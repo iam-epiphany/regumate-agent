@@ -1,186 +1,52 @@
-# Agent 架构开发教程
+# Agent 架构设计
 
-这个模块带你实现 MVP 单 Agent 工作流。先不要做多 Agent，也不要引入复杂框架。第一阶段目标是让 Agent 按固定步骤调用 Tool，产出可复核的异常分析结果。
+当前 RAG-only 阶段暂不实现 Agent 工作流。系统先把“可信文档入库、检索、引用回答、无依据拒答、审计留痕”做稳定。
 
-## 1. 最终要实现什么效果
+## 1. 当前为什么不做 Agent
 
-输入：
+可信 RAG 问答的第一目标是回答必须有依据。现在还没有报表校验、异常 finding、人工复核等任务链路，因此不需要引入 Agent 编排。
 
-```json
-{
-  "task_id": "TASK_001",
-  "report_file_path": "data/samples/balance_invalid_total.csv"
-}
-```
-
-输出：
-
-```json
-{
-  "task_id": "TASK_001",
-  "status": "completed",
-  "findings": [],
-  "evidence_chain": []
-}
-```
-
-Agent 的流程：
+当前代码中的 `rag_service.answer_question()` 承担一个非常轻量的编排职责：
 
 ```text
-解析报表 -> 执行规则 -> 检索制度 -> 生成证据链 -> 生成复核建议
+接收问题 -> 检索 chunks -> 判断是否拒答 -> 用命中片段组织模板答案 -> 保存问答日志 -> 写审计日志
 ```
 
-## 2. 文件应该放在哪里
+这不是完整 Agent，只是 RAG 问答服务。这样做的好处是可测试、可解释、便于后续替换真实 LLM。
 
-```text
-backend/app/agents/
-  filing_lint_agent.py
-backend/app/schemas/
-  agent.py
-backend/app/tools/
-  report_tools.py
-  rag_tools.py
-backend/app/tests/
-  test_filing_lint_agent.py
-```
+## 2. 当前边界
 
-## 3. 第一步：定义 Agent 状态
+当前阶段不新增：
 
-文件：`backend/app/schemas/agent.py`
+- `backend/app/agents/`
+- AgentState
+- Tool Calling
+- 多 Agent
+- LangGraph
+- 报表异常排查流程
 
-```python
-from pydantic import BaseModel
+当前阶段保留的扩展点：
 
+- `rag_service.answer_question()` 后续可以接入真实 LLM。
+- citations 已经结构化，未来可作为 Agent 输入证据。
+- `qa_logs` 和 `audit_logs` 已记录问答过程，未来可用于追踪。
 
-class AgentState(BaseModel):
-    task_id: str
-    report_file_path: str
-    status: str = "pending"
-    rows: list[dict] = []
-    validation_results: list[dict] = []
-    regulation_chunks: list[dict] = []
-    evidence_chain: list[dict] = []
-    errors: list[dict] = []
-```
+## 3. 未来重新引入 Agent 的条件
 
-新手理解：AgentState 就是流程中的“工作台记录”。每一步把自己的结果写进去。
+只有当以下能力重新进入开发范围时，再设计 Agent：
 
-## 4. 第二步：写 Agent 主函数
+- 报表结构化解析。
+- 可配置规则校验。
+- 异常 finding 生成。
+- 证据链构建。
+- 人工复核。
+- 历史案例沉淀。
 
-文件：`backend/app/agents/filing_lint_agent.py`
+届时 Agent 应只负责编排，不直接做确定性校验；规则、检索、计算仍由普通 service/tool 完成。
 
-```python
-from backend.app.schemas.agent import AgentState
-from backend.app.tools.report_tools import parse_report_file, validate_report_rules
-from backend.app.tools.rag_tools import retrieve_regulation
+## 4. 验收标准
 
-
-def run_filing_lint_agent(task_id: str, report_file_path: str) -> AgentState:
-    state = AgentState(task_id=task_id, report_file_path=report_file_path, status="running")
-
-    parse_result = parse_report_file(report_file_path)
-    if not parse_result.ok:
-        state.status = "failed"
-        state.errors.append(parse_result.error.model_dump())
-        return state
-
-    state.rows = parse_result.data["rows"]
-
-    validation_result = validate_report_rules(state.rows)
-    if not validation_result.ok:
-        state.status = "failed"
-        state.errors.append(validation_result.error.model_dump())
-        return state
-
-    state.validation_results = validation_result.data["results"]
-
-    failed_results = [item for item in state.validation_results if not item["passed"]]
-    for finding in failed_results:
-        rag_result = retrieve_regulation(finding["message"])
-        if rag_result.ok:
-            state.regulation_chunks.extend(rag_result.data["chunks"])
-
-    state.evidence_chain = build_simple_evidence_chain(failed_results, state.regulation_chunks)
-    state.status = "completed"
-    return state
-```
-
-## 5. 第三步：先写最简单证据链
-
-同一个文件里先放一个简单函数，后续再迁移到 `evidence_tools.py`：
-
-```python
-def build_simple_evidence_chain(findings: list[dict], chunks: list[dict]) -> list[dict]:
-    chain = []
-    for finding in findings:
-        chain.append(
-            {
-                "finding": finding,
-                "regulation_refs": [chunk["chunk_id"] for chunk in chunks],
-                "suggestion": "请人工复核该异常是否由填报口径或模板公式导致。",
-            }
-        )
-    return chain
-```
-
-第一阶段不要追求智能推理，先保证结构打通。
-
-## 6. 第四步：写测试
-
-文件：`backend/app/tests/test_filing_lint_agent.py`
-
-```python
-from pathlib import Path
-
-from backend.app.agents.filing_lint_agent import run_filing_lint_agent
-
-
-def test_agent_runs_with_invalid_sample():
-    path = Path("data/samples/balance_invalid_total.csv")
-    state = run_filing_lint_agent("TASK_TEST", str(path))
-    assert state.status == "completed"
-    assert len(state.validation_results) >= 1
-```
-
-运行：
-
-```powershell
-pytest backend\app\tests\test_filing_lint_agent.py
-```
-
-## 7. 第五步：把 Agent 接到 API
-
-后续可以新增接口：
-
-```text
-POST /reports/{report_id}/analyze
-```
-
-接口内部根据 `report_id` 找到上传文件路径，再调用：
-
-```python
-run_filing_lint_agent(task_id, report_file_path)
-```
-
-## 8. Agent 不应该做什么
-
-- 不直接解析 CSV，调用 `parse_report_file`。
-- 不直接写规则，调用 `validate_report_rules`。
-- 不凭空解释制度，调用 `retrieve_regulation`。
-- 不覆盖人工复核结论。
-- 不把所有逻辑写进 prompt。
-
-## 9. 常见错误
-
-- Agent 输出只有自然语言，无法测试。
-- Tool 失败后 Agent 继续往下跑。
-- 没有保存中间结果，前端无法展示过程。
-- 一开始就拆成多个 Agent，流程反而跑不通。
-
-## 10. 完成标准
-
-- 能用一个样例 CSV 跑完整流程。
-- AgentState 保留解析结果、规则结果、制度检索结果、证据链。
-- Tool 出错时 Agent 能返回 failed 状态。
-- 测试能验证 Agent 主流程。
-
+- 当前代码中没有 Agent 目录和 Agent API。
+- 问答结果只来自检索到的 citations。
+- 无 citations 时固定拒答。
+- 后续引入 Agent 前，必须先更新本文件、API 文档和测试计划。
