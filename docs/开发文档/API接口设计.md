@@ -1,235 +1,129 @@
-# API 接口开发教程
+# API 接口设计
 
-这个模块教你从零开始设计和实现 FilingLint Agent 的后端 API。API 是前端、规则校验、RAG、Agent 工作流之间的契约，不要让前端猜字段。
+本文档记录当前 RAG-only 阶段的前后端接口契约。后端接口统一使用 `/api` 前缀。
 
-## 1. 最终要实现什么效果
+## 1. 接口清单
 
-MVP 阶段至少实现这些接口：
+| 状态 | 方法 | 路径 | 用途 |
+| --- | --- | --- | --- |
+| 已实现 | `GET` | `/api/health` | 健康检查 |
+| 已实现 | `POST` | `/api/documents/upload` | 上传并入库监管制度文档 |
+| 已实现 | `GET` | `/api/documents` | 查询知识库文档列表 |
+| 已实现 | `GET` | `/api/documents/{document_id}` | 查看文档详情和 chunk |
+| 已实现 | `POST` | `/api/qa/ask` | 可信 RAG 问答 |
+| 已实现 | `GET` | `/api/audit/logs` | 查看审计日志 |
 
-| 方法 | 路径 | 作用 |
-| --- | --- | --- |
-| GET | `/health` | 检查后端是否启动 |
-| POST | `/reports/upload` | 上传 CSV / Excel 报表 |
-| POST | `/reports/{report_id}/validate` | 执行报表规则校验 |
-| GET | `/findings/{finding_id}` | 查看异常详情和证据链 |
-| POST | `/rag/query` | 查询制度依据 |
-| POST | `/reviews` | 提交人工复核结论 |
+## 2. POST /api/documents/upload
 
-第一阶段可以只实现 `/health` 和 `/reports/upload`，后续逐步补齐。
+上传监管制度、填报说明、指标口径文档。支持 `.txt`、`.md`、`.docx`、`.pdf`。
 
-## 2. 文件应该放在哪里
-
-建议结构：
-
-```text
-backend/app/api/
-  reports.py
-  rag.py
-  reviews.py
-backend/app/schemas/
-  reports.py
-  common.py
-backend/app/services/
-  report_storage.py
-backend/app/tests/
-  test_reports_api.py
-```
-
-## 3. 第一步：定义通用错误格式
-
-文件：`backend/app/schemas/common.py`
-
-示例：
-
-```python
-from pydantic import BaseModel
-
-
-class ErrorResponse(BaseModel):
-    error_code: str
-    message: str
-    details: list[dict] = []
-```
-
-以后所有接口错误都尽量返回类似结构，前端就能统一展示。
-
-## 4. 第二步：定义上传接口响应
-
-文件：`backend/app/schemas/reports.py`
-
-```python
-from pydantic import BaseModel
-
-
-class ReportUploadResponse(BaseModel):
-    report_id: str
-    filename: str
-    content_type: str | None = None
-    size: int
-```
-
-字段解释：
-
-| 字段 | 含义 |
-| --- | --- |
-| `report_id` | 后端生成的报表 ID |
-| `filename` | 原始文件名 |
-| `content_type` | 上传文件类型 |
-| `size` | 文件大小，单位字节 |
-
-## 5. 第三步：写保存上传文件的 service
-
-文件：`backend/app/services/report_storage.py`
-
-```python
-from pathlib import Path
-from uuid import uuid4
-
-UPLOAD_DIR = Path("data/uploads")
-ALLOWED_SUFFIXES = {".csv", ".xlsx", ".xls"}
-
-
-def save_report_file(filename: str, content: bytes) -> dict:
-    suffix = Path(filename).suffix.lower()
-    if suffix not in ALLOWED_SUFFIXES:
-        raise ValueError("UNSUPPORTED_FILE_TYPE")
-
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    report_id = str(uuid4())
-    target = UPLOAD_DIR / f"{report_id}{suffix}"
-    target.write_bytes(content)
-    return {
-        "report_id": report_id,
-        "filename": filename,
-        "size": len(content),
-        "path": str(target),
-    }
-```
-
-新手注意：service 只处理保存逻辑，不要在这里写 HTTP 状态码。
-
-## 6. 第四步：写 FastAPI router
-
-文件：`backend/app/api/reports.py`
-
-```python
-from fastapi import APIRouter, File, HTTPException, UploadFile
-
-from backend.app.schemas.reports import ReportUploadResponse
-from backend.app.services.report_storage import save_report_file
-
-router = APIRouter()
-
-
-@router.post("/upload", response_model=ReportUploadResponse)
-async def upload_report(file: UploadFile = File(...)):
-    content = await file.read()
-    try:
-        result = save_report_file(file.filename or "unknown", content)
-    except ValueError as exc:
-        if str(exc) == "UNSUPPORTED_FILE_TYPE":
-            raise HTTPException(status_code=400, detail="不支持的文件类型")
-        raise
-
-    return ReportUploadResponse(
-        report_id=result["report_id"],
-        filename=result["filename"],
-        content_type=file.content_type,
-        size=result["size"],
-    )
-```
-
-## 7. 第五步：在 `main.py` 挂载 router
-
-文件：`backend/main.py`
-
-```python
-from fastapi import FastAPI
-
-from backend.app.api import reports
-
-app = FastAPI(title="FilingLint Agent API")
-app.include_router(reports.router, prefix="/reports", tags=["reports"])
-
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-```
-
-## 8. 第六步：手动验证
-
-启动后端：
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-uvicorn backend.main:app --reload
-```
-
-打开：
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-用 Swagger 页面上传 `data/samples/balance_valid.csv`，确认返回：
+成功响应：
 
 ```json
 {
-  "report_id": "...",
-  "filename": "balance_valid.csv",
-  "content_type": "text/csv",
-  "size": 123
+  "document_id": "DOC-20260707-0001",
+  "filename": "监管填报说明.md",
+  "content_type": "text/markdown",
+  "size": 1024,
+  "chunk_count": 3,
+  "uploaded_at": "2026-07-07T10:30:00+00:00"
 }
 ```
 
-## 9. 第七步：写 API 测试
+错误响应：
 
-文件：`backend/app/tests/test_reports_api.py`
+| 场景 | HTTP | 响应 |
+| --- | --- | --- |
+| 空文件 | 400 | `{ "detail": "上传文档不能为空" }` |
+| 不支持格式 | 400 | `{ "detail": "仅支持 .txt、.md、.docx、.pdf 文档" }` |
+| 无可解析文本 | 400 | `{ "detail": "文档没有可解析文本" }` |
 
-```python
-from fastapi.testclient import TestClient
+## 3. GET /api/documents
 
-from backend.main import app
+成功响应：
 
-client = TestClient(app)
-
-
-def test_health():
-    response = client.get("/health")
-    assert response.status_code == 200
-
-
-def test_upload_csv():
-    response = client.post(
-        "/reports/upload",
-        files={"file": ("demo.csv", b"a,b\n1,2\n", "text/csv")},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["filename"] == "demo.csv"
-    assert "report_id" in body
+```json
+{
+  "documents": [
+    {
+      "document_id": "DOC-20260707-0001",
+      "filename": "监管填报说明.md",
+      "file_type": "md",
+      "size": 1024,
+      "chunk_count": 3,
+      "uploaded_at": "2026-07-07T10:30:00+00:00",
+      "status": "indexed"
+    }
+  ]
+}
 ```
 
-运行：
+## 4. GET /api/documents/{document_id}
 
-```powershell
-pytest backend\app\tests\test_reports_api.py
+成功响应：
+
+```json
+{
+  "document_id": "DOC-20260707-0001",
+  "filename": "监管填报说明.md",
+  "file_type": "md",
+  "size": 1024,
+  "chunk_count": 3,
+  "uploaded_at": "2026-07-07T10:30:00+00:00",
+  "status": "indexed",
+  "chunks": [
+    {
+      "chunk_id": "DOC-20260707-0001-CHUNK-0001",
+      "text_preview": "普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。",
+      "section_title": "普惠小微贷款统计口径",
+      "page_number": null,
+      "created_at": "2026-07-07T10:30:00+00:00"
+    }
+  ]
+}
 ```
 
-## 10. 常见错误
+## 5. POST /api/qa/ask
 
-- 前端需要字段，但后端响应模型没定义。
-- 接口直接返回 Python traceback。
-- 上传接口保存真实敏感文件到仓库。
-- router 写了但忘记在 `main.py` 挂载。
-- 测试只测成功，不测错误文件类型。
+请求：
 
-## 11. 完成标准
+```json
+{
+  "question": "普惠小微贷款统计口径是什么？"
+}
+```
 
-- `/health` 可以访问。
-- `/reports/upload` 可以上传 CSV。
-- 不支持的文件类型有明确错误。
-- OpenAPI `/docs` 能看到接口。
-- 至少有一个成功上传测试。
+有依据响应：
 
+```json
+{
+  "answer": "根据知识库中检索到的监管制度片段，关于“普惠小微贷款统计口径是什么？”可以参考以下内容：普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。",
+  "citations": [
+    {
+      "document_id": "DOC-20260707-0001",
+      "chunk_id": "DOC-20260707-0001-CHUNK-0001",
+      "filename": "监管填报说明.md",
+      "section_title": "普惠小微贷款统计口径",
+      "page_number": null,
+      "excerpt": "普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。"
+    }
+  ],
+  "confidence": 0.6,
+  "refused": false
+}
+```
+
+无依据响应：
+
+```json
+{
+  "answer": "知识库中未找到足够依据，无法给出确定回答。",
+  "citations": [],
+  "confidence": 0.0,
+  "refused": true
+}
+```
+
+## 6. GET /api/audit/logs
+
+返回最近操作记录，包括文档上传、文档入库、问答和拒答。

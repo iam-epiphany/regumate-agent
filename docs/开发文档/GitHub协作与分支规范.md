@@ -24,8 +24,8 @@ git status
 分支命名：
 
 ```text
-feat/report-upload
-fix/balance-rule-total
+feat/document-upload
+fix/rag-refusal
 docs/rewrite-dev-docs
 test/rag-citations
 ```
@@ -75,9 +75,9 @@ type(scope): summary
 示例：
 
 ```text
-feat(api): add report upload endpoint
-test(rules): add balance total rule tests
-docs(agent): add tool calling tutorial
+feat(api): add document upload endpoint
+test(rag): add refusal and citation tests
+docs(rag): update knowledge base workflow
 ```
 
 ## 6. 第五步：写 PR 描述
@@ -156,4 +156,3 @@ git diff
 - PR 有验收方式。
 - AI 改动经过人工 review。
 - 合并前测试或手动验收结果明确。
-
