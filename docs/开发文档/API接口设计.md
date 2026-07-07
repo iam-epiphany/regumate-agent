@@ -1,129 +1,53 @@
 # API 接口设计
 
-本文档记录当前 RAG-only 阶段的前后端接口契约。后端接口统一使用 `/api` 前缀。
+ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 
-## 1. 接口清单
+## 设计原则
 
-| 状态 | 方法 | 路径 | 用途 |
-| --- | --- | --- | --- |
-| 已实现 | `GET` | `/api/health` | 健康检查 |
-| 已实现 | `POST` | `/api/documents/upload` | 上传并入库监管制度文档 |
-| 已实现 | `GET` | `/api/documents` | 查询知识库文档列表 |
-| 已实现 | `GET` | `/api/documents/{document_id}` | 查看文档详情和 chunk |
-| 已实现 | `POST` | `/api/qa/ask` | 可信 RAG 问答 |
-| 已实现 | `GET` | `/api/audit/logs` | 查看审计日志 |
+- API 层只处理 HTTP 契约和异常转换。
+- 业务逻辑放在 service 层。
+- 所有响应结构由 Pydantic schema 定义。
+- 问答接口必须返回引用列表，或明确拒答。
 
-## 2. POST /api/documents/upload
+## 接口列表
 
-上传监管制度、填报说明、指标口径文档。支持 `.txt`、`.md`、`.docx`、`.pdf`。
-
-成功响应：
-
-```json
-{
-  "document_id": "DOC-20260707-0001",
-  "filename": "监管填报说明.md",
-  "content_type": "text/markdown",
-  "size": 1024,
-  "chunk_count": 3,
-  "uploaded_at": "2026-07-07T10:30:00+00:00"
-}
-```
-
-错误响应：
-
-| 场景 | HTTP | 响应 |
+| 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| 空文件 | 400 | `{ "detail": "上传文档不能为空" }` |
-| 不支持格式 | 400 | `{ "detail": "仅支持 .txt、.md、.docx、.pdf 文档" }` |
-| 无可解析文本 | 400 | `{ "detail": "文档没有可解析文本" }` |
+| GET | `/api/health` | 后端健康检查 |
+| POST | `/api/documents/upload` | 上传知识库文档 |
+| GET | `/api/documents` | 获取文档列表 |
+| GET | `/api/documents/{document_id}` | 获取文档详情与 chunk |
+| POST | `/api/qa/ask` | 提交问题并获得可信回答 |
+| GET | `/api/audit/logs` | 获取审计日志 |
 
-## 3. GET /api/documents
+## 文档上传
 
-成功响应：
+`POST /api/documents/upload`
 
-```json
-{
-  "documents": [
-    {
-      "document_id": "DOC-20260707-0001",
-      "filename": "监管填报说明.md",
-      "file_type": "md",
-      "size": 1024,
-      "chunk_count": 3,
-      "uploaded_at": "2026-07-07T10:30:00+00:00",
-      "status": "indexed"
-    }
-  ]
-}
-```
+- 请求：`multipart/form-data`，字段名为 `file`。
+- 支持：`.txt`、`.md`、`.docx`、可提取文本的 `.pdf`。
+- 成功返回：文档编号、文件名、大小、chunk 数量、上传时间。
+- 失败返回：不支持格式、空文件、无法解析文本等 400 错误。
 
-## 4. GET /api/documents/{document_id}
+## 可信问答
 
-成功响应：
-
-```json
-{
-  "document_id": "DOC-20260707-0001",
-  "filename": "监管填报说明.md",
-  "file_type": "md",
-  "size": 1024,
-  "chunk_count": 3,
-  "uploaded_at": "2026-07-07T10:30:00+00:00",
-  "status": "indexed",
-  "chunks": [
-    {
-      "chunk_id": "DOC-20260707-0001-CHUNK-0001",
-      "text_preview": "普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。",
-      "section_title": "普惠小微贷款统计口径",
-      "page_number": null,
-      "created_at": "2026-07-07T10:30:00+00:00"
-    }
-  ]
-}
-```
-
-## 5. POST /api/qa/ask
+`POST /api/qa/ask`
 
 请求：
 
 ```json
 {
-  "question": "普惠小微贷款统计口径是什么？"
+  "question": "资产合计应如何填报？"
 }
 ```
 
-有依据响应：
+响应包含：
 
-```json
-{
-  "answer": "根据知识库中检索到的监管制度片段，关于“普惠小微贷款统计口径是什么？”可以参考以下内容：普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。",
-  "citations": [
-    {
-      "document_id": "DOC-20260707-0001",
-      "chunk_id": "DOC-20260707-0001-CHUNK-0001",
-      "filename": "监管填报说明.md",
-      "section_title": "普惠小微贷款统计口径",
-      "page_number": null,
-      "excerpt": "普惠小微贷款统计应以填报说明规定的客户范围、贷款用途、金额口径为准。"
-    }
-  ],
-  "confidence": 0.6,
-  "refused": false
-}
-```
+- `answer`：回答文本或拒答文本。
+- `citations`：引用片段列表。
+- `confidence`：当前关键词检索的简化置信度。
+- `refused`：是否拒答。
 
-无依据响应：
+## 不提供的接口
 
-```json
-{
-  "answer": "知识库中未找到足够依据，无法给出确定回答。",
-  "citations": [],
-  "confidence": 0.0,
-  "refused": true
-}
-```
-
-## 6. GET /api/audit/logs
-
-返回最近操作记录，包括文档上传、文档入库、问答和拒答。
+当前不提供真实报表校验、复核、报告生成或复杂任务编排接口。
