@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.run-state/
 
 # Virtual environments
 .venv/
@@ -40,8 +41,16 @@ outputs/
 reports/generated/
 backend/storage/
 data/app.db
+data/audit_archives/
+data/qdrant/
+data/model_cache/
 data/documents/originals/*
 !data/documents/originals/.gitkeep
+data/test_documents/parser_samples/*
+.cache/
+models/
+model_cache/
+hf_cache/
 
 # Large or generated files
 *.sqlite3

@@ -1,0 +1,75 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from backend.app.core.database import get_db
+from backend.app.schemas.audit import (
+    AuditArchiveDeleteResponse,
+    AuditArchiveDetailResponse,
+    AuditArchiveListResponse,
+    AuditArchiveSummary,
+    AuditLogItem,
+    AuditLogListResponse,
+)
+from backend.app.services.audit_service import (
+    delete_audit_archive,
+    list_audit_archives,
+    list_audit_logs,
+    read_audit_archive,
+    read_audit_archive_content,
+)
+
+
+router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+@router.get("/logs", response_model=AuditLogListResponse)
+def get_audit_logs(db: Session = Depends(get_db)) -> AuditLogListResponse:
+    logs = list_audit_logs(db)
+    return AuditLogListResponse(
+        logs=[
+            AuditLogItem(
+                id=log.id,
+                action=log.action,
+                target_type=log.target_type,
+                target_id=log.target_id,
+                detail=log.detail,
+                created_at=log.created_at.isoformat(),
+            )
+            for log in logs
+        ]
+    )
+
+
+@router.get("/archives", response_model=AuditArchiveListResponse)
+def get_audit_archives() -> AuditArchiveListResponse:
+    archives = list_audit_archives()
+    return AuditArchiveListResponse(
+        archives=[
+            AuditArchiveSummary(
+                date=archive.date,
+                filename=archive.path.name,
+                size=archive.size,
+                updated_at=archive.updated_at.isoformat(),
+            )
+            for archive in archives
+        ]
+    )
+
+
+@router.get("/archives/{archive_date}", response_model=AuditArchiveDetailResponse)
+def get_audit_archive(archive_date: str) -> AuditArchiveDetailResponse:
+    try:
+        archive = read_audit_archive(archive_date)
+        content = read_audit_archive_content(archive_date)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到指定日期的日志归档") from exc
+    return AuditArchiveDetailResponse(date=archive.date, filename=archive.path.name, content=content)
+
+
+@router.delete("/archives/{archive_date}", response_model=AuditArchiveDeleteResponse)
+def remove_audit_archive(archive_date: str) -> AuditArchiveDeleteResponse:
+    try:
+        delete_audit_archive(archive_date)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到指定日期的日志归档") from exc
+    return AuditArchiveDeleteResponse(date=archive_date, deleted=True)

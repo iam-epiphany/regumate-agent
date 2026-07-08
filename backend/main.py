@@ -9,11 +9,12 @@ from backend.app.api.audit import router as audit_router
 from backend.app.api.documents import router as documents_router
 from backend.app.api.health import router as health_router
 from backend.app.api.qa import router as qa_router
+from backend.app.core.config import API_TITLE
 from backend.app.core.database import init_db
 
 
 # FastAPI 应用对象，应用启动入口。
-app = FastAPI(title="FilingSentry Agent API")
+app = FastAPI(title=API_TITLE)
 init_db()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
