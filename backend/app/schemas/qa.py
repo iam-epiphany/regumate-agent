@@ -12,6 +12,10 @@ class Citation(BaseModel):
     section_title: str | None = None
     page_number: int | None = None
     excerpt: str
+    score: float | None = None
+    rerank_score: float | None = None
+    chunk_type: str = "paragraph"
+    evidence_role: str = "related_context"
 
 
 class QAResponse(BaseModel):
@@ -19,4 +23,3 @@ class QAResponse(BaseModel):
     citations: list[Citation]
     confidence: float
     refused: bool
-

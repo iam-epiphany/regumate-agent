@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { DocumentDetailResponse, DocumentListResponse, DocumentUploadResponse } from "../types/api";
+import type { DocumentDeleteResponse, DocumentDetailResponse, DocumentListResponse, DocumentUploadResponse } from "../types/api";
 
 export function listDocuments(): Promise<DocumentListResponse> {
   return apiFetch<DocumentListResponse>("/api/documents");
@@ -19,3 +19,9 @@ export function uploadDocument(file: File): Promise<DocumentUploadResponse> {
   });
 }
 
+export function deleteDocument(documentId: string, signal?: AbortSignal): Promise<DocumentDeleteResponse> {
+  return apiFetch<DocumentDeleteResponse>(`/api/documents/${documentId}`, {
+    method: "DELETE",
+    signal,
+  });
+}

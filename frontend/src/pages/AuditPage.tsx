@@ -1,19 +1,52 @@
-import { RefreshCw } from "lucide-react";
+import { FileText, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { listAuditLogs } from "../api/audit";
-import type { AuditLogItem } from "../types/api";
+import { deleteAuditArchive, getAuditArchive, listAuditArchives, listAuditLogs } from "../api/audit";
+import type { AuditArchiveDetailResponse, AuditArchiveSummary, AuditLogItem } from "../types/api";
+import { formatAuditLog } from "../utils/audit";
 
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
+  const [archives, setArchives] = useState<AuditArchiveSummary[]>([]);
+  const [selectedArchive, setSelectedArchive] = useState<AuditArchiveDetailResponse | null>(null);
+  const [message, setMessage] = useState("仅显示当天审计日志，过期日志会自动归档。");
 
   useEffect(() => {
-    void loadLogs();
+    void loadAuditData();
   }, []);
 
-  async function loadLogs() {
-    const result = await listAuditLogs();
-    setLogs(result.logs);
+  async function loadAuditData() {
+    const [logResult, archiveResult] = await Promise.all([listAuditLogs(), listAuditArchives()]);
+    setLogs(logResult.logs);
+    setArchives(archiveResult.archives);
+  }
+
+  async function showArchive(date: string) {
+    try {
+      const archive = await getAuditArchive(date);
+      setSelectedArchive(archive);
+      setMessage(`正在查看 ${date} 的日志归档。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "读取日志归档失败。");
+      await loadAuditData();
+    }
+  }
+
+  async function removeArchive(date: string) {
+    if (!window.confirm(`确认删除 ${date} 的日志归档？此操作不可恢复。`)) {
+      return;
+    }
+    try {
+      await deleteAuditArchive(date);
+      if (selectedArchive?.date === date) {
+        setSelectedArchive(null);
+      }
+      setMessage(`已删除 ${date} 的日志归档。`);
+      await loadAuditData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除日志归档失败。");
+      await loadAuditData();
+    }
   }
 
   return (
@@ -23,13 +56,17 @@ export function AuditPage() {
           <p className="eyebrow">Audit</p>
           <h1>审计日志</h1>
         </div>
-        <button className="icon-button" type="button" onClick={() => void loadLogs()}>
+        <button className="icon-button" type="button" onClick={() => void loadAuditData()}>
           <RefreshCw size={17} />
           刷新
         </button>
       </section>
 
       <section className="panel">
+        <div className="panel-title">
+          <h2>今日日志</h2>
+        </div>
+        <p className="hint">{message}</p>
         {logs.length > 0 ? (
           <div className="table-wrap">
             <table>
@@ -42,24 +79,79 @@ export function AuditPage() {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id}>
-                    <td>{formatDateTime(log.created_at)}</td>
-                    <td className="mono">{log.action}</td>
+                {logs.map((log) => {
+                  const display = formatAuditLog(log);
+                  return (
+                    <tr key={log.id}>
+                      <td>{formatDateTime(log.created_at)}</td>
+                      <td>{display.action}</td>
+                      <td>{display.target}</td>
+                      <td className="audit-detail">{display.detail}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">今天暂无日志。</p>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-title">
+          <FileText size={20} />
+          <h2>历史日志归档</h2>
+        </div>
+        {archives.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>文件</th>
+                  <th>大小</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archives.map((archive) => (
+                  <tr key={archive.date}>
+                    <td>{archive.date}</td>
+                    <td>{archive.filename}</td>
+                    <td>{formatFileSize(archive.size)}</td>
+                    <td>{formatDateTime(archive.updated_at)}</td>
                     <td>
-                      {log.target_type}
-                      {log.target_id ? ` / ${log.target_id}` : ""}
+                      <button className="secondary-button" type="button" onClick={() => void showArchive(archive.date)}>
+                        查看
+                      </button>
+                      <button className="secondary-button danger-button" type="button" onClick={() => void removeArchive(archive.date)}>
+                        <Trash2 size={15} />
+                        删除
+                      </button>
                     </td>
-                    <td>{log.detail}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="muted">暂无日志。</p>
+          <p className="muted">暂无历史归档。</p>
         )}
       </section>
+
+      {selectedArchive ? (
+        <section className="panel">
+          <div className="panel-title">
+            <h2>{selectedArchive.date} 日志内容</h2>
+            <button className="secondary-button" type="button" onClick={() => setSelectedArchive(null)}>
+              收起
+            </button>
+          </div>
+          <pre className="archive-content">{selectedArchive.content}</pre>
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -67,4 +159,14 @@ export function AuditPage() {
 function formatDateTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatFileSize(value: number): string {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }

@@ -34,6 +34,11 @@ button:disabled {
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
   border-right: 1px solid #dce2ee;
   padding: 22px 18px;
   background: #ffffff;
@@ -84,10 +89,29 @@ nav {
   background: #0f766e;
 }
 
+.icon-button:disabled {
+  color: #64748b;
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+}
+
 .secondary-button {
   color: #334155;
   border-color: #cbd5e1;
   background: #ffffff;
+}
+
+.danger-button {
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.danger-button:hover {
+  background: #fef2f2;
+}
+
+.danger-solid-button {
+  background: #b91c1c;
 }
 
 .content {
@@ -127,6 +151,13 @@ h1 {
   font-size: 30px;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 h2 {
   margin-bottom: 14px;
   font-size: 18px;
@@ -135,18 +166,6 @@ h2 {
 h3 {
   margin-bottom: 6px;
   font-size: 15px;
-}
-
-.status-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid #dce2ee;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  background: #ffffff;
 }
 
 .dashboard-grid {
@@ -185,6 +204,11 @@ h3 {
 .plain-list li {
   display: grid;
   gap: 4px;
+}
+
+.activity-title {
+  color: #0f172a;
+  font-weight: 800;
 }
 
 .panel.wide {
@@ -366,12 +390,130 @@ textarea {
   font-weight: 800;
 }
 
+.chunk-text {
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #1f2937;
+  font-family: inherit;
+  line-height: 1.7;
+}
+
+.chunk-text--table {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.7;
+}
+
+.source-details {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.source-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.source-details p {
+  margin: 8px 0 0;
+}
+
+.audit-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.archive-content {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin: 0;
+  padding: 14px;
+  color: #1f2937;
+  background: #f8fafc;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.confirm-dialog {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  width: min(520px, 100%);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
+}
+
+.confirm-dialog__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.confirm-dialog__body h2 {
+  margin-bottom: 8px;
+}
+
+.confirm-dialog__body p {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.confirm-dialog__facts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.confirm-dialog__facts div {
+  display: grid;
+  gap: 3px;
+}
+
+.confirm-dialog__facts dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.confirm-dialog__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
+    position: static;
+    height: auto;
+    overflow-y: visible;
     border-right: 0;
     border-bottom: 1px solid #dce2ee;
   }
@@ -380,14 +522,17 @@ textarea {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .page-head,
-  .status-strip {
+  .page-head {
     align-items: stretch;
     flex-direction: column;
   }
 
   .dashboard-grid,
   .workflow {
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-dialog {
     grid-template-columns: 1fr;
   }
 }

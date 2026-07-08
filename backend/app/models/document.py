@@ -21,6 +21,8 @@ class Document(Base):
     size: Mapped[int] = mapped_column(Integer)
     storage_path: Mapped[str] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(30), default="indexed")
+    index_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    index_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -38,6 +40,10 @@ class DocumentChunk(Base):
     chunk_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     document_id: Mapped[str] = mapped_column(String(32), ForeignKey("documents.document_id"), index=True)
     text: Mapped[str] = mapped_column(Text)
+    embedding_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    index_status: Mapped[str] = mapped_column(String(30), default="indexed")
+    index_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_file: Mapped[str] = mapped_column(String(255))
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -57,4 +63,3 @@ class QALog(Base):
     confidence: Mapped[float] = mapped_column(default=0.0)
     citation_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-

@@ -7,6 +7,7 @@ import { listDocuments } from "../api/documents";
 import { getHealth } from "../api/system";
 import { StatusBadge } from "../components/StatusBadge";
 import type { AuditLogItem, DocumentSummary } from "../types/api";
+import { formatAuditLog } from "../utils/audit";
 
 interface WorkspacePageProps {
   onNavigate: (path: string) => void;
@@ -45,19 +46,17 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
       <section className="page-head">
         <div>
           <p className="eyebrow">ReguMate RAG</p>
-          <h1>银行监管可信问答工作台</h1>
+          <div className="title-row">
+            <h1>银行监管可信问答工作台</h1>
+            <StatusBadge tone={health === "ok" ? "ok" : health === "error" ? "error" : "neutral"}>
+              {health === "ok" ? "后端已连接" : health === "error" ? "后端未连接" : "检查中"}
+            </StatusBadge>
+          </div>
         </div>
         <button className="icon-button" type="button" onClick={loadDashboard}>
           <Activity size={18} />
           刷新状态
         </button>
-      </section>
-
-      <section className="status-strip">
-        <StatusBadge tone={health === "ok" ? "ok" : health === "error" ? "error" : "neutral"}>
-          {health === "ok" ? "后端已连接" : health === "error" ? "后端未连接" : "检查中"}
-        </StatusBadge>
-        <span>当前主线：监管制度与统计报表口径文档知识库 + 可信 RAG 问答</span>
       </section>
 
       <section className="dashboard-grid">
@@ -98,12 +97,15 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
           </div>
           {logs.length > 0 ? (
             <ul className="plain-list">
-              {logs.map((log) => (
-                <li key={log.id}>
-                  <span className="mono">{log.action}</span>
-                  <span>{log.detail}</span>
-                </li>
-              ))}
+              {logs.map((log) => {
+                const display = formatAuditLog(log);
+                return (
+                  <li key={log.id}>
+                    <span className="activity-title">{display.action}</span>
+                    <span>{display.detail}</span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="muted">暂无审计日志。</p>

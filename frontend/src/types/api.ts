@@ -27,17 +27,31 @@ export interface DocumentSummary {
   chunk_count: number;
   uploaded_at: string;
   status: string;
+  index_version: string | null;
+  index_error: string | null;
 }
 
 export interface DocumentListResponse {
   documents: DocumentSummary[];
 }
 
+export interface DocumentDeleteResponse {
+  document_id: string;
+  deleted: boolean;
+  vector_warning: string | null;
+}
+
 export interface ChunkSummary {
   chunk_id: string;
+  text: string;
   text_preview: string;
+  chunk_type: string;
+  is_truncated: boolean;
   section_title: string | null;
   page_number: number | null;
+  token_count: number;
+  index_status: string;
+  index_version: string | null;
   created_at: string;
 }
 
@@ -49,6 +63,8 @@ export interface DocumentDetailResponse {
   chunk_count: number;
   uploaded_at: string;
   status: string;
+  index_version: string | null;
+  index_error: string | null;
   chunks: ChunkSummary[];
 }
 
@@ -59,6 +75,10 @@ export interface Citation {
   section_title: string | null;
   page_number: number | null;
   excerpt: string;
+  score: number | null;
+  rerank_score: number | null;
+  chunk_type: string;
+  evidence_role: string;
 }
 
 export interface QAResponse {
@@ -81,3 +101,24 @@ export interface AuditLogListResponse {
   logs: AuditLogItem[];
 }
 
+export interface AuditArchiveSummary {
+  date: string;
+  filename: string;
+  size: number;
+  updated_at: string;
+}
+
+export interface AuditArchiveListResponse {
+  archives: AuditArchiveSummary[];
+}
+
+export interface AuditArchiveDetailResponse {
+  date: string;
+  filename: string;
+  content: string;
+}
+
+export interface AuditArchiveDeleteResponse {
+  date: string;
+  deleted: boolean;
+}

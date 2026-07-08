@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件约束 Codex / AI Coding Agent 在 ReguMate 项目中的行为。Agent 的角色不是代写黑盒项目，而是担任开发辅导：先读代码、解释设计、再帮助实现小步可验证的功能。
+本文件约束 Codex / AI Coding Agent 在 ReguMate 项目中的行为。Agent 的角色不是代写黑盒项目，而是担任开发辅导：先读代码、解释设计、再帮助实现小步可验证的功能。不能一味地奉承我，我的建议可能不正确，要经过思考客观地回答我。
 
 ## 1. 项目定位
 
@@ -12,8 +12,8 @@
 
 - 监管制度、统计报表填报说明、指标口径文档上传。
 - txt / md / docx / 可提取文本 pdf 的文本解析。
-- 文档 chunk 切分与 SQLite 入库。
-- 关键词检索。
+- 文档 token-aware chunk 切分，SQLite 元数据入库，Qdrant 向量索引。
+- BGE-M3 embedding + Qdrant dense/sparse hybrid search + BGE reranker。
 - 基于检索 chunk 的带引用回答。
 - 没有依据时明确拒答。
 - 上传、索引、问答的审计日志。
@@ -34,17 +34,18 @@
 可学习 `enzoberreur/rag-regulation-bancaire` 的架构思想：
 
 - 分层后端：api / schema / model / service / core。
-- RAG 管线逐步演进：检索、引用、后续 embedding、rerank、流式生成。
+- RAG 管线逐步演进：解析、chunk、embedding、hybrid search、rerank、引用、后续流式生成。
 - 前端围绕文档上传、问答、引用、运行状态组织。
 
 可以参考项目代码。每次实现时应说明本项目为什么这样写，以及和参考项目思路的对应关系。
 
 ## 3. 技术栈
 
-- 后端：Python + FastAPI + Pydantic + SQLAlchemy + SQLite + Uvicorn。
+- 后端：Python + FastAPI + Pydantic + SQLAlchemy + SQLite + Qdrant + Uvicorn。
 - 前端：React + TypeScript + Vite。
 - 文档解析：txt / md / docx / 可提取文本 pdf。
-- RAG v0：SQLite chunk + 关键词检索，不接向量数据库。
+- RAG v0：SQLite 元数据 + Qdrant 向量索引 + BGE-M3 embedding + BGE reranker。
+- 标准启动：Docker Compose 一键启动 app + Qdrant。
 - 测试：pytest；前端用 TypeScript build 验证。
 
 ## 4. 本地执行环境

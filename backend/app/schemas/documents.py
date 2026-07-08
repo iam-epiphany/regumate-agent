@@ -18,17 +18,31 @@ class DocumentSummary(BaseModel):
     chunk_count: int
     uploaded_at: str
     status: str
+    index_version: str | None = None
+    index_error: str | None = None
 
 
 class DocumentListResponse(BaseModel):
     documents: list[DocumentSummary]
 
 
+class DocumentDeleteResponse(BaseModel):
+    document_id: str
+    deleted: bool
+    vector_warning: str | None = None
+
+
 class ChunkSummary(BaseModel):
     chunk_id: str
+    text: str
     text_preview: str
+    chunk_type: str = "paragraph"
+    is_truncated: bool = False
     section_title: str | None = None
     page_number: int | None = None
+    token_count: int = 0
+    index_status: str
+    index_version: str | None = None
     created_at: str
 
 
@@ -40,5 +54,6 @@ class DocumentDetailResponse(BaseModel):
     chunk_count: int
     uploaded_at: str
     status: str
+    index_version: str | None = None
+    index_error: str | None = None
     chunks: list[ChunkSummary]
-
