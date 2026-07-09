@@ -1,6 +1,7 @@
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+import re
 from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy import select
@@ -22,8 +23,20 @@ def next_document_id(db: Session) -> str:
     today = datetime.now().strftime("%Y%m%d")
     prefix = f"DOC-{today}-"
     statement = select(Document).where(Document.document_id.like(f"{prefix}%"))
-    count = len(list(db.scalars(statement)))
-    return f"{prefix}{count + 1:04d}"
+    existing_numbers: set[int] = set()
+    for document_id in db.scalars(statement):
+        number = _document_number(document_id, prefix)
+        if number is not None:
+            existing_numbers.add(number)
+    if DOCUMENT_DIR.exists():
+        for path in DOCUMENT_DIR.glob(f"{prefix}*"):
+            if path.suffix.lower() not in SUPPORTED_DOCUMENT_EXTENSIONS:
+                continue
+            number = _document_number(path.stem, prefix)
+            if number is not None:
+                existing_numbers.add(number)
+    next_number = max(existing_numbers, default=0) + 1
+    return f"{prefix}{next_number:04d}"
 
 
 def save_original_document(document_id: str, filename: str, content: bytes, content_type: str | None = None) -> Path:
@@ -38,8 +51,15 @@ def save_original_document(document_id: str, filename: str, content: bytes, cont
 
     DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
     storage_path = DOCUMENT_DIR / f"{document_id}{suffix}"
+    if storage_path.exists():
+        raise UnsupportedDocumentTypeError("文档存储路径已存在，请刷新后重试上传")
     storage_path.write_bytes(content)
     return storage_path
+
+
+def _document_number(value: str, prefix: str) -> int | None:
+    match = re.fullmatch(rf"{re.escape(prefix)}(\d{{4}})", value)
+    return int(match.group(1)) if match else None
 
 
 def _validate_mime_type(suffix: str, content_type: str | None) -> None:

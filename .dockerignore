@@ -16,6 +16,7 @@ data/app.db
 data/documents/originals/*
 !data/documents/originals/.gitkeep
 data/qdrant/
+data/models/
 data/model_cache/
 data/test_documents/parser_samples/
 

@@ -53,9 +53,9 @@ docker compose up --build
 - SQLite：`data/app.db`
 - 上传原文：`data/documents/originals/`
 - Qdrant 向量：`data/qdrant/`
-- Docker 模型缓存：`data/model_cache/`
+- Docker 模型缓存：`data/models/`
 
-Docker 首次后台索引会下载 BGE-M3 和 reranker 模型，耗时较长；后续会复用 `data/model_cache/`。
+Docker 首次后台索引会下载 BGE-M3 和 reranker 模型，耗时较长；后续会复用 `data/models/`。
 
 
 Windows 本地开发默认使用 `D:\AI-Cache` 作为统一 AI 模型缓存目录，BGE-M3、BGE reranker 和后续其他 embedding 模型都会放在这里。其他机器或容器环境可以通过 `REGUMATE_MODEL_CACHE_DIR` 覆盖；`HF_HOME`、`HF_HUB_CACHE`、`SENTENCE_TRANSFORMERS_HOME` 和 `TORCH_HOME` 默认会落在该目录下。项目不再主动设置已弃用的 `TRANSFORMERS_CACHE`。
@@ -103,9 +103,33 @@ $env:PYTHONIOENCODING='utf-8'
 .\.venv\Scripts\python.exe scripts\rebuild_vector_index.py
 ```
 
+## 离线模型交付
+
+本项目默认支持模型离线加载，不依赖 HuggingFace 网络访问。首次 Docker 构建仍需安装基础依赖和拉取基础镜像；如评审环境完全无外网，需要提前准备 Docker 镜像包或在有网络环境下完成构建。
+
+Git 仓库默认不提交大模型。比赛交付包需要额外包含以下普通模型目录：
+
+- `data/models/bge-m3`
+- `data/models/bge-reranker-v2-m3`
+
+这两个目录应直接包含模型运行文件，例如 `config.json`、tokenizer 相关文件和 `model.safetensors` 或 `pytorch_model.bin`。启动前建议检查：
+
+```powershell
+python scripts/check_offline_models.py
+```
+
+如果本机已经有 HuggingFace 缓存，可运行辅助脚本整理为普通模型目录：
+
+```powershell
+.\scripts\prepare_offline_models.ps1
+```
+
+Docker Compose 默认设置 `REGUMATE_OFFLINE_MODE=true`，并把容器内模型路径固定为 `/app/data/models/bge-m3` 和 `/app/data/models/bge-reranker-v2-m3`。只有显式设置 `REGUMATE_OFFLINE_MODE=false` 时，系统才允许 fallback 到在线模型名。
+
 ## API
 
 - `GET /api/health`
+- `GET /api/health/rag`
 - `POST /api/documents/upload`
 - `GET /api/documents`
 - `GET /api/documents/{document_id}`

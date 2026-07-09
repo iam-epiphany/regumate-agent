@@ -1,11 +1,15 @@
 ﻿from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 import json
+import os
+from pathlib import Path
+import tempfile
 import pytest
+from sqlalchemy import create_engine
 from sqlalchemy import select
 
 from backend.app.core.config import AUDIT_ARCHIVE_DIR
-from backend.app.core.database import Base, SessionLocal, engine
+from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
 from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
@@ -16,16 +20,23 @@ from backend.app.services.vector_store_service import VectorStoreError
 
 
 client = TestClient(app)
+TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f"regumate-test-{os.getpid()}.db"
+test_engine = create_engine(f"sqlite:///{TEST_DATABASE_PATH.as_posix()}", connect_args={"check_same_thread": False})
+SessionLocal.configure(bind=test_engine)
 
 
 def reset_database() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(bind=test_engine)
+    Base.metadata.create_all(bind=test_engine)
 
 
 @pytest.fixture(autouse=True)
-def fake_indexing_services(monkeypatch):
+def fake_indexing_services(monkeypatch, tmp_path):
     calls = []
+    document_dir = tmp_path / "documents" / "originals"
+    document_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("backend.app.services.document_storage.DOCUMENT_DIR", document_dir)
+    monkeypatch.setattr("backend.app.services.document_lifecycle_service.DOCUMENT_DIR", document_dir)
 
     def fake_embed_texts(texts: list[str]) -> list[TextEmbedding]:
         return [
@@ -36,8 +47,12 @@ def fake_indexing_services(monkeypatch):
     def fake_upsert_chunk_embeddings(**kwargs) -> None:
         calls.append(kwargs)
 
+    def fake_count_document_vectors(document_id: str) -> int:
+        return len(calls[-1]["chunks"]) if calls else 0
+
     monkeypatch.setattr("backend.app.services.document_indexing_service.embed_texts", fake_embed_texts)
     monkeypatch.setattr("backend.app.services.document_indexing_service.upsert_chunk_embeddings", fake_upsert_chunk_embeddings)
+    monkeypatch.setattr("backend.app.services.document_indexing_service.count_document_vectors", fake_count_document_vectors)
     monkeypatch.setattr(
         "backend.app.services.document_lifecycle_service.delete_document_vectors",
         lambda document_id, chunk_ids=None: None,
@@ -45,11 +60,11 @@ def fake_indexing_services(monkeypatch):
     yield calls
 
 
-def fake_retrieval_match() -> RetrievalMatch:
+def fake_retrieval_match(document_id: str = "DOC-TEST-0001") -> RetrievalMatch:
     return RetrievalMatch(
         citation=Citation(
-            document_id="DOC-TEST-0001",
-            chunk_id="DOC-TEST-0001-CHUNK-0001",
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
             filename="rules.txt",
             section_title="资产合计",
             page_number=None,
@@ -84,6 +99,7 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/documents/{document_id}" in paths
     assert "delete" in app.openapi()["paths"]["/api/documents/{document_id}"]
     assert "/api/qa/ask" in paths
+    assert "/api/qa/retrieve" in paths
     assert "/api/audit/logs" in paths
     assert "/api/audit/archives" in paths
     assert "/api/audit/archives/{archive_date}" in paths
@@ -136,7 +152,11 @@ def test_build_document_index_marks_document_indexed(monkeypatch, fake_indexing_
     assert response.status_code == 200
     assert response.json()["status"] == "indexed"
     assert len(fake_indexing_services) == 1
-    assert fake_indexing_services[0]["chunks"][0].embedding_text
+    embedding_text = fake_indexing_services[0]["chunks"][0].embedding_text
+    assert "来源文件：rules.txt" in embedding_text
+    assert "文档格式：txt" in embedding_text
+    assert "内容类型：正文" in embedding_text
+    assert embedding_text.endswith("资产合计应等于资产分项金额合计。")
 
 
 def test_build_document_index_returns_503_when_embedding_index_fails(monkeypatch) -> None:
@@ -280,7 +300,7 @@ def test_delete_document_keeps_record_when_qdrant_cleanup_fails(monkeypatch) -> 
     assert client.get("/api/documents").json()["documents"] == []
 
 
-def test_list_documents_removes_record_when_original_file_is_missing() -> None:
+def test_list_documents_marks_record_when_original_file_is_missing() -> None:
     reset_database()
     upload_response = client.post(
         "/api/documents/upload",
@@ -300,12 +320,15 @@ def test_list_documents_removes_record_when_original_file_is_missing() -> None:
     response = client.get("/api/documents")
 
     assert response.status_code == 200
-    assert response.json()["documents"] == []
+    documents = response.json()["documents"]
+    assert len(documents) == 1
+    assert documents[0]["document_id"] == document_id
+    assert documents[0]["status"] == "source_missing"
 
 
-def test_qa_returns_answer_with_citations_when_knowledge_matches(monkeypatch) -> None:
+def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
     reset_database()
-    client.post(
+    upload_response = client.post(
         "/api/documents/upload",
         files={
             "file": (
@@ -315,19 +338,376 @@ def test_qa_returns_answer_with_citations_when_knowledge_matches(monkeypatch) ->
             )
         },
     )
+    document_id = upload_response.json()["document_id"]
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [fake_retrieval_match()])
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [fake_retrieval_match(document_id)],
+    )
 
     response = client.post("/api/qa/ask", json={"question": "资产合计怎么填报"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is False
+    assert body["answer"] is None
     assert body["citations"]
-    assert "资产合计" in body["answer"]
-    assert "DOC-TEST-0001-CHUNK-0001" not in body["answer"]
-    assert body["citations"][0]["chunk_id"] == "DOC-TEST-0001-CHUNK-0001"
+    assert body["context_package"]["is_final_answer"] is False
+    assert body["context_package"]["mode"] == "rag_context"
+    assert body["context_package"]["query"] == "资产合计怎么填报"
+    assert body["context_package"]["context_chunks"][0]["citation_label"] == "[1]"
+    assert "资产合计" in body["context_package"]["context_chunks"][0]["text"]
+    assert "不得编造知识库中没有的制度依据" in body["context_package"]["llm_prompt"]
+    assert "资产合计怎么填报" in body["context_package"]["llm_prompt"]
+    assert "根据知识库引用，可归纳为" not in body["context_package"]["llm_prompt"]
+    assert body["citations"][0]["chunk_id"] == f"{document_id}-CHUNK-0001"
     assert body["confidence"] < 1.0
+
+
+def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "overdue_rules.txt",
+                "4. 逾期贷款与风险分类 逾期贷款统计以合同约定还款日为基础。",
+                "text/plain",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    evidence = (
+        "4. 逾期贷款与风险分类 逾期贷款统计以合同约定还款日为基础。"
+        "贷款本金或利息超过约定还款日仍未偿还的，应根据逾期天数进入逾期贷款统计。"
+        "逾期统计强调时间状态，风险分类强调还款能力和资产质量，两者不能直接等同。"
+        "若一笔贷款逾期 10 天，但借款人经营正常、担保有效且还款来源明确，本模拟文档不要求仅因逾期 10 天就直接下调为不良。"
+        "若逾期时间较长、现金流恶化或担保价值明显不足，应结合风险分类规则重新判断。"
+    )
+    match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
+            filename="overdue_rules.txt",
+            section_title="逾期贷款与风险分类",
+            page_number=None,
+            excerpt=evidence,
+            score=0.8,
+            rerank_score=0.95,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.8,
+        rerank_score=0.95,
+        coverage_score=0.9,
+        evidence_role="direct_evidence",
+        evidence_text=evidence,
+    )
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match])
+
+    response = client.post("/api/qa/ask", json={"question": "逾期贷款与风险分类"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["refused"] is False
+    package = body["context_package"]
+    assert package["is_final_answer"] is False
+    assert package["retrieval_summary"]["used_chunks"] == 1
+    assert package["context_chunks"][0]["source_doc"] == "overdue_rules.txt"
+    assert "贷款本金或利息超过约定还款日仍未偿还" in package["context_chunks"][0]["text"]
+    assert "两者不能直接等同" in package["llm_prompt"]
+    assert "逾期 10 天" in package["llm_prompt"]
+    assert "重新判断" in package["llm_prompt"]
+    assert "1. 结论" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_qa_retrieve_returns_llm_context_package_and_cleans_repeated_title(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "complex_reporting_policy_sample.md",
+                "2. 普惠小微贷款统计口径\n普惠小微贷款统计应同时满足客户范围、贷款用途和金额口径三类条件。",
+                "text/markdown",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
+            filename="complex_reporting_policy_sample.md",
+            section_title="2. 普惠小微贷款统计口径",
+            page_number=None,
+            excerpt=(
+                "2. 普惠小微贷款统计口径\n"
+                "普惠小微贷款统计应同时满足客户范围、贷款用途和金额口径三类条件。"
+            ),
+            score=0.8,
+            rerank_score=0.87,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.8,
+        rerank_score=0.87,
+        coverage_score=1.0,
+        evidence_role="direct_evidence",
+    )
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match, match])
+
+    response = client.post("/api/qa/retrieve", json={"question": "哪些贷款余额可以纳入普惠小微贷款统计，哪些不能？"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_final_answer"] is False
+    assert body["retrieval_summary"]["used_chunks"] == 1
+    assert body["retrieval_summary"]["query_count"] == 0
+    assert body["retrieval_summary"]["candidate_count"] == 0
+    assert body["retrieval_summary"]["filtered_count"] == 0
+    assert body["retrieval_summary"]["citation_validation"]["invalid_chunks"] == 0
+    assert body["context_chunks"][0]["section_title"] == "2. 普惠小微贷款统计口径"
+    assert body["context_chunks"][0]["text"].startswith("普惠小微贷款统计应同时满足")
+    assert body["context_chunks"][0]["citation_label"] == "[1]"
+    assert "[1] 来源：complex_reporting_policy_sample.md / 2. 普惠小微贷款统计口径" in body["llm_prompt"]
+    assert "哪些贷款余额可以纳入普惠小微贷款统计，哪些不能？" in body["llm_prompt"]
+    assert "不得编造知识库中没有的制度依据" in body["llm_prompt"]
+    assert "不能纳入、暂不纳入、需补充材料" not in body["llm_prompt"]
+    assert "根据知识库引用，可归纳为" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_qa_retrieve_filters_untraceable_citation(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    document_id = upload_response.json()["document_id"]
+    match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
+            filename="rules.txt",
+            section_title="资产合计",
+            page_number=None,
+            excerpt="这段内容并不存在于 SQLite 原始 chunk 中。",
+            score=0.8,
+            rerank_score=0.9,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.8,
+        rerank_score=0.9,
+        coverage_score=1.0,
+        evidence_role="direct_evidence",
+    )
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match])
+
+    response = client.post("/api/qa/retrieve", json={"question": "资产合计怎么填报"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["context_chunks"] == []
+    assert body["retrieval_summary"]["has_sufficient_context"] is False
+    assert body["retrieval_summary"]["citation_validation"]["invalid_chunks"] == 1
+    assert body["retrieval_summary"]["citation_validation"]["invalid_chunk_ids"] == [f"{document_id}-CHUNK-0001"]
+
+
+def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, fake_indexing_services) -> None:
+    reset_database()
+    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "complex_reporting_policy_sample.md",
+                "## 3. 资产合计与校验关系\n"
+                "资产合计应等于各项资产分项金额之和。若资产合计与分项合计存在差异，"
+                "应优先检查币种折算、四舍五入、科目映射和重复汇总问题。\n\n"
+                "### 3.1 资产合计差异处理\n"
+                "当资产合计差异小于等于系统允许的尾差阈值时，可以记录尾差说明；"
+                "当差异超过尾差阈值时，应退回填报人员核对分项数据。"
+                "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。\n",
+                "text/markdown",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    index_response = client.post(f"/api/documents/{document_id}/index")
+    assert index_response.status_code == 200
+    parent_chunk_id = f"{document_id}-CHUNK-0001"
+    parent_match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=parent_chunk_id,
+            filename="complex_reporting_policy_sample.md",
+            section_title="3. 资产合计与校验关系",
+            section_number="3",
+            next_chunk_id=f"{document_id}-CHUNK-0002",
+            page_number=None,
+            excerpt=(
+                "3. 资产合计与校验关系\n"
+                "资产合计应等于各项资产分项金额之和。若资产合计与分项合计存在差异，"
+                "应优先检查币种折算、四舍五入、科目映射和重复汇总问题。"
+            ),
+            score=0.8,
+            rerank_score=0.92,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.8,
+        rerank_score=0.92,
+        coverage_score=0.8,
+        evidence_role="direct_evidence",
+    )
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [parent_match])
+
+    response = client.post(
+        "/api/qa/retrieve",
+        json={"question": "资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_final_answer"] is False
+    assert body["retrieval_summary"]["has_sufficient_context"] is True
+    assert body["retrieval_summary"]["missing_aspects"] == []
+    assert [
+        aspect["aspect_id"]
+        for aspect in body["retrieval_summary"]["query_plan"]["aspects"]
+    ] == ["asset_total_difference_check", "foreign_currency_evidence"]
+    assert all(
+        aspect["covered"]
+        for aspect in body["retrieval_summary"]["aspect_retrievals"]
+    )
+    section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
+    assert "3. 资产合计与校验关系" in section_titles
+    assert "3.1 资产合计差异处理" in section_titles
+    assert "币种折算、四舍五入、科目映射和重复汇总" in body["llm_prompt"]
+    assert "汇率日期、折算规则和原币金额来源" in body["llm_prompt"]
+    child_chunk = next(chunk for chunk in body["context_chunks"] if chunk["section_title"] == "3.1 资产合计差异处理")
+    assert child_chunk["metadata"]["evidence_role"] == "expanded_context"
+    assert child_chunk["metadata"]["expansion_reason"] == "child_section"
+
+
+def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_indexing_services) -> None:
+    reset_database()
+    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "complex_reporting_policy_sample.md",
+                "## 3. 资产合计与校验关系\n"
+                "资产合计应等于各项资产分项金额之和。若资产合计与分项合计存在差异，"
+                "应优先检查币种折算、四舍五入、科目映射和重复汇总问题。\n\n"
+                "### 3.1 资产合计差异处理\n"
+                "当资产合计差异小于等于系统允许的尾差阈值时，可以记录尾差说明；"
+                "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。\n\n"
+                "## 4. 逾期贷款与风险分类\n"
+                "逾期贷款统计以合同约定还款日为基础，风险分类强调还款能力和资产质量。\n",
+                "text/markdown",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    index_response = client.post(f"/api/documents/{document_id}/index")
+    assert index_response.status_code == 200
+    parent_match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
+            filename="complex_reporting_policy_sample.md",
+            section_title="3. 资产合计与校验关系",
+            section_number="3",
+            next_chunk_id=f"{document_id}-CHUNK-0002",
+            page_number=None,
+            excerpt=(
+                "3. 资产合计与校验关系\n"
+                "资产合计应等于各项资产分项金额之和。若资产合计与分项合计存在差异，"
+                "应优先检查币种折算、四舍五入、科目映射和重复汇总问题。"
+            ),
+            score=0.8,
+            rerank_score=0.92,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.8,
+        rerank_score=0.92,
+        coverage_score=0.8,
+        evidence_role="direct_evidence",
+    )
+    unrelated_match = RetrievalMatch(
+        citation=Citation(
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0003",
+            filename="complex_reporting_policy_sample.md",
+            section_title="4. 逾期贷款与风险分类",
+            section_number="4",
+            previous_chunk_id=f"{document_id}-CHUNK-0002",
+            page_number=None,
+            excerpt="4. 逾期贷款与风险分类\n逾期贷款统计以合同约定还款日为基础，风险分类强调还款能力和资产质量。",
+            score=0.78,
+            rerank_score=0.86,
+            chunk_type="paragraph",
+            evidence_role="direct_evidence",
+        ),
+        score=0.78,
+        rerank_score=0.86,
+        coverage_score=0.4,
+        evidence_role="direct_evidence",
+    )
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [parent_match, unrelated_match],
+    )
+
+    response = client.post(
+        "/api/qa/retrieve",
+        json={"question": "资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
+    assert section_titles == ["3. 资产合计与校验关系", "3.1 资产合计差异处理"]
+    assert body["retrieval_summary"]["used_chunks"] == 2
+    assert body["retrieval_summary"]["top_k"] == 5
+    assert body["retrieval_summary"]["prompt_filtered_count"] == 1
+    assert body["retrieval_summary"]["prompt_selection"]["final_prompt_chunks"] == 2
+    assert "4. 逾期贷款与风险分类" not in body["llm_prompt"]
+
+
+def test_qa_retrieve_marks_missing_context_aspect(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "complex_reporting_policy_sample.md",
+                "3. 资产合计与校验关系\n资产合计应等于各项资产分项金额之和。若资产合计与分项合计存在差异，应优先检查币种折算、四舍五入、科目映射和重复汇总问题。",
+                "text/plain",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    with SessionLocal() as db:
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        assert document is not None
+        document.status = "indexed"
+        db.commit()
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [fake_retrieval_match(document_id)])
+
+    response = client.post(
+        "/api/qa/retrieve",
+        json={"question": "资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["retrieval_summary"]["has_sufficient_context"] is False
+    assert "未召回外币折算差异需要保留的依据" in body["retrieval_summary"]["missing_aspects"]
 
 
 def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
@@ -344,19 +724,27 @@ def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is True
-    assert body["answer"] == "知识库中未找到足够依据，无法给出确定回答。"
+    assert body["answer"] is None
+    assert body["context_package"]["retrieval_summary"]["used_chunks"] == 0
+    assert body["context_package"]["retrieval_summary"]["has_sufficient_context"] is False
 
 
 def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None:
     reset_database()
+    table_evidence = "表格：\n| 情形 | 处理口径 |\n| 借款用途为个人住房装修 | 不纳入普惠小微贷款 |"
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", table_evidence, "text/plain")},
+    )
+    document_id = upload_response.json()["document_id"]
     related_match = RetrievalMatch(
         citation=Citation(
-            document_id="DOC-TEST-0001",
-            chunk_id="DOC-TEST-0001-CHUNK-0005",
+            document_id=document_id,
+            chunk_id=f"{document_id}-CHUNK-0001",
             filename="rules.txt",
             section_title="普惠小微贷款统计口径",
             page_number=None,
-            excerpt="表格：\n| 情形 | 处理口径 |\n| 借款用途为个人住房装修 | 不纳入普惠小微贷款 |",
+            excerpt=table_evidence,
             score=0.8,
             rerank_score=1.0,
             chunk_type="table",
@@ -373,8 +761,10 @@ def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None
 
     assert response.status_code == 200
     body = response.json()
-    assert body["refused"] is True
-    assert "未找到能直接回答" in body["answer"]
+    assert body["refused"] is False
+    assert body["answer"] is None
+    assert body["context_package"]["context_chunks"][0]["metadata"]["evidence_role"] == "table_context"
+    assert "借款用途为个人住房装修" in body["context_package"]["llm_prompt"]
 
 
 def test_qa_refuses_weak_single_token_match(monkeypatch) -> None:
@@ -398,6 +788,7 @@ def test_qa_refuses_weak_single_token_match(monkeypatch) -> None:
     body = response.json()
     assert body["refused"] is True
     assert body["citations"] == []
+    assert body["context_package"]["is_final_answer"] is False
 
 
 def test_qa_returns_503_when_retrieval_system_unavailable(monkeypatch) -> None:
@@ -417,10 +808,14 @@ def test_qa_returns_503_when_retrieval_system_unavailable(monkeypatch) -> None:
 def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
     reset_database()
     question = "asset total"
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [fake_retrieval_match()])
-    client.post(
+    upload_response = client.post(
         "/api/documents/upload",
         files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    document_id = upload_response.json()["document_id"]
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [fake_retrieval_match(document_id)],
     )
     client.post("/api/qa/ask", json={"question": question})
 
@@ -430,12 +825,14 @@ def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
     logs = response.json()["logs"]
     actions = [log["action"] for log in logs]
     assert "document_uploaded" in actions
-    assert "qa_answered" in actions
+    assert "qa_context_built" in actions
 
-    qa_log = next(log for log in logs if log["action"] == "qa_answered")
+    qa_log = next(log for log in logs if log["action"] == "qa_context_built")
     qa_detail = json.loads(qa_log["detail"])
     assert qa_detail["question"] == question
-    assert qa_detail["answer"]
+    assert qa_detail["answer"] is None
+    assert qa_detail["is_final_answer"] is False
+    assert qa_detail["used_chunks"] == 1
     assert "citations" not in qa_detail
 
 

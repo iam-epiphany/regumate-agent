@@ -33,8 +33,74 @@ def test_chunks_inherit_section_from_structured_blocks(tmp_path) -> None:
     assert len(chunks) == 1
     assert chunks[0].section_title == "资产合计"
     assert "资产合计应等于各项资产分项金额合计" in chunks[0].text
-    assert chunks[0].embedding_text.startswith("章节：资产合计")
+    assert "章节路径：监管填报说明 > 资产合计" in chunks[0].embedding_text
+    assert "章节：资产合计" in chunks[0].embedding_text
+    assert "内容类型：正文" in chunks[0].embedding_text
     assert chunks[0].token_count > 0
+
+
+def test_contextual_embedding_text_includes_document_and_location_metadata() -> None:
+    parsed = ParsedDocument(
+        text="3.1 资产合计差异处理\n\n若差异来自外币折算，应保留汇率日期。",
+        metadata={"source_format": "pdf"},
+        blocks=[
+            ParsedBlock(
+                text="3.1 资产合计差异处理",
+                block_type="heading",
+                order_index=1,
+                page_number=7,
+                section_title="3.1 资产合计差异处理",
+                level=2,
+            ),
+            ParsedBlock(
+                text="若差异来自外币折算，应保留汇率日期。",
+                block_type="paragraph",
+                order_index=2,
+                page_number=7,
+                section_title="3.1 资产合计差异处理",
+            ),
+        ],
+    )
+
+    chunks = build_chunks_from_parsed(
+        document_id="DOC-TEST-0001",
+        parsed=parsed,
+        source_file="G01资产负债统计表填报说明.pdf",
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].text == "3.1 资产合计差异处理\n\n若差异来自外币折算，应保留汇率日期。"
+    assert "来源文件：G01资产负债统计表填报说明.pdf" in chunks[0].embedding_text
+    assert "文档格式：pdf" in chunks[0].embedding_text
+    assert "章节路径：3.1 资产合计差异处理" in chunks[0].embedding_text
+    assert "条款号：3.1" in chunks[0].embedding_text
+    assert "父条款号：3" in chunks[0].embedding_text
+    assert "页码：7" in chunks[0].embedding_text
+    assert chunks[0].embedding_text.endswith(chunks[0].text)
+
+
+def test_chunks_keep_section_hierarchy_and_neighbor_ids(tmp_path) -> None:
+    path = tmp_path / "rules.md"
+    path.write_text(
+        "## 3. 资产合计与校验关系\n"
+        "资产合计应等于各项资产分项金额之和。\n\n"
+        "### 3.1 资产合计差异处理\n"
+        "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。\n",
+        encoding="utf-8",
+    )
+    parsed = parse_document(path)
+
+    chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
+
+    assert len(chunks) == 2
+    assert chunks[0].section_number == "3"
+    assert chunks[0].parent_section_number is None
+    assert chunks[0].section_path == ["3. 资产合计与校验关系"]
+    assert chunks[0].next_chunk_id == chunks[1].chunk_id
+    assert chunks[1].section_number == "3.1"
+    assert chunks[1].parent_section_number == "3"
+    assert chunks[1].section_path == ["3. 资产合计与校验关系", "3.1 资产合计差异处理"]
+    assert chunks[1].previous_chunk_id == chunks[0].chunk_id
 
 
 def test_chunk_splitting_respects_max_tokens_and_overlap() -> None:

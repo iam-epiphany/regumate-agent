@@ -3,9 +3,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import INDEX_VERSION
 from backend.app.models.document import Document, DocumentChunk
-from backend.app.services.chunk_service import ChunkDraft, count_tokens
+from backend.app.services.chunk_service import ChunkDraft, build_contextual_embedding_text, count_tokens
 from backend.app.services.embedding_service import EmbeddingServiceError, embed_texts
-from backend.app.services.vector_store_service import VectorStoreError, upsert_chunk_embeddings
+from backend.app.services.vector_store_service import (
+    VectorStoreError,
+    count_document_vectors,
+    delete_document_vectors,
+    upsert_chunk_embeddings,
+)
 
 
 class DocumentIndexingError(RuntimeError):
@@ -22,60 +27,108 @@ def index_document(db: Session, document: Document) -> None:
     if not chunks:
         raise DocumentIndexingError("文档没有可索引的 chunk")
 
+    drafts = _to_chunk_drafts(chunks, document)
     document.status = "indexing"
     document.index_version = INDEX_VERSION
     document.index_error = None
-    for chunk in chunks:
-        chunk.embedding_text = chunk.embedding_text or _embedding_text(chunk)
-        chunk.token_count = chunk.token_count or count_tokens(chunk.text)
+    for chunk, draft in zip(chunks, drafts, strict=True):
+        chunk.embedding_text = draft.embedding_text
+        chunk.token_count = draft.token_count
         chunk.index_status = "indexing"
         chunk.index_version = INDEX_VERSION
     db.commit()
-
-    drafts = [_to_chunk_draft(chunk) for chunk in chunks]
     try:
         embeddings = embed_texts([chunk.embedding_text for chunk in drafts])
         upsert_chunk_embeddings(chunks=drafts, embeddings=embeddings, filename=document.filename)
+        vector_count = count_document_vectors(document.document_id)
+        if vector_count < len(drafts):
+            raise VectorStoreError(f"Qdrant 向量数量不完整：expected={len(drafts)}, actual={vector_count}")
     except (EmbeddingServiceError, VectorStoreError) as exc:
+        _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])
         _mark_index_failed(db, document, chunks, str(exc))
         raise DocumentIndexingError(str(exc)) from exc
 
-    document.status = "indexed"
-    document.index_version = INDEX_VERSION
-    document.index_error = None
+    try:
+        document.status = "indexed"
+        document.index_version = INDEX_VERSION
+        document.index_error = None
+        for chunk in chunks:
+            chunk.index_status = "indexed"
+            chunk.index_version = INDEX_VERSION
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])
+        raise DocumentIndexingError(f"SQLite 索引状态提交失败：{exc}") from exc
+
+
+def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[ChunkDraft]:
+    drafts: list[ChunkDraft] = []
+    title_by_section_number: dict[str, str] = {}
     for chunk in chunks:
-        chunk.index_status = "indexed"
-        chunk.index_version = INDEX_VERSION
-    db.commit()
+        section_number = _section_number(chunk.section_title)
+        if section_number and chunk.section_title:
+            title_by_section_number[section_number] = chunk.section_title
 
-
-def _to_chunk_draft(chunk: DocumentChunk) -> ChunkDraft:
-    return ChunkDraft(
-        chunk_id=chunk.chunk_id,
-        document_id=chunk.document_id,
-        text=chunk.text,
-        embedding_text=chunk.embedding_text or _embedding_text(chunk),
-        token_count=chunk.token_count or count_tokens(chunk.text),
-        title=chunk.title,
-        section_title=chunk.section_title,
-        page_number=chunk.page_number,
-        chunk_type=_chunk_type(chunk.text),
-    )
-
-
-def _embedding_text(chunk: DocumentChunk) -> str:
-    chunk_type = _chunk_type(chunk.text)
-    labels: list[str] = []
-    if chunk.section_title:
-        labels.append(f"章节：{chunk.section_title}")
-    if chunk_type == "table":
-        labels.append("内容类型：表格")
-    label_text = "\n".join(labels)
-    return f"{label_text}\n\n{chunk.text}" if labels else chunk.text
+    for previous, chunk, next_chunk in zip([None, *chunks[:-1]], chunks, [*chunks[1:], None], strict=True):
+        section_number = _section_number(chunk.section_title)
+        parent_section_number = _parent_section_number(section_number)
+        section_path = []
+        if parent_section_number and parent_section_number in title_by_section_number:
+            section_path.append(title_by_section_number[parent_section_number])
+        if chunk.section_title:
+            section_path.append(chunk.section_title)
+        chunk_type = _chunk_type(chunk.text)
+        token_count = chunk.token_count or count_tokens(chunk.text)
+        embedding_text = build_contextual_embedding_text(
+            text=chunk.text,
+            source_file=chunk.source_file or document.filename,
+            source_format=document.file_type,
+            section_title=chunk.section_title,
+            section_path=section_path,
+            section_number=section_number,
+            parent_section_number=parent_section_number,
+            page_number=chunk.page_number,
+            chunk_type=chunk_type,
+        )
+        drafts.append(
+            ChunkDraft(
+                chunk_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                text=chunk.text,
+                embedding_text=embedding_text,
+                token_count=token_count,
+                title=chunk.title,
+                section_title=chunk.section_title,
+                page_number=chunk.page_number,
+                chunk_type=chunk_type,
+                section_path=section_path,
+                section_number=section_number,
+                parent_section_number=parent_section_number,
+                previous_chunk_id=previous.chunk_id if previous else None,
+                next_chunk_id=next_chunk.chunk_id if next_chunk else None,
+            )
+        )
+    return drafts
 
 
 def _chunk_type(text: str) -> str:
     return "table" if text.lstrip().startswith(("表格：", "表格行证据：")) or "\n|" in text or "表格行证据：" in text else "paragraph"
+
+
+def _section_number(section_title: str | None) -> str | None:
+    if not section_title:
+        return None
+    import re
+
+    match = re.match(r"^\s*(\d+(?:\.\d+)*)[\.、\s]", section_title)
+    return match.group(1) if match else None
+
+
+def _parent_section_number(section_number: str | None) -> str | None:
+    if not section_number or "." not in section_number:
+        return None
+    return section_number.rsplit(".", maxsplit=1)[0]
 
 
 def _mark_index_failed(db: Session, document: Document, chunks: list[DocumentChunk], error: str) -> None:
@@ -86,3 +139,10 @@ def _mark_index_failed(db: Session, document: Document, chunks: list[DocumentChu
         chunk.index_status = "index_failed"
         chunk.index_version = INDEX_VERSION
     db.commit()
+
+
+def _cleanup_partial_vectors(document_id: str, chunk_ids: list[str]) -> None:
+    try:
+        delete_document_vectors(document_id, chunk_ids=chunk_ids)
+    except VectorStoreError:
+        pass

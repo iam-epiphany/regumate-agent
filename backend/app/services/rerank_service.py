@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from backend.app.core.config import RERANKER_MODEL_NAME, RERANK_TOP_K
+from backend.app.core.config import RERANK_TOP_K
+from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_reranker_model_path
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -24,7 +25,10 @@ def _get_reranker() -> Any:
         raise RerankServiceError("缺少 FlagEmbedding 依赖，无法加载 BGE reranker") from exc
 
     try:
-        return FlagReranker(RERANKER_MODEL_NAME, use_fp16=True)
+        reranker_model_path = resolve_reranker_model_path()
+        return FlagReranker(reranker_model_path, use_fp16=True)
+    except ModelPathResolutionError as exc:
+        raise RerankServiceError(str(exc)) from exc
     except Exception as exc:
         raise RerankServiceError("BGE reranker 模型加载失败") from exc
 

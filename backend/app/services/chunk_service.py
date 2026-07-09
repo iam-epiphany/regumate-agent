@@ -24,6 +24,11 @@ class ChunkDraft:
     section_title: str | None
     page_number: int | None
     chunk_type: str = "paragraph"
+    section_path: list[str] | None = None
+    section_number: str | None = None
+    parent_section_number: str | None = None
+    previous_chunk_id: str | None = None
+    next_chunk_id: str | None = None
 
 
 def build_chunks(document_id: str, text: str) -> list[ChunkDraft]:
@@ -37,9 +42,14 @@ def build_chunks(document_id: str, text: str) -> list[ChunkDraft]:
     return build_chunks_from_parsed(document_id=document_id, parsed=parsed)
 
 
-def build_chunks_from_parsed(document_id: str, parsed: ParsedDocument) -> list[ChunkDraft]:
+def build_chunks_from_parsed(
+    document_id: str,
+    parsed: ParsedDocument,
+    source_file: str | None = None,
+) -> list[ChunkDraft]:
     """Build retrievable chunks from structured parser blocks."""
 
+    source_format = _metadata_text(parsed.metadata.get("source_format"))
     groups = _group_blocks(parsed.blocks)
     chunks: list[ChunkDraft] = []
     for group in groups:
@@ -50,14 +60,30 @@ def build_chunks_from_parsed(document_id: str, parsed: ParsedDocument) -> list[C
                     chunk_id=f"{document_id}-CHUNK-{len(chunks) + 1:04d}",
                     document_id=document_id,
                     text=piece,
-                    embedding_text=_build_embedding_text(piece, group.section_title, group.block_type),
+                    embedding_text=build_contextual_embedding_text(
+                        text=piece,
+                        source_file=source_file,
+                        source_format=source_format,
+                        section_title=group.section_title,
+                        section_path=group.section_path,
+                        section_number=group.section_number,
+                        parent_section_number=group.parent_section_number,
+                        page_number=group.page_number,
+                        chunk_type=group.block_type,
+                    ),
                     token_count=token_count,
                     title=group.section_title,
                     section_title=group.section_title,
                     page_number=group.page_number,
                     chunk_type=group.block_type,
+                    section_path=group.section_path,
+                    section_number=group.section_number,
+                    parent_section_number=group.parent_section_number,
                 )
             )
+    for previous, current, next_chunk in zip([None, *chunks[:-1]], chunks, [*chunks[1:], None], strict=True):
+        current.previous_chunk_id = previous.chunk_id if previous else None
+        current.next_chunk_id = next_chunk.chunk_id if next_chunk else None
     return chunks
 
 
@@ -67,12 +93,18 @@ class _ChunkGroup:
     section_title: str | None
     page_number: int | None
     block_type: str = "paragraph"
+    section_path: list[str] | None = None
+    section_number: str | None = None
+    parent_section_number: str | None = None
 
 
 def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
     groups: list[_ChunkGroup] = []
     buffer: list[str] = []
     current_section: str | None = None
+    current_path: list[str] = []
+    current_section_number: str | None = None
+    current_parent_section_number: str | None = None
     current_page: int | None = None
     has_body = False
 
@@ -80,7 +112,16 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
         nonlocal buffer, has_body
         text = "\n\n".join(part for part in buffer if part.strip()).strip()
         if text and has_body:
-            groups.append(_ChunkGroup(text=text, section_title=current_section, page_number=current_page))
+            groups.append(
+                _ChunkGroup(
+                    text=text,
+                    section_title=current_section,
+                    page_number=current_page,
+                    section_path=list(current_path),
+                    section_number=current_section_number,
+                    parent_section_number=current_parent_section_number,
+                )
+            )
         buffer = []
         has_body = False
 
@@ -93,6 +134,9 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
             if has_body:
                 flush()
             current_section = block.text
+            current_section_number = _section_number(block.text)
+            current_parent_section_number = _parent_section_number(current_section_number)
+            current_path = _updated_section_path(current_path, block.text, block.level, current_section_number)
             buffer = [block.text]
             current_page = block.page_number
             has_body = False
@@ -108,6 +152,14 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                 flush()
             if block.section_title:
                 current_section = block.section_title
+                current_section_number = _section_number(block.section_title)
+                current_parent_section_number = _parent_section_number(current_section_number)
+                current_path = _updated_section_path(
+                    current_path,
+                    block.section_title,
+                    block.level,
+                    current_section_number,
+                )
             if block.page_number is not None:
                 current_page = block.page_number
             table_text = f"表格：\n{block.text}"
@@ -119,6 +171,9 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                     section_title=current_section,
                     page_number=current_page,
                     block_type="table",
+                    section_path=list(current_path),
+                    section_number=current_section_number,
+                    parent_section_number=current_parent_section_number,
                 )
             )
             continue
@@ -128,6 +183,15 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
 
         if block.section_title:
             current_section = block.section_title
+            current_section_number = _section_number(block.section_title)
+            current_parent_section_number = _parent_section_number(current_section_number)
+            if not current_path or current_path[-1] != block.section_title:
+                current_path = _updated_section_path(
+                    current_path,
+                    block.section_title,
+                    block.level,
+                    current_section_number,
+                )
         if block.page_number is not None:
             current_page = block.page_number
 
@@ -136,6 +200,33 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
 
     flush()
     return groups
+
+
+def _section_number(section_title: str | None) -> str | None:
+    if not section_title:
+        return None
+    match = re.match(r"^\s*(\d+(?:\.\d+)*)[\.、\s]", section_title)
+    return match.group(1) if match else None
+
+
+def _parent_section_number(section_number: str | None) -> str | None:
+    if not section_number or "." not in section_number:
+        return None
+    return section_number.rsplit(".", maxsplit=1)[0]
+
+
+def _updated_section_path(
+    current_path: list[str],
+    title: str,
+    level: int | None,
+    section_number: str | None,
+) -> list[str]:
+    if level is None and section_number:
+        level = section_number.count(".") + 1
+    if level is None:
+        return [title]
+    prefix = current_path[: max(level - 1, 0)]
+    return [*prefix, title]
 
 
 def _should_merge_table_context(buffer: list[str]) -> bool:
@@ -258,16 +349,50 @@ def _join_token_units(tokens: list[str]) -> str:
     return text
 
 
-def _build_embedding_text(text: str, section_title: str | None, chunk_type: str = "paragraph") -> str:
+def build_contextual_embedding_text(
+    *,
+    text: str,
+    source_file: str | None = None,
+    source_format: str | None = None,
+    section_title: str | None,
+    section_path: list[str] | None = None,
+    section_number: str | None = None,
+    parent_section_number: str | None = None,
+    page_number: int | None = None,
+    chunk_type: str = "paragraph",
+) -> str:
+    """Prepend deterministic retrieval context while keeping chunk text unchanged."""
+
     labels: list[str] = []
+    if source_file:
+        labels.append(f"来源文件：{source_file}")
+    if source_format:
+        labels.append(f"文档格式：{source_format}")
+    if section_path:
+        labels.append("章节路径：" + " > ".join(section_path))
     if section_title:
         labels.append(f"章节：{section_title}")
+    if section_number:
+        labels.append(f"条款号：{section_number}")
+    if parent_section_number:
+        labels.append(f"父条款号：{parent_section_number}")
+    if page_number is not None:
+        labels.append(f"页码：{page_number}")
     if chunk_type == "table":
         labels.append("内容类型：表格")
         labels.append(_table_header_label(text))
+    else:
+        labels.append("内容类型：正文")
     labels = [label for label in labels if label]
     label_text = "\n".join(labels)
     return f"{label_text}\n\n{text}" if labels else text
+
+
+def _metadata_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _split_table_text(text: str) -> list[str]:

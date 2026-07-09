@@ -43,6 +43,7 @@ backend/storage/
 data/app.db
 data/audit_archives/
 data/qdrant/
+data/models/
 data/model_cache/
 data/documents/originals/*
 !data/documents/originals/.gitkeep
