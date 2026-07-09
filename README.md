@@ -4,6 +4,7 @@ ReguMate 是一个可信 RAG 问答项目，主题是“面向银行业监管制
 
 当前版本保留一个可运行的 FastAPI + React + SQLite + Qdrant MVP：上传监管制度、统计报表填报说明、指标口径等知识文档，解析并切分 chunk；上传后后台自动使用 BGE-M3 embedding、Qdrant hybrid search 和 BGE reranker 构建检索索引，并在缺少依据时拒答。
 
+
 ## 当前功能
 
 - 上传 `.txt`、`.md`、`.docx`、可提取文本的 `.pdf` 文档。
@@ -56,12 +57,14 @@ docker compose up --build
 
 Docker 首次后台索引会下载 BGE-M3 和 reranker 模型，耗时较长；后续会复用 `data/models/`。
 
+
 Windows 本地开发默认使用 `D:\AI-Cache` 作为统一 AI 模型缓存目录，BGE-M3、BGE reranker 和后续其他 embedding 模型都会放在这里。其他机器或容器环境可以通过 `REGUMATE_MODEL_CACHE_DIR` 覆盖；`HF_HOME`、`HF_HUB_CACHE`、`SENTENCE_TRANSFORMERS_HOME` 和 `TORCH_HOME` 默认会落在该目录下。项目不再主动设置已弃用的 `TRANSFORMERS_CACHE`。
 
 停止服务：
 
 ```powershell
 docker compose down
+
 ```
 
 ## 本地开发启动
@@ -150,10 +153,4 @@ cd frontend
 npm run build
 ```
 
-## 后续学习路线
 
-1. 读懂当前向量 RAG MVP。
-2. 重写文档解析、chunk、检索、引用回答各模块。
-3. 增加配置管理和更清晰的服务边界。
-4. 学习 embedding 与向量检索，但保持回答必须有引用。
-5. 学习 rerank、文档多样性、流式回答和更强的引用校验。
