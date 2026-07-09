@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from backend.app.core.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_NAME
+from backend.app.core.config import EMBEDDING_BATCH_SIZE
+from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -30,7 +31,10 @@ def _get_bge_m3_model() -> Any:
         raise EmbeddingServiceError("缺少 FlagEmbedding 依赖，无法生成 BGE-M3 embedding") from exc
 
     try:
-        return BGEM3FlagModel(EMBEDDING_MODEL_NAME, use_fp16=True)
+        embedding_model_path = resolve_embedding_model_path()
+        return BGEM3FlagModel(embedding_model_path, use_fp16=True)
+    except ModelPathResolutionError as exc:
+        raise EmbeddingServiceError(str(exc)) from exc
     except Exception as exc:
         raise EmbeddingServiceError("BGE-M3 embedding 模型加载失败") from exc
 

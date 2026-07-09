@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { QAResponse } from "../types/api";
+import type { LLMContextPackage, QAResponse } from "../types/api";
 
 export function askQuestion(question: string): Promise<QAResponse> {
   return apiFetch<QAResponse>("/api/qa/ask", {
@@ -9,3 +9,10 @@ export function askQuestion(question: string): Promise<QAResponse> {
   });
 }
 
+export function retrieveQuestionContext(question: string): Promise<LLMContextPackage> {
+  return apiFetch<LLMContextPackage>("/api/qa/retrieve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}

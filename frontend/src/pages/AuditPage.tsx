@@ -2,14 +2,17 @@ import { FileText, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { deleteAuditArchive, getAuditArchive, listAuditArchives, listAuditLogs } from "../api/audit";
+import { ExpandableText } from "../components/ExpandableText";
 import type { AuditArchiveDetailResponse, AuditArchiveSummary, AuditLogItem } from "../types/api";
-import { formatAuditLog } from "../utils/audit";
+import { formatAuditLog, parseAuditArchiveContent } from "../utils/audit";
 
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [archives, setArchives] = useState<AuditArchiveSummary[]>([]);
   const [selectedArchive, setSelectedArchive] = useState<AuditArchiveDetailResponse | null>(null);
   const [message, setMessage] = useState("仅显示当天审计日志，过期日志会自动归档。");
+  const parsedArchive = selectedArchive ? parseAuditArchiveContent(selectedArchive.content) : null;
+  const selectedArchiveSummary = selectedArchive ? archives.find((archive) => archive.date === selectedArchive.date) : null;
 
   useEffect(() => {
     void loadAuditData();
@@ -86,7 +89,9 @@ export function AuditPage() {
                       <td>{formatDateTime(log.created_at)}</td>
                       <td>{display.action}</td>
                       <td>{display.target}</td>
-                      <td className="audit-detail">{display.detail}</td>
+                      <td className="audit-detail">
+                        <ExpandableText text={display.detail} maxChars={160} />
+                      </td>
                     </tr>
                   );
                 })}
@@ -144,12 +149,61 @@ export function AuditPage() {
       {selectedArchive ? (
         <section className="panel">
           <div className="panel-title">
-            <h2>{selectedArchive.date} 日志内容</h2>
+            <h2>{selectedArchive.date} 历史日志</h2>
             <button className="secondary-button" type="button" onClick={() => setSelectedArchive(null)}>
               收起
             </button>
           </div>
-          <pre className="archive-content">{selectedArchive.content}</pre>
+          <div className="archive-summary" aria-label="归档摘要">
+            <div>
+              <span className="archive-summary__label">日志条数</span>
+              <strong>{parsedArchive?.entries.length ?? 0}</strong>
+            </div>
+            <div>
+              <span className="archive-summary__label">归档文件</span>
+              <strong>{selectedArchive.filename}</strong>
+            </div>
+            <div>
+              <span className="archive-summary__label">文件大小</span>
+              <strong>{selectedArchiveSummary ? formatFileSize(selectedArchiveSummary.size) : "未知"}</strong>
+            </div>
+            <div>
+              <span className="archive-summary__label">最近归档</span>
+              <strong>{formatArchiveTime(parsedArchive?.archived_at.at(-1))}</strong>
+            </div>
+          </div>
+
+          {parsedArchive && parsedArchive.entries.length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>动作</th>
+                    <th>对象</th>
+                    <th>详情</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsedArchive.entries.map((entry) => {
+                    const display = formatAuditLog(entry);
+                    return (
+                      <tr key={`${entry.created_at}-${entry.id}`}>
+                        <td>{formatDateTime(entry.created_at)}</td>
+                        <td>{display.action}</td>
+                        <td>{display.target}</td>
+                        <td className="audit-detail">
+                          <ExpandableText text={display.detail} maxChars={160} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted">该归档暂时无法解析为日志条目，请刷新后重试。</p>
+          )}
         </section>
       ) : null}
     </main>
@@ -169,4 +223,8 @@ function formatFileSize(value: number): string {
     return `${(value / 1024).toFixed(1)} KB`;
   }
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatArchiveTime(value: string | undefined): string {
+  return value ? formatDateTime(value) : "未知";
 }

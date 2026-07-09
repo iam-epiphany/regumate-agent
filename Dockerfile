@@ -13,10 +13,16 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     REGUMATE_MODEL_CACHE_DIR=/app/data/model_cache \
+    REGUMATE_OFFLINE_MODE=true \
     HF_HOME=/app/data/model_cache/huggingface \
     HF_HUB_CACHE=/app/data/model_cache/huggingface/hub \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HF_DATASETS_OFFLINE=1 \
     SENTENCE_TRANSFORMERS_HOME=/app/data/model_cache/sentence_transformers \
-    TORCH_HOME=/app/data/model_cache/torch
+    TORCH_HOME=/app/data/model_cache/torch \
+    EMBEDDING_MODEL_PATH=/app/data/models/bge-m3 \
+    RERANKER_MODEL_PATH=/app/data/models/bge-reranker-v2-m3
 
 WORKDIR /app
 

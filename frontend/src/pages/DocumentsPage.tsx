@@ -1,4 +1,4 @@
-import { AlertTriangle, FileUp, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, FileUp, RefreshCw, Trash2, X } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,14 +8,19 @@ import type { ChunkSummary, DocumentSummary } from "../types/api";
 
 interface UploadNotice {
   documentId: string;
-  chunkCount: number;
+  completed: boolean;
+}
+
+interface ToastNotice {
+  message: string;
+  tone: "success" | "error";
 }
 
 export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedChunks, setSelectedChunks] = useState<ChunkSummary[]>([]);
-  const [message, setMessage] = useState("请选择 .txt、.md、.docx 或 .pdf 文档上传。");
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
+  const [toastNotice, setToastNotice] = useState<ToastNotice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DocumentSummary | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const deleteAbortController = useRef<AbortController | null>(null);
@@ -45,8 +50,23 @@ export function DocumentsPage() {
       return;
     }
 
-    setMessage(formatUploadMessage(uploadNotice, uploadedDocument.status));
+    if (uploadedDocument.status === "indexed" && !uploadNotice.completed) {
+      setToastNotice({ message: "上传成功", tone: "success" });
+      setUploadNotice({ ...uploadNotice, completed: true });
+    }
+    if (uploadedDocument.status === "index_failed" && !uploadNotice.completed) {
+      setToastNotice({ message: "上传失败", tone: "error" });
+      setUploadNotice({ ...uploadNotice, completed: true });
+    }
   }, [documents, uploadNotice]);
+
+  useEffect(() => {
+    if (!toastNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setToastNotice(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toastNotice]);
 
   async function loadDocuments() {
     const result = await listDocuments();
@@ -60,17 +80,19 @@ export function DocumentsPage() {
       return;
     }
 
-    setMessage("正在上传并解析文档...");
     setUploadNotice(null);
+    setToastNotice(null);
     try {
       const result = await uploadDocument(file);
-      const notice = { documentId: result.document_id, chunkCount: result.chunk_count };
-      setUploadNotice(notice);
+      setUploadNotice({ documentId: result.document_id, completed: false });
       const latestDocuments = await loadDocuments();
       const uploadedDocument = latestDocuments.find((document) => document.document_id === result.document_id);
-      setMessage(formatUploadMessage(notice, uploadedDocument?.status));
+      if (uploadedDocument?.status === "indexed") {
+        setToastNotice({ message: "上传成功", tone: "success" });
+        setUploadNotice({ documentId: result.document_id, completed: true });
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "上传失败。");
+      setToastNotice({ message: error instanceof Error ? error.message : "上传失败", tone: "error" });
     } finally {
       event.target.value = "";
     }
@@ -92,13 +114,19 @@ export function DocumentsPage() {
     setDeleteTarget(null);
     setDeletingDocumentId(documentId);
     setUploadNotice(null);
-    setMessage(`正在删除文档：${documentId}`);
+    setToastNotice(null);
     try {
       const result = await deleteDocument(documentId, controller.signal);
-      setMessage(result.vector_warning ? `文档已删除，但向量清理有警告：${result.vector_warning}` : `文档已删除：${documentId}`);
+      setToastNotice({
+        message: result.vector_warning ? `删除成功，向量清理有警告：${result.vector_warning}` : "删除成功",
+        tone: "success",
+      });
       setSelectedChunks([]);
     } catch (error) {
-      setMessage(isAbortError(error) ? "已取消等待删除结果，正在刷新文档列表。" : error instanceof Error ? error.message : "删除失败。");
+      setToastNotice({
+        message: isAbortError(error) ? "已取消等待删除结果，正在刷新文档列表。" : error instanceof Error ? error.message : "删除失败",
+        tone: "error",
+      });
     } finally {
       if (deleteAbortController.current === controller) {
         deleteAbortController.current = null;
@@ -116,6 +144,7 @@ export function DocumentsPage() {
 
   return (
     <main className="page">
+      {toastNotice ? <Toast notice={toastNotice} /> : null}
       <section className="page-head">
         <div>
           <p className="eyebrow">Knowledge Base</p>
@@ -136,7 +165,7 @@ export function DocumentsPage() {
           选择文档
           <input type="file" accept=".txt,.md,.docx,.pdf" onChange={(event) => void handleFileChange(event)} />
         </label>
-        <p className="hint">{message}</p>
+        <p className="hint">请选择 .txt、.md、.docx 或 .pdf 文档上传</p>
       </section>
 
       <section className="panel">
@@ -256,6 +285,16 @@ export function DocumentsPage() {
   );
 }
 
+function Toast({ notice }: { notice: ToastNotice }) {
+  const Icon = notice.tone === "success" ? CheckCircle2 : AlertCircle;
+  return (
+    <div className={`toast-notice toast-notice--${notice.tone}`} role="status" aria-live="polite">
+      <Icon size={18} />
+      <span>{notice.message}</span>
+    </div>
+  );
+}
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
@@ -315,19 +354,4 @@ function displayChunkText(chunk: ChunkSummary): string {
 
   const withoutTitle = text.slice(sectionTitle.length).replace(/^\s+/, "");
   return withoutTitle || chunk.text;
-}
-
-function formatUploadMessage(notice: UploadNotice, status?: string): string {
-  const prefix = `上传成功：${notice.documentId}，生成 ${notice.chunkCount} 个内容片段。`;
-
-  if (status === "indexed") {
-    return `${prefix}知识库索引已构建完成。`;
-  }
-  if (status === "index_failed") {
-    return `${prefix}但知识库索引构建失败，请查看文档列表中的错误状态。`;
-  }
-  if (status === "uploaded" || status === "indexing") {
-    return `${prefix}系统正在后台构建知识库索引。`;
-  }
-  return `${prefix}正在刷新索引状态。`;
 }

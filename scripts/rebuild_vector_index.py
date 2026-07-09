@@ -42,7 +42,11 @@ def refresh_document_chunks(db, document: Document) -> None:
         raise FileNotFoundError(f"Original file missing: {source_path}")
 
     parsed = parse_document(source_path)
-    drafts = build_chunks_from_parsed(document_id=document.document_id, parsed=parsed)
+    drafts = build_chunks_from_parsed(
+        document_id=document.document_id,
+        parsed=parsed,
+        source_file=document.filename,
+    )
     if not drafts:
         raise DocumentParseError("文档没有可入库的文本片段")
 

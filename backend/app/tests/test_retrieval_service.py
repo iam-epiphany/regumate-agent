@@ -1,5 +1,9 @@
 from backend.app.services.rerank_service import RerankedChunk
-from backend.app.services.retrieval_service import retrieve_citations
+from backend.app.services.retrieval_service import (
+    get_last_retrieval_diagnostics,
+    retrieval_queries,
+    retrieve_citations,
+)
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -18,11 +22,22 @@ def candidate() -> VectorSearchResult:
     )
 
 
+def fake_embed_texts(monkeypatch):
+    calls = []
+
+    def _fake(texts: list[str]):
+        calls.append(texts)
+        return [f"query-vector-{index}" for index, _text in enumerate(texts)]
+
+    monkeypatch.setattr("backend.app.services.retrieval_service.embed_texts", _fake)
+    return calls
+
+
 def test_retrieve_citations_runs_hybrid_search_and_rerank(monkeypatch) -> None:
     calls = []
     item = candidate()
 
-    monkeypatch.setattr("backend.app.services.retrieval_service.embed_query", lambda question: "query-vector")
+    embed_calls = fake_embed_texts(monkeypatch)
 
     def fake_hybrid_search(query_embedding, *, limit: int):
         calls.append((query_embedding, limit))
@@ -36,16 +51,21 @@ def test_retrieve_citations_runs_hybrid_search_and_rerank(monkeypatch) -> None:
 
     matches = retrieve_citations("资产合计怎么计算")
 
-    assert calls == [("query-vector", 30)]
+    assert embed_calls == [["资产合计怎么计算"]]
+    assert calls == [("query-vector-0", 50)]
     assert matches[0].citation.chunk_id == "DOC-TEST-0001-CHUNK-0001"
     assert matches[0].rerank_score == 0.91
     assert matches[0].evidence_role == "direct_evidence"
+    diagnostics = get_last_retrieval_diagnostics()
+    assert diagnostics.query_count == 1
+    assert diagnostics.candidate_count == 1
+    assert diagnostics.reranked_count == 1
 
 
 def test_retrieve_citations_filters_low_rerank_scores(monkeypatch) -> None:
     item = candidate()
 
-    monkeypatch.setattr("backend.app.services.retrieval_service.embed_query", lambda question: "query-vector")
+    fake_embed_texts(monkeypatch)
     monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", lambda query_embedding, *, limit: [item])
     monkeypatch.setattr(
         "backend.app.services.retrieval_service.rerank_candidates",
@@ -85,7 +105,7 @@ def test_retrieve_citations_prefers_direct_paragraph_over_neighbor_table(monkeyp
         chunk_type="table",
     )
 
-    monkeypatch.setattr("backend.app.services.retrieval_service.embed_query", lambda question: "query-vector")
+    fake_embed_texts(monkeypatch)
     monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", lambda query_embedding, *, limit: [table, paragraph])
     monkeypatch.setattr(
         "backend.app.services.retrieval_service.rerank_candidates",
@@ -116,7 +136,7 @@ def test_retrieve_citations_filters_high_rerank_low_coverage(monkeypatch) -> Non
         chunk_type="paragraph",
     )
 
-    monkeypatch.setattr("backend.app.services.retrieval_service.embed_query", lambda question: "query-vector")
+    fake_embed_texts(monkeypatch)
     monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", lambda query_embedding, *, limit: [item])
     monkeypatch.setattr(
         "backend.app.services.retrieval_service.rerank_candidates",
@@ -124,3 +144,89 @@ def test_retrieve_citations_filters_high_rerank_low_coverage(monkeypatch) -> Non
     )
 
     assert retrieve_citations("同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？") == []
+
+
+def test_retrieve_citations_accepts_table_evidence_for_comparison_question(monkeypatch) -> None:
+    table = VectorSearchResult(
+        chunk_id="DOC-TEST-0001-CHUNK-0020",
+        document_id="DOC-TEST-0001",
+        filename="rules.md",
+        section_title="逾期贷款与不良贷款区别",
+        page_number=None,
+        text=(
+            "表格行证据：比较项目为“逾期贷款与不良贷款”时，区别为“逾期统计强调时间状态，"
+            "不良贷款或风险分类强调还款能力和资产质量，两者不能直接等同”。"
+        ),
+        embedding_text=(
+            "章节：逾期贷款与不良贷款区别\n内容类型：表格\n内容形态：表格行级证据\n\n"
+            "表格行证据：比较项目为“逾期贷款与不良贷款”时，区别为“逾期统计强调时间状态，"
+            "不良贷款或风险分类强调还款能力和资产质量，两者不能直接等同”。"
+        ),
+        token_count=80,
+        score=0.88,
+        chunk_type="table",
+    )
+
+    fake_embed_texts(monkeypatch)
+    monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", lambda query_embedding, *, limit: [table])
+    monkeypatch.setattr(
+        "backend.app.services.retrieval_service.rerank_candidates",
+        lambda question, candidates, limit: [RerankedChunk(candidate=table, rerank_score=0.94)],
+    )
+
+    matches = retrieve_citations("逾期与不良的区别")
+
+    assert len(matches) == 1
+    assert matches[0].citation.chunk_id == "DOC-TEST-0001-CHUNK-0020"
+    assert matches[0].evidence_role == "table_evidence"
+
+
+def test_retrieval_queries_decompose_asset_difference_foreign_currency_question() -> None:
+    queries = retrieval_queries("资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？")
+
+    assert "资产合计 差异 优先检查 币种折算 四舍五入 科目映射 重复汇总" in queries
+    assert "外币折算 保留 汇率日期 折算规则 原币金额来源" in queries
+
+
+def test_retrieve_citations_batches_expanded_query_embeddings(monkeypatch) -> None:
+    item = VectorSearchResult(
+        chunk_id="DOC-TEST-0001-CHUNK-0030",
+        document_id="DOC-TEST-0001",
+        filename="rules.md",
+        section_title="资产合计差异处理",
+        page_number=None,
+        text=(
+            "资产合计差异应优先检查币种折算、四舍五入、科目映射和重复汇总。"
+            "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。"
+        ),
+        embedding_text=(
+            "章节：资产合计差异处理\n\n资产合计差异应优先检查币种折算、四舍五入、科目映射和重复汇总。"
+            "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。"
+        ),
+        token_count=100,
+        score=0.9,
+        chunk_type="paragraph",
+    )
+    embed_calls = fake_embed_texts(monkeypatch)
+    hybrid_calls = []
+
+    def fake_hybrid_search(query_embedding, *, limit: int):
+        hybrid_calls.append((query_embedding, limit))
+        return [item]
+
+    monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", fake_hybrid_search)
+    monkeypatch.setattr(
+        "backend.app.services.retrieval_service.rerank_candidates",
+        lambda question, candidates, limit: [RerankedChunk(candidate=candidates[0], rerank_score=0.93)],
+    )
+
+    matches = retrieve_citations("资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？")
+
+    assert matches
+    assert len(embed_calls) == 1
+    assert len(embed_calls[0]) > 1
+    assert len(hybrid_calls) == len(embed_calls[0])
+    diagnostics = get_last_retrieval_diagnostics()
+    assert diagnostics.query_count == len(embed_calls[0])
+    assert diagnostics.raw_candidate_count == len(embed_calls[0])
+    assert diagnostics.candidate_count == 1

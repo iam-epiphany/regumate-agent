@@ -6,6 +6,20 @@ interface AuditDisplay {
   detail: string;
 }
 
+export interface ParsedAuditArchiveEntry {
+  id: number;
+  created_at: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  detail: string;
+}
+
+export interface ParsedAuditArchive {
+  archived_at: string[];
+  entries: ParsedAuditArchiveEntry[];
+}
+
 interface QAAuditDetail {
   question?: string;
   answer?: string;
@@ -21,6 +35,7 @@ const ACTION_LABELS: Record<string, string> = {
   document_delete_failed: "文档删除失败",
   qa_answered: "提问",
   qa_refused: "提问未回答",
+  qa_context_built: "提问",
 };
 
 const TARGET_LABELS: Record<string, string> = {
@@ -36,6 +51,31 @@ export function formatAuditLog(log: AuditLogItem): AuditDisplay {
   };
 }
 
+export function parseAuditArchiveContent(content: string): ParsedAuditArchive {
+  const archived_at = Array.from(content.matchAll(/^归档时间：(.+)$/gm), (match) => match[1].trim());
+  const headings = Array.from(content.matchAll(/^## (.+?) · (.+)$/gm));
+  const entries = headings.map((heading, index) => {
+    const blockStart = heading.index ?? 0;
+    const nextHeading = headings[index + 1];
+    const blockEnd = nextHeading?.index ?? content.length;
+    const block = content.slice(blockStart, blockEnd);
+    const targetType = matchLine(block, "对象类型") || "unknown";
+    const rawTargetId = matchLine(block, "对象编号");
+    const detail = matchCodeBlock(block) || matchLine(block, "详情") || "";
+
+    return {
+      id: index + 1,
+      created_at: heading[1].trim(),
+      action: heading[2].trim(),
+      target_type: targetType,
+      target_id: rawTargetId && rawTargetId !== "无" ? rawTargetId : null,
+      detail,
+    };
+  });
+
+  return { archived_at, entries };
+}
+
 function formatTarget(log: AuditLogItem): string {
   const target = TARGET_LABELS[log.target_type] ?? log.target_type;
   return log.target_id ? `${target}：${log.target_id}` : target;
@@ -45,7 +85,7 @@ function formatDetail(log: AuditLogItem): string {
   if (log.action === "document_indexed") {
     return formatIndexedDetail(log.detail);
   }
-  if (log.action === "qa_answered" || log.action === "qa_refused") {
+  if (log.action === "qa_answered" || log.action === "qa_refused" || log.action === "qa_context_built") {
     return formatQADetail(log.detail);
   }
 
@@ -83,4 +123,14 @@ function parseQADetail(detail: string): QAAuditDetail | null {
   } catch {
     return null;
   }
+}
+
+function matchLine(block: string, label: string): string | null {
+  const match = new RegExp(`^- ${label}：(.+)$`, "m").exec(block);
+  return match ? match[1].trim() : null;
+}
+
+function matchCodeBlock(block: string): string | null {
+  const match = /```text\r?\n([\s\S]*?)\r?\n```/.exec(block);
+  return match ? match[1].trim() : null;
 }

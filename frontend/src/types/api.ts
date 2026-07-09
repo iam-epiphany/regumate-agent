@@ -81,11 +81,107 @@ export interface Citation {
   evidence_role: string;
 }
 
+export interface RetrievalResult {
+  chunk_id: string;
+  rank: number;
+  score: number | null;
+  source_doc: string;
+  section_title: string | null;
+  section_path: string[];
+  text: string;
+  citation_label: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface LLMContextPackage {
+  query: string;
+  mode: "rag_context";
+  is_final_answer: false;
+  instruction: string;
+  retrieval_summary: {
+    top_k: number;
+    used_chunks: number;
+    has_sufficient_context: boolean;
+    query_count?: number;
+    candidate_count?: number;
+    reranked_count?: number;
+    filtered_count?: number;
+    prompt_filtered_count?: number;
+    timings_ms?: Record<string, number>;
+    score_range?: Record<string, number | null>;
+    query_variants?: string[];
+    missing_aspects?: string[];
+    coverage_notes?: string[];
+    query_plan?: {
+      original_question: string;
+      planner: string;
+      fallback_used: boolean;
+      error: string | null;
+      aspects: Array<{
+        aspect_id: string;
+        question: string;
+        search_queries: string[];
+        expected_evidence_type: string;
+        keywords: string[];
+      }>;
+    };
+    aspect_retrievals?: Array<{
+      aspect_id: string;
+      question: string;
+      search_queries: string[];
+      expected_evidence_type: string;
+      keywords: string[];
+      covered: boolean;
+      missing: boolean;
+      candidate_count: number;
+      selected_chunk_ids: string[];
+      retrieved_chunks: Array<{
+        chunk_id: string;
+        source_doc: string;
+        section_title: string | null;
+        score: number | null;
+        rerank_score: unknown;
+        evidence_role: unknown;
+        selected_for_prompt: boolean;
+      }>;
+      diagnostics: Array<Record<string, unknown>>;
+    }>;
+    final_prompt_chunk_ids?: string[];
+    prompt_selection?: {
+      max_prompt_chunks: number;
+      min_prompt_chunks: number;
+      force_min_chunks: boolean;
+      rerank_prompt_threshold: number;
+      relative_score_ratio: number;
+      candidate_prompt_chunks: number;
+      final_prompt_chunks: number;
+      covered_aspects: string[];
+      expected_aspects: Array<{
+        aspect_id: string;
+        description: string;
+        search_queries?: string[];
+        expected_evidence_type?: string;
+      }>;
+      final_prompt_chunk_ids?: string[];
+      aspect_selected_chunk_ids?: Record<string, string[]>;
+    };
+    citation_validation?: {
+      checked_chunks: number;
+      valid_chunks: number;
+      invalid_chunks: number;
+      invalid_chunk_ids: string[];
+    };
+  };
+  context_chunks: RetrievalResult[];
+  llm_prompt: string;
+}
+
 export interface QAResponse {
-  answer: string;
+  answer: string | null;
   citations: Citation[];
   confidence: number;
   refused: boolean;
+  context_package: LLMContextPackage | null;
 }
 
 export interface AuditLogItem {

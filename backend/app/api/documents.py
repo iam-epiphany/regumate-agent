@@ -29,6 +29,7 @@ from backend.app.services.document_lifecycle_service import (
     DocumentDeletionError,
     delete_document_record,
     original_file_exists,
+    recover_documents_from_originals,
     remove_documents_with_missing_originals,
 )
 
@@ -54,7 +55,7 @@ async def upload_document(
             content_type=file.content_type,
         )
         parsed = parse_document(storage_path)
-        chunks = build_chunks_from_parsed(document_id=document_id, parsed=parsed)
+        chunks = build_chunks_from_parsed(document_id=document_id, parsed=parsed, source_file=filename)
     except UnsupportedDocumentTypeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except EmptyDocumentError as exc:
@@ -130,10 +131,15 @@ def build_document_index(document_id: str, db: Session = Depends(get_db)) -> Doc
 
 @router.get("", response_model=DocumentListResponse)
 def list_documents(db: Session = Depends(get_db)) -> DocumentListResponse:
+    recovered_documents = recover_documents_from_originals(db)
+    for document_id, result in recovered_documents:
+        detail = f"original file recovered into SQLite; result: {result}"
+        log_action(db, "document_recovered_from_original", "document", document_id, detail[:500])
+
     removed_documents = remove_documents_with_missing_originals(db)
     for document_id, result in removed_documents:
-        detail = f"original file missing; cleanup result: {result}"
-        log_action(db, "document_removed_missing_original", "document", document_id, detail[:500])
+        detail = f"original file missing; result: {result}"
+        log_action(db, "document_marked_source_missing", "document", document_id, detail[:500])
 
     statement = select(Document).order_by(Document.uploaded_at.desc())
     documents = db.scalars(statement).all()
@@ -146,19 +152,14 @@ def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDet
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
     if not original_file_exists(document):
-        try:
-            delete_document_record(db, document)
-        except DocumentDeletionError as exc:
-            log_action(
-                db,
-                "document_remove_missing_original_failed",
-                "document",
-                document_id,
-                f"original file missing; vector cleanup failed: {exc}"[:500],
-            )
-            raise HTTPException(status_code=503, detail=f"原始文件已删除，但 Qdrant 向量清理失败：{exc}") from exc
-        log_action(db, "document_removed_missing_original", "document", document_id, "original file missing")
-        raise HTTPException(status_code=404, detail="原始文件已删除，文档记录已同步移除")
+        document.status = "source_missing"
+        document.index_error = "原始文件缺失，已暂停该文档参与知识库问答；请恢复文件或显式删除文档。"
+        chunks = db.scalars(select(DocumentChunk).where(DocumentChunk.document_id == document.document_id)).all()
+        for chunk in chunks:
+            chunk.index_status = "source_missing"
+        db.commit()
+        log_action(db, "document_marked_source_missing", "document", document_id, "original file missing")
+        db.refresh(document)
 
     return _to_detail(document, db)
 

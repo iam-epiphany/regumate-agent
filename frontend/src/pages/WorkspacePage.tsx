@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { listAuditLogs } from "../api/audit";
 import { listDocuments } from "../api/documents";
 import { getHealth } from "../api/system";
+import { ExpandableText } from "../components/ExpandableText";
 import { StatusBadge } from "../components/StatusBadge";
 import type { AuditLogItem, DocumentSummary } from "../types/api";
 import { formatAuditLog } from "../utils/audit";
@@ -101,8 +102,11 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
                 const display = formatAuditLog(log);
                 return (
                   <li key={log.id}>
-                    <span className="activity-title">{display.action}</span>
-                    <span>{display.detail}</span>
+                    <span>
+                      <strong className="activity-title">{display.action}</strong>
+                      <span className="activity-separator">：</span>
+                      <ExpandableText text={formatRecentActivityDetail(display.detail)} maxChars={90} />
+                    </span>
                   </li>
                 );
               })}
@@ -133,4 +137,8 @@ function ActionCard({ icon, title, text, onClick }: ActionCardProps) {
       <p>{text}</p>
     </button>
   );
+}
+
+function formatRecentActivityDetail(detail: string): string {
+  return detail.replace(/\s+/g, " ").trim() || "无补充说明";
 }
