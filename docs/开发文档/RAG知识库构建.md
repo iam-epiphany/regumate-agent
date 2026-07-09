@@ -33,19 +33,19 @@ Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默
 ## 检索流程
 
 1. `rag_service` 清理用户问题。
-2. `query_planner_service` 先把原始问题拆成多个 aspect。每个 aspect 包含子问题、`evidence_need`、结构化 `search_queries` 和关键词。该 LLM 只做拆题和检索计划，不生成最终答案；没有 API key、LLM 超时或返回格式异常时，自动回退到本地规则拆分。
-3. 每个 aspect 单独调用检索链路，不再把复杂问题整体只检索一次。一个 aspect 内通常包含 2-3 个 search query：`semantic_question` 贴近用户意图，`document_style_statement` 模拟制度原文/填报说明证据句，`keyword_anchor` 用少量关键术语兜底。
-4. `embedding_service` 对每次检索的 query variants 做批量 BGE-M3 dense / sparse embedding，避免同一检索内重复模型调用。
-5. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一检索内候选按 `chunk_id` 去重后保留较高召回分。
-6. `rerank_service` 使用当前 aspect query 对候选 chunk 重新评分；当前默认扩大初召回到 50、rerank 20，但 rerank 结果不直接等同于最终入 Prompt 片段。
-7. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，按 `aspect_query_rrf_then_bge_rerank` 记录 `fusion_method`，并保留每个 chunk 命中的 query、query type、rank 和融合分。
+2. `query_planner_service` 先用轻量规则估计问题复杂度，动态计算本次 `max_aspects`；`QUERY_PLANNER_MAX_ASPECTS` 只作为安全阀，不作为固定拆题数量。用户枚举多个处理对象时，原则上一项一个 aspect；没有 API key、LLM 超时或返回格式异常时，自动回退到本地规则拆分。
+3. 每个 aspect 包含子问题、`evidence_need`、结构化 `search_queries` 和关键词。一个 aspect 内通常包含 2-3 个 search query：`semantic_question` 贴近用户意图，`document_style_statement` 模拟制度原文/填报说明证据句，`keyword_anchor` 用少量关键术语兜底。
+4. `embedding_service` 对同一 aspect 内的 search query 做批量 BGE-M3 dense / sparse embedding，避免逐 query 重复模型调用。
+5. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一 aspect 内候选按 `chunk_id` 去重后保留较高召回分。
+6. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，保留每个 chunk 命中的 query、query type、rank 和融合分。
+7. `rag_service` 在融合后按向量/RRF 分数截断进入 rerank 的候选，默认最多 `RERANK_CANDIDATE_LIMIT=24` 个 chunk；`rerank_service` 对每个 aspect 只调用一次 BGE reranker，默认输出 top 20。该限制只控制重排成本，不直接决定最终入 Prompt 片段。
 8. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
 9. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；即使初始命中已达到最终 topK，也会先尝试结构补充再统一截断。
 10. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
 11. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
 12. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，且返回摘录必须能回溯到 SQLite 原始 chunk；不可回溯的片段会被过滤并写入 `citation_validation`。
 13. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；最终最多 `MAX_PROMPT_CHUNKS=5` 条，不为了凑固定数量加入无关片段。
-14. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、候选数、rerank 数、过滤数、Prompt 过滤数、阶段耗时和分数范围，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
+14. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、原始召回数、去重候选数、rerank 调用数、进入 rerank 数、rerank 输出数、过滤数、Prompt 过滤数、阶段耗时、分数范围和模型设备，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
 15. `/api/qa/ask/stream` 会复用同一条 RAG 链路，并通过 `progress_reporter` 在 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build` 和 `llm_generation` 阶段推送 SSE 事件。当前阶段不生成最终答案，`llm_generation` 只推送 `skipped`，表示等待后续接入最终 LLM。
 
 QueryPlanner 默认配置：
@@ -55,8 +55,22 @@ QueryPlanner 默认配置：
 - `DEEPSEEK_API_KEY` 或 `QUERY_PLANNER_API_KEY`：DeepSeek API key，不写入源码或文档示例。
 - `QUERY_PLANNER_BASE_URL=https://api.deepseek.com`
 - `QUERY_PLANNER_MODEL=deepseek-v4-flash`，可按本地账号可用模型改为 `deepseek-v4-pro`。
-- `QUERY_PLANNER_MAX_ASPECTS=5`
+- `QUERY_PLANNER_MAX_ASPECTS=12`，仅作为系统安全阀；实际本次 `max_aspects` 由 `QueryBudgetPlanner` 按问题复杂度动态计算。
 - `QUERY_PLANNER_MAX_SEARCH_QUERIES=3`
+- `MODEL_DEVICE=auto`，优先使用 CUDA，其次 CPU；`retrieval_summary.model_device` 会显示实际设备、torch 版本和 CUDA 状态。
+
+当前首轮调优只限制 rerank 输入规模，不同步收紧阈值和 Prompt 长度。可控复杂问题“资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？”在模拟监管制度候选池中的对比：
+
+| 指标 | 修改前 | 修改后 |
+| --- | ---: | ---: |
+| query variants 数量 | 7 | 7 |
+| 原始候选片段数量 | 280 | 280 |
+| 去重后候选数量 | 40 | 40 |
+| 进入 rerank 数量 | 40 | 24 |
+| rerank 输出数量 | 20 | 20 |
+| 最终 Prompt 片段数量 | 由后续 Prompt 选择决定 | 由后续 Prompt 选择决定 |
+
+后续性能优化将 rerank 作用点进一步前移到 aspect 级：同一 aspect 的多条 search query 先批量召回、去重和 RRF 融合，然后只做 1 次 BGE rerank，避免 `aspect 数 x query 数` 的重复重排成本。
 
 ## 回答原则
 
@@ -70,9 +84,10 @@ QueryPlanner 默认配置：
 ## Chunk 质量规则
 
 - 普通正文 chunk 优先保留标题、段落和完整句子，只有单个超长句无法容纳时才做 token 级兜底切分。
-- 表格 block 不整表原样入库；每一行会转换为一条自然语言 table chunk，例如“表格行证据：情形为‘借款用途为个人住房装修’时，处理口径为‘不纳入普惠小微贷款’。”
-- 同章节内紧邻表格前的短说明段会合并进每条表格行级证据，例如“以下情形……”会随每一行一起入库，避免表格行缺少语义上下文。
-- 借鉴 Contextual Retrieval 思路，`embedding_text` 会在原始 chunk 前确定性拼接来源文件、文档格式、章节路径、章节号、父章节号、页码、内容类型和表格字段等上下文；`text` 保持原文片段不变，用于引用展示和回溯校验。
+- 表格 block 会解析出表头、行列、原始 Markdown 表格、表格标题、页码和章节路径；小表生成 1 条表格摘要 chunk，并为每一行生成自然语言 table chunk。
+- 行级 table chunk 不跨行合并、不截断完整行；每条行证据会重复表格标题、表头、行号和 `列名=单元格` 结构，便于 embedding 与引用回溯。
+- 同章节内紧邻表格前的短说明段会作为 `table_context` 注入摘要和每条表格行级证据，但不参与表头识别，避免“以下情形……”误作列名。
+- 借鉴 Contextual Retrieval 思路，`embedding_text` 会在原始 chunk 前确定性拼接来源文件、文档格式、章节路径、章节号、父章节号、页码、内容类型、表格标题、表头和行数据等上下文；`text` 保持可引用证据文本，用于引用展示和回溯校验。
 - 文档详情接口返回完整 `text` 和短 `text_preview`；前端查看 chunk 时使用完整 `text`，并保留段落和表格换行。
 
 ## 向量索引
@@ -96,6 +111,12 @@ collection 名称由 `QDRANT_COLLECTION` 配置，默认 `regumate_chunks`。pay
 - `embedding_text`
 - `token_count`
 - `chunk_type`
+- `chunk_metadata`
+- `table_id`
+- `table_title`
+- `table_headers`
+- `row_index`
+- `raw_table_preview`
 - `index_version`
 - `section_path`
 - `section_number`
@@ -172,6 +193,22 @@ ReguMate 默认支持模型离线加载，不依赖 HuggingFace 网络访问。�
 
 Docker Compose 默认设置 `REGUMATE_OFFLINE_MODE=true`、`HF_HUB_OFFLINE=1`、`TRANSFORMERS_OFFLINE=1` 和 `HF_DATASETS_OFFLINE=1`。离线模式下如果模型缺失，系统会直接返回中文错误，提示应放置的主机目录和容器目录，不会触发 HuggingFace 网络请求。
 
+## 模型设备与 CUDA
+
+本地模型推理默认使用 `MODEL_DEVICE=auto`：
+
+1. 检测到 CUDA 可用时，embedding 和 reranker 使用 `cuda`，并启用 fp16。
+2. CUDA 不可用或显式设置 `MODEL_DEVICE=cpu` 时回退 CPU。
+3. `retrieval_summary.model_device` 会返回 `selected_device`、`torch_version`、`cuda_available`、`cuda_device_name` 和回退原因。
+
+Windows 本地开发如需安装 CUDA 版 PyTorch，可运行：
+
+```powershell
+.\scripts\install_cuda_torch.ps1
+```
+
+当前已验证的本机组合为 NVIDIA GeForce RTX 5070 Laptop GPU、NVIDIA Driver 595.79、`torch==2.11.0+cu128`。如果网络下载大 wheel 中断，可先用支持断点续传的工具下载 wheel，再本地 `pip install`。
+
 启动前可运行：
 
 ```powershell
@@ -206,3 +243,22 @@ python scripts/check_offline_models.py
 流式观测接口不会改变上下文包结构。它只在同一执行过程中额外推送阶段状态：问题理解、依据检索、候选重排、上下文精选、Prompt 构造和 LLM 生成占位。前端据此显示运行中的转动图标、完成对勾、失败提示和跳过状态，避免长耗时查询期间页面静止。
 
 上下文组装会尽量利用章节结构补足相邻依据。例如命中 `3. 资产合计与校验关系` 时，如果同一文档存在 `3.1 资产合计差异处理`，且问题涉及差异、处理、外币折算、保留依据等词，系统会优先补充该子章节。随后最终 Prompt 选择会按 QueryPlanner 拆出的 aspect 覆盖进行二次筛选：每个 aspect 至少尝试保留 1 条可回溯依据；像 `4. 逾期贷款与风险分类` 这类不覆盖当前 aspect 的片段即使 rerank 分数不低也不会进入 Prompt。若某个 aspect 没有可回溯候选，`retrieval_summary.missing_aspects` 会标记缺失点，提醒后续 LLM 不要硬编。`aspect_retrievals[].diagnostics` 会展示每条结构化 query 的 `query_type`、召回候选、rerank 数量和可用命中数，`retrieved_chunks[].query_hits` 会展示该 chunk 由哪些 query 召回。
+
+## 检索评测驱动的补充优化
+
+针对《银行业监管制度测试样例_模拟版.pdf》的检索评测暴露出三类问题：
+
+- 简单元数据事实问题，例如“文件版本是什么”，可被 dense/sparse 召回，但 BGE reranker 对短元数据片段给分较低，导致 `MIN_RERANK_SCORE` 过滤掉正确依据。
+- 多条款问题，例如“资产合计不一致 + 外币折算留痕”，如果 QueryPlanner 预算只给 1 个 aspect，会漏掉外币折算依据。
+- 依据不足问题在本地 fallback 下不应默认改写成资产合计差异或外币折算问题，否则会强行召回无关依据。
+
+当前处理策略：
+
+1. QueryPlanner 的预算取“检测到的业务主题数”和“问题分句数”的较大值，避免复合问题被压成单 aspect。
+2. 本地 heuristic 覆盖文档版本、统计报表定义、校验规则分类、规则编号查询、资产合计差异、外币折算留痕、普惠小微、绿色信贷、逾期与不良等常见制度检索意图。
+3. 未检测到业务主题时不再默认注入资产合计/外币折算 aspect，而是按用户原问题 fallback 检索；没有依据时由 `missing_aspects` 标记缺失。
+4. `question_terms` 增加文件版本、版本号、发布日期、适用范围、规则编号、触发条件、处理建议等检索词，提升元数据和表格规则查询的 evidence coverage。
+5. 对“覆盖度高 + 向量/稀疏召回分高”的精确命中允许绕过 reranker 下限，避免短事实片段被误杀；普通问题仍保留 coverage 和 rerank 双过滤。
+6. 最终上下文排序降低“附录 B 样例问答测试集”的优先级，除非用户显式询问附录或测试集，优先返回正文条款和规则表。
+
+该优化不改变 API schema、SQLite 表结构或 Qdrant payload 结构，主要影响检索计划、证据过滤和最终上下文排序。

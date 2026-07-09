@@ -39,6 +39,7 @@ def _upgrade_sqlite_schema() -> None:
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
         "embedding_text": "ALTER TABLE document_chunks ADD COLUMN embedding_text TEXT",
+        "chunk_metadata": "ALTER TABLE document_chunks ADD COLUMN chunk_metadata TEXT",
         "token_count": "ALTER TABLE document_chunks ADD COLUMN token_count INTEGER DEFAULT 0",
         "index_status": "ALTER TABLE document_chunks ADD COLUMN index_status VARCHAR(30) DEFAULT 'indexed'",
         "index_version": "ALTER TABLE document_chunks ADD COLUMN index_version VARCHAR(80)",

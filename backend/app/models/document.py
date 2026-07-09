@@ -41,6 +41,7 @@ class DocumentChunk(Base):
     document_id: Mapped[str] = mapped_column(String(32), ForeignKey("documents.document_id"), index=True)
     text: Mapped[str] = mapped_column(Text)
     embedding_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, default=0)
     index_status: Mapped[str] = mapped_column(String(30), default="indexed")
     index_version: Mapped[str | None] = mapped_column(String(80), nullable=True)

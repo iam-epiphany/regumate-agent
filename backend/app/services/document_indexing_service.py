@@ -1,4 +1,5 @@
 from sqlalchemy import select
+import json
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import INDEX_VERSION
@@ -34,6 +35,7 @@ def index_document(db: Session, document: Document) -> None:
     for chunk, draft in zip(chunks, drafts, strict=True):
         chunk.embedding_text = draft.embedding_text
         chunk.token_count = draft.token_count
+        chunk.chunk_metadata = json.dumps(draft.metadata or {}, ensure_ascii=False)
         chunk.index_status = "indexing"
         chunk.index_version = INDEX_VERSION
     db.commit()
@@ -79,6 +81,7 @@ def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[Ch
         if chunk.section_title:
             section_path.append(chunk.section_title)
         chunk_type = _chunk_type(chunk.text)
+        chunk_metadata = _chunk_metadata(chunk)
         token_count = chunk.token_count or count_tokens(chunk.text)
         embedding_text = build_contextual_embedding_text(
             text=chunk.text,
@@ -90,6 +93,7 @@ def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[Ch
             parent_section_number=parent_section_number,
             page_number=chunk.page_number,
             chunk_type=chunk_type,
+            chunk_metadata=chunk_metadata,
         )
         drafts.append(
             ChunkDraft(
@@ -107,13 +111,26 @@ def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[Ch
                 parent_section_number=parent_section_number,
                 previous_chunk_id=previous.chunk_id if previous else None,
                 next_chunk_id=next_chunk.chunk_id if next_chunk else None,
+                metadata=chunk_metadata,
             )
         )
     return drafts
 
 
 def _chunk_type(text: str) -> str:
-    return "table" if text.lstrip().startswith(("表格：", "表格行证据：")) or "\n|" in text or "表格行证据：" in text else "paragraph"
+    stripped = text.lstrip()
+    table_prefixes = ("表格：", "表格摘要：", "表格行证据：", "琛ㄦ牸锛?", "琛ㄦ牸琛岃瘉鎹細")
+    return "table" if stripped.startswith(table_prefixes) or "\n|" in text else "paragraph"
+
+
+def _chunk_metadata(chunk: DocumentChunk) -> dict:
+    if not chunk.chunk_metadata:
+        return {}
+    try:
+        value = json.loads(chunk.chunk_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _section_number(section_title: str | None) -> str | None:

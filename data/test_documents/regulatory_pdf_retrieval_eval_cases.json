@@ -1,0 +1,114 @@
+[
+  {
+    "id": "simple_version",
+    "category": "简单事实查询",
+    "question": "这份模拟制度的文件版本是什么？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "重要声明",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0002"],
+    "expected_terms": ["文件版本：V1.0"],
+    "expected_summary": "重要声明中列出的文件版本信息。",
+    "success_criteria": "正确依据出现在 Top1，且内容包含“文件版本：V1.0”。"
+  },
+  {
+    "id": "definition_stat_report",
+    "category": "字段/术语定义查询",
+    "question": "文档中统计报表是什么意思？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第六条 统计报表",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0011"],
+    "expected_terms": ["统计报表是指", "指定模板", "期间", "币种", "机构层级", "指标口径"],
+    "expected_summary": "统计报表定义及常见文件格式。",
+    "success_criteria": "第六条定义出现在 Top3。"
+  },
+  {
+    "id": "condition_micro_name",
+    "category": "条件判断类问题",
+    "question": "客户名称里有“小微”两个字，是否可以直接纳入普惠小微贷款统计？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第十二条 普惠小微贷款纳入原则 / 第十三条 不得直接纳入的情形",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0024", "DOC-20260709-0001-CHUNK-0025"],
+    "expected_terms": ["不得直接认定为普惠小微贷款", "借款主体类型", "单户授信额度", "贷款用途"],
+    "expected_summary": "普惠小微纳入需结合主体类型、授信额度、用途等，不得仅凭客户名称直接认定。",
+    "success_criteria": "第十三条出现在 Top3；第十二条可作为补充。"
+  },
+  {
+    "id": "classification_rules",
+    "category": "分类说明类问题",
+    "question": "校验规则分为哪几类？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第二十六条 校验规则分类",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0035"],
+    "expected_terms": ["格式规则", "完整性规则", "数值规则", "勾稽规则", "跨期规则", "跨表规则", "依据规则"],
+    "expected_summary": "校验规则七类分类说明。",
+    "success_criteria": "第二十六条分类说明出现在 Top1。"
+  },
+  {
+    "id": "multi_asset_fx",
+    "category": "多条款组合问题",
+    "question": "资产合计与分项加总不一致时应该按什么顺序排查？如果是外币折算导致的，还需要保留哪些依据？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第二十一条 差异排查顺序 / 第二十二条 外币折算要求",
+    "expected_chunks": [
+      "DOC-20260709-0001-CHUNK-0030",
+      "DOC-20260709-0001-CHUNK-0032",
+      "DOC-20260709-0001-CHUNK-0038",
+      "DOC-20260709-0001-CHUNK-0042"
+    ],
+    "expected_terms": ["差异排查顺序", "币种折算", "原币金额", "折算汇率", "折算日期", "汇率来源"],
+    "expected_summary": "资产合计差异排查顺序与外币折算留痕依据。",
+    "success_criteria": "第二十一条和第二十二条主要依据均出现在 Top5；规则表 R-SUM-003/R-FX-007 可作为补充。"
+  },
+  {
+    "id": "table_rule_fx",
+    "category": "表格或结构化内容查询",
+    "question": "规则 R-FX-007 的触发条件和处理建议是什么？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第二十六条 校验规则分类",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0042"],
+    "expected_terms": ["R-FX-007", "外币折算留痕校验", "缺少汇率来源或折算日期", "补充折算依据和经办记录"],
+    "expected_summary": "校验规则表中 R-FX-007 行。",
+    "success_criteria": "R-FX-007 表格行证据出现在 Top1。"
+  },
+  {
+    "id": "similar_overdue_npl",
+    "category": "容易混淆的相似概念问题",
+    "question": "逾期贷款是否等同于不良贷款？两者依据分别是什么？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第十八条 基本关系 / 第十九条 系统处理要求",
+    "expected_chunks": [
+      "DOC-20260709-0001-CHUNK-0027",
+      "DOC-20260709-0001-CHUNK-0028",
+      "DOC-20260709-0001-CHUNK-0041",
+      "DOC-20260709-0001-CHUNK-0066",
+      "DOC-20260709-0001-CHUNK-0067"
+    ],
+    "expected_terms": ["逾期贷款不必然等同于不良贷款", "合同约定还款期限", "风险分类"],
+    "expected_summary": "逾期贷款与不良贷款属于不同统计维度。",
+    "success_criteria": "第十八条或第十九条出现在 Top3；指标字典可作为补充。"
+  },
+  {
+    "id": "insufficient_writeoff",
+    "category": "依据不足时应拒绝判断的问题",
+    "question": "已核销贷款是否应纳入普惠小微贷款统计？",
+    "expected_source_file": "银行业监管制度测试样例_模拟版.pdf",
+    "expected_section": "第十三条 不得直接纳入的情形",
+    "expected_chunks": ["DOC-20260709-0001-CHUNK-0026"],
+    "expected_terms": ["当前知识库未提供时应回答无法判断"],
+    "expected_summary": "已核销贷款是否纳入当前知识库未提供，应回答无法判断。",
+    "success_criteria": "无法判断边界出现在 Top3，系统不应返回确定纳入口径。",
+    "should_refuse": true
+  },
+  {
+    "id": "insufficient_mars",
+    "category": "依据不足时应拒绝判断的问题",
+    "question": "火星基地建设项目如何审批？",
+    "expected_source_file": "无",
+    "expected_section": "无",
+    "expected_chunks": [],
+    "expected_terms": [],
+    "expected_summary": "知识库没有火星基地建设项目审批依据。",
+    "success_criteria": "has_sufficient_context 为 false，不应强行召回无关监管统计片段作为充分依据。",
+    "should_refuse": true
+  }
+]

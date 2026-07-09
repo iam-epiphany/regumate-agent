@@ -210,8 +210,11 @@ function RetrievalDiagnosticsPanel({
   const queryVariants = summary?.query_variants ?? [];
   const totalFiltered = (summary?.filtered_count ?? 0) + (summary?.prompt_filtered_count ?? 0);
   const finalPromptChunkIds = summary?.final_prompt_chunk_ids ?? promptSelection?.final_prompt_chunk_ids ?? [];
-  const coveredAspects = promptSelection?.covered_aspects.length ?? aspectRetrievals.filter((aspect) => aspect.covered).length;
-  const totalAspects = queryPlan?.aspects.length ?? aspectRetrievals.length;
+  const promptCoveredAspects = summary?.prompt_covered_aspect_count ?? promptSelection?.covered_aspects.length ?? aspectRetrievals.filter((aspect) => aspect.covered).length;
+  const retrievalCoveredAspects = summary?.retrieval_covered_aspect_count ?? promptSelection?.retrieval_covered_aspects?.length ?? aspectRetrievals.filter((aspect) => aspect.retrieval_covered ?? aspect.covered).length;
+  const totalAspects = summary?.aspect_count ?? queryPlan?.aspects.length ?? aspectRetrievals.length;
+  const promptCapacityLimited = summary?.prompt_capacity_limited ?? promptSelection?.prompt_capacity_limited ?? false;
+  const modelDevice = summary?.model_device;
 
   return (
     <section className="panel diagnostics-panel">
@@ -262,7 +265,8 @@ function RetrievalDiagnosticsPanel({
             {(queryPlan?.aspects ?? []).map((aspect, index) => {
               const retrieval = aspectRetrievals.find((item) => item.aspect_id === aspect.aspect_id);
               const latestAspectEvent = latestEventForAspect(progressEvents, aspect.aspect_id);
-              const covered = retrieval?.covered ?? latestAspectEvent?.status === "completed";
+              const retrievalCovered = retrieval?.retrieval_covered ?? retrieval?.covered ?? latestAspectEvent?.status === "completed";
+              const promptCovered = retrieval?.covered ?? false;
               const missing = retrieval?.missing ?? latestAspectEvent?.status === "failed";
               const sectionTitles = uniqueValues(
                 retrieval?.retrieved_chunks
@@ -273,14 +277,14 @@ function RetrievalDiagnosticsPanel({
                 <li key={aspect.aspect_id}>
                   {missing ? (
                     <XCircle size={16} className="runtime-icon error" />
-                  ) : covered ? (
+                  ) : retrievalCovered ? (
                     <CheckCircle2 size={16} className="runtime-icon ok" />
                   ) : (
                     <Loader2 size={16} className="runtime-icon running" />
                   )}
                   <span>
                     方面 {index + 1}
-                    {covered ? " 已召回依据" : missing ? " 未找到足够依据" : " 正在检索"}
+                    {retrievalCovered ? (promptCovered ? " 已入 Prompt" : " 已检索，未入 Prompt") : missing ? " 未找到足够依据" : " 正在检索"}
                     ：{sectionTitles.length ? sectionTitles.join("；") : aspect.question}
                   </span>
                   {retrieval ? (
@@ -320,7 +324,10 @@ function RetrievalDiagnosticsPanel({
             </div>
             <div>
               <span className="runtime-summary-label">覆盖情况</span>
-              <strong>{coveredAspects}/{totalAspects} 个问题方面已覆盖</strong>
+              <strong>
+                检索 {retrievalCoveredAspects}/{totalAspects}，入 Prompt {promptCoveredAspects}/{totalAspects}
+                {promptCapacityLimited ? "（容量受限）" : ""}
+              </strong>
             </div>
           </div>
         </section>
@@ -330,9 +337,15 @@ function RetrievalDiagnosticsPanel({
         <summary>调试详情</summary>
         <div className="diagnostic-detail-grid">
           <p className="muted">候选片段：{summary?.candidate_count ?? "-"}</p>
+          <p className="muted">原始召回：{summary?.raw_candidate_count ?? "-"}</p>
+          <p className="muted">进入重排：{summary?.rerank_input_count ?? "-"}</p>
+          <p className="muted">重排调用：{summary?.rerank_call_count ?? "-"}</p>
           <p className="muted">重排片段：{summary?.reranked_count ?? "-"}</p>
           <p className="muted">过滤片段：{summary ? totalFiltered : "-"}</p>
           <p className="muted">原始 Query 数：{summary?.query_count ?? "-"}</p>
+          <p className="muted">
+            模型设备：{modelDevice ? `${modelDevice.selected_device}${modelDevice.cuda_device_name ? ` / ${modelDevice.cuda_device_name}` : ""}` : "-"}
+          </p>
           <p className="muted">
             阶段耗时：embedding {formatMs(timings.embedding)} / Qdrant {formatMs(timings.qdrant)} / rerank{" "}
             {formatMs(timings.rerank)}
@@ -373,13 +386,18 @@ function QueryDiagnostics({ diagnostics }: { diagnostics: Array<Record<string, u
         const query = typeof item.search_query === "string" ? item.search_query : `query ${index + 1}`;
         const queryType = typeof item.query_type === "string" ? item.query_type : "legacy";
         const candidateCount = typeof item.candidate_count === "number" ? item.candidate_count : 0;
+        const rawCandidateCount = typeof item.raw_candidate_count === "number" ? item.raw_candidate_count : 0;
+        const rerankInputCount = typeof item.rerank_input_count === "number" ? item.rerank_input_count : 0;
+        const rerankCallCount = typeof item.rerank_call_count === "number" ? item.rerank_call_count : 0;
         const rerankedCount = typeof item.reranked_count === "number" ? item.reranked_count : 0;
         const matchCount = typeof item.match_count === "number" ? item.match_count : 0;
         return (
           <li key={`${queryType}-${query}-${index}`}>
             <span className={`query-type ${queryType}`}>{formatQueryType(queryType)}</span>
             <span>{query}</span>
-            <small>候选 {candidateCount} / 重排 {rerankedCount} / 可用 {matchCount}</small>
+            <small>
+              原始 {rawCandidateCount} / 去重 {candidateCount} / 入重排 {rerankInputCount} / 调用 {rerankCallCount} / 重排 {rerankedCount} / 可用 {matchCount}
+            </small>
           </li>
         );
       })}
@@ -495,7 +513,8 @@ function synthesizeCompletedEvent(stage: RagProgressStage, summary: RetrievalSum
     return null;
   }
   const totalAspects = summary.query_plan?.aspects.length ?? 0;
-  const coveredAspects = summary.prompt_selection?.covered_aspects.length ?? 0;
+  const promptCoveredAspects = summary.prompt_covered_aspect_count ?? summary.prompt_selection?.covered_aspects.length ?? 0;
+  const retrievalCoveredAspects = summary.retrieval_covered_aspect_count ?? summary.prompt_selection?.retrieval_covered_aspects?.length ?? 0;
   if (stage === "planning") {
     return {
       stage,
@@ -525,7 +544,7 @@ function synthesizeCompletedEvent(stage: RagProgressStage, summary: RetrievalSum
       stage,
       status: "completed",
       title: "上下文精选完成",
-      detail: `最终使用 ${summary.used_chunks}/${summary.top_k} 个片段，覆盖 ${coveredAspects}/${totalAspects} 个方面`,
+      detail: `最终使用 ${summary.used_chunks}/${summary.top_k} 个片段，检索覆盖 ${retrievalCoveredAspects}/${totalAspects}，入 Prompt ${promptCoveredAspects}/${totalAspects}`,
     };
   }
   if (stage === "prompt_build") {
@@ -568,6 +587,7 @@ function formatQueryType(value: string): string {
     keyword_anchor: "关键词锚点",
     legacy: "兼容查询",
     fallback: "兜底查询",
+    aspect_fused: "方面融合重排",
   };
   return labels[value] ?? value;
 }

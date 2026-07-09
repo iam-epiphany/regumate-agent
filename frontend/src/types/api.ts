@@ -102,8 +102,17 @@ export interface LLMContextPackage {
     top_k: number;
     used_chunks: number;
     has_sufficient_context: boolean;
+    aspect_count?: number;
+    retrieval_covered_aspect_count?: number;
+    prompt_covered_aspect_count?: number;
+    prompt_capacity_limited?: boolean;
+    covered_by_retrieval_but_not_prompted?: string[];
     query_count?: number;
+    raw_candidate_count?: number;
     candidate_count?: number;
+    rerank_input_count?: number;
+    rerank_call_count?: number;
+    rerank_candidate_limit?: number;
     reranked_count?: number;
     filtered_count?: number;
     prompt_filtered_count?: number;
@@ -113,11 +122,21 @@ export interface LLMContextPackage {
     missing_aspects?: string[];
     coverage_notes?: string[];
     fusion_method?: string;
+    model_device?: {
+      requested_device: string;
+      selected_device: string;
+      torch_version: string | null;
+      cuda_available: boolean;
+      cuda_device_count: number;
+      cuda_device_name: string | null;
+      fallback_reason: string | null;
+    };
     query_plan?: {
       original_question: string;
       planner: string;
       fallback_used: boolean;
       error: string | null;
+      budget?: Record<string, unknown>;
       aspects: Array<{
         aspect_id: string;
         question: string;
@@ -135,7 +154,9 @@ export interface LLMContextPackage {
       expected_evidence_type: string;
       keywords: string[];
       covered: boolean;
+      retrieval_covered?: boolean;
       missing: boolean;
+      covered_by_retrieval_but_not_prompted?: boolean;
       candidate_count: number;
       selected_chunk_ids: string[];
       retrieved_chunks: Array<{
@@ -160,7 +181,10 @@ export interface LLMContextPackage {
       relative_score_ratio: number;
       candidate_prompt_chunks: number;
       final_prompt_chunks: number;
+      retrieval_covered_aspects?: string[];
       covered_aspects: string[];
+      covered_by_retrieval_but_not_prompted?: string[];
+      prompt_capacity_limited?: boolean;
       expected_aspects: Array<{
         aspect_id: string;
         description: string;

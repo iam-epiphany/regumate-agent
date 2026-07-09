@@ -107,7 +107,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - `is_final_answer`：固定为 `false`。
 - `instruction`：要求 LLM 只能基于检索片段回答，依据不足时明确说明无法判断。
 - `retrieval_summary`：包含 `top_k`、`used_chunks`、`has_sufficient_context`、`coverage_notes`、`missing_aspects`，并扩展返回 `query_plan`、`aspect_retrievals`、`final_prompt_chunk_ids`、`fusion_method`、`query_count`、`candidate_count`、`reranked_count`、`filtered_count`、`prompt_filtered_count`、`prompt_selection`、`timings_ms`、`score_range` 和 `citation_validation`。
-- `context_chunks`：去重、清洗、动态筛选后的最终入 Prompt 片段，包含 `chunk_id`、`rank`、`score`、`source_doc`、`section_title`、`section_path`、`text`、`citation_label` 和 `metadata`。
+- `context_chunks`：去重、清洗、动态筛选后的最终入 Prompt 片段，包含 `chunk_id`、`rank`、`score`、`source_doc`、`section_title`、`section_path`、`text`、`citation_label` 和 `metadata`。表格 chunk 的 `metadata` 会额外包含 `table_id`、`table_title`、`table_headers`、`row_index`、`row_cells`、`table_chunk_role` 和 `raw_table_preview` 等结构化字段。
 - `llm_prompt`：由 `RAGPromptBuilder` 统一构造，可在未来直接发送给 LLM。
 
 检索结果组装会去掉重复 chunk、去掉片段开头重复章节标题，保留原文片段，不提前改写成结论式答案。系统会先通过 QueryPlanner 把复合问题拆成多个 aspect；每个 aspect 生成结构化 `search_queries` 对象数组，单条 query 包含 `query`、`query_type` 和 `rationale`，其中 `query_type` 包括 `semantic_question`、`document_style_statement`、`keyword_anchor`，用于让 LLM 生成贴近监管制度原文或填报说明证据句的检索表达，而不是只挑关键词。每个 aspect 的多条 query 会分别 retrieve/rerank，并在应用层按 RRF 融合候选，`fusion_method` 为 `aspect_query_rrf_then_bge_rerank`。QueryPlanner 阶段只允许拆题和生成检索计划，不回答用户问题；没有 LLM 配置或 LLM 失败时使用本地规则 fallback。上下文片段必须来自 `indexed` 文档，且摘录需要能回溯到 SQLite 原始 chunk；不可回溯片段会被过滤。最终进入 Prompt 的片段不再固定凑数，而是优先保证每个 aspect 至少有一条相关依据，再按 rerank 基础门槛、相对分数、重复度和章节结构动态补充，最多 `MAX_PROMPT_CHUNKS` 条；如果只有 1-2 条真正相关，就只返回 1-2 条。问答审计日志记录 `answer=null`、上下文包模式、是否最终答案和命中片段数量，不保存完整引用来源。
@@ -128,6 +128,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - `rerank_score`：BGE reranker 分数。
 - `chunk_type`：`paragraph` 或 `table`。
 - `evidence_role`：`direct_evidence`、`table_evidence`、`related_context`、`table_context` 或 `expanded_context`。
+- 表格结构字段：命中表格时，`metadata` 中保留表格标题、表头、行号和行数据；普通用户界面可继续只展示来源、章节、页码和摘录。
 
 当前阶段不生成最终自然语言答案。`has_sufficient_context=false` 或 `missing_aspects` 非空时，后续 LLM 应明确说明依据不足，不能补写知识库外内容。`chunk_id` 等工程编号保留在引用详情中。
 
