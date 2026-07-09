@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class DocumentUploadResponse(BaseModel):
@@ -43,6 +45,7 @@ class ChunkSummary(BaseModel):
     token_count: int = 0
     index_status: str
     index_version: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
 

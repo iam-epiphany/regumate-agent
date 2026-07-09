@@ -5,6 +5,7 @@ from typing import Any
 
 from backend.app.core.config import EMBEDDING_BATCH_SIZE
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
+from backend.app.services.model_device_service import selected_model_device
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -32,7 +33,14 @@ def _get_bge_m3_model() -> Any:
 
     try:
         embedding_model_path = resolve_embedding_model_path()
-        return BGEM3FlagModel(embedding_model_path, use_fp16=True)
+        try:
+            return BGEM3FlagModel(
+                embedding_model_path,
+                use_fp16=selected_model_device() == "cuda",
+                devices=selected_model_device(),
+            )
+        except TypeError:
+            return BGEM3FlagModel(embedding_model_path, use_fp16=selected_model_device() == "cuda")
     except ModelPathResolutionError as exc:
         raise EmbeddingServiceError(str(exc)) from exc
     except Exception as exc:

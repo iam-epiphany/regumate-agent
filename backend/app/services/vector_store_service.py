@@ -36,6 +36,7 @@ class VectorSearchResult:
     parent_section_number: str | None = None
     previous_chunk_id: str | None = None
     next_chunk_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def ensure_vector_collection() -> None:
@@ -74,6 +75,7 @@ def upsert_chunk_embeddings(
     client, models = _qdrant()
     points = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
+        chunk_metadata = chunk.metadata or {}
         points.append(
             models.PointStruct(
                 id=_point_id(chunk.chunk_id),
@@ -96,6 +98,12 @@ def upsert_chunk_embeddings(
                     "parent_section_number": chunk.parent_section_number,
                     "previous_chunk_id": chunk.previous_chunk_id,
                     "next_chunk_id": chunk.next_chunk_id,
+                    "chunk_metadata": chunk_metadata,
+                    "table_id": chunk_metadata.get("table_id"),
+                    "table_title": chunk_metadata.get("table_title"),
+                    "table_headers": chunk_metadata.get("table_headers") or chunk_metadata.get("headers"),
+                    "row_index": chunk_metadata.get("row_index"),
+                    "raw_table_preview": chunk_metadata.get("raw_table_preview"),
                     "index_version": INDEX_VERSION,
                 },
             )
@@ -248,6 +256,7 @@ def _to_search_result(point: Any) -> VectorSearchResult:
         parent_section_number=payload.get("parent_section_number"),
         previous_chunk_id=payload.get("previous_chunk_id"),
         next_chunk_id=payload.get("next_chunk_id"),
+        metadata=_payload_dict(payload.get("chunk_metadata")),
     )
 
 
@@ -255,3 +264,7 @@ def _payload_string_list(value: Any) -> list[str] | None:
     if not isinstance(value, list):
         return None
     return [str(item) for item in value if item]
+
+
+def _payload_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}

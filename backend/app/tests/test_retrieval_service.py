@@ -230,3 +230,54 @@ def test_retrieve_citations_batches_expanded_query_embeddings(monkeypatch) -> No
     assert diagnostics.query_count == len(embed_calls[0])
     assert diagnostics.raw_candidate_count == len(embed_calls[0])
     assert diagnostics.candidate_count == 1
+
+
+def test_retrieve_citations_limits_candidates_before_rerank(monkeypatch) -> None:
+    items = [
+        VectorSearchResult(
+            chunk_id=f"DOC-TEST-0001-CHUNK-{index:04d}",
+            document_id="DOC-TEST-0001",
+            filename="quality_rules.md",
+            section_title="资产合计差异处理",
+            page_number=None,
+            text=(
+                "资产合计差异应优先检查币种折算、四舍五入、科目映射和重复汇总问题。"
+                "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。"
+            ),
+            embedding_text=(
+                "章节：资产合计差异处理\n\n"
+                "资产合计差异应优先检查币种折算、四舍五入、科目映射和重复汇总问题。"
+                "若差异来自外币折算，应保留汇率日期、折算规则和原币金额来源。"
+            ),
+            token_count=100,
+            score=1.0 - index * 0.001,
+            chunk_type="paragraph",
+        )
+        for index in range(40)
+    ]
+    rerank_inputs = []
+
+    fake_embed_texts(monkeypatch)
+    monkeypatch.setattr("backend.app.services.retrieval_service.hybrid_search", lambda query_embedding, *, limit: items)
+
+    def fake_rerank_candidates(question, candidates, limit):
+        rerank_inputs.append(candidates)
+        return [
+            RerankedChunk(candidate=candidate, rerank_score=0.95 - index * 0.001)
+            for index, candidate in enumerate(candidates[:limit])
+        ]
+
+    monkeypatch.setattr("backend.app.services.retrieval_service.rerank_candidates", fake_rerank_candidates)
+
+    matches = retrieve_citations("资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？")
+
+    assert matches
+    assert len(rerank_inputs) == 1
+    assert len(rerank_inputs[0]) == 24
+    assert [item.chunk_id for item in rerank_inputs[0]] == [item.chunk_id for item in items[:24]]
+    diagnostics = get_last_retrieval_diagnostics()
+    assert diagnostics.query_count > 1
+    assert diagnostics.raw_candidate_count == 40 * diagnostics.query_count
+    assert diagnostics.candidate_count == 40
+    assert diagnostics.rerank_input_count == 24
+    assert diagnostics.reranked_count == 20

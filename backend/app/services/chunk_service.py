@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import re
+from typing import Any
 
 from backend.app.core.config import (
     CHUNK_MAX_TOKENS,
@@ -29,6 +30,7 @@ class ChunkDraft:
     parent_section_number: str | None = None
     previous_chunk_id: str | None = None
     next_chunk_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def build_chunks(document_id: str, text: str) -> list[ChunkDraft]:
@@ -53,15 +55,15 @@ def build_chunks_from_parsed(
     groups = _group_blocks(parsed.blocks)
     chunks: list[ChunkDraft] = []
     for group in groups:
-        for piece in _split_group_text(group):
-            token_count = count_tokens(piece)
+        for piece in _split_group(group, document_id=document_id):
+            token_count = count_tokens(piece.text)
             chunks.append(
                 ChunkDraft(
                     chunk_id=f"{document_id}-CHUNK-{len(chunks) + 1:04d}",
                     document_id=document_id,
-                    text=piece,
+                    text=piece.text,
                     embedding_text=build_contextual_embedding_text(
-                        text=piece,
+                        text=piece.text,
                         source_file=source_file,
                         source_format=source_format,
                         section_title=group.section_title,
@@ -70,6 +72,7 @@ def build_chunks_from_parsed(
                         parent_section_number=group.parent_section_number,
                         page_number=group.page_number,
                         chunk_type=group.block_type,
+                        chunk_metadata=piece.metadata,
                     ),
                     token_count=token_count,
                     title=group.section_title,
@@ -79,6 +82,7 @@ def build_chunks_from_parsed(
                     section_path=group.section_path,
                     section_number=group.section_number,
                     parent_section_number=group.parent_section_number,
+                    metadata=piece.metadata,
                 )
             )
     for previous, current, next_chunk in zip([None, *chunks[:-1]], chunks, [*chunks[1:], None], strict=True):
@@ -96,6 +100,13 @@ class _ChunkGroup:
     section_path: list[str] | None = None
     section_number: str | None = None
     parent_section_number: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+@dataclass
+class _ChunkPiece:
+    text: str
+    metadata: dict[str, Any]
 
 
 def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
@@ -174,6 +185,11 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                     section_path=list(current_path),
                     section_number=current_section_number,
                     parent_section_number=current_parent_section_number,
+                    metadata={
+                        **(block.metadata or {}),
+                        "table_context": table_context,
+                        "table_title": _table_title(table_context, current_section),
+                    },
                 )
             )
             continue
@@ -234,15 +250,15 @@ def _should_merge_table_context(buffer: list[str]) -> bool:
     return bool(text) and count_tokens(text) <= 120
 
 
-def _split_group_text(group: _ChunkGroup) -> list[str]:
+def _split_group(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPiece]:
     if group.block_type == "table":
-        return _split_table_text(group.text)
+        return _split_table_text(group, document_id=document_id)
 
     cleaned = group.text.strip()
     if not cleaned:
         return []
     if count_tokens(cleaned) <= CHUNK_MAX_TOKENS:
-        return [cleaned]
+        return [_ChunkPiece(text=cleaned, metadata={})]
 
     paragraphs = [paragraph.strip() for paragraph in cleaned.split("\n\n") if paragraph.strip()]
     if len(paragraphs) >= 2:
@@ -253,7 +269,7 @@ def _split_group_text(group: _ChunkGroup) -> list[str]:
     pieces: list[str] = []
     for piece in semantic_pieces:
         pieces.extend(_split_by_token_limit(piece))
-    return _add_overlap([piece for piece in pieces if piece])
+    return [_ChunkPiece(text=piece, metadata={}) for piece in _add_overlap([piece for piece in pieces if piece])]
 
 
 def _split_by_semantic_breaks(paragraphs: list[str]) -> list[str]:
@@ -360,9 +376,11 @@ def build_contextual_embedding_text(
     parent_section_number: str | None = None,
     page_number: int | None = None,
     chunk_type: str = "paragraph",
+    chunk_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Prepend deterministic retrieval context while keeping chunk text unchanged."""
 
+    chunk_metadata = chunk_metadata or {}
     labels: list[str] = []
     if source_file:
         labels.append(f"来源文件：{source_file}")
@@ -381,6 +399,22 @@ def build_contextual_embedding_text(
     if chunk_type == "table":
         labels.append("内容类型：表格")
         labels.append(_table_header_label(text))
+        table_title = _metadata_text(chunk_metadata.get("table_title"))
+        headers = [
+            str(header)
+            for header in chunk_metadata.get("table_headers") or chunk_metadata.get("headers") or []
+            if str(header).strip()
+        ]
+        row_cells = chunk_metadata.get("row_cells") or {}
+        labels.append("内容类型：表格")
+        if table_title:
+            labels.append(f"表格标题：{table_title}")
+        if headers:
+            labels.append("表头：" + "、".join(headers))
+        if chunk_metadata.get("row_index") is not None:
+            labels.append(f"表格行号：{chunk_metadata.get('row_index')}")
+        if isinstance(row_cells, dict) and row_cells:
+            labels.append("行数据：" + "；".join(f"{key}={value}" for key, value in row_cells.items()))
     else:
         labels.append("内容类型：正文")
     labels = [label for label in labels if label]
@@ -395,15 +429,16 @@ def _metadata_text(value: object) -> str | None:
     return text or None
 
 
-def _split_table_text(text: str) -> list[str]:
-    cleaned = text.strip()
+def _split_table_text(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPiece]:
+    cleaned = group.text.strip()
     if not cleaned:
         return []
 
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     table_indexes = [index for index, line in enumerate(lines) if _looks_like_table_line(line)]
     if not table_indexes:
-        return _split_by_token_limit(cleaned)
+        metadata = _base_table_metadata(group, document_id)
+        return [_ChunkPiece(text=piece, metadata=metadata) for piece in _split_by_token_limit(cleaned)]
 
     first_table_index = table_indexes[0]
     prefix_lines = lines[:first_table_index]
@@ -412,17 +447,36 @@ def _split_table_text(text: str) -> list[str]:
     header = table_lines[:header_count]
     rows = table_lines[header_count:]
     if not rows:
-        return _split_by_token_limit(cleaned)
+        metadata = _base_table_metadata(group, document_id)
+        return [_ChunkPiece(text=piece, metadata=metadata) for piece in _split_by_token_limit(cleaned)]
 
-    pieces: list[str] = []
-    header_cells = _table_cells(header[0])
+    pieces: list[_ChunkPiece] = []
+    header_cells = [_normalize_table_header(cell, index) for index, cell in enumerate(_table_cells(header[0]), start=1)]
     context = _table_context_text(prefix_lines)
-    for row in rows:
-        if _is_table_separator_line(row):
-            continue
-        row_text = _table_row_to_evidence(context, header_cells, _table_cells(row))
-        pieces.extend(_split_by_token_limit(row_text))
-    return [piece for piece in pieces if piece]
+    base_metadata = _base_table_metadata(group, document_id)
+    base_metadata["table_headers"] = header_cells
+    base_metadata["raw_table_preview"] = "\n".join(table_lines[: min(len(table_lines), 6)])
+    data_rows = [row for row in rows if not _is_table_separator_line(row)]
+
+    if data_rows:
+        pieces.append(
+            _ChunkPiece(
+                text=_table_summary_text(context, base_metadata, len(data_rows)),
+                metadata={**base_metadata, "table_chunk_role": "summary", "row_index": None},
+            )
+        )
+
+    for row_index, row in enumerate(data_rows, start=1):
+        row_pairs = _table_row_pairs(header_cells, _table_cells(row))
+        row_metadata = {
+            **base_metadata,
+            "table_chunk_role": "row",
+            "row_index": row_index,
+            "row_cells": {header: cell for header, cell in row_pairs},
+        }
+        row_text = _table_row_to_evidence(context, base_metadata, row_pairs)
+        pieces.append(_ChunkPiece(text=row_text, metadata=row_metadata))
+    return [piece for piece in pieces if piece.text.strip()]
 
 
 def _table_context_text(prefix_lines: list[str]) -> str:
@@ -453,6 +507,78 @@ def _table_row_to_evidence(context: str, headers: list[str], cells: list[str]) -
     if context:
         return f"{context}\n\n{row_sentence}"
     return row_sentence
+
+
+def _normalize_table_header(header: str, index: int) -> str:
+    cleaned = header.strip()
+    return cleaned or f"列{index}"
+
+
+def _table_row_pairs(headers: list[str], cells: list[str]) -> list[tuple[str, str]]:
+    width = max(len(headers), len(cells))
+    padded_headers = headers + [f"列{index}" for index in range(len(headers) + 1, width + 1)]
+    padded_cells = cells + [""] * (width - len(cells))
+    return [
+        (header, cell)
+        for header, cell in zip(padded_headers, padded_cells, strict=True)
+        if header.strip() and cell.strip()
+    ]
+
+
+def _table_row_to_evidence(
+    context: str,
+    table_metadata: dict[str, Any],
+    pairs: list[tuple[str, str]],
+) -> str:
+    if not pairs:
+        return context
+
+    table_title = _metadata_text(table_metadata.get("table_title"))
+    title_text = f"《{table_title}》" if table_title else "该表"
+    if len(pairs) == 2:
+        row_sentence = f"表格行证据：在{title_text}中，{pairs[0][0]}为“{pairs[0][1]}”时，{pairs[1][0]}为“{pairs[1][1]}”。"
+    else:
+        row_sentence = f"表格行证据：在{title_text}中，" + "；".join(f"{header}=“{cell}”" for header, cell in pairs) + "。"
+    if context:
+        return f"{context}\n\n{row_sentence}"
+    return row_sentence
+
+
+def _table_summary_text(context: str, table_metadata: dict[str, Any], row_count: int) -> str:
+    table_title = _metadata_text(table_metadata.get("table_title")) or "未命名表格"
+    headers = [str(header) for header in table_metadata.get("table_headers") or [] if str(header).strip()]
+    header_text = "、".join(headers) if headers else "未识别表头"
+    summary = f"表格摘要：{table_title}。表头：{header_text}。共{row_count}行数据。"
+    return f"{context}\n\n{summary}" if context else summary
+
+
+def _base_table_metadata(group: _ChunkGroup, document_id: str) -> dict[str, Any]:
+    source = dict(group.metadata or {})
+    table_index = int(source.get("table_index") or 1)
+    table_id = source.get("table_id") or f"{document_id}-TABLE-{table_index:04d}"
+    table_title = _metadata_text(source.get("table_title")) or _metadata_text(group.section_title) or "未命名表格"
+    raw_table_text = _metadata_text(source.get("raw_table_text")) or group.text
+    return {
+        **source,
+        "table_id": table_id,
+        "table_title": table_title,
+        "raw_table_text": raw_table_text,
+        "raw_table_preview": raw_table_text[:500],
+    }
+
+
+def _table_title(context: str, section_title: str | None) -> str | None:
+    for line in reversed([line.strip() for line in context.splitlines() if line.strip()]):
+        if _looks_like_table_title(line):
+            return line.rstrip("：:")
+    return section_title
+
+
+def _looks_like_table_title(text: str) -> bool:
+    compact = text.strip()
+    if len(compact) > 80:
+        return False
+    return bool(re.search(r"(表|附表|指标表)", compact))
 
 
 def _looks_like_table_line(line: str) -> bool:

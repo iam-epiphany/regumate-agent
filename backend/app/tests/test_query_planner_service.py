@@ -107,3 +107,42 @@ def test_query_planner_accepts_legacy_string_search_queries() -> None:
     assert len(aspects[0].search_queries) == 1
     assert aspects[0].search_queries[0].query == "资产合计填报口径"
     assert aspects[0].search_queries[0].query_type == "legacy"
+
+
+def test_query_planner_dynamic_budget_detects_complex_question_aspects(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+    question = (
+        "系统应如何分别处理普惠小微贷款纳入、绿色信贷识别、逾期与不良贷款关系、"
+        "资产合计差异排查、外币折算依据保留、历史差错更正记录、多期间影响说明，"
+        "以及在依据不足时是否可以直接判断银行违规或生成正式监管报告？"
+    )
+
+    plan = plan_query(question)
+
+    assert plan.fallback_used is True
+    assert [aspect.aspect_id for aspect in plan.aspects] == [
+        "inclusive_micro_loan_scope",
+        "green_credit_identification",
+        "overdue_nonperforming_relationship",
+        "asset_total_difference_check",
+        "foreign_currency_evidence",
+        "historical_error_correction",
+        "multi_period_impact",
+        "insufficient_evidence_safety_boundary",
+    ]
+    assert plan.budget is not None
+    assert plan.budget["detected_item_count"] == 8
+    assert plan.budget["max_aspects"] == 8
+    assert plan.budget["capacity_limited"] is False
+
+
+def test_query_planner_budget_marks_capacity_limit(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_MAX_ASPECTS", 3)
+
+    budget = query_planner_service.plan_query_budget(
+        "系统应如何分别处理普惠小微贷款纳入、绿色信贷识别、逾期与不良贷款关系、资产合计差异排查？"
+    )
+
+    assert budget.max_aspects == 3
+    assert budget.capacity_limited is True
+    assert budget.omitted_or_merged_items == ("资产合计差异排查",)

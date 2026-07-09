@@ -15,8 +15,12 @@ from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
+from backend.app.services.document_storage import next_document_id
+from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
 from backend.app.services.retrieval_service import RetrievalMatch, RetrievalServiceUnavailable
+from backend.app.services.rerank_service import RerankedChunk
 from backend.app.services.vector_store_service import VectorStoreError
+from backend.app.services.vector_store_service import VectorSearchResult
 
 
 client = TestClient(app)
@@ -152,6 +156,27 @@ def test_upload_txt_document_creates_chunks_and_triggers_background_index(monkey
     assert background_calls == [body["document_id"]]
     documents = client.get("/api/documents").json()["documents"]
     assert documents[0]["status"] == "uploaded"
+
+
+def test_next_document_id_uses_existing_document_ids() -> None:
+    reset_database()
+    today = datetime.now().strftime("%Y%m%d")
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id=f"DOC-{today}-0001",
+                filename="existing.pdf",
+                content_type="application/pdf",
+                file_type="pdf",
+                size=100,
+                storage_path="existing.pdf",
+                status="uploaded",
+                chunk_count=0,
+            )
+        )
+        db.commit()
+
+        assert next_document_id(db) == f"DOC-{today}-0002"
 
 
 def test_build_document_index_marks_document_indexed(monkeypatch, fake_indexing_services) -> None:
@@ -984,4 +1009,112 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
     assert delete_response.status_code == 200
     assert delete_response.json()["deleted"] is True
     assert not archive_path.exists()
+
+
+def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="green_credit_identification",
+        question="绿色信贷识别应如何处理",
+        search_queries=(
+            QuerySearchQuery("绿色信贷识别的标准和方法有哪些", "semantic_question", "贴近用户意图"),
+            QuerySearchQuery("绿色信贷 识别 标准 分类 认定方法", "document_style_statement", "贴近制度原文"),
+            QuerySearchQuery("绿色信贷 识别 标准 分类", "keyword_anchor", "术语兜底"),
+        ),
+        evidence_need="绿色信贷识别的标准、分类和识别方法",
+        keywords=("绿色信贷", "识别", "标准"),
+    )
+    candidates = [
+        VectorSearchResult(
+            chunk_id=f"DOC-TEST-0001-CHUNK-{index:04d}",
+            document_id="DOC-TEST-0001",
+            filename="rules.md",
+            section_title="绿色信贷标识",
+            page_number=None,
+            text="绿色信贷标识应基于贷款资金投向、项目性质和支持材料确定。",
+            embedding_text="章节：绿色信贷标识\n\n绿色信贷标识应基于贷款资金投向、项目性质和支持材料确定。",
+            token_count=50,
+            score=1.0 - index * 0.01,
+            chunk_type="paragraph",
+        )
+        for index in range(6)
+    ]
+    rerank_calls = []
+
+    def fake_collect(queries, query_metadata=None, diagnostics=None):
+        assert len(queries) == 3
+        if diagnostics is not None:
+            diagnostics.query_count = len(queries)
+            diagnostics.raw_candidate_count = len(candidates) * len(queries)
+            diagnostics.candidate_count = len(candidates)
+        return (
+            candidates,
+            {
+                candidate.chunk_id: [
+                    {"query": queries[0], "query_type": "semantic_question", "rank": index + 1}
+                ]
+                for index, candidate in enumerate(candidates)
+            },
+            [
+                {
+                    "search_query": query,
+                    "query_type": "semantic_question",
+                    "rationale": "",
+                    "query_count": 1,
+                    "raw_candidate_count": len(candidates),
+                    "candidate_count": len(candidates),
+                    "rerank_input_count": 0,
+                    "rerank_call_count": 0,
+                    "reranked_count": 0,
+                    "filtered_count": 0,
+                    "match_count": 0,
+                    "timings_ms": {},
+                    "score_range": {},
+                    "query_variants": [query],
+                }
+                for query in queries
+            ],
+        )
+
+    def fake_rerank(question, candidates, limit):
+        rerank_calls.append((question, len(candidates), limit))
+        return [RerankedChunk(candidate=candidate, rerank_score=0.9) for candidate in candidates[:2]]
+
+    def fake_matches_from_reranked(question, reranked, diagnostics, limit=5):
+        diagnostics.reranked_count = len(reranked)
+        return [
+            RetrievalMatch(
+                citation=Citation(
+                    document_id=item.candidate.document_id,
+                    chunk_id=item.candidate.chunk_id,
+                    filename=item.candidate.filename,
+                    section_title=item.candidate.section_title,
+                    excerpt=item.candidate.text,
+                    score=item.candidate.score,
+                    rerank_score=item.rerank_score,
+                    chunk_type=item.candidate.chunk_type,
+                    evidence_role="direct_evidence",
+                ),
+                score=item.candidate.score,
+                rerank_score=item.rerank_score,
+                coverage_score=1.0,
+                evidence_role="direct_evidence",
+            )
+            for item in reranked
+        ]
+
+    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
+    monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
+    monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
+    monkeypatch.setattr(rag_service, "_filter_indexed_matches", lambda db, matches: matches)
+
+    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+
+    assert len(matches) == 2
+    assert rerank_calls == [("绿色信贷识别应如何处理", 6, 20)]
+    fused = diagnostics[-1]
+    assert fused["query_type"] == "aspect_fused"
+    assert fused["rerank_call_count"] == 1
+    assert fused["query_count"] == 3
 

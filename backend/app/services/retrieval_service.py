@@ -9,6 +9,7 @@ from backend.app.core.config import (
     FINAL_CITATION_LIMIT,
     MIN_EVIDENCE_COVERAGE,
     MIN_RERANK_SCORE,
+    RERANK_CANDIDATE_LIMIT,
     RERANK_TOP_K,
     RETRIEVAL_TOP_K,
 )
@@ -41,6 +42,8 @@ class RetrievalDiagnostics:
     query_count: int = 0
     candidate_count: int = 0
     raw_candidate_count: int = 0
+    rerank_input_count: int = 0
+    rerank_call_count: int = 0
     reranked_count: int = 0
     filtered_count: int = 0
     reliable_count: int = 0
@@ -52,7 +55,11 @@ class RetrievalDiagnostics:
     def to_summary_fields(self) -> dict[str, Any]:
         return {
             "query_count": self.query_count,
+            "raw_candidate_count": self.raw_candidate_count,
             "candidate_count": self.candidate_count,
+            "rerank_input_count": self.rerank_input_count,
+            "rerank_call_count": self.rerank_call_count,
+            "rerank_candidate_limit": RERANK_CANDIDATE_LIMIT,
             "reranked_count": self.reranked_count,
             "filtered_count": self.filtered_count,
             "timings_ms": self.timings_ms,
@@ -91,6 +98,8 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
             },
         )
         candidates = _collect_candidates(question, diagnostics)
+        rerank_candidates_input = _limit_rerank_candidates(candidates)
+        diagnostics.rerank_input_count = len(rerank_candidates_input)
         _report_progress(
             progress_reporter,
             {
@@ -102,6 +111,7 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "summary": {
                     "candidate_count": diagnostics.candidate_count,
                     "raw_candidate_count": diagnostics.raw_candidate_count,
+                    "rerank_input_count": diagnostics.rerank_input_count,
                     "query_count": diagnostics.query_count,
                 },
             },
@@ -113,11 +123,16 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "stage": "rerank",
                 "status": "running",
                 "title": "正在重排候选片段",
-                "detail": f"正在重排 {len(candidates)} 个候选片段……",
-                "summary": {"candidate_count": len(candidates)},
+                "detail": f"正在重排 {diagnostics.rerank_input_count} 个候选片段……",
+                "summary": {
+                    "candidate_count": diagnostics.candidate_count,
+                    "rerank_input_count": diagnostics.rerank_input_count,
+                    "rerank_candidate_limit": RERANK_CANDIDATE_LIMIT,
+                },
             },
         )
-        reranked = rerank_candidates(question=question, candidates=candidates, limit=RERANK_TOP_K)
+        reranked = rerank_candidates(question=question, candidates=rerank_candidates_input, limit=RERANK_TOP_K)
+        diagnostics.rerank_call_count = 1 if rerank_candidates_input else 0
         diagnostics.timings_ms["rerank"] = _elapsed_ms(rerank_started_at)
         diagnostics.reranked_count = len(reranked)
         diagnostics.score_range = _score_range(candidates, reranked)
@@ -129,7 +144,10 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "title": "候选重排完成",
                 "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {diagnostics.timings_ms['rerank']:.0f}ms",
                 "elapsed_ms": diagnostics.timings_ms["rerank"],
-                "summary": {"reranked_count": diagnostics.reranked_count},
+                "summary": {
+                    "rerank_input_count": diagnostics.rerank_input_count,
+                    "reranked_count": diagnostics.reranked_count,
+                },
             },
         )
     except (EmbeddingServiceError, VectorStoreError, RerankServiceError) as exc:
@@ -146,27 +164,8 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
         )
         raise RetrievalServiceUnavailable(str(exc)) from exc
 
-    terms = question_terms(question)
-    filter_started_at = perf_counter()
-    reliable = [_annotate(item, terms, question) for item in reranked if _is_reliable(item, terms, question)]
-    diagnostics.timings_ms["filter"] = _elapsed_ms(filter_started_at)
-    diagnostics.reliable_count = len(reliable)
-    diagnostics.filtered_count = max(diagnostics.reranked_count - len(reliable), 0)
-    reliable.sort(key=_rank_key, reverse=True)
-    selected = _select_final_chunks(reliable, question, limit=FINAL_CITATION_LIMIT)
-    diagnostics.selected_count = len(selected)
+    matches = matches_from_reranked(question=question, reranked=reranked, diagnostics=diagnostics)
     diagnostics.timings_ms["total"] = _elapsed_ms(total_started_at)
-    matches = [
-        RetrievalMatch(
-            citation=_to_citation(item),
-            score=item.candidate.score,
-            rerank_score=item.rerank_score,
-            coverage_score=item.coverage_score,
-            evidence_role=item.evidence_role,
-            evidence_text=_candidate_evidence_text(item.candidate),
-        )
-        for item in selected
-    ]
     return matches
 
 
@@ -177,6 +176,14 @@ def _report_progress(progress_reporter: ProgressReporter | None, event: dict[str
 
 def _collect_candidates(question: str, diagnostics: RetrievalDiagnostics) -> list[VectorSearchResult]:
     queries = retrieval_queries(question)
+    return collect_candidates_for_queries(queries, diagnostics)
+
+
+def collect_candidates_for_queries(
+    queries: list[str],
+    diagnostics: RetrievalDiagnostics | None = None,
+) -> list[VectorSearchResult]:
+    diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
     diagnostics.query_count = len(queries)
     if not queries:
@@ -197,6 +204,109 @@ def _collect_candidates(question: str, diagnostics: RetrievalDiagnostics) -> lis
     diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
     diagnostics.candidate_count = len(candidates_by_chunk_id)
     return list(candidates_by_chunk_id.values())
+
+
+def collect_candidates_with_query_hits(
+    queries: list[str],
+    *,
+    query_metadata: list[dict[str, Any]] | None = None,
+    diagnostics: RetrievalDiagnostics | None = None,
+) -> tuple[list[VectorSearchResult], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    diagnostics = diagnostics or RetrievalDiagnostics()
+    diagnostics.query_variants = queries
+    diagnostics.query_count = len(queries)
+    if not queries:
+        return [], {}, []
+
+    metadata_items = query_metadata or [{} for _ in queries]
+    candidates_by_chunk_id: dict[str, VectorSearchResult] = {}
+    query_hits_by_chunk_id: dict[str, list[dict[str, Any]]] = {}
+    per_query_diagnostics: list[dict[str, Any]] = []
+
+    embedding_started_at = perf_counter()
+    query_embeddings = embed_texts(queries)
+    diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
+
+    qdrant_started_at = perf_counter()
+    for query, query_embedding, metadata in zip(queries, query_embeddings, metadata_items, strict=True):
+        raw_results = hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K)
+        seen_for_query: set[str] = set()
+        for rank, candidate in enumerate(raw_results, start=1):
+            diagnostics.raw_candidate_count += 1
+            seen_for_query.add(candidate.chunk_id)
+            existing = candidates_by_chunk_id.get(candidate.chunk_id)
+            if existing is None or candidate.score > existing.score:
+                candidates_by_chunk_id[candidate.chunk_id] = candidate
+            query_hits_by_chunk_id.setdefault(candidate.chunk_id, []).append(
+                {
+                    "query": query,
+                    "rank": rank,
+                    "vector_score": candidate.score,
+                    **metadata,
+                }
+            )
+        per_query_diagnostics.append(
+            {
+                "search_query": query,
+                "query_count": 1,
+                "raw_candidate_count": len(raw_results),
+                "candidate_count": len(seen_for_query),
+                "rerank_input_count": 0,
+                "rerank_call_count": 0,
+                "reranked_count": 0,
+                "filtered_count": 0,
+                "match_count": 0,
+                "query_variants": [query],
+                "timings_ms": {},
+                "score_range": _score_range(raw_results, []),
+                **metadata,
+            }
+        )
+
+    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    diagnostics.candidate_count = len(candidates_by_chunk_id)
+    return list(candidates_by_chunk_id.values()), query_hits_by_chunk_id, per_query_diagnostics
+
+
+def matches_from_reranked(
+    *,
+    question: str,
+    reranked: list[RerankedChunk],
+    diagnostics: RetrievalDiagnostics | None = None,
+    limit: int = FINAL_CITATION_LIMIT,
+) -> list[RetrievalMatch]:
+    diagnostics = diagnostics or RetrievalDiagnostics()
+    terms = question_terms(question)
+    filter_started_at = perf_counter()
+    reliable = [_annotate(item, terms, question) for item in reranked if _is_reliable(item, terms, question)]
+    diagnostics.timings_ms["filter"] = _elapsed_ms(filter_started_at)
+    diagnostics.reliable_count = len(reliable)
+    diagnostics.filtered_count = max(diagnostics.reranked_count - len(reliable), 0)
+    reliable.sort(key=_rank_key, reverse=True)
+    selected = _select_final_chunks(reliable, question, limit=limit)
+    diagnostics.selected_count = len(selected)
+    return [
+        RetrievalMatch(
+            citation=_to_citation(item),
+            score=item.candidate.score,
+            rerank_score=item.rerank_score,
+            coverage_score=item.coverage_score,
+            evidence_role=item.evidence_role,
+            evidence_text=_candidate_evidence_text(item.candidate),
+            metadata=item.candidate.metadata or {},
+        )
+        for item in selected
+    ]
+
+
+def limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+    if len(candidates) <= RERANK_CANDIDATE_LIMIT:
+        return candidates
+    return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:RERANK_CANDIDATE_LIMIT]
+
+
+def _limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+    return limit_rerank_candidates(candidates)
 
 
 def retrieval_queries(question: str) -> list[str]:
@@ -224,9 +334,16 @@ class _AnnotatedChunk:
 
 
 def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
-    if not item.candidate.chunk_id or not item.candidate.text.strip() or item.rerank_score < MIN_RERANK_SCORE:
+    if not item.candidate.chunk_id or not item.candidate.text.strip():
         return False
     coverage = evidence_coverage(terms, _candidate_evidence_text(item.candidate))
+    strong_exact_match = (
+        coverage >= DIRECT_EVIDENCE_COVERAGE
+        and item.candidate.score >= 0.60
+        and item.rerank_score >= 0.0
+    )
+    if item.rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
+        return False
     if coverage < MIN_EVIDENCE_COVERAGE:
         return False
     if _is_table_context(item.candidate, question, coverage):
@@ -303,6 +420,18 @@ def _to_citation(item: _AnnotatedChunk) -> Citation:
 def question_terms(question: str) -> list[str]:
     normalized = _normalize_for_match(question)
     domain_phrases = [
+        "重要声明",
+        "文件版本",
+        "版本号",
+        "发布日期",
+        "适用范围",
+        "模拟制度",
+        "文档版本",
+        "定义",
+        "规则编号",
+        "规则名称",
+        "触发条件",
+        "处理建议",
         "普惠小微",
         "同一借款人",
         "借款人",
