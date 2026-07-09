@@ -15,8 +15,12 @@ from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
+from backend.app.services.document_storage import next_document_id
+from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
 from backend.app.services.retrieval_service import RetrievalMatch, RetrievalServiceUnavailable
+from backend.app.services.rerank_service import RerankedChunk
 from backend.app.services.vector_store_service import VectorStoreError
+from backend.app.services.vector_store_service import VectorSearchResult
 
 
 client = TestClient(app)
@@ -37,6 +41,7 @@ def fake_indexing_services(monkeypatch, tmp_path):
     document_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("backend.app.services.document_storage.DOCUMENT_DIR", document_dir)
     monkeypatch.setattr("backend.app.services.document_lifecycle_service.DOCUMENT_DIR", document_dir)
+    monkeypatch.setattr("backend.app.services.query_planner_service.QUERY_PLANNER_API_KEY", None)
 
     def fake_embed_texts(texts: list[str]) -> list[TextEmbedding]:
         return [
@@ -81,6 +86,21 @@ def fake_retrieval_match(document_id: str = "DOC-TEST-0001") -> RetrievalMatch:
     )
 
 
+def parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for frame in text.strip().split("\n\n"):
+        event_name = "message"
+        data = None
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                event_name = line.removeprefix("event:").strip()
+            if line.startswith("data:"):
+                data = json.loads(line.removeprefix("data:").strip())
+        if data is not None:
+            events.append((event_name, data))
+    return events
+
+
 def test_health_check() -> None:
     response = client.get("/api/health")
 
@@ -99,6 +119,7 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/documents/{document_id}" in paths
     assert "delete" in app.openapi()["paths"]["/api/documents/{document_id}"]
     assert "/api/qa/ask" in paths
+    assert "/api/qa/ask/stream" in paths
     assert "/api/qa/retrieve" in paths
     assert "/api/audit/logs" in paths
     assert "/api/audit/archives" in paths
@@ -135,6 +156,27 @@ def test_upload_txt_document_creates_chunks_and_triggers_background_index(monkey
     assert background_calls == [body["document_id"]]
     documents = client.get("/api/documents").json()["documents"]
     assert documents[0]["status"] == "uploaded"
+
+
+def test_next_document_id_uses_existing_document_ids() -> None:
+    reset_database()
+    today = datetime.now().strftime("%Y%m%d")
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id=f"DOC-{today}-0001",
+                filename="existing.pdf",
+                content_type="application/pdf",
+                file_type="pdf",
+                size=100,
+                storage_path="existing.pdf",
+                status="uploaded",
+                chunk_count=0,
+            )
+        )
+        db.commit()
+
+        assert next_document_id(db) == f"DOC-{today}-0002"
 
 
 def test_build_document_index_marks_document_indexed(monkeypatch, fake_indexing_services) -> None:
@@ -364,6 +406,73 @@ def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
     assert body["confidence"] < 1.0
 
 
+def test_qa_stream_returns_progress_events_and_final_response(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "rules.txt",
+                "资产合计应等于资产分项金额合计。\n报表数据应保证字段完整、金额类型正确。",
+                "text/plain",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [fake_retrieval_match(document_id)],
+    )
+
+    response = client.post("/api/qa/ask/stream", json={"question": "资产合计怎么填报"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse_events(response.text)
+    event_names = [event_name for event_name, _payload in events]
+    progress_stages = [
+        payload["stage"]
+        for event_name, payload in events
+        if event_name == "progress"
+    ]
+    assert event_names[-1] == "final"
+    assert "planning" in progress_stages
+    assert "retrieval" in progress_stages
+    assert "rerank" in progress_stages
+    assert "context_selection" in progress_stages
+    assert "prompt_build" in progress_stages
+    assert "llm_generation" in progress_stages
+    assert any(
+        payload["stage"] == "planning" and payload["status"] == "completed"
+        for event_name, payload in events
+        if event_name == "progress"
+    )
+    final_payload = events[-1][1]
+    assert final_payload["answer"] is None
+    assert final_payload["context_package"]["query"] == "资产合计怎么填报"
+    assert final_payload["context_package"]["is_final_answer"] is False
+
+
+def test_qa_stream_returns_error_event_when_retrieval_fails(monkeypatch) -> None:
+    reset_database()
+
+    def failing_retrieve(question: str, progress_reporter=None):
+        raise RetrievalServiceUnavailable("Qdrant hybrid 检索失败")
+
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", failing_retrieve)
+
+    response = client.post("/api/qa/ask/stream", json={"question": "资产合计"})
+
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    assert any(event_name == "error" for event_name, _payload in events)
+    assert any(
+        event_name == "progress" and payload["status"] == "failed"
+        for event_name, payload in events
+    )
+    assert all(event_name != "final" for event_name, _payload in events)
+
+
 def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
     reset_database()
     upload_response = client.post(
@@ -561,7 +670,13 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
         coverage_score=0.8,
         evidence_role="direct_evidence",
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [parent_match])
+    retrieval_calls = []
+
+    def fake_retrieve(question: str):
+        retrieval_calls.append(question)
+        return [parent_match]
+
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", fake_retrieve)
 
     response = client.post(
         "/api/qa/retrieve",
@@ -577,9 +692,22 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
         aspect["aspect_id"]
         for aspect in body["retrieval_summary"]["query_plan"]["aspects"]
     ] == ["asset_total_difference_check", "foreign_currency_evidence"]
+    assert body["retrieval_summary"]["fusion_method"] == "aspect_query_rrf_then_bge_rerank"
+    query_plan_aspects = body["retrieval_summary"]["query_plan"]["aspects"]
+    assert query_plan_aspects[0]["search_queries"][0]["query_type"] == "semantic_question"
+    assert query_plan_aspects[0]["search_queries"][1]["query_type"] == "document_style_statement"
+    assert query_plan_aspects[0]["search_queries"][2]["query_type"] == "keyword_anchor"
+    assert "资产合计与分项合计存在差异时应优先检查哪些原因" in retrieval_calls
+    assert "外币折算导致资产合计差异时需要保留哪些支持材料" in retrieval_calls
+    assert len(retrieval_calls) == 6
     assert all(
         aspect["covered"]
         for aspect in body["retrieval_summary"]["aspect_retrievals"]
+    )
+    assert all(
+        diagnostic["query_type"] in {"semantic_question", "document_style_statement", "keyword_anchor"}
+        for aspect in body["retrieval_summary"]["aspect_retrievals"]
+        for diagnostic in aspect["diagnostics"]
     )
     section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
     assert "3. 资产合计与校验关系" in section_titles
@@ -881,4 +1009,112 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
     assert delete_response.status_code == 200
     assert delete_response.json()["deleted"] is True
     assert not archive_path.exists()
+
+
+def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="green_credit_identification",
+        question="绿色信贷识别应如何处理",
+        search_queries=(
+            QuerySearchQuery("绿色信贷识别的标准和方法有哪些", "semantic_question", "贴近用户意图"),
+            QuerySearchQuery("绿色信贷 识别 标准 分类 认定方法", "document_style_statement", "贴近制度原文"),
+            QuerySearchQuery("绿色信贷 识别 标准 分类", "keyword_anchor", "术语兜底"),
+        ),
+        evidence_need="绿色信贷识别的标准、分类和识别方法",
+        keywords=("绿色信贷", "识别", "标准"),
+    )
+    candidates = [
+        VectorSearchResult(
+            chunk_id=f"DOC-TEST-0001-CHUNK-{index:04d}",
+            document_id="DOC-TEST-0001",
+            filename="rules.md",
+            section_title="绿色信贷标识",
+            page_number=None,
+            text="绿色信贷标识应基于贷款资金投向、项目性质和支持材料确定。",
+            embedding_text="章节：绿色信贷标识\n\n绿色信贷标识应基于贷款资金投向、项目性质和支持材料确定。",
+            token_count=50,
+            score=1.0 - index * 0.01,
+            chunk_type="paragraph",
+        )
+        for index in range(6)
+    ]
+    rerank_calls = []
+
+    def fake_collect(queries, query_metadata=None, diagnostics=None):
+        assert len(queries) == 3
+        if diagnostics is not None:
+            diagnostics.query_count = len(queries)
+            diagnostics.raw_candidate_count = len(candidates) * len(queries)
+            diagnostics.candidate_count = len(candidates)
+        return (
+            candidates,
+            {
+                candidate.chunk_id: [
+                    {"query": queries[0], "query_type": "semantic_question", "rank": index + 1}
+                ]
+                for index, candidate in enumerate(candidates)
+            },
+            [
+                {
+                    "search_query": query,
+                    "query_type": "semantic_question",
+                    "rationale": "",
+                    "query_count": 1,
+                    "raw_candidate_count": len(candidates),
+                    "candidate_count": len(candidates),
+                    "rerank_input_count": 0,
+                    "rerank_call_count": 0,
+                    "reranked_count": 0,
+                    "filtered_count": 0,
+                    "match_count": 0,
+                    "timings_ms": {},
+                    "score_range": {},
+                    "query_variants": [query],
+                }
+                for query in queries
+            ],
+        )
+
+    def fake_rerank(question, candidates, limit):
+        rerank_calls.append((question, len(candidates), limit))
+        return [RerankedChunk(candidate=candidate, rerank_score=0.9) for candidate in candidates[:2]]
+
+    def fake_matches_from_reranked(question, reranked, diagnostics, limit=5):
+        diagnostics.reranked_count = len(reranked)
+        return [
+            RetrievalMatch(
+                citation=Citation(
+                    document_id=item.candidate.document_id,
+                    chunk_id=item.candidate.chunk_id,
+                    filename=item.candidate.filename,
+                    section_title=item.candidate.section_title,
+                    excerpt=item.candidate.text,
+                    score=item.candidate.score,
+                    rerank_score=item.rerank_score,
+                    chunk_type=item.candidate.chunk_type,
+                    evidence_role="direct_evidence",
+                ),
+                score=item.candidate.score,
+                rerank_score=item.rerank_score,
+                coverage_score=1.0,
+                evidence_role="direct_evidence",
+            )
+            for item in reranked
+        ]
+
+    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
+    monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
+    monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
+    monkeypatch.setattr(rag_service, "_filter_indexed_matches", lambda db, matches: matches)
+
+    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+
+    assert len(matches) == 2
+    assert rerank_calls == [("绿色信贷识别应如何处理", 6, 20)]
+    fused = diagnostics[-1]
+    assert fused["query_type"] == "aspect_fused"
+    assert fused["rerank_call_count"] == 1
+    assert fused["query_count"] == 3
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -124,6 +125,7 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
                     document_id=document_id,
                     text=chunk.text,
                     embedding_text=chunk.embedding_text,
+                    chunk_metadata=json.dumps(chunk.metadata or {}, ensure_ascii=False),
                     token_count=chunk.token_count,
                     index_status="indexed" if indexed else "uploaded",
                     index_version=INDEX_VERSION,

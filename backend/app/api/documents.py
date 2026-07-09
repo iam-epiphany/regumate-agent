@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
@@ -87,6 +88,7 @@ async def upload_document(
             document_id=document_id,
             text=chunk.text,
             embedding_text=chunk.embedding_text,
+            chunk_metadata=json.dumps(chunk.metadata or {}, ensure_ascii=False),
             token_count=chunk.token_count,
             index_status="uploaded",
             index_version=INDEX_VERSION,
@@ -213,6 +215,7 @@ def _to_detail(document: Document, db: Session) -> DocumentDetailResponse:
                 token_count=chunk.token_count,
                 index_status=chunk.index_status,
                 index_version=chunk.index_version,
+                metadata=_chunk_metadata(chunk),
                 created_at=chunk.created_at.isoformat(),
             )
             for chunk in chunks
@@ -221,7 +224,19 @@ def _to_detail(document: Document, db: Session) -> DocumentDetailResponse:
 
 
 def _chunk_type(text: str) -> str:
-    return "table" if text.lstrip().startswith(("表格：", "表格行证据：")) or "\n|" in text or "表格行证据：" in text else "paragraph"
+    stripped = text.lstrip()
+    table_prefixes = ("表格：", "表格摘要：", "表格行证据：", "琛ㄦ牸锛?", "琛ㄦ牸琛岃瘉鎹細")
+    return "table" if stripped.startswith(table_prefixes) or "\n|" in text else "paragraph"
+
+
+def _chunk_metadata(chunk: DocumentChunk) -> dict:
+    if not chunk.chunk_metadata:
+        return {}
+    try:
+        value = json.loads(chunk.chunk_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _to_summary(document: Document) -> DocumentSummary:

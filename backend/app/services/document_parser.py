@@ -142,6 +142,7 @@ class DocxDocumentLoader:
                         block_type="table",
                         order_index=len(blocks) + 1,
                         section_title=current_section,
+                        metadata=_table_metadata(table_text, len([block for block in blocks if block.block_type == "table"]) + 1),
                     )
                 )
         return LoaderResult(blocks=blocks, loader_name=self.name)
@@ -316,6 +317,7 @@ def _markdown_to_blocks(text: str, page_number: int | None = None) -> list[Parse
     current_section: str | None = None
     paragraph_lines: list[str] = []
     table_lines: list[str] = []
+    table_index = 0
 
     def flush_paragraph() -> None:
         nonlocal paragraph_lines
@@ -333,9 +335,10 @@ def _markdown_to_blocks(text: str, page_number: int | None = None) -> list[Parse
         paragraph_lines = []
 
     def flush_table() -> None:
-        nonlocal table_lines
+        nonlocal table_lines, table_index
         table = _normalize_text("\n".join(table_lines))
         if table:
+            table_index += 1
             blocks.append(
                 ParsedBlock(
                     text=table,
@@ -343,6 +346,7 @@ def _markdown_to_blocks(text: str, page_number: int | None = None) -> list[Parse
                     order_index=len(blocks) + 1,
                     page_number=page_number,
                     section_title=current_section,
+                    metadata=_table_metadata(table, table_index),
                 )
             )
         table_lines = []
@@ -401,6 +405,64 @@ def _looks_like_markdown_table_line(stripped_line: str) -> bool:
         return False
     cells = [cell.strip() for cell in stripped_line.strip("|").split("|")]
     return len(cells) >= 2
+
+
+def _table_metadata(table_text: str, table_index: int | None = None) -> dict[str, object]:
+    rows = _parse_markdown_table(table_text)
+    metadata: dict[str, object] = {
+        "raw_table_text": table_text,
+    }
+    if table_index is not None:
+        metadata["table_index"] = table_index
+    if not rows:
+        return metadata
+
+    headers = [_normalize_header(cell, index) for index, cell in enumerate(rows[0], start=1)]
+    data_rows = rows[1:]
+    metadata["headers"] = headers
+    metadata["rows"] = [
+        {
+            "row_index": row_index,
+            "cells": _row_cells(headers, row),
+        }
+        for row_index, row in enumerate(data_rows, start=1)
+    ]
+    return metadata
+
+
+def _parse_markdown_table(table_text: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for line in table_text.splitlines():
+        stripped = line.strip()
+        if not _looks_like_markdown_table_line(stripped) or _is_markdown_separator_line(stripped):
+            continue
+        rows.append(_markdown_table_cells(stripped))
+    return rows
+
+
+def _markdown_table_cells(line: str) -> list[str]:
+    return [_normalize_text(cell.replace("\\|", "|")) for cell in line.strip("|").split("|")]
+
+
+def _is_markdown_separator_line(line: str) -> bool:
+    cells = [cell.strip() for cell in line.strip("|").split("|")]
+    return bool(cells) and all(cell and set(cell) <= {"-", ":"} for cell in cells)
+
+
+def _normalize_header(header: str, index: int) -> str:
+    cleaned = _normalize_text(header)
+    return cleaned or f"列{index}"
+
+
+def _row_cells(headers: list[str], row: list[str]) -> dict[str, str]:
+    width = max(len(headers), len(row))
+    padded_headers = headers + [f"列{index}" for index in range(len(headers) + 1, width + 1)]
+    padded_row = row + [""] * (width - len(row))
+    return {
+        header: cell
+        for header, cell in zip(padded_headers, padded_row, strict=True)
+        if cell.strip()
+    }
 
 
 def _unstructured_block_type(element_type: str) -> str | None:

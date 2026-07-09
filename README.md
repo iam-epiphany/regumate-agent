@@ -2,6 +2,8 @@
 
 ReguMate 是一个可信 RAG 问答项目，主题是“面向银行业监管制度与统计报表的可信 RAG 问答”。
 
+项目最终目标是服务银行统计报送人员、合规人员和财务人员：用户上传监管制度和填报说明，系统构建可信知识库；用户再上传统计报表，系统根据制度口径检查报表，并支持围绕报表异常进行问答，最终给出有依据的解释和整改建议。
+
 当前版本保留一个可运行的 FastAPI + React + SQLite + Qdrant MVP：上传监管制度、统计报表填报说明、指标口径等知识文档，解析并切分 chunk；上传后后台自动使用 BGE-M3 embedding、Qdrant hybrid search 和 BGE reranker 构建检索索引，并在缺少依据时拒答。
 
 
@@ -95,6 +97,14 @@ npm run build
 cd ..
 .\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+如本机有 NVIDIA GPU，建议安装 CUDA 版 PyTorch 以加速 BGE-M3 embedding 和 BGE reranker：
+
+```powershell
+.\scripts\install_cuda_torch.ps1
+```
+
+系统默认 `MODEL_DEVICE=auto`，会优先使用 CUDA；CUDA 不可用时回退 CPU。问答调试摘要中的 `model_device` 会显示实际设备和 CUDA 状态。
 
 如果已有旧数据库 chunk，需要重建向量索引：
 

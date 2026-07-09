@@ -22,7 +22,7 @@ class EmptyDocumentError(ValueError):
 def next_document_id(db: Session) -> str:
     today = datetime.now().strftime("%Y%m%d")
     prefix = f"DOC-{today}-"
-    statement = select(Document).where(Document.document_id.like(f"{prefix}%"))
+    statement = select(Document.document_id).where(Document.document_id.like(f"{prefix}%"))
     existing_numbers: set[int] = set()
     for document_id in db.scalars(statement):
         number = _document_number(document_id, prefix)

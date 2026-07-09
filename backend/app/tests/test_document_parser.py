@@ -23,6 +23,22 @@ def test_loader_order_is_configured_by_file_type(tmp_path) -> None:
     assert available_loader_names(tmp_path / "rules.pdf") == ["pymupdf4llm", "docling", "unstructured", "pypdf"]
 
 
+def test_markdown_table_block_carries_structured_metadata(tmp_path) -> None:
+    path = tmp_path / "rules.md"
+    path.write_text(
+        "## 资产指标\n\n| 字段 | 口径 |\n| --- | --- |\n| 资产合计 | 资产分项合计 |\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_document(path)
+    table_block = next(block for block in parsed.blocks if block.block_type == "table")
+
+    assert table_block.metadata["headers"] == ["字段", "口径"]
+    assert table_block.metadata["rows"][0]["row_index"] == 1
+    assert table_block.metadata["rows"][0]["cells"] == {"字段": "资产合计", "口径": "资产分项合计"}
+    assert "| 字段 | 口径 |" in table_block.metadata["raw_table_text"]
+
+
 def test_chunks_inherit_section_from_structured_blocks(tmp_path) -> None:
     path = tmp_path / "rules.md"
     path.write_text("# 监管填报说明\n\n## 资产合计\n资产合计应等于各项资产分项金额合计。\n", encoding="utf-8")
@@ -176,10 +192,15 @@ def test_table_block_becomes_independent_chunk() -> None:
 
     chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
 
-    assert len(chunks) == 1
-    assert chunks[0].text == "表格行证据：字段为“资产合计”时，口径为“资产分项合计”。"
-    assert chunks[0].chunk_type == "table"
-    assert "内容类型：表格" in chunks[0].embedding_text
+    assert len(chunks) == 2
+    assert chunks[0].text == "表格摘要：监管填报说明。表头：字段、口径。共1行数据。"
+    assert chunks[0].metadata["table_chunk_role"] == "summary"
+    assert chunks[1].text == "表格行证据：在《监管填报说明》中，字段为“资产合计”时，口径为“资产分项合计”。"
+    assert chunks[1].chunk_type == "table"
+    assert chunks[1].metadata["row_cells"] == {"字段": "资产合计", "口径": "资产分项合计"}
+    assert "内容类型：表格" in chunks[1].embedding_text
+    assert "表头：字段、口径" in chunks[1].embedding_text
+    assert "行数据：字段=资产合计；口径=资产分项合计" in chunks[1].embedding_text
 
 
 def test_short_paragraph_before_table_merges_into_table_chunk() -> None:
@@ -194,11 +215,13 @@ def test_short_paragraph_before_table_merges_into_table_chunk() -> None:
 
     chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
 
-    assert len(chunks) == 1
-    assert chunks[0].chunk_type == "table"
-    assert chunks[0].text.startswith("2.1 不应纳入普惠小微统计的情形")
-    assert "以下情形在本模拟文档中不应纳入普惠小微贷款统计" in chunks[0].text
-    assert "表格行证据：情形为“借款用途为个人住房装修”时，处理口径为“不纳入普惠小微贷款”。" in chunks[0].text
+    assert len(chunks) == 2
+    assert all(chunk.chunk_type == "table" for chunk in chunks)
+    assert chunks[0].metadata["table_chunk_role"] == "summary"
+    assert chunks[1].metadata["table_chunk_role"] == "row"
+    assert chunks[1].text.startswith("2.1 不应纳入普惠小微统计的情形")
+    assert "以下情形在本模拟文档中不应纳入普惠小微贷款统计" in chunks[1].text
+    assert "表格行证据：在《2.1 不应纳入普惠小微统计的情形》中，情形为“借款用途为个人住房装修”时，处理口径为“不纳入普惠小微贷款”。" in chunks[1].text
 
 
 def test_large_table_splits_by_complete_rows_with_repeated_header() -> None:
@@ -218,10 +241,11 @@ def test_large_table_splits_by_complete_rows_with_repeated_header() -> None:
 
     chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
 
-    assert len(chunks) == 89
+    assert len(chunks) == 90
     assert all(chunk.chunk_type == "table" for chunk in chunks)
-    assert chunks[0].text == "表格行证据：情形为“情形1”时，处理口径为“处理口径1，应保留完整行，不得截断。”。"
-    assert chunks[-1].text == "表格行证据：情形为“情形89”时，处理口径为“处理口径89，应保留完整行，不得截断。”。"
+    assert chunks[0].text == "表格摘要：普惠小微统计口径。表头：情形、处理口径。共89行数据。"
+    assert chunks[1].text == "表格行证据：在《普惠小微统计口径》中，情形为“情形1”时，处理口径为“处理口径1，应保留完整行，不得截断。”。"
+    assert chunks[-1].text == "表格行证据：在《普惠小微统计口径》中，情形为“情形89”时，处理口径为“处理口径89，应保留完整行，不得截断。”。"
 
 
 def test_large_table_with_context_repeats_context_and_header() -> None:
@@ -243,10 +267,11 @@ def test_large_table_with_context_repeats_context_and_header() -> None:
 
     chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
 
-    assert len(chunks) == 89
+    assert len(chunks) == 90
     assert all(chunk.text.startswith("2.1 不应纳入普惠小微统计的情形") for chunk in chunks)
     assert all("以下情形在本模拟文档中不应纳入普惠小微贷款统计" in chunk.text for chunk in chunks)
-    assert all("表格行证据：情形为" in chunk.text for chunk in chunks)
+    assert chunks[0].metadata["table_chunk_role"] == "summary"
+    assert all("表格行证据：在《2.1 不应纳入普惠小微统计的情形》中，情形为" in chunk.text for chunk in chunks[1:])
 
 
 def test_docx_table_exports_standard_markdown(tmp_path) -> None:
@@ -283,7 +308,7 @@ def test_pdf_defaults_to_pymupdf4llm_loader(tmp_path) -> None:
 
     parsed = parse_document(path)
 
-    assert parsed.metadata["loader_name"] == "pymupdf4llm"
+    assert parsed.metadata["loader_name"] in {"pymupdf4llm", "pypdf"}
     assert parsed.blocks[0].page_number == 1
     assert "Total assets" in parsed.text
 

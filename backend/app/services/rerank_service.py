@@ -4,6 +4,7 @@ from typing import Any
 
 from backend.app.core.config import RERANK_TOP_K
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_reranker_model_path
+from backend.app.services.model_device_service import selected_model_device
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -26,7 +27,14 @@ def _get_reranker() -> Any:
 
     try:
         reranker_model_path = resolve_reranker_model_path()
-        return FlagReranker(reranker_model_path, use_fp16=True)
+        try:
+            return FlagReranker(
+                reranker_model_path,
+                use_fp16=selected_model_device() == "cuda",
+                devices=selected_model_device(),
+            )
+        except TypeError:
+            return FlagReranker(reranker_model_path, use_fp16=selected_model_device() == "cuda")
     except ModelPathResolutionError as exc:
         raise RerankServiceError(str(exc)) from exc
     except Exception as exc:

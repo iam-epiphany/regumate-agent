@@ -102,8 +102,17 @@ export interface LLMContextPackage {
     top_k: number;
     used_chunks: number;
     has_sufficient_context: boolean;
+    aspect_count?: number;
+    retrieval_covered_aspect_count?: number;
+    prompt_covered_aspect_count?: number;
+    prompt_capacity_limited?: boolean;
+    covered_by_retrieval_but_not_prompted?: string[];
     query_count?: number;
+    raw_candidate_count?: number;
     candidate_count?: number;
+    rerank_input_count?: number;
+    rerank_call_count?: number;
+    rerank_candidate_limit?: number;
     reranked_count?: number;
     filtered_count?: number;
     prompt_filtered_count?: number;
@@ -112,15 +121,27 @@ export interface LLMContextPackage {
     query_variants?: string[];
     missing_aspects?: string[];
     coverage_notes?: string[];
+    fusion_method?: string;
+    model_device?: {
+      requested_device: string;
+      selected_device: string;
+      torch_version: string | null;
+      cuda_available: boolean;
+      cuda_device_count: number;
+      cuda_device_name: string | null;
+      fallback_reason: string | null;
+    };
     query_plan?: {
       original_question: string;
       planner: string;
       fallback_used: boolean;
       error: string | null;
+      budget?: Record<string, unknown>;
       aspects: Array<{
         aspect_id: string;
         question: string;
-        search_queries: string[];
+        evidence_need?: string;
+        search_queries: QueryPlanSearchQuery[];
         expected_evidence_type: string;
         keywords: string[];
       }>;
@@ -128,11 +149,14 @@ export interface LLMContextPackage {
     aspect_retrievals?: Array<{
       aspect_id: string;
       question: string;
-      search_queries: string[];
+      evidence_need?: string;
+      search_queries: QueryPlanSearchQuery[];
       expected_evidence_type: string;
       keywords: string[];
       covered: boolean;
+      retrieval_covered?: boolean;
       missing: boolean;
+      covered_by_retrieval_but_not_prompted?: boolean;
       candidate_count: number;
       selected_chunk_ids: string[];
       retrieved_chunks: Array<{
@@ -141,6 +165,8 @@ export interface LLMContextPackage {
         section_title: string | null;
         score: number | null;
         rerank_score: unknown;
+        fusion_score?: unknown;
+        query_hits?: Array<Record<string, unknown>>;
         evidence_role: unknown;
         selected_for_prompt: boolean;
       }>;
@@ -155,11 +181,15 @@ export interface LLMContextPackage {
       relative_score_ratio: number;
       candidate_prompt_chunks: number;
       final_prompt_chunks: number;
+      retrieval_covered_aspects?: string[];
       covered_aspects: string[];
+      covered_by_retrieval_but_not_prompted?: string[];
+      prompt_capacity_limited?: boolean;
       expected_aspects: Array<{
         aspect_id: string;
         description: string;
-        search_queries?: string[];
+        evidence_need?: string;
+        search_queries?: QueryPlanSearchQuery[];
         expected_evidence_type?: string;
       }>;
       final_prompt_chunk_ids?: string[];
@@ -176,12 +206,38 @@ export interface LLMContextPackage {
   llm_prompt: string;
 }
 
+export interface QueryPlanSearchQuery {
+  query: string;
+  query_type: "semantic_question" | "document_style_statement" | "keyword_anchor" | "legacy" | "fallback" | string;
+  rationale: string;
+}
+
 export interface QAResponse {
   answer: string | null;
   citations: Citation[];
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
+}
+
+export type RagProgressStage =
+  | "planning"
+  | "retrieval"
+  | "rerank"
+  | "context_selection"
+  | "prompt_build"
+  | "llm_generation";
+
+export type RagProgressStatus = "running" | "completed" | "failed" | "skipped" | "pending";
+
+export interface RagProgressEvent {
+  stage: RagProgressStage;
+  status: RagProgressStatus;
+  title: string;
+  detail: string;
+  elapsed_ms?: number | null;
+  summary?: Record<string, unknown>;
+  aspect_id?: string;
 }
 
 export interface AuditLogItem {
