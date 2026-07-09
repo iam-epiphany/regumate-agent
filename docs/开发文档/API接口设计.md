@@ -20,6 +20,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | POST | `/api/documents/{document_id}/index` | 手动重建单个文档的向量索引 |
 | DELETE | `/api/documents/{document_id}` | 删除文档、chunk 和向量索引 |
 | POST | `/api/qa/ask` | 提交问题并获得可信回答 |
+| POST | `/api/qa/ask/stream` | 提交流式问答请求并通过 SSE 观察 RAG 执行过程 |
 | GET | `/api/audit/logs` | 获取当天审计日志，并自动归档过期日志 |
 | GET | `/api/audit/archives` | 获取历史审计日志归档列表 |
 | GET | `/api/audit/archives/{archive_date}` | 查看某天审计日志归档内容 |
@@ -88,7 +89,16 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 当前 RAG-only 阶段尚未接入 LLM，问答接口不再生成“根据知识库引用，可归纳为”这类半成品最终答案。
 
 - `POST /api/qa/ask`：返回 `QAResponse`，其中 `answer` 为 `null`，`context_package` 为结构化 `LLMContextPackage`，`citations` 保留为兼容字段。
+- `POST /api/qa/ask/stream`：返回 `text/event-stream`，先推送 RAG 阶段进度事件，最后推送完整 `QAResponse`；用于前端动态“检索观测”面板。
 - `POST /api/qa/retrieve`：仅返回 `LLMContextPackage`，用于调试检索和后续 LLM 输入。
+
+`/api/qa/ask/stream` 的 SSE 事件：
+
+- `progress`：阶段进度，字段包括 `stage`、`status`、`title`、`detail`、可选 `elapsed_ms`、`summary`、`aspect_id`。`stage` 取值为 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build`、`llm_generation`；`status` 取值为 `running`、`completed`、`failed`、`skipped`。
+- `final`：完整 `QAResponse`，结构与 `/api/qa/ask` 相同。
+- `error`：流式执行失败时返回 `{ "detail": "..." }`；此时不会再推送 `final`。
+
+当前仍是 RAG-only，`llm_generation` 阶段固定返回 `skipped`，表示“当前阶段未接入最终 LLM 生成”。
 
 `LLMContextPackage` 包含：
 
@@ -96,11 +106,11 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - `mode`：固定为 `rag_context`。
 - `is_final_answer`：固定为 `false`。
 - `instruction`：要求 LLM 只能基于检索片段回答，依据不足时明确说明无法判断。
-- `retrieval_summary`：包含 `top_k`、`used_chunks`、`has_sufficient_context`、`coverage_notes`、`missing_aspects`，并扩展返回 `query_plan`、`aspect_retrievals`、`final_prompt_chunk_ids`、`query_count`、`candidate_count`、`reranked_count`、`filtered_count`、`prompt_filtered_count`、`prompt_selection`、`timings_ms`、`score_range` 和 `citation_validation`。
+- `retrieval_summary`：包含 `top_k`、`used_chunks`、`has_sufficient_context`、`coverage_notes`、`missing_aspects`，并扩展返回 `query_plan`、`aspect_retrievals`、`final_prompt_chunk_ids`、`fusion_method`、`query_count`、`candidate_count`、`reranked_count`、`filtered_count`、`prompt_filtered_count`、`prompt_selection`、`timings_ms`、`score_range` 和 `citation_validation`。
 - `context_chunks`：去重、清洗、动态筛选后的最终入 Prompt 片段，包含 `chunk_id`、`rank`、`score`、`source_doc`、`section_title`、`section_path`、`text`、`citation_label` 和 `metadata`。
 - `llm_prompt`：由 `RAGPromptBuilder` 统一构造，可在未来直接发送给 LLM。
 
-检索结果组装会去掉重复 chunk、去掉片段开头重复章节标题，保留原文片段，不提前改写成结论式答案。系统会先通过 QueryPlanner 把复合问题拆成多个 aspect；每个 aspect 单独生成 search query、单独 retrieve/rerank，再合并候选。QueryPlanner 阶段只允许拆题和生成检索计划，不回答用户问题；没有 LLM 配置或 LLM 失败时使用本地规则 fallback。上下文片段必须来自 `indexed` 文档，且摘录需要能回溯到 SQLite 原始 chunk；不可回溯片段会被过滤。最终进入 Prompt 的片段不再固定凑数，而是优先保证每个 aspect 至少有一条相关依据，再按 rerank 基础门槛、相对分数、重复度和章节结构动态补充，最多 `MAX_PROMPT_CHUNKS` 条；如果只有 1-2 条真正相关，就只返回 1-2 条。问答审计日志记录 `answer=null`、上下文包模式、是否最终答案和命中片段数量，不保存完整引用来源。
+检索结果组装会去掉重复 chunk、去掉片段开头重复章节标题，保留原文片段，不提前改写成结论式答案。系统会先通过 QueryPlanner 把复合问题拆成多个 aspect；每个 aspect 生成结构化 `search_queries` 对象数组，单条 query 包含 `query`、`query_type` 和 `rationale`，其中 `query_type` 包括 `semantic_question`、`document_style_statement`、`keyword_anchor`，用于让 LLM 生成贴近监管制度原文或填报说明证据句的检索表达，而不是只挑关键词。每个 aspect 的多条 query 会分别 retrieve/rerank，并在应用层按 RRF 融合候选，`fusion_method` 为 `aspect_query_rrf_then_bge_rerank`。QueryPlanner 阶段只允许拆题和生成检索计划，不回答用户问题；没有 LLM 配置或 LLM 失败时使用本地规则 fallback。上下文片段必须来自 `indexed` 文档，且摘录需要能回溯到 SQLite 原始 chunk；不可回溯片段会被过滤。最终进入 Prompt 的片段不再固定凑数，而是优先保证每个 aspect 至少有一条相关依据，再按 rerank 基础门槛、相对分数、重复度和章节结构动态补充，最多 `MAX_PROMPT_CHUNKS` 条；如果只有 1-2 条真正相关，就只返回 1-2 条。问答审计日志记录 `answer=null`、上下文包模式、是否最终答案和命中片段数量，不保存完整引用来源。
 
 响应包含：
 

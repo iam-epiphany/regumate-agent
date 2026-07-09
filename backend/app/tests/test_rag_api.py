@@ -37,6 +37,7 @@ def fake_indexing_services(monkeypatch, tmp_path):
     document_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("backend.app.services.document_storage.DOCUMENT_DIR", document_dir)
     monkeypatch.setattr("backend.app.services.document_lifecycle_service.DOCUMENT_DIR", document_dir)
+    monkeypatch.setattr("backend.app.services.query_planner_service.QUERY_PLANNER_API_KEY", None)
 
     def fake_embed_texts(texts: list[str]) -> list[TextEmbedding]:
         return [
@@ -81,6 +82,21 @@ def fake_retrieval_match(document_id: str = "DOC-TEST-0001") -> RetrievalMatch:
     )
 
 
+def parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for frame in text.strip().split("\n\n"):
+        event_name = "message"
+        data = None
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                event_name = line.removeprefix("event:").strip()
+            if line.startswith("data:"):
+                data = json.loads(line.removeprefix("data:").strip())
+        if data is not None:
+            events.append((event_name, data))
+    return events
+
+
 def test_health_check() -> None:
     response = client.get("/api/health")
 
@@ -99,6 +115,7 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/documents/{document_id}" in paths
     assert "delete" in app.openapi()["paths"]["/api/documents/{document_id}"]
     assert "/api/qa/ask" in paths
+    assert "/api/qa/ask/stream" in paths
     assert "/api/qa/retrieve" in paths
     assert "/api/audit/logs" in paths
     assert "/api/audit/archives" in paths
@@ -364,6 +381,73 @@ def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
     assert body["confidence"] < 1.0
 
 
+def test_qa_stream_returns_progress_events_and_final_response(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "rules.txt",
+                "资产合计应等于资产分项金额合计。\n报表数据应保证字段完整、金额类型正确。",
+                "text/plain",
+            )
+        },
+    )
+    document_id = upload_response.json()["document_id"]
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [fake_retrieval_match(document_id)],
+    )
+
+    response = client.post("/api/qa/ask/stream", json={"question": "资产合计怎么填报"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = parse_sse_events(response.text)
+    event_names = [event_name for event_name, _payload in events]
+    progress_stages = [
+        payload["stage"]
+        for event_name, payload in events
+        if event_name == "progress"
+    ]
+    assert event_names[-1] == "final"
+    assert "planning" in progress_stages
+    assert "retrieval" in progress_stages
+    assert "rerank" in progress_stages
+    assert "context_selection" in progress_stages
+    assert "prompt_build" in progress_stages
+    assert "llm_generation" in progress_stages
+    assert any(
+        payload["stage"] == "planning" and payload["status"] == "completed"
+        for event_name, payload in events
+        if event_name == "progress"
+    )
+    final_payload = events[-1][1]
+    assert final_payload["answer"] is None
+    assert final_payload["context_package"]["query"] == "资产合计怎么填报"
+    assert final_payload["context_package"]["is_final_answer"] is False
+
+
+def test_qa_stream_returns_error_event_when_retrieval_fails(monkeypatch) -> None:
+    reset_database()
+
+    def failing_retrieve(question: str, progress_reporter=None):
+        raise RetrievalServiceUnavailable("Qdrant hybrid 检索失败")
+
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", failing_retrieve)
+
+    response = client.post("/api/qa/ask/stream", json={"question": "资产合计"})
+
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    assert any(event_name == "error" for event_name, _payload in events)
+    assert any(
+        event_name == "progress" and payload["status"] == "failed"
+        for event_name, payload in events
+    )
+    assert all(event_name != "final" for event_name, _payload in events)
+
+
 def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
     reset_database()
     upload_response = client.post(
@@ -561,7 +645,13 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
         coverage_score=0.8,
         evidence_role="direct_evidence",
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [parent_match])
+    retrieval_calls = []
+
+    def fake_retrieve(question: str):
+        retrieval_calls.append(question)
+        return [parent_match]
+
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", fake_retrieve)
 
     response = client.post(
         "/api/qa/retrieve",
@@ -577,9 +667,22 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
         aspect["aspect_id"]
         for aspect in body["retrieval_summary"]["query_plan"]["aspects"]
     ] == ["asset_total_difference_check", "foreign_currency_evidence"]
+    assert body["retrieval_summary"]["fusion_method"] == "aspect_query_rrf_then_bge_rerank"
+    query_plan_aspects = body["retrieval_summary"]["query_plan"]["aspects"]
+    assert query_plan_aspects[0]["search_queries"][0]["query_type"] == "semantic_question"
+    assert query_plan_aspects[0]["search_queries"][1]["query_type"] == "document_style_statement"
+    assert query_plan_aspects[0]["search_queries"][2]["query_type"] == "keyword_anchor"
+    assert "资产合计与分项合计存在差异时应优先检查哪些原因" in retrieval_calls
+    assert "外币折算导致资产合计差异时需要保留哪些支持材料" in retrieval_calls
+    assert len(retrieval_calls) == 6
     assert all(
         aspect["covered"]
         for aspect in body["retrieval_summary"]["aspect_retrievals"]
+    )
+    assert all(
+        diagnostic["query_type"] in {"semantic_question", "document_style_statement", "keyword_anchor"}
+        for aspect in body["retrieval_summary"]["aspect_retrievals"]
+        for diagnostic in aspect["diagnostics"]
     )
     section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
     assert "3. 资产合计与校验关系" in section_titles

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import json
 import re
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from backend.app.services.query_planner_service import QueryAspect, QueryPlan, p
 from backend.app.services.retrieval_service import (
     RetrievalDiagnostics,
     RetrievalMatch,
+    ProgressReporter,
     evidence_coverage,
     get_last_retrieval_diagnostics,
     question_terms,
@@ -37,6 +39,15 @@ CONTEXT_INSTRUCTION = (
 )
 CONTEXT_CHUNK_CHAR_LIMIT = 1200
 EMPTY_ANSWER_LOG_TEXT = "[RAG_CONTEXT_PACKAGE_ONLY] 当前阶段未接入 LLM，接口仅返回检索上下文包。"
+ASPECT_QUERY_FUSION_METHOD = "aspect_query_rrf_then_bge_rerank"
+RRF_K = 60
+QUERY_TYPE_WEIGHTS = {
+    "semantic_question": 1.0,
+    "document_style_statement": 1.15,
+    "keyword_anchor": 0.75,
+    "legacy": 0.9,
+    "fallback": 0.85,
+}
 
 
 @dataclass(frozen=True)
@@ -60,12 +71,16 @@ class AspectRetrieval:
     covered: bool = False
 
 
-def answer_question(db: Session, question: str) -> QAResponse:
+def answer_question(
+    db: Session,
+    question: str,
+    progress_reporter: ProgressReporter | None = None,
+) -> QAResponse:
     cleaned_question = question.strip()
     if not cleaned_question:
         return QAResponse(answer=None, citations=[], confidence=0.0, refused=True, context_package=None)
 
-    package = build_context_package(db, cleaned_question)
+    package = build_context_package(db, cleaned_question, progress_reporter=progress_reporter)
     response = QAResponse(
         answer=None,
         citations=[_citation_from_result(result) for result in package.context_chunks],
@@ -85,13 +100,75 @@ def retrieve_context_package(db: Session, question: str) -> LLMContextPackage:
     return build_context_package(db, cleaned_question)
 
 
-def build_context_package(db: Session, question: str) -> LLMContextPackage:
+def build_context_package(
+    db: Session,
+    question: str,
+    progress_reporter: ProgressReporter | None = None,
+) -> LLMContextPackage:
+    planning_started_at = perf_counter()
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "detail": "正在拆分问题并生成检索计划……",
+        },
+    )
     query_plan = plan_query(question)
-    aspect_retrievals = _retrieve_aspects(db, query_plan)
+    planning_elapsed_ms = _elapsed_ms(planning_started_at)
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "planning",
+            "status": "completed",
+            "title": "问题理解完成",
+            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {planning_elapsed_ms:.0f}ms",
+            "elapsed_ms": planning_elapsed_ms,
+            "summary": {
+                "aspect_count": len(query_plan.aspects),
+                "aspects": [aspect.to_debug_dict() for aspect in query_plan.aspects],
+                "planner": query_plan.planner,
+                "fallback_used": query_plan.fallback_used,
+            },
+        },
+    )
+    aspect_retrievals = _retrieve_aspects(db, query_plan, progress_reporter=progress_reporter)
     citation_validation = _merge_citation_validation(
         [item.citation_validation for item in aspect_retrievals]
     )
+    context_started_at = perf_counter()
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "context_selection",
+            "status": "running",
+            "title": "正在精选最终上下文",
+            "detail": "正在按问题方面选择可引用依据……",
+        },
+    )
     context_chunks, prompt_selection = _select_prompt_chunks(question, query_plan, aspect_retrievals)
+    context_elapsed_ms = _elapsed_ms(context_started_at)
+    covered_aspect_count = sum(1 for item in aspect_retrievals if item.covered)
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "context_selection",
+            "status": "completed",
+            "title": "上下文精选完成",
+            "detail": (
+                f"最终使用 {len(context_chunks)}/{MAX_PROMPT_CHUNKS} 个片段，"
+                f"覆盖 {covered_aspect_count}/{len(query_plan.aspects)} 个方面"
+            ),
+            "elapsed_ms": context_elapsed_ms,
+            "summary": {
+                "used_chunks": len(context_chunks),
+                "max_prompt_chunks": MAX_PROMPT_CHUNKS,
+                "covered_aspects": covered_aspect_count,
+                "total_aspects": len(query_plan.aspects),
+            },
+        },
+    )
     diagnostics = _aggregate_aspect_diagnostics(aspect_retrievals)
     retrieval_summary = _build_retrieval_summary(
         question,
@@ -102,7 +179,38 @@ def build_context_package(db: Session, question: str) -> LLMContextPackage:
         citation_validation,
         prompt_selection,
     )
+    prompt_started_at = perf_counter()
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "prompt_build",
+            "status": "running",
+            "title": "正在构造 LLM Prompt",
+            "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        },
+    )
     prompt = RAGPromptBuilder().build(question, context_chunks)
+    prompt_elapsed_ms = _elapsed_ms(prompt_started_at)
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "prompt_build",
+            "status": "completed",
+            "title": "Prompt 构造完成",
+            "detail": f"已完成 Prompt 构造，用时 {prompt_elapsed_ms:.0f}ms",
+            "elapsed_ms": prompt_elapsed_ms,
+            "summary": {"prompt_chunk_count": len(context_chunks)},
+        },
+    )
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "llm_generation",
+            "status": "skipped",
+            "title": "LLM 生成暂未接入",
+            "detail": "当前阶段未接入最终 LLM 生成，接口仅返回可用于生成的上下文包。",
+        },
+    )
     return LLMContextPackage(
         query=question,
         instruction=CONTEXT_INSTRUCTION,
@@ -141,57 +249,190 @@ def _empty_context_package(question: str) -> LLMContextPackage:
     )
 
 
-def _retrieve_aspects(db: Session, query_plan: QueryPlan) -> list[AspectRetrieval]:
+def _retrieve_aspects(
+    db: Session,
+    query_plan: QueryPlan,
+    progress_reporter: ProgressReporter | None = None,
+) -> list[AspectRetrieval]:
     aspect_retrievals: list[AspectRetrieval] = []
-    for aspect in query_plan.aspects:
-        matches, diagnostics = _retrieve_aspect_matches(db, aspect)
+    for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "retrieval",
+                "status": "running",
+                "title": f"正在检索方面 {aspect_index}",
+                "detail": f"正在为“{aspect.question}”检索相关依据……",
+                "aspect_id": aspect.aspect_id,
+                "summary": {
+                    "aspect_index": aspect_index,
+                    "total_aspects": len(query_plan.aspects),
+                    "aspect_question": aspect.question,
+                },
+            },
+        )
+        matches, diagnostics = _retrieve_aspect_matches(
+            db,
+            aspect,
+            progress_reporter=progress_reporter,
+        )
         matches = _expand_neighbor_matches(db, aspect.question, matches)
         candidates = _to_retrieval_results(matches)
         for candidate in candidates:
             candidate.metadata["aspect_id"] = aspect.aspect_id
             candidate.metadata["aspect_question"] = aspect.question
-            candidate.metadata["aspect_search_queries"] = list(aspect.search_queries)
+            candidate.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
             candidate.metadata["expected_evidence_type"] = aspect.expected_evidence_type
+            candidate.metadata["evidence_need"] = aspect.evidence_need
             candidate.metadata.setdefault("prompt_matched_aspects", [aspect.aspect_id])
         valid_candidates, citation_validation = _validate_context_chunks(db, candidates)
-        aspect_retrievals.append(
-            AspectRetrieval(
-                aspect=aspect,
-                candidates=valid_candidates,
-                diagnostics=diagnostics,
-                citation_validation=citation_validation,
-                selected_chunk_ids=[],
-                covered=False,
-            )
+        aspect_retrieval = AspectRetrieval(
+            aspect=aspect,
+            candidates=valid_candidates,
+            diagnostics=diagnostics,
+            citation_validation=citation_validation,
+            selected_chunk_ids=[],
+            covered=False,
+        )
+        aspect_retrievals.append(aspect_retrieval)
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "retrieval",
+                "status": "completed" if valid_candidates else "failed",
+                "title": f"方面 {aspect_index} 检索完成" if valid_candidates else f"方面 {aspect_index} 未找到足够依据",
+                "detail": (
+                    f"已为“{aspect.question}”召回 {len(valid_candidates)} 个可回溯候选片段"
+                    if valid_candidates
+                    else f"“{aspect.question}”暂未召回可回溯依据"
+                ),
+                "aspect_id": aspect.aspect_id,
+                "summary": {
+                    "aspect_index": aspect_index,
+                    "total_aspects": len(query_plan.aspects),
+                    "candidate_count": len(valid_candidates),
+                    "aspect_question": aspect.question,
+                    "retrieved_sections": [
+                        chunk.section_title for chunk in valid_candidates if chunk.section_title
+                    ],
+                },
+            },
         )
     return aspect_retrievals
 
 
-def _retrieve_aspect_matches(db: Session, aspect: QueryAspect) -> tuple[list[RetrievalMatch], list[dict[str, Any]]]:
-    collected: list[RetrievalMatch] = []
-    seen_chunk_ids: set[str] = set()
+def _retrieve_aspect_matches(
+    db: Session,
+    aspect: QueryAspect,
+    progress_reporter: ProgressReporter | None = None,
+) -> tuple[list[RetrievalMatch], list[dict[str, Any]]]:
+    fused_by_chunk_id: dict[str, RetrievalMatch] = {}
+    fusion_scores: dict[str, float] = {}
+    fusion_query_hits: dict[str, list[dict[str, Any]]] = {}
     diagnostics_by_query: list[dict[str, Any]] = []
 
-    for search_query in aspect.search_queries or (aspect.question,):
+    for search_query in aspect.search_queries:
         reset_retrieval_diagnostics()
-        matches = _filter_indexed_matches(db, retrieve_citations(search_query))
+        matches = _filter_indexed_matches(
+            db,
+            _retrieve_citations_with_optional_progress(search_query.query, progress_reporter),
+        )
         diagnostics = get_last_retrieval_diagnostics()
         diagnostics_by_query.append(
             {
-                "search_query": search_query,
+                "search_query": search_query.query,
+                "query_type": search_query.query_type,
+                "rationale": search_query.rationale,
+                "match_count": len(matches),
                 **diagnostics.to_summary_fields(),
             }
         )
-        for match in matches:
-            if match.citation.chunk_id in seen_chunk_ids:
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "rerank",
+                "status": "completed",
+                "title": "候选重排完成",
+                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排",
+                "elapsed_ms": diagnostics.timings_ms.get("rerank"),
+                "summary": {
+                    "search_query": search_query.query,
+                    "query_type": search_query.query_type,
+                    "reranked_count": diagnostics.reranked_count,
+                },
+            },
+        )
+        query_weight = QUERY_TYPE_WEIGHTS.get(search_query.query_type, 1.0)
+        for rank, match in enumerate(matches, start=1):
+            chunk_id = match.citation.chunk_id
+            if not chunk_id:
                 continue
-            match.metadata["aspect_id"] = aspect.aspect_id
-            match.metadata["aspect_question"] = aspect.question
-            match.metadata["aspect_search_query"] = search_query
-            match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
-            collected.append(match)
-            seen_chunk_ids.add(match.citation.chunk_id)
-    return collected, diagnostics_by_query
+            fusion_scores[chunk_id] = fusion_scores.get(chunk_id, 0.0) + query_weight / (RRF_K + rank)
+            fusion_query_hits.setdefault(chunk_id, []).append(
+                {
+                    "query": search_query.query,
+                    "query_type": search_query.query_type,
+                    "rationale": search_query.rationale,
+                    "rank": rank,
+                    "rrf_contribution": round(query_weight / (RRF_K + rank), 6),
+                }
+            )
+            existing = fused_by_chunk_id.get(chunk_id)
+            if existing is None or _match_sort_key(match) > _match_sort_key(existing):
+                fused_by_chunk_id[chunk_id] = match
+
+    fused_matches = list(fused_by_chunk_id.values())
+    for match in fused_matches:
+        chunk_id = match.citation.chunk_id
+        match.metadata["aspect_id"] = aspect.aspect_id
+        match.metadata["aspect_question"] = aspect.question
+        match.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
+        match.metadata["aspect_search_query_hits"] = fusion_query_hits.get(chunk_id, [])
+        match.metadata["aspect_query_fusion_score"] = round(fusion_scores.get(chunk_id, 0.0), 6)
+        match.metadata["fusion_method"] = ASPECT_QUERY_FUSION_METHOD
+        match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
+        match.metadata["evidence_need"] = aspect.evidence_need
+
+    fused_matches.sort(
+        key=lambda match: (
+            fusion_scores.get(match.citation.chunk_id, 0.0),
+            match.rerank_score,
+            match.score,
+        ),
+        reverse=True,
+    )
+    return fused_matches, diagnostics_by_query
+
+
+def _retrieve_citations_with_optional_progress(
+    search_query: str,
+    progress_reporter: ProgressReporter | None,
+) -> list[RetrievalMatch]:
+    if progress_reporter is None:
+        return retrieve_citations(search_query)
+    try:
+        return retrieve_citations(search_query, progress_reporter=progress_reporter)
+    except TypeError as exc:
+        if "progress_reporter" not in str(exc):
+            raise
+        return retrieve_citations(search_query)
+
+
+def _report_progress(progress_reporter: ProgressReporter | None, event: dict[str, Any]) -> None:
+    if progress_reporter is not None:
+        progress_reporter(event)
+
+
+def _match_sort_key(match: RetrievalMatch) -> tuple[float, float, float]:
+    return (
+        float(match.rerank_score or 0.0),
+        float(match.coverage_score or 0.0),
+        float(match.score or 0.0),
+    )
+
+
+def _search_query_debug_list(aspect: QueryAspect) -> list[dict[str, Any]]:
+    return [search_query.to_debug_dict() for search_query in aspect.search_queries]
 
 
 def _to_retrieval_results(matches: list[RetrievalMatch]) -> list[RetrievalResult]:
@@ -391,7 +632,8 @@ def _prompt_selection_summary(
                 {
                     "aspect_id": aspect.aspect_id,
                     "description": aspect.question,
-                    "search_queries": list(aspect.search_queries),
+                    "evidence_need": aspect.evidence_need,
+                    "search_queries": _search_query_debug_list(aspect),
                     "expected_evidence_type": aspect.expected_evidence_type,
                 }
                 for aspect in query_plan.aspects
@@ -424,8 +666,9 @@ def _mark_chunk_for_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> None:
     chunk.metadata["prompt_matched_aspects"] = matched_aspects
     chunk.metadata["aspect_id"] = aspect.aspect_id
     chunk.metadata["aspect_question"] = aspect.question
-    chunk.metadata["aspect_search_queries"] = list(aspect.search_queries)
+    chunk.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
     chunk.metadata["expected_evidence_type"] = aspect.expected_evidence_type
+    chunk.metadata["evidence_need"] = aspect.evidence_need
 
 
 def _chunk_matches_query_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> bool:
@@ -854,6 +1097,7 @@ def _build_retrieval_summary(
         "query_plan": query_plan.to_debug_dict(),
         "aspect_retrievals": [_aspect_retrieval_debug(item) for item in aspect_retrievals],
         "final_prompt_chunk_ids": [chunk.chunk_id for chunk in context_chunks],
+        "fusion_method": ASPECT_QUERY_FUSION_METHOD,
     }
     summary.update(diagnostics.to_summary_fields())
     return summary
@@ -910,6 +1154,7 @@ def _merge_citation_validation(validations: list[dict[str, Any]]) -> dict[str, A
 def _aspect_retrieval_debug(item: AspectRetrieval) -> dict[str, Any]:
     return {
         **item.aspect.to_debug_dict(),
+        "evidence_need": item.aspect.evidence_need,
         "covered": item.covered,
         "missing": not item.covered,
         "candidate_count": len(item.candidates),
@@ -921,6 +1166,8 @@ def _aspect_retrieval_debug(item: AspectRetrieval) -> dict[str, Any]:
                 "section_title": chunk.section_title,
                 "score": chunk.score,
                 "rerank_score": chunk.metadata.get("rerank_score"),
+                "fusion_score": chunk.metadata.get("aspect_query_fusion_score"),
+                "query_hits": chunk.metadata.get("aspect_search_query_hits", []),
                 "evidence_role": chunk.metadata.get("evidence_role"),
                 "selected_for_prompt": chunk.chunk_id in item.selected_chunk_ids,
             }
@@ -978,6 +1225,10 @@ def _confidence_from_results(results: list[RetrievalResult]) -> float:
         return 0.0
     best_score = max(scores)
     return min(max(float(best_score), 0.0), 0.95)
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((perf_counter() - started_at) * 1000, 2)
 
 
 def _int_or_none(value: Any) -> int | None:

@@ -33,18 +33,20 @@ Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默
 ## 检索流程
 
 1. `rag_service` 清理用户问题。
-2. `query_planner_service` 先把原始问题拆成多个 aspect。每个 aspect 包含子问题、`search_queries`、预期证据类型和关键词。该 LLM 只做拆题和检索计划，不生成最终答案；没有 API key、LLM 超时或返回格式异常时，自动回退到本地规则拆分。
-3. 每个 aspect 单独调用检索链路，不再把复杂问题整体只检索一次。一个 aspect 内可以有 1-3 个 search query。
+2. `query_planner_service` 先把原始问题拆成多个 aspect。每个 aspect 包含子问题、`evidence_need`、结构化 `search_queries` 和关键词。该 LLM 只做拆题和检索计划，不生成最终答案；没有 API key、LLM 超时或返回格式异常时，自动回退到本地规则拆分。
+3. 每个 aspect 单独调用检索链路，不再把复杂问题整体只检索一次。一个 aspect 内通常包含 2-3 个 search query：`semantic_question` 贴近用户意图，`document_style_statement` 模拟制度原文/填报说明证据句，`keyword_anchor` 用少量关键术语兜底。
 4. `embedding_service` 对每次检索的 query variants 做批量 BGE-M3 dense / sparse embedding，避免同一检索内重复模型调用。
-5. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 RRF 融合召回结果；同一检索内候选按 `chunk_id` 去重后保留较高召回分。
+5. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一检索内候选按 `chunk_id` 去重后保留较高召回分。
 6. `rerank_service` 使用当前 aspect query 对候选 chunk 重新评分；当前默认扩大初召回到 50、rerank 20，但 rerank 结果不直接等同于最终入 Prompt 片段。
-7. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
-8. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；即使初始命中已达到最终 topK，也会先尝试结构补充再统一截断。
-9. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
-10. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
-11. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，且返回摘录必须能回溯到 SQLite 原始 chunk；不可回溯的片段会被过滤并写入 `citation_validation`。
-12. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；最终最多 `MAX_PROMPT_CHUNKS=5` 条，不为了凑固定数量加入无关片段。
-13. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、query 数、候选数、rerank 数、过滤数、Prompt 过滤数、阶段耗时和分数范围，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
+7. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，按 `aspect_query_rrf_then_bge_rerank` 记录 `fusion_method`，并保留每个 chunk 命中的 query、query type、rank 和融合分。
+8. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
+9. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；即使初始命中已达到最终 topK，也会先尝试结构补充再统一截断。
+10. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
+11. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
+12. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，且返回摘录必须能回溯到 SQLite 原始 chunk；不可回溯的片段会被过滤并写入 `citation_validation`。
+13. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；最终最多 `MAX_PROMPT_CHUNKS=5` 条，不为了凑固定数量加入无关片段。
+14. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、候选数、rerank 数、过滤数、Prompt 过滤数、阶段耗时和分数范围，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
+15. `/api/qa/ask/stream` 会复用同一条 RAG 链路，并通过 `progress_reporter` 在 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build` 和 `llm_generation` 阶段推送 SSE 事件。当前阶段不生成最终答案，`llm_generation` 只推送 `skipped`，表示等待后续接入最终 LLM。
 
 QueryPlanner 默认配置：
 
@@ -201,4 +203,6 @@ python scripts/check_offline_models.py
 
 生成上下文前会执行基础清洗：重复 `chunk_id` 或重复文本只保留一次；如果片段正文开头重复显示章节标题，则去掉正文中的重复标题；片段保留原文，不提前改写成结论式答案；长片段按句子边界尽量截断到约 1200 字。输出不再包含“根据知识库引用，可归纳为”“1. 结论”等旧模板内容。
 
-上下文组装会尽量利用章节结构补足相邻依据。例如命中 `3. 资产合计与校验关系` 时，如果同一文档存在 `3.1 资产合计差异处理`，且问题涉及差异、处理、外币折算、保留依据等词，系统会优先补充该子章节。随后最终 Prompt 选择会按 QueryPlanner 拆出的 aspect 覆盖进行二次筛选：每个 aspect 至少尝试保留 1 条可回溯依据；像 `4. 逾期贷款与风险分类` 这类不覆盖当前 aspect 的片段即使 rerank 分数不低也不会进入 Prompt。若某个 aspect 没有可回溯候选，`retrieval_summary.missing_aspects` 会标记缺失点，提醒后续 LLM 不要硬编。
+流式观测接口不会改变上下文包结构。它只在同一执行过程中额外推送阶段状态：问题理解、依据检索、候选重排、上下文精选、Prompt 构造和 LLM 生成占位。前端据此显示运行中的转动图标、完成对勾、失败提示和跳过状态，避免长耗时查询期间页面静止。
+
+上下文组装会尽量利用章节结构补足相邻依据。例如命中 `3. 资产合计与校验关系` 时，如果同一文档存在 `3.1 资产合计差异处理`，且问题涉及差异、处理、外币折算、保留依据等词，系统会优先补充该子章节。随后最终 Prompt 选择会按 QueryPlanner 拆出的 aspect 覆盖进行二次筛选：每个 aspect 至少尝试保留 1 条可回溯依据；像 `4. 逾期贷款与风险分类` 这类不覆盖当前 aspect 的片段即使 rerank 分数不低也不会进入 Prompt。若某个 aspect 没有可回溯候选，`retrieval_summary.missing_aspects` 会标记缺失点，提醒后续 LLM 不要硬编。`aspect_retrievals[].diagnostics` 会展示每条结构化 query 的 `query_type`、召回候选、rerank 数量和可用命中数，`retrieved_chunks[].query_hits` 会展示该 chunk 由哪些 query 召回。

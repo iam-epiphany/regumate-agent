@@ -54,6 +54,7 @@
 - 不要调用 `rg`。
 - 文件发现使用 `Get-ChildItem -Recurse -File`。
 - 文本搜索使用 `Select-String -Path <file> -Pattern <pattern>`。
+- 文件发现和文本搜索必须先限定业务目录或关键词范围，默认排除 `.venv`、`node_modules`、`dist`、`build`、`.git`、`__pycache__`、`.pytest_cache`、运行时数据库、上传文件和其他大体积生成目录，避免输出被无关依赖或产物冲爆。
 - 不要使用 Bash heredoc。
 - Python 输出涉及中文路径或数学符号前，设置 `$env:PYTHONIOENCODING='utf-8'`。
 - Markdown 文件统一 UTF-8。

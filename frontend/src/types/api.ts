@@ -112,6 +112,7 @@ export interface LLMContextPackage {
     query_variants?: string[];
     missing_aspects?: string[];
     coverage_notes?: string[];
+    fusion_method?: string;
     query_plan?: {
       original_question: string;
       planner: string;
@@ -120,7 +121,8 @@ export interface LLMContextPackage {
       aspects: Array<{
         aspect_id: string;
         question: string;
-        search_queries: string[];
+        evidence_need?: string;
+        search_queries: QueryPlanSearchQuery[];
         expected_evidence_type: string;
         keywords: string[];
       }>;
@@ -128,7 +130,8 @@ export interface LLMContextPackage {
     aspect_retrievals?: Array<{
       aspect_id: string;
       question: string;
-      search_queries: string[];
+      evidence_need?: string;
+      search_queries: QueryPlanSearchQuery[];
       expected_evidence_type: string;
       keywords: string[];
       covered: boolean;
@@ -141,6 +144,8 @@ export interface LLMContextPackage {
         section_title: string | null;
         score: number | null;
         rerank_score: unknown;
+        fusion_score?: unknown;
+        query_hits?: Array<Record<string, unknown>>;
         evidence_role: unknown;
         selected_for_prompt: boolean;
       }>;
@@ -159,7 +164,8 @@ export interface LLMContextPackage {
       expected_aspects: Array<{
         aspect_id: string;
         description: string;
-        search_queries?: string[];
+        evidence_need?: string;
+        search_queries?: QueryPlanSearchQuery[];
         expected_evidence_type?: string;
       }>;
       final_prompt_chunk_ids?: string[];
@@ -176,12 +182,38 @@ export interface LLMContextPackage {
   llm_prompt: string;
 }
 
+export interface QueryPlanSearchQuery {
+  query: string;
+  query_type: "semantic_question" | "document_style_statement" | "keyword_anchor" | "legacy" | "fallback" | string;
+  rationale: string;
+}
+
 export interface QAResponse {
   answer: string | null;
   citations: Citation[];
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
+}
+
+export type RagProgressStage =
+  | "planning"
+  | "retrieval"
+  | "rerank"
+  | "context_selection"
+  | "prompt_build"
+  | "llm_generation";
+
+export type RagProgressStatus = "running" | "completed" | "failed" | "skipped" | "pending";
+
+export interface RagProgressEvent {
+  stage: RagProgressStage;
+  status: RagProgressStatus;
+  title: string;
+  detail: string;
+  elapsed_ms?: number | null;
+  summary?: Record<string, unknown>;
+  aspect_id?: string;
 }
 
 export interface AuditLogItem {

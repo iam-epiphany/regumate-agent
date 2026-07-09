@@ -2,7 +2,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 import re
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
 
 from backend.app.core.config import (
     DIRECT_EVIDENCE_COVERAGE,
@@ -20,6 +20,9 @@ from backend.app.services.vector_store_service import VectorSearchResult, Vector
 
 class RetrievalServiceUnavailable(RuntimeError):
     pass
+
+
+ProgressReporter = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -72,19 +75,75 @@ def reset_retrieval_diagnostics() -> None:
     _LAST_RETRIEVAL_DIAGNOSTICS.set(RetrievalDiagnostics())
 
 
-def retrieve_citations(question: str) -> list[RetrievalMatch]:
+def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
     diagnostics = RetrievalDiagnostics()
     _LAST_RETRIEVAL_DIAGNOSTICS.set(diagnostics)
     total_started_at = perf_counter()
     try:
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "retrieval",
+                "status": "running",
+                "title": "正在检索相关依据",
+                "detail": "正在从知识库召回候选片段……",
+                "summary": {"query": question},
+            },
+        )
         candidates = _collect_candidates(question, diagnostics)
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "retrieval",
+                "status": "completed",
+                "title": "依据检索完成",
+                "detail": f"已召回 {diagnostics.candidate_count} 个候选片段，用时 {diagnostics.timings_ms.get('qdrant', 0):.0f}ms",
+                "elapsed_ms": diagnostics.timings_ms.get("qdrant"),
+                "summary": {
+                    "candidate_count": diagnostics.candidate_count,
+                    "raw_candidate_count": diagnostics.raw_candidate_count,
+                    "query_count": diagnostics.query_count,
+                },
+            },
+        )
         rerank_started_at = perf_counter()
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "rerank",
+                "status": "running",
+                "title": "正在重排候选片段",
+                "detail": f"正在重排 {len(candidates)} 个候选片段……",
+                "summary": {"candidate_count": len(candidates)},
+            },
+        )
         reranked = rerank_candidates(question=question, candidates=candidates, limit=RERANK_TOP_K)
         diagnostics.timings_ms["rerank"] = _elapsed_ms(rerank_started_at)
         diagnostics.reranked_count = len(reranked)
         diagnostics.score_range = _score_range(candidates, reranked)
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "rerank",
+                "status": "completed",
+                "title": "候选重排完成",
+                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {diagnostics.timings_ms['rerank']:.0f}ms",
+                "elapsed_ms": diagnostics.timings_ms["rerank"],
+                "summary": {"reranked_count": diagnostics.reranked_count},
+            },
+        )
     except (EmbeddingServiceError, VectorStoreError, RerankServiceError) as exc:
         diagnostics.timings_ms["total"] = _elapsed_ms(total_started_at)
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "retrieval",
+                "status": "failed",
+                "title": "依据检索失败",
+                "detail": str(exc),
+                "elapsed_ms": diagnostics.timings_ms["total"],
+            },
+        )
         raise RetrievalServiceUnavailable(str(exc)) from exc
 
     terms = question_terms(question)
@@ -109,6 +168,11 @@ def retrieve_citations(question: str) -> list[RetrievalMatch]:
         for item in selected
     ]
     return matches
+
+
+def _report_progress(progress_reporter: ProgressReporter | None, event: dict[str, Any]) -> None:
+    if progress_reporter is not None:
+        progress_reporter(event)
 
 
 def _collect_candidates(question: str, diagnostics: RetrievalDiagnostics) -> list[VectorSearchResult]:
