@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import re
 import urllib.error
@@ -20,7 +20,7 @@ class QueryPlannerError(RuntimeError):
     pass
 
 
-VALID_QUERY_TYPES = {"semantic_question", "document_style_statement", "keyword_anchor", "legacy", "fallback"}
+VALID_QUERY_TYPES = {"semantic_question", "document_style_statement", "keyword_anchor", "table_locator", "legacy", "fallback"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,12 @@ class QueryAspect:
     search_queries: tuple[QuerySearchQuery, ...]
     evidence_need: str
     keywords: tuple[str, ...]
+    modality: str = "text"
+    table_task: str = "none"
+    table_filters: dict[str, Any] = field(default_factory=dict)
+    operation: str = "none"
+    selectors: tuple[dict[str, Any], ...] = ()
+    expected_unit: str | None = None
 
     @property
     def expected_evidence_type(self) -> str:
@@ -55,6 +61,12 @@ class QueryAspect:
             "question": self.question,
             "evidence_need": self.evidence_need,
             "expected_evidence_type": self.evidence_need,
+            "modality": self.modality,
+            "table_task": self.table_task,
+            "table_filters": self.table_filters,
+            "operation": self.operation,
+            "selectors": list(self.selectors),
+            "expected_unit": self.expected_unit,
             "search_queries": [query.to_debug_dict() for query in self.search_queries],
             "keywords": list(self.keywords),
         }
@@ -99,12 +111,41 @@ class QueryBudget:
         }
 
 
-def plan_query(question: str) -> QueryPlan:
+def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     cleaned_question = question.strip()
     if not cleaned_question:
         return QueryPlan(original_question="", aspects=(), planner="empty", fallback_used=True)
 
     budget = plan_query_budget(cleaned_question)
+
+    # Explicit spreadsheet questions are deterministic enough to plan locally.
+    # This avoids an API round trip and, more importantly, prevents an LLM from
+    # changing operand order or losing a filename/sheet constraint.
+    table_aspect = _fallback_table_aspect(cleaned_question, options=options)
+    if table_aspect is not None:
+        return QueryPlan(
+            original_question=cleaned_question,
+            aspects=(table_aspect,),
+            planner="deterministic-table",
+            fallback_used=True,
+            budget=budget.to_debug_dict(),
+        )
+
+    # Multiple-choice contest questions normally name the target material in
+    # book-title marks, while the remaining stem is generic wording such as
+    # "which statement is consistent".  Treating that whole stem as lexical
+    # coverage dilutes the exact title and can discard the right chunk after
+    # reranking.  Anchor coverage/reranking on the material title while still
+    # using the original stem and every option for hybrid candidate recall.
+    mcq_aspect = _fallback_mcq_aspect(cleaned_question, options=options)
+    if mcq_aspect is not None:
+        return QueryPlan(
+            original_question=cleaned_question,
+            aspects=(mcq_aspect,),
+            planner="deterministic-mcq",
+            fallback_used=True,
+            budget=budget.to_debug_dict(),
+        )
 
     if QUERY_PLANNER_ENABLED and QUERY_PLANNER_API_KEY:
         try:
@@ -167,6 +208,7 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
     endpoint = f"{QUERY_PLANNER_BASE_URL.rstrip('/')}/chat/completions"
     payload = {
         "model": QUERY_PLANNER_MODEL,
+        "thinking": {"type": "disabled"},
         "temperature": 0,
         "response_format": {"type": "json_object"},
         "messages": [
@@ -176,7 +218,9 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
                     "你是 ReguMate 的检索前 QueryPlanner。"
                     "你的唯一任务是把银行监管制度、统计报表填报说明、指标口径问题拆成检索 aspect，生成检索计划。"
                     "禁止回答用户问题，禁止给出结论，禁止补充知识库外事实。"
-                    "你要生成有利于向量检索命中制度原文 chunk 的自然语言查询，不要只挑关键词。"
+                    "你要同时支持制度文档检索和 Excel/统计报表结构化检索。"
+                    "制度问题生成有利于向量检索命中原文 chunk 的自然语言查询；"
+                    "Excel/统计报表问题必须生成表格定位计划，识别文件、sheet、期间、指标、行标签、列标签、单位和计算动作。"
                     "用户枚举多个处理对象时，原则上一项一个 aspect。"
                     "不得丢弃依据不足、违规判断、正式监管报告生成等安全边界问题。"
                     "只输出 JSON 对象。"
@@ -187,16 +231,20 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
                 "content": (
                     "请按本次预算把下面问题拆成 1 到 "
                     f"{budget.max_aspects} 个 aspect，系统安全上限为 {budget.system_max_aspects}。每个 aspect 包含："
-                    "aspect_id、question、evidence_need、search_queries、keywords。"
+                    "aspect_id、question、evidence_need、search_queries、keywords、modality、table_task、table_filters、operation。"
                     "如果用户明确枚举了多个处理对象，一般每个处理对象单独成为一个 aspect；"
                     "如果因为预算必须合并或遗漏项目，把项目名称写入 omitted_or_merged_items。"
                     "输出 JSON 顶层必须包含 aspects 和 omitted_or_merged_items。"
                     "search_queries 必须是对象数组，每个对象包含 query、query_type、rationale。"
-                    "query_type 只能是 semantic_question、document_style_statement、keyword_anchor。"
+                    "query_type 只能是 semantic_question、document_style_statement、keyword_anchor、table_locator。"
+                    "modality 只能是 text、table、mixed；table_task 只能是 lookup、compare、calculate、locate、none；"
+                    "operation 只能是 max、min、difference、sum、ratio、none。"
+                    "table_filters 可包含 filename、source_title、year、month、quarter、sheet、indicator、row_label、column_label、unit、metric、scope。"
                     "每个 aspect 生成 2 到 "
                     f"{QUERY_PLANNER_MAX_SEARCH_QUERIES} 条 search_queries："
                     "semantic_question 贴近用户意图；document_style_statement 像制度原文、填报说明标题或证据句；"
-                    "keyword_anchor 只用少量关键术语兜底。"
+                    "table_locator 用文件名、sheet、期间、指标、行列标签和单位锚点定位表格；keyword_anchor 只用少量关键术语兜底。"
+                    "Excel/统计报表取数题优先 modality=table；既要制度口径又要表格数值时 modality=mixed。"
                     "优先生成可能出现在制度文档/填报说明中的自然语言证据查询，禁止只输出关键词串。"
                     "evidence_need 描述要找章节定义、填报口径、处理流程、例外条件或留痕依据。"
                     "如果问题只有一个主题，也返回一个 aspect。"
@@ -289,6 +337,10 @@ def _aspects_from_payload(
                     or "相关制度依据"
                 ),
                 keywords=tuple(_dedupe(keywords)[:8]),
+                modality=_clean_modality(raw_aspect.get("modality")),
+                table_task=_clean_table_task(raw_aspect.get("table_task")),
+                table_filters=_clean_table_filters(raw_aspect.get("table_filters")),
+                operation=_clean_operation(raw_aspect.get("operation")),
             )
         )
 
@@ -299,6 +351,10 @@ def _aspects_from_payload(
 
 def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[QueryAspect]:
     budget = budget or plan_query_budget(question)
+    table_aspect = _fallback_table_aspect(question)
+    if table_aspect is not None:
+        return [table_aspect]
+
     heuristic_aspects = _domain_heuristic_aspects(question, max_aspects=budget.max_aspects)
     if heuristic_aspects:
         return heuristic_aspects
@@ -320,6 +376,77 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
             )
         )
     return aspects
+
+
+def _fallback_mcq_aspect(question: str, options: list[str] | None = None) -> QueryAspect | None:
+    cleaned_options = [str(option).strip() for option in (options or []) if str(option).strip()]
+    if len(cleaned_options) < 2:
+        return None
+
+    title_candidates = [
+        _normalize_mcq_title(item)
+        for pattern in (r"《([^》]+)》", r"“([^”]+)”", r'"([^"]+)"')
+        for item in re.findall(pattern, question)
+        if _normalize_mcq_title(item)
+    ]
+    title_anchor = title_candidates[0] if title_candidates else ""
+    requested_format_match = re.search(r"[（(]\s*(pdf|word|docx?)\s*[）)]", question, flags=re.IGNORECASE)
+    requested_format = requested_format_match.group(1).lower() if requested_format_match else ""
+    anchor_question = title_anchor or re.sub(
+        r"(检索|查阅|根据|以下哪一项|以下哪项|哪一项|哪项|与材料内容一致|与材料一致|说法正确|表述正确|正确的是|不正确的是)",
+        " ",
+        question,
+    )
+    anchor_question = re.sub(r"[？?。；;，,：:\s]+", " ", anchor_question).strip() or question
+
+    option_statements = _mcq_option_evidence_statements(cleaned_options)
+    search_queries = [
+        QuerySearchQuery(
+            query=anchor_question,
+            query_type="keyword_anchor",
+            rationale="选择题指定材料的标题或核心主题锚点",
+        ),
+        QuerySearchQuery(
+            query=question,
+            query_type="semantic_question",
+            rationale="保留选择题原始语义和限定条件",
+        ),
+        *[
+            QuerySearchQuery(
+            query=statement,
+            query_type="document_style_statement",
+            rationale="候选项中的独立事实用于召回直接证据",
+            )
+            for statement in option_statements[:8]
+        ],
+    ]
+    return QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question=anchor_question,
+        search_queries=tuple(_dedupe_search_queries(search_queries)),
+        evidence_need="在指定材料中核对候选项并找到直接支持或否定证据",
+        keywords=tuple(_dedupe([anchor_question, *title_candidates])[:8]),
+        modality="text",
+        table_filters={"file_type": requested_format} if requested_format else {},
+    )
+
+
+def _normalize_mcq_title(value: str) -> str:
+    title = str(value or "").strip()
+    return re.sub(r"[（(]\s*(?:pdf|word|docx?|附件)\s*[）)]$", "", title, flags=re.IGNORECASE).strip()
+
+
+def _mcq_option_evidence_statements(options: list[str]) -> list[str]:
+    statements: list[str] = []
+    seen: set[str] = set()
+    for option in options:
+        for statement in re.split(r"[；;]", option):
+            cleaned = re.sub(r"\s+", " ", statement).strip(" 。；;")
+            normalized = re.sub(r"\s+", "", cleaned)
+            if cleaned and normalized not in seen:
+                seen.add(normalized)
+                statements.append(cleaned)
+    return statements
 
 
 def _domain_heuristic_aspects(question: str, max_aspects: int | None = None) -> list[QueryAspect]:
@@ -594,6 +721,160 @@ def _clean_search_queries(value: Any) -> list[QuerySearchQuery]:
             )
         )
     return queries
+
+
+def _clean_modality(value: Any) -> str:
+    text = _clean_text(value).lower()
+    return text if text in {"text", "table", "mixed"} else "text"
+
+
+def _clean_table_task(value: Any) -> str:
+    text = _clean_text(value).lower()
+    return text if text in {"lookup", "compare", "calculate", "locate", "none"} else "none"
+
+
+def _clean_operation(value: Any) -> str:
+    text = _clean_text(value).lower()
+    return text if text in {"max", "min", "difference", "sum", "ratio", "none"} else "none"
+
+
+def _clean_table_filters(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    allowed = {
+        "filename",
+        "source_title",
+        "year",
+        "month",
+        "quarter",
+        "sheet",
+        "indicator",
+        "row_label",
+        "column_label",
+        "unit",
+        "metric",
+        "scope",
+    }
+    return {key: value[key] for key in allowed if key in value and value[key] not in (None, "", [])}
+
+
+def _fallback_table_aspect(question: str, options: list[str] | None = None) -> QueryAspect | None:
+    normalized = re.sub(r"\s+", "", question)
+    table_markers = ["Excel", "excel", "工作表", "单元格", "表格", "情况表", "统计表", "附件"]
+    table_actions = ["数值", "金额", "余额", "是多少", "多少", "最高", "最低", "最大", "最小", "差值", "相差", "占比", "比例", "取数"]
+    explicit_table = any(marker in question for marker in table_markers)
+    numerical_intent = any(action in normalized for action in table_actions)
+    if not explicit_table and not numerical_intent:
+        return None
+
+    table_task = "lookup"
+    operation = "none"
+    if any(term in normalized for term in ["最高", "最大", "最多"]):
+        table_task = "compare"
+        operation = "max"
+    elif any(term in normalized for term in ["最低", "最小", "最少"]):
+        table_task = "compare"
+        operation = "min"
+    elif any(term in normalized for term in ["差值", "相差", "变化", "增加", "减少"]):
+        table_task = "calculate"
+        operation = "difference"
+    elif "占比" in normalized or "比例" in normalized:
+        table_task = "calculate"
+        operation = "ratio"
+    elif any(term in normalized for term in ["求和", "总和", "加总"]):
+        table_task = "calculate"
+        operation = "sum"
+
+    filters = _extract_table_filters(question)
+    selectors = _extract_table_selectors(question, table_task, options or [])
+    # “在某口径下取数” is still a pure table lookup. Only explicit requests to
+    # combine a regulation/explanation with table data should trigger the
+    # slower mixed vector path.
+    mixed_markers = ["根据监管制度", "结合监管制度", "填报说明依据", "制度依据", "监管规则"]
+    modality = "mixed" if explicit_table and any(term in normalized for term in mixed_markers) else "table"
+    locator_terms = " ".join(str(value) for value in filters.values() if value)
+    search_queries = [
+        QuerySearchQuery(question, "semantic_question", "表格问题的自然语言意图"),
+        QuerySearchQuery(
+            " ".join(part for part in [str(filters.get("source_title") or ""), str(filters.get("sheet") or ""), str(filters.get("indicator") or "")] if part),
+            "document_style_statement",
+            "接近表格标题和工作表名称",
+        ),
+        QuerySearchQuery(locator_terms or question, "table_locator", "表格结构定位锚点"),
+    ]
+    search_queries = tuple(query for query in search_queries if query.query.strip())
+    keywords = _keywords_from_text(" ".join([question, locator_terms]))
+    return QueryAspect(
+        aspect_id="table_evidence",
+        question=question,
+        search_queries=search_queries[:QUERY_PLANNER_MAX_SEARCH_QUERIES],
+        evidence_need="表格工作表、行列标签、单元格坐标和值",
+        keywords=tuple(keywords),
+        modality=modality,
+        table_task=table_task,
+        table_filters=filters,
+        operation=operation,
+        selectors=tuple(selectors),
+        expected_unit=str(filters.get("unit") or "") or None,
+    )
+
+
+def _extract_table_selectors(
+    question: str,
+    table_task: str,
+    options: list[str],
+) -> list[dict[str, Any]]:
+    quoted = [item.strip() for item in re.findall(r"“([^”]+)”", question) if item.strip()]
+    selectors: list[dict[str, Any]] = []
+    if table_task == "calculate" and len(quoted) >= 3:
+        # “row”从“column A”到“column B” means B - A.
+        selectors = [
+            {"row_label": quoted[0], "column_label": quoted[1]},
+            {"row_label": quoted[0], "column_label": quoted[2]},
+        ]
+    elif table_task == "compare" and options:
+        scope = quoted[0] if quoted else ""
+        selectors = [
+            {"label": option, "scope": scope}
+            for option in options
+            if str(option).strip()
+        ]
+    elif table_task == "lookup":
+        if len(quoted) >= 2:
+            selectors = [{"row_or_indicator": quoted[0], "column_label": quoted[-1]}]
+        elif quoted:
+            selectors = [{"row_or_indicator": quoted[0]}]
+    return selectors
+
+
+def _extract_table_filters(question: str) -> dict[str, Any]:
+    filters: dict[str, Any] = {}
+    title_match = re.search(r"《([^》]+)》", question)
+    if title_match:
+        filters["source_title"] = title_match.group(1).strip()
+    sheet_match = re.search(r"工作表[：:]\s*([^），)。；;]+)", question)
+    if sheet_match:
+        filters["sheet"] = sheet_match.group(1).strip()
+    year_match = re.search(r"(20\d{2})年", question)
+    if year_match:
+        filters["year"] = int(year_match.group(1))
+    month_match = re.search(r"(?:20\d{2}年)?(\d{1,2})月", question)
+    if month_match:
+        filters["month"] = int(month_match.group(1))
+    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", question)
+    if quarter_match:
+        value = quarter_match.group(1) or quarter_match.group(2)
+        filters["quarter"] = {"一": 1, "二": 2, "三": 3, "四": 4}.get(value, int(value) if value.isdigit() else None)
+    quoted_terms = re.findall(r"“([^”]+)”", question)
+    if quoted_terms:
+        filters["indicator"] = quoted_terms[0]
+        if len(quoted_terms) > 1:
+            filters["column_label"] = quoted_terms[-1]
+    for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
+        if label.replace(" ", "") in re.sub(r"\s+", "", question):
+            filters["row_label"] = label
+            break
+    return filters
 
 
 def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:

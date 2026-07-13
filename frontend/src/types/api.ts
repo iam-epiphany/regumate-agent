@@ -10,6 +10,24 @@ export interface HealthResponse {
   message: string;
 }
 
+export interface RagHealthResponse {
+  offline_mode: boolean;
+  embedding_model_ready: boolean;
+  reranker_model_ready: boolean;
+  embedding_model_path: string;
+  reranker_model_path: string;
+  qdrant_ready: boolean;
+  qdrant_collection: string;
+  qdrant_collection_ready: boolean;
+  sqlite_ready: boolean;
+  libreoffice_ready: boolean;
+  antiword_ready: boolean;
+  libreoffice_version: string | null;
+  antiword_version: string | null;
+  index_tasks: Record<string, number>;
+  ready: boolean;
+}
+
 export interface DocumentUploadResponse {
   document_id: string;
   filename: string;
@@ -17,6 +35,7 @@ export interface DocumentUploadResponse {
   size: number;
   chunk_count: number;
   uploaded_at: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface DocumentSummary {
@@ -29,6 +48,7 @@ export interface DocumentSummary {
   status: string;
   index_version: string | null;
   index_error: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface DocumentListResponse {
@@ -52,6 +72,7 @@ export interface ChunkSummary {
   token_count: number;
   index_status: string;
   index_version: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 
@@ -65,7 +86,11 @@ export interface DocumentDetailResponse {
   status: string;
   index_version: string | null;
   index_error: string | null;
+  metadata: Record<string, unknown>;
   chunks: ChunkSummary[];
+  chunk_total: number;
+  chunk_offset: number;
+  chunk_limit: number;
 }
 
 export interface Citation {
@@ -79,6 +104,7 @@ export interface Citation {
   rerank_score: number | null;
   chunk_type: string;
   evidence_role: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface RetrievalResult {
@@ -141,6 +167,10 @@ export interface LLMContextPackage {
         aspect_id: string;
         question: string;
         evidence_need?: string;
+        modality?: "text" | "table" | "mixed" | string;
+        table_task?: "lookup" | "compare" | "calculate" | "locate" | "none" | string;
+        table_filters?: Record<string, unknown>;
+        operation?: "max" | "min" | "difference" | "sum" | "ratio" | "none" | string;
         search_queries: QueryPlanSearchQuery[];
         expected_evidence_type: string;
         keywords: string[];
@@ -150,6 +180,10 @@ export interface LLMContextPackage {
       aspect_id: string;
       question: string;
       evidence_need?: string;
+      modality?: "text" | "table" | "mixed" | string;
+      table_task?: "lookup" | "compare" | "calculate" | "locate" | "none" | string;
+      table_filters?: Record<string, unknown>;
+      operation?: "max" | "min" | "difference" | "sum" | "ratio" | "none" | string;
       search_queries: QueryPlanSearchQuery[];
       expected_evidence_type: string;
       keywords: string[];
@@ -208,7 +242,14 @@ export interface LLMContextPackage {
 
 export interface QueryPlanSearchQuery {
   query: string;
-  query_type: "semantic_question" | "document_style_statement" | "keyword_anchor" | "legacy" | "fallback" | string;
+  query_type:
+    | "semantic_question"
+    | "document_style_statement"
+    | "keyword_anchor"
+    | "table_locator"
+    | "legacy"
+    | "fallback"
+    | string;
   rationale: string;
 }
 
@@ -218,6 +259,12 @@ export interface QAResponse {
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
+  answer_type: "table_deterministic" | "llm_grounded" | "extractive_fallback" | "refusal" | string;
+  generation_status: string;
+  claims: Array<{ text: string; citation_ids: string[] }>;
+  grounding_validation: Record<string, unknown>;
+  refusal_reason: string | null;
+  degraded: boolean;
 }
 
 export type RagProgressStage =
@@ -226,7 +273,8 @@ export type RagProgressStage =
   | "rerank"
   | "context_selection"
   | "prompt_build"
-  | "llm_generation";
+  | "llm_generation"
+  | "grounding_validation";
 
 export type RagProgressStatus = "running" | "completed" | "failed" | "skipped" | "pending";
 
@@ -246,6 +294,15 @@ export interface AuditLogItem {
   target_type: string;
   target_id: string | null;
   detail: string;
+  severity: "info" | "warning" | "error";
+  event_key: string | null;
+  summary: string | null;
+  user_message: string | null;
+  details_json: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  occurrence_count: number;
+  resolved: boolean;
   created_at: string;
 }
 

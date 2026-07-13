@@ -10,6 +10,7 @@ class DocumentUploadResponse(BaseModel):
     size: int
     chunk_count: int
     uploaded_at: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class DocumentSummary(BaseModel):
@@ -22,6 +23,7 @@ class DocumentSummary(BaseModel):
     status: str
     index_version: str | None = None
     index_error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class DocumentListResponse(BaseModel):
@@ -59,4 +61,8 @@ class DocumentDetailResponse(BaseModel):
     status: str
     index_version: str | None = None
     index_error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     chunks: list[ChunkSummary]
+    chunk_total: int = 0
+    chunk_offset: int = 0
+    chunk_limit: int = 50

@@ -3,7 +3,9 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
+from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import select
@@ -11,8 +13,9 @@ from sqlalchemy import select
 from backend.app.core.config import AUDIT_ARCHIVE_DIR
 from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
-from backend.app.models.document import Document
-from backend.app.schemas.qa import Citation
+from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
+from backend.app.schemas.qa import Citation, LLMContextPackage
+from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
 from backend.app.services.document_storage import next_document_id
@@ -42,6 +45,7 @@ def fake_indexing_services(monkeypatch, tmp_path):
     monkeypatch.setattr("backend.app.services.document_storage.DOCUMENT_DIR", document_dir)
     monkeypatch.setattr("backend.app.services.document_lifecycle_service.DOCUMENT_DIR", document_dir)
     monkeypatch.setattr("backend.app.services.query_planner_service.QUERY_PLANNER_API_KEY", None)
+    monkeypatch.setattr("backend.app.services.answer_generation_service.ANSWER_GENERATION_API_KEY", None)
 
     def fake_embed_texts(texts: list[str]) -> list[TextEmbedding]:
         return [
@@ -61,6 +65,19 @@ def fake_indexing_services(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "backend.app.services.document_lifecycle_service.delete_document_vectors",
         lambda document_id, chunk_ids=None: None,
+    )
+
+    def synchronous_test_enqueue(document_id: str) -> bool:
+        with SessionLocal() as db:
+            document = db.scalar(select(Document).where(Document.document_id == document_id))
+            assert document is not None
+            from backend.app.services.document_indexing_service import index_document
+
+            index_document(db, document)
+        return True
+
+    monkeypatch.setattr(
+        "backend.app.api.documents.enqueue_document_index", synchronous_test_enqueue
     )
     yield calls
 
@@ -101,6 +118,18 @@ def parse_sse_events(text: str) -> list[tuple[str, dict]]:
     return events
 
 
+def latest_progress_event(events: list[tuple[str, dict]], stage: str, *, aspect: bool | None = None) -> dict | None:
+    for event_name, payload in reversed(events):
+        if event_name != "progress" or payload.get("stage") != stage:
+            continue
+        if aspect is True and not payload.get("aspect_id"):
+            continue
+        if aspect is False and payload.get("aspect_id"):
+            continue
+        return payload
+    return None
+
+
 def test_health_check() -> None:
     response = client.get("/api/health")
 
@@ -109,10 +138,39 @@ def test_health_check() -> None:
     assert response.json()["message"] == "ReguMate backend is healthy"
 
 
+def test_rag_health_remains_diagnostic_while_readiness_returns_503(monkeypatch) -> None:
+    health = RagHealthResponse(
+        offline_mode=True,
+        embedding_model_ready=True,
+        reranker_model_ready=True,
+        embedding_model_path="/models/bge-m3",
+        reranker_model_path="/models/reranker",
+        qdrant_ready=True,
+        qdrant_collection="regumate_contest_v3",
+        qdrant_collection_ready=False,
+        sqlite_ready=True,
+        libreoffice_ready=True,
+        antiword_ready=True,
+        index_tasks={"queued": 2, "queue_depth": 2, "queue_capacity": 8},
+        ready=False,
+    )
+    monkeypatch.setattr("backend.app.api.health._rag_health", lambda: health)
+
+    diagnostic = client.get("/api/health/rag")
+    readiness = client.get("/api/health/ready")
+
+    assert diagnostic.status_code == 200
+    assert diagnostic.json()["index_tasks"]["queued"] == 2
+    assert readiness.status_code == 503
+    assert readiness.json()["qdrant_collection_ready"] is False
+
+
 def test_openapi_only_exposes_rag_main_routes() -> None:
     paths = set(app.openapi()["paths"])
 
     assert "/api/health" in paths
+    assert "/api/health/rag" in paths
+    assert "/api/health/ready" in paths
     assert "/api/documents/upload" in paths
     assert "/api/documents/{document_id}/index" in paths
     assert "/api/documents" in paths
@@ -158,7 +216,7 @@ def test_upload_txt_document_creates_chunks_and_triggers_background_index(monkey
     assert documents[0]["status"] == "uploaded"
 
 
-def test_next_document_id_uses_existing_document_ids() -> None:
+def test_next_document_id_is_collision_resistant_and_keeps_date_prefix() -> None:
     reset_database()
     today = datetime.now().strftime("%Y%m%d")
     with SessionLocal() as db:
@@ -176,12 +234,84 @@ def test_next_document_id_uses_existing_document_ids() -> None:
         )
         db.commit()
 
-        assert next_document_id(db) == f"DOC-{today}-0002"
+        first = next_document_id(db)
+        second = next_document_id(db)
+        assert re.fullmatch(rf"DOC-{today}-[0-9A-F]{{12}}", first)
+        assert re.fullmatch(rf"DOC-{today}-[0-9A-F]{{12}}", second)
+        assert first != second
 
 
-def test_build_document_index_marks_document_indexed(monkeypatch, fake_indexing_services) -> None:
+def test_index_task_is_durable_when_memory_queue_is_full(monkeypatch) -> None:
+    reset_database()
+    document_id = "DOC-QUEUE-0001"
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id=document_id,
+                filename="queued.txt",
+                content_type="text/plain",
+                file_type="txt",
+                size=10,
+                storage_path="queued.txt",
+                status="uploaded",
+                chunk_count=1,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
+    monkeypatch.setattr("backend.app.services.index_task_service._schedule_in_memory", lambda value: False)
+    from backend.app.services.index_task_service import enqueue_document_index
+
+    assert enqueue_document_index(document_id) is False
+    with SessionLocal() as db:
+        task = db.scalar(
+            select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id)
+        )
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        assert task is not None
+        assert task.status == "queued"
+        assert document is not None
+        assert document.status == "index_queued"
+
+
+def test_running_index_task_is_requeued_after_restart() -> None:
+    reset_database()
+    document_id = "DOC-QUEUE-0002"
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id=document_id,
+                filename="recover.txt",
+                content_type="text/plain",
+                file_type="txt",
+                size=10,
+                storage_path="recover.txt",
+                status="indexing",
+                chunk_count=1,
+            )
+        )
+        db.add(DocumentIndexTask(document_id=document_id, status="running"))
+        db.commit()
+
+    from backend.app.services.index_task_service import _recover_interrupted_tasks
+
+    _recover_interrupted_tasks()
+    with SessionLocal() as db:
+        task = db.scalar(
+            select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id)
+        )
+        assert task is not None
+        assert task.status == "queued"
+
+
+def test_build_document_index_persists_bounded_queue_task(monkeypatch) -> None:
     reset_database()
     monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
+    monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
+    monkeypatch.setattr("backend.app.services.index_task_service._schedule_in_memory", lambda value: False)
+    from backend.app.services.index_task_service import enqueue_document_index
+    monkeypatch.setattr("backend.app.api.documents.enqueue_document_index", enqueue_document_index)
 
     upload_response = client.post(
         "/api/documents/upload",
@@ -192,17 +322,20 @@ def test_build_document_index_marks_document_indexed(monkeypatch, fake_indexing_
     response = client.post(f"/api/documents/{document_id}/index")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "indexed"
-    assert len(fake_indexing_services) == 1
-    embedding_text = fake_indexing_services[0]["chunks"][0].embedding_text
-    assert "来源文件：rules.txt" in embedding_text
-    assert "文档格式：txt" in embedding_text
-    assert "内容类型：正文" in embedding_text
-    assert embedding_text.endswith("资产合计应等于资产分项金额合计。")
+    assert response.json()["status"] == "index_queued"
+    with SessionLocal() as db:
+        task = db.scalar(select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id))
+        assert task is not None
+        assert task.status == "queued"
 
 
-def test_build_document_index_returns_503_when_embedding_index_fails(monkeypatch) -> None:
+def test_queued_index_failure_is_recorded_for_retry(monkeypatch) -> None:
     reset_database()
+    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
+    monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
+    monkeypatch.setattr("backend.app.services.index_task_service._schedule_in_memory", lambda value: False)
+    from backend.app.services.index_task_service import _run_task, enqueue_document_index
+    monkeypatch.setattr("backend.app.api.documents.enqueue_document_index", enqueue_document_index)
 
     upload_response = client.post(
         "/api/documents/upload",
@@ -217,11 +350,17 @@ def test_build_document_index_returns_503_when_embedding_index_fails(monkeypatch
 
     response = client.post(f"/api/documents/{document_id}/index")
 
-    assert response.status_code == 503
+    assert response.status_code == 200
+    assert _run_task(document_id) is True
     documents = client.get("/api/documents").json()["documents"]
     assert len(documents) == 1
     assert documents[0]["status"] == "index_failed"
     assert documents[0]["index_error"] == "embedding service unavailable"
+    with SessionLocal() as db:
+        task = db.scalar(select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id))
+        assert task is not None
+        assert task.status == "queued"
+        assert task.retry_count == 1
 
 
 def test_upload_empty_document_returns_400() -> None:
@@ -234,6 +373,19 @@ def test_upload_empty_document_returns_400() -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "上传文档不能为空"
+
+
+def test_upload_stream_rejects_limit_and_removes_temporary_file(monkeypatch, tmp_path) -> None:
+    reset_database()
+    monkeypatch.setattr("backend.app.api.documents.MAX_UPLOAD_BYTES", 8)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("too-large.txt", b"123456789", "text/plain")},
+    )
+
+    assert response.status_code == 413
+    assert list((tmp_path / "documents" / "originals").glob("*")) == []
 
 
 def test_upload_rejects_pdf_extension_with_executable_content() -> None:
@@ -293,6 +445,49 @@ def test_list_and_get_document_detail() -> None:
     assert chunk["is_truncated"] is True
     assert chunk["chunk_type"] == "paragraph"
     assert "\n" in chunk["text"]
+    assert detail_response.json()["chunk_total"] == 1
+    assert detail_response.json()["chunk_offset"] == 0
+    assert detail_response.json()["chunk_limit"] == 50
+
+
+def test_document_detail_is_paginated_for_large_documents() -> None:
+    reset_database()
+    document_id = "DOC-LARGE-0001"
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id=document_id,
+                filename="large.xls",
+                content_type=None,
+                file_type="xls",
+                size=100,
+                storage_path="large.xls",
+                status="indexed",
+                chunk_count=125,
+            )
+        )
+        for index in range(125):
+            db.add(
+                DocumentChunk(
+                    chunk_id=f"{document_id}-CHUNK-{index + 1:04d}",
+                    document_id=document_id,
+                    text=f"chunk {index + 1}",
+                    token_count=2,
+                    index_status="indexed",
+                    source_file="large.xls",
+                )
+            )
+        db.commit()
+
+    response = client.get(f"/api/documents/{document_id}?chunk_offset=50&chunk_limit=50")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chunk_total"] == 125
+    assert body["chunk_offset"] == 50
+    assert body["chunk_limit"] == 50
+    assert len(body["chunks"]) == 50
+    assert body["chunks"][0]["text"] == "chunk 51"
 
 
 def test_delete_document_removes_document_from_list() -> None:
@@ -342,7 +537,7 @@ def test_delete_document_keeps_record_when_qdrant_cleanup_fails(monkeypatch) -> 
     assert client.get("/api/documents").json()["documents"] == []
 
 
-def test_list_documents_marks_record_when_original_file_is_missing() -> None:
+def test_list_documents_marks_record_when_source_repair_is_requested() -> None:
     reset_database()
     upload_response = client.post(
         "/api/documents/upload",
@@ -359,13 +554,58 @@ def test_list_documents_marks_record_when_original_file_is_missing() -> None:
 
     os.remove(storage_path)
 
-    response = client.get("/api/documents")
+    response = client.get("/api/documents?repair_sources=true")
 
     assert response.status_code == 200
     documents = response.json()["documents"]
     assert len(documents) == 1
     assert documents[0]["document_id"] == document_id
     assert documents[0]["status"] == "source_missing"
+
+
+def test_list_documents_restores_windows_storage_path_marked_source_missing(tmp_path) -> None:
+    reset_database()
+    document_dir = tmp_path / "documents" / "originals"
+    document_dir.mkdir(parents=True, exist_ok=True)
+    stored = document_dir / "DOC-WINDOWS-0001.xls"
+    stored.write_text("placeholder", encoding="utf-8")
+
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id="DOC-WINDOWS-0001",
+                filename="395_人身保险公司县域机构统计表.xls",
+                content_type=None,
+                file_type="xls",
+                size=100,
+                storage_path=r"D:\Agent-Project\ReguMate Agent\data\evaluation\final_runtime\documents\originals\DOC-WINDOWS-0001.xls",
+                status="source_missing",
+                index_error="原始文件缺失",
+                chunk_count=1,
+            )
+        )
+        db.add(
+            DocumentChunk(
+                chunk_id="DOC-WINDOWS-0001-CHUNK-0001",
+                document_id="DOC-WINDOWS-0001",
+                text="chunk",
+                token_count=1,
+                index_status="source_missing",
+                source_file="395_人身保险公司县域机构统计表.xls",
+            )
+        )
+        db.commit()
+
+    response = client.get("/api/documents")
+
+    assert response.status_code == 200
+    document = response.json()["documents"][0]
+    assert document["status"] == "indexed"
+    assert document["index_error"] is None
+    with SessionLocal() as db:
+        chunk = db.scalar(select(DocumentChunk).where(DocumentChunk.document_id == "DOC-WINDOWS-0001"))
+        assert chunk is not None
+        assert chunk.index_status == "indexed"
 
 
 def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
@@ -387,12 +627,13 @@ def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
         lambda question: [fake_retrieval_match(document_id)],
     )
 
-    response = client.post("/api/qa/ask", json={"question": "资产合计怎么填报"})
+    response = client.post("/api/qa/ask", json={"question": "资产合计怎么填报", "include_debug": True})
 
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is False
-    assert body["answer"] is None
+    assert body["answer"]
+    assert body["answer_type"] == "extractive_fallback"
     assert body["citations"]
     assert body["context_package"]["is_final_answer"] is False
     assert body["context_package"]["mode"] == "rag_context"
@@ -424,7 +665,7 @@ def test_qa_stream_returns_progress_events_and_final_response(monkeypatch) -> No
         lambda question: [fake_retrieval_match(document_id)],
     )
 
-    response = client.post("/api/qa/ask/stream", json={"question": "资产合计怎么填报"})
+    response = client.post("/api/qa/ask/stream", json={"question": "资产合计怎么填报", "include_debug": True})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -442,15 +683,99 @@ def test_qa_stream_returns_progress_events_and_final_response(monkeypatch) -> No
     assert "context_selection" in progress_stages
     assert "prompt_build" in progress_stages
     assert "llm_generation" in progress_stages
+    assert "grounding_validation" in progress_stages
+    retrieval_event = latest_progress_event(events, "retrieval", aspect=False)
+    rerank_event = latest_progress_event(events, "rerank", aspect=False)
+    assert retrieval_event is not None
+    assert retrieval_event["status"] == "completed"
+    assert rerank_event is not None
+    assert rerank_event["status"] in {"completed", "skipped"}
     assert any(
         payload["stage"] == "planning" and payload["status"] == "completed"
         for event_name, payload in events
         if event_name == "progress"
     )
     final_payload = events[-1][1]
-    assert final_payload["answer"] is None
+    assert final_payload["answer"]
     assert final_payload["context_package"]["query"] == "资产合计怎么填报"
     assert final_payload["context_package"]["is_final_answer"] is False
+
+
+def test_qa_stream_marks_empty_retrieval_rerank_and_generation_as_handled(monkeypatch) -> None:
+    reset_database()
+    client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
+
+    response = client.post("/api/qa/ask/stream", json={"question": "火星基地如何审批", "include_debug": True})
+
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    retrieval_event = latest_progress_event(events, "retrieval", aspect=False)
+    rerank_event = latest_progress_event(events, "rerank", aspect=False)
+    generation_event = latest_progress_event(events, "llm_generation", aspect=False)
+    assert retrieval_event is not None
+    assert retrieval_event["status"] == "completed"
+    assert rerank_event is not None
+    assert rerank_event["status"] == "skipped"
+    assert generation_event is not None
+    assert generation_event["status"] == "skipped"
+    assert "skipped" not in generation_event["detail"]
+    final_payload = events[-1][1]
+    assert final_payload["refused"] is True
+    assert final_payload["answer_type"] == "refusal"
+    assert final_payload["generation_status"] == "skipped"
+
+
+def test_qa_stream_skips_pipeline_for_choice_question_without_options(monkeypatch) -> None:
+    reset_database()
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("choice question without options should not enter retrieval")
+
+    monkeypatch.setattr("backend.app.services.rag_service.build_context_package", fail_if_called)
+
+    response = client.post(
+        "/api/qa/ask/stream",
+        json={"question": "关于《材料》，下列哪一组选项正确？", "include_debug": True},
+    )
+
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    assert latest_progress_event(events, "retrieval", aspect=False)["status"] == "skipped"
+    assert latest_progress_event(events, "rerank", aspect=False)["status"] == "skipped"
+    assert latest_progress_event(events, "llm_generation", aspect=False)["status"] == "skipped"
+    final_payload = events[-1][1]
+    assert final_payload["refused"] is True
+    assert final_payload["answer_type"] == "clarification"
+    assert final_payload["generation_status"] == "skipped"
+
+
+def test_qa_stream_handles_consecutive_questions(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    document_id = upload_response.json()["document_id"]
+    monkeypatch.setattr(
+        "backend.app.services.rag_service.retrieve_citations",
+        lambda question: [fake_retrieval_match(document_id)],
+    )
+
+    first_response = client.post("/api/qa/ask/stream", json={"question": "资产合计怎么填报"})
+    second_response = client.post("/api/qa/ask/stream", json={"question": "字段完整性如何检查"})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first_events = parse_sse_events(first_response.text)
+    second_events = parse_sse_events(second_response.text)
+    assert first_events[-1][0] == "final"
+    assert second_events[-1][0] == "final"
+    assert latest_progress_event(first_events, "retrieval", aspect=False)["status"] == "completed"
+    assert latest_progress_event(second_events, "retrieval", aspect=False)["status"] == "completed"
 
 
 def test_qa_stream_returns_error_event_when_retrieval_fails(monkeypatch) -> None:
@@ -514,7 +839,7 @@ def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
     )
     monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match])
 
-    response = client.post("/api/qa/ask", json={"question": "逾期贷款与风险分类"})
+    response = client.post("/api/qa/ask", json={"question": "逾期贷款与风险分类", "include_debug": True})
 
     assert response.status_code == 200
     body = response.json()
@@ -801,7 +1126,7 @@ def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_ind
     section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
     assert section_titles == ["3. 资产合计与校验关系", "3.1 资产合计差异处理"]
     assert body["retrieval_summary"]["used_chunks"] == 2
-    assert body["retrieval_summary"]["top_k"] == 5
+    assert body["retrieval_summary"]["top_k"] == 12
     assert body["retrieval_summary"]["prompt_filtered_count"] == 1
     assert body["retrieval_summary"]["prompt_selection"]["final_prompt_chunks"] == 2
     assert "4. 逾期贷款与风险分类" not in body["llm_prompt"]
@@ -847,14 +1172,73 @@ def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
 
     monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
 
-    response = client.post("/api/qa/ask", json={"question": "火星基地如何审批"})
+    response = client.post("/api/qa/ask", json={"question": "火星基地如何审批", "include_debug": True})
 
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is True
-    assert body["answer"] is None
+    assert "未找到足够依据" in body["answer"]
+    assert body["answer_type"] == "refusal"
     assert body["context_package"]["retrieval_summary"]["used_chunks"] == 0
     assert body["context_package"]["retrieval_summary"]["has_sufficient_context"] is False
+
+
+def test_qa_clarifies_choice_question_without_options_before_retrieval(monkeypatch) -> None:
+    reset_database()
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("choice question without options should not enter retrieval")
+
+    monkeypatch.setattr("backend.app.services.rag_service.build_context_package", fail_if_called)
+
+    response = client.post(
+        "/api/qa/ask",
+        json={
+            "question": "关于《账簿划分和名词解释》，下列哪一组选项中的两项表述均属于该材料内容？",
+            "include_debug": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["refused"] is True
+    assert body["answer_type"] == "clarification"
+    assert body["generation_status"] == "skipped"
+    assert body["refusal_reason"] == "missing_options_for_choice_question"
+    assert body["context_package"] is None
+    assert "请补充选项" in body["answer"]
+
+
+def test_qa_extracts_inline_options_before_retrieval(monkeypatch) -> None:
+    reset_database()
+    captured: dict[str, object] = {}
+
+    def fake_build_context_package(db, question, options=None, progress_reporter=None):
+        captured["question"] = question
+        captured["options"] = options
+        return LLMContextPackage(
+            query=question,
+            instruction="test",
+            retrieval_summary={"used_chunks": 0, "has_sufficient_context": False},
+            context_chunks=[],
+            llm_prompt="",
+        )
+
+    monkeypatch.setattr("backend.app.services.rag_service.build_context_package", fake_build_context_package)
+
+    response = client.post(
+        "/api/qa/ask",
+        json={
+            "question": "关于《材料》，以下哪项正确？ A 第一项事实 B 第二项事实 C 第三项事实",
+            "include_debug": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "refusal"
+    assert captured["question"] == "关于《材料》，以下哪项正确？"
+    assert captured["options"] == ["第一项事实", "第二项事实", "第三项事实"]
 
 
 def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None:
@@ -885,12 +1269,12 @@ def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None
     )
     monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [related_match])
 
-    response = client.post("/api/qa/ask", json={"question": "同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？"})
+    response = client.post("/api/qa/ask", json={"question": "同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？", "include_debug": True})
 
     assert response.status_code == 200
     body = response.json()
-    assert body["refused"] is False
-    assert body["answer"] is None
+    assert body["refused"] is True
+    assert body["answer_type"] == "refusal"
     assert body["context_package"]["context_chunks"][0]["metadata"]["evidence_role"] == "table_context"
     assert "借款用途为个人住房装修" in body["context_package"]["llm_prompt"]
 
@@ -910,7 +1294,7 @@ def test_qa_refuses_weak_single_token_match(monkeypatch) -> None:
 
     monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
 
-    response = client.post("/api/qa/ask", json={"question": "数据中心机房如何审批"})
+    response = client.post("/api/qa/ask", json={"question": "数据中心机房如何审批", "include_debug": True})
 
     assert response.status_code == 200
     body = response.json()
@@ -958,15 +1342,63 @@ def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
     qa_log = next(log for log in logs if log["action"] == "qa_context_built")
     qa_detail = json.loads(qa_log["detail"])
     assert qa_detail["question"] == question
-    assert qa_detail["answer"] is None
-    assert qa_detail["is_final_answer"] is False
+    assert qa_detail["answer"]
+    assert qa_detail["is_final_answer"] is True
     assert qa_detail["used_chunks"] == 1
     assert "citations" not in qa_detail
+    assert qa_log["summary"] == "问答完成"
+    assert qa_log["user_message"].startswith("已回答：")
+    assert question in qa_log["user_message"]
+    qa_details_json = json.loads(qa_log["details_json"])
+    assert qa_details_json["question"] == question
+    assert qa_details_json["answer"] == qa_detail["answer"]
+    assert qa_details_json["citation_count"] == 1
+
+
+def test_audit_logs_aggregate_repeated_warning_events() -> None:
+    reset_database()
+    from backend.app.services.audit_service import record_event
+
+    with SessionLocal() as db:
+        first = record_event(
+            db,
+            "document_marked_source_missing",
+            "document",
+            "DOC-MISSING",
+            detail="original file missing; result: marked_source_missing",
+            severity="warning",
+            event_key="source_missing:DOC-MISSING",
+            summary="原文件缺失",
+            user_message="系统检测到原文件不可用。",
+        )
+        second = record_event(
+            db,
+            "document_marked_source_missing",
+            "document",
+            "DOC-MISSING",
+            detail="original file missing; result: marked_source_missing",
+            severity="warning",
+            event_key="source_missing:DOC-MISSING",
+            summary="原文件缺失",
+            user_message="系统检测到原文件不可用。",
+        )
+
+        assert first.id == second.id
+
+    response = client.get("/api/audit/logs")
+
+    assert response.status_code == 200
+    logs = response.json()["logs"]
+    assert len(logs) == 1
+    assert logs[0]["severity"] == "warning"
+    assert logs[0]["summary"] == "原文件缺失"
+    assert logs[0]["occurrence_count"] == 2
 
 
 def test_audit_logs_archive_expired_logs_by_day() -> None:
     reset_database()
-    old_date = (datetime.now(timezone.utc) - timedelta(days=2)).date().isoformat()
+    old_created_at = datetime.now(timezone.utc) - timedelta(days=2)
+    old_date = old_created_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
     archive_path = AUDIT_ARCHIVE_DIR / f"audit-{old_date}.md"
     if archive_path.exists():
         archive_path.unlink()
@@ -974,13 +1406,13 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
     with SessionLocal() as db:
         db.add(
             AuditLog(
-                action="qa_answered",
-                target_type="question",
-                target_id=None,
-                detail=json.dumps({"question": "old question", "answer": "old answer"}, ensure_ascii=False),
-                created_at=datetime.now(timezone.utc) - timedelta(days=2),
+                    action="qa_answered",
+                    target_type="question",
+                    target_id=None,
+                    detail=json.dumps({"question": "old question", "answer": "old answer"}, ensure_ascii=False),
+                    created_at=old_created_at,
+                )
             )
-        )
         db.add(
             AuditLog(
                 action="document_uploaded",
@@ -1112,9 +1544,74 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
 
     assert len(matches) == 2
-    assert rerank_calls == [("绿色信贷识别应如何处理", 6, 20)]
+    assert rerank_calls == [
+        ("绿色信贷识别应如何处理\n绿色信贷 识别 标准 分类 认定方法", 6, 20)
+    ]
     fused = diagnostics[-1]
     assert fused["query_type"] == "aspect_fused"
     assert fused["rerank_call_count"] == 1
     assert fused["query_count"] == 3
+
+
+def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="table_evidence",
+        question="根据《2099年10月人身险公司经营情况表》查询原保险保费收入。",
+        search_queries=(
+            QuerySearchQuery("2099年10月人身险公司经营情况表 原保险保费收入", "table_locator", ""),
+        ),
+        evidence_need="表格工作表、行列标签、单元格坐标和值",
+        keywords=("原保险保费收入",),
+        modality="table",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2099年10月人身险公司经营情况表",
+            "year": 2099,
+            "month": 10,
+            "indicator": "原保险保费收入",
+        },
+    )
+
+    monkeypatch.setattr(rag_service, "retrieve_spreadsheet_matches", lambda db, aspect, limit: [])
+    monkeypatch.setattr(
+        rag_service,
+        "get_last_spreadsheet_diagnostic",
+        lambda: {"match_status": "period_not_found", "refusal_reason": "指定年份、月份或季度在表格索引中不存在。"},
+    )
+
+    def fail_collect(*args, **kwargs):
+        raise AssertionError("vector fallback should not run after terminal spreadsheet refusal")
+
+    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fail_collect)
+
+    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+
+    assert matches == []
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["spreadsheet_match_status"] == "period_not_found"
+    assert diagnostics[0]["early_stopped"] is True
+    assert diagnostics[0]["early_stop_reason"] == "structured_spreadsheet_refusal"
+    assert diagnostics[0]["rerank_call_count"] == 0
+
+
+def test_mixed_table_refusal_still_allows_text_fallback() -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="mixed_evidence",
+        question="结合制度和表格说明原保险保费收入。",
+        search_queries=(QuerySearchQuery("原保险保费收入 制度说明", "semantic_question", ""),),
+        evidence_need="制度文本和表格证据",
+        keywords=("原保险保费收入",),
+        modality="mixed",
+        table_task="lookup",
+        table_filters={"indicator": "不存在指标"},
+    )
+
+    assert rag_service._should_stop_after_spreadsheet_refusal(
+        aspect,
+        {"match_status": "indicator_not_found", "refusal_reason": "指定指标不存在。"},
+    ) is False
 

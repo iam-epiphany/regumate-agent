@@ -1,7 +1,7 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import DOCUMENT_DIR, INDEX_VERSION, SUPPORTED_DOCUMENT_EXTENSIONS
@@ -10,6 +10,7 @@ from backend.app.services.chunk_service import build_chunks_from_parsed
 from backend.app.services.document_parser import DocumentParseError, parse_document
 from backend.app.services.vector_store_service import VectorStoreError, delete_document_vectors
 from backend.app.services.vector_store_service import count_document_vectors
+from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
 
 
 class DocumentDeletionError(RuntimeError):
@@ -24,8 +25,16 @@ def resolve_original_path(document: Document) -> Path:
     storage_path = Path(document.storage_path)
     if storage_path.exists():
         return storage_path
-    fallback = DOCUMENT_DIR / storage_path.name
+    fallback = DOCUMENT_DIR / _storage_basename(document.storage_path)
     return fallback
+
+
+def _storage_basename(storage_path: str) -> str:
+    """Return the file name even when a Windows path is read inside Linux."""
+
+    if "\\" in storage_path or ":" in storage_path:
+        return PureWindowsPath(storage_path).name
+    return Path(storage_path).name
 
 
 def delete_document_record(db: Session, document: Document) -> None:
@@ -49,7 +58,7 @@ def delete_document_record(db: Session, document: Document) -> None:
         _mark_delete_failed(db, document, chunks, str(exc))
         raise DocumentDeletionError(str(exc)) from exc
 
-    storage_path = Path(document.storage_path)
+    storage_path = resolve_original_path(document)
     if storage_path.exists():
         storage_path.unlink()
 
@@ -72,6 +81,26 @@ def remove_documents_with_missing_originals(db: Session) -> list[tuple[str, str]
     if removed:
         db.commit()
     return removed
+
+
+def restore_documents_with_available_originals(db: Session) -> list[tuple[str, str]]:
+    restored: list[tuple[str, str]] = []
+    documents = db.scalars(select(Document).where(Document.status == "source_missing")).all()
+    for document in documents:
+        if not original_file_exists(document):
+            continue
+        document.status = "indexed"
+        document.index_error = None
+        db.execute(
+            update(DocumentChunk)
+            .where(DocumentChunk.document_id == document.document_id)
+            .where(DocumentChunk.index_status == "source_missing")
+            .values(index_status="indexed")
+        )
+        restored.append((document.document_id, "restored_indexed"))
+    if restored:
+        db.commit()
+    return restored
 
 
 def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
@@ -118,9 +147,9 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
             chunk_count=len(chunks),
         )
         db.add(document)
+        chunk_models: list[DocumentChunk] = []
         for chunk in chunks:
-            db.add(
-                DocumentChunk(
+            chunk_model = DocumentChunk(
                     chunk_id=chunk.chunk_id,
                     document_id=document_id,
                     text=chunk.text,
@@ -134,7 +163,10 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
                     page_number=chunk.page_number,
                     source_file=path.name,
                 )
-            )
+            chunk_models.append(chunk_model)
+            db.add(chunk_model)
+        db.flush()
+        rebuild_spreadsheet_cell_index(db, document, chunk_models)
         existing_ids.add(document_id)
         recovered.append((document_id, "indexed" if indexed else "uploaded"))
     if recovered:

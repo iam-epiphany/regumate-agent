@@ -33,6 +33,15 @@ def get_audit_logs(db: Session = Depends(get_db)) -> AuditLogListResponse:
                 target_type=log.target_type,
                 target_id=log.target_id,
                 detail=log.detail,
+                severity=log.severity or "info",
+                event_key=log.event_key,
+                summary=log.summary,
+                user_message=log.user_message,
+                details_json=log.details_json,
+                first_seen_at=log.first_seen_at.isoformat() if log.first_seen_at else None,
+                last_seen_at=log.last_seen_at.isoformat() if log.last_seen_at else None,
+                occurrence_count=log.occurrence_count or 1,
+                resolved=bool(log.resolved),
                 created_at=log.created_at.isoformat(),
             )
             for log in logs

@@ -230,6 +230,9 @@ def collect_candidates_with_query_hits(
     qdrant_started_at = perf_counter()
     for query, query_embedding, metadata in zip(queries, query_embeddings, metadata_items, strict=True):
         raw_results = hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K)
+        for candidate in raw_results:
+            candidate.score += _query_anchor_boost(query, candidate)
+        raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
         seen_for_query: set[str] = set()
         for rank, candidate in enumerate(raw_results, start=1):
             diagnostics.raw_candidate_count += 1
@@ -268,6 +271,23 @@ def collect_candidates_with_query_hits(
     return list(candidates_by_chunk_id.values()), query_hits_by_chunk_id, per_query_diagnostics
 
 
+def _query_anchor_boost(query: str, candidate: VectorSearchResult) -> float:
+    """Reward exact auditable anchors without replacing semantic retrieval."""
+
+    filename = _normalize_for_match(candidate.filename)
+    boost = 0.0
+    for title in re.findall(r"《([^》]+)》", query):
+        normalized = _normalize_for_match(title)
+        if normalized and normalized in filename:
+            boost = max(boost, 0.30)
+    for document_number in re.findall(r"[\u4e00-\u9fffA-Za-z]+〔\d{4}〕\d+号", query):
+        if _normalize_for_match(document_number) in _normalize_for_match(
+            f"{candidate.filename} {candidate.embedding_text}"
+        ):
+            boost = max(boost, 0.20)
+    return boost
+
+
 def matches_from_reranked(
     *,
     question: str,
@@ -299,9 +319,15 @@ def matches_from_reranked(
     ]
 
 
-def limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+def limit_rerank_candidates(
+    candidates: list[VectorSearchResult],
+    *,
+    preserve_order: bool = False,
+) -> list[VectorSearchResult]:
     if len(candidates) <= RERANK_CANDIDATE_LIMIT:
         return candidates
+    if preserve_order:
+        return candidates[:RERANK_CANDIDATE_LIMIT]
     return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:RERANK_CANDIDATE_LIMIT]
 
 
@@ -344,10 +370,19 @@ def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     )
     if item.rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
         return False
-    if coverage < MIN_EVIDENCE_COVERAGE:
+    # The previous universal lexical-coverage gate discarded 28 official
+    # Word/PDF cases even after BGE reranker had placed the expected document at
+    # the top. Chinese regulatory questions and source clauses frequently use
+    # paraphrases, so a strong cross-encoder match is valid semantic evidence.
+    strong_semantic_match = (
+        item.rerank_score >= 0.55
+        and item.candidate.score >= 0.05
+        and coverage > 0.0
+    )
+    if coverage < MIN_EVIDENCE_COVERAGE and not strong_semantic_match:
         return False
     if _is_table_context(item.candidate, question, coverage):
-        return coverage >= DIRECT_EVIDENCE_COVERAGE
+        return coverage >= DIRECT_EVIDENCE_COVERAGE or strong_semantic_match
     return True
 
 
@@ -414,6 +449,7 @@ def _to_citation(item: _AnnotatedChunk) -> Citation:
         rerank_score=item.rerank_score,
         chunk_type=candidate.chunk_type,
         evidence_role=item.evidence_role,
+        metadata=candidate.metadata or {},
     )
 
 

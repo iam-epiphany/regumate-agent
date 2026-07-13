@@ -5,6 +5,13 @@ from pydantic import BaseModel, Field
 
 class QARequest(BaseModel):
     question: str
+    options: list[str] = Field(default_factory=list, max_length=8)
+    include_debug: bool = False
+
+
+class AnswerClaim(BaseModel):
+    text: str
+    citation_ids: list[str] = Field(default_factory=list)
 
 
 class Citation(BaseModel):
@@ -23,6 +30,7 @@ class Citation(BaseModel):
     rerank_score: float | None = None
     chunk_type: str = "paragraph"
     evidence_role: str = "related_context"
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalResult(BaseModel):
@@ -53,3 +61,9 @@ class QAResponse(BaseModel):
     confidence: float
     refused: bool
     context_package: LLMContextPackage | None = None
+    answer_type: str = "refusal"
+    generation_status: str = "skipped"
+    claims: list[AnswerClaim] = Field(default_factory=list)
+    grounding_validation: dict[str, Any] = Field(default_factory=dict)
+    refusal_reason: str | None = None
+    degraded: bool = False

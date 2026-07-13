@@ -5,7 +5,7 @@ export function askQuestion(question: string): Promise<QAResponse> {
   return apiFetch<QAResponse>("/api/qa/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: true }),
   });
 }
 
@@ -13,7 +13,7 @@ export function retrieveQuestionContext(question: string): Promise<LLMContextPac
   return apiFetch<LLMContextPackage>("/api/qa/retrieve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: true }),
   });
 }
 
@@ -21,11 +21,12 @@ export async function askQuestionStream(
   question: string,
   onProgress: (event: RagProgressEvent) => void,
   signal?: AbortSignal,
+  includeDebug = false,
 ): Promise<QAResponse> {
   const response = await fetch("/api/qa/ask/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: includeDebug }),
     signal,
   });
 

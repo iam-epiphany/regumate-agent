@@ -1,166 +1,269 @@
 # ReguMate
 
-ReguMate 是一个可信 RAG 问答项目，主题是“面向银行业监管制度与统计报表的可信 RAG 问答”。
+ReguMate 是“面向银行业监管制度与统计报表的可信 RAG 问答”比赛作品。系统支持监管制度、填报说明和 Excel 报表入库，通过 BGE-M3 dense/sparse hybrid retrieval、Qdrant、BGE reranker、确定性表格计算与 DeepSeek 事实校验生成带引用答案；没有依据时明确拒答。
 
-项目最终目标是服务银行统计报送人员、合规人员和财务人员：用户上传监管制度和填报说明，系统构建可信知识库；用户再上传统计报表，系统根据制度口径检查报表，并支持围绕报表异常进行问答，最终给出有依据的解释和整改建议。
+当前范围是可信 RAG MVP，不包含完整规则引擎、正式审查报告、人工复核或复杂 Agent 编排。
 
-当前版本保留一个可运行的 FastAPI + React + SQLite + Qdrant MVP：上传监管制度、统计报表填报说明、指标口径等知识文档，解析并切分 chunk；上传后后台自动使用 BGE-M3 embedding、Qdrant hybrid search 和 BGE reranker 构建检索索引，并在缺少依据时拒答。
+## 1. 环境要求
 
+- Windows 10/11 + Docker Desktop（Linux 容器模式）。
+- 建议内存不低于 16GB，项目所在磁盘至少预留 15GB。
+- 不要求安装 Python、Node.js、LibreOffice、antiword 或 CUDA。
+- GPU 可选；离线演示镜像默认可在 CPU 上运行，首次模型加载会较慢。
+- 文本题使用 DeepSeek 时需要可访问 `https://api.deepseek.com`；未配置 key 时系统只返回可信摘录或拒答，不会编造。
 
-## 当前功能
+## 2. 离线交付包结构
 
-- 上传 `.txt`、`.md`、`.docx`、可提取文本的 `.pdf` 文档。
-- 将文档解析并切分为 chunk。
-- 上传和向量化在工程内部解耦；用户一键上传后，后台自动构建知识库索引。
-- 使用 SQLite 保存文档、chunk、问答日志和审计日志。
-- 使用 Qdrant 保存 chunk 向量索引。
-- 使用 BGE-M3 embedding 和 BGE reranker 实现向量检索与重排。
-- 问答结果返回引用来源。
-- 无命中时返回：`知识库中未找到足够依据，无法给出确定回答。`
-- React 前端提供工作台、知识库、可信问答、审计日志页面。
+```text
+ReguMate Agent/
+  backend/ frontend/ scripts/
+  data/
+    contest dataset/                 官方500份附件和QA数据
+    models/
+      bge-m3/
+      bge-reranker-v2-m3/
+  dist-delivery/
+    regumate-images.tar              已验证的app与Qdrant镜像
+    SHA256SUMS.txt
+  .env.example
+  docker-compose.yml
+```
 
-当前不做真实报表上传校验、规则引擎、人工复核、审查报告或复杂任务编排。
+模型约6.4GB，通过只读逻辑路径挂载进容器，不打入应用镜像。评委宿主机不需要安装 LibreOffice：镜像内已经包含 LibreOffice Writer/Calc、antiword和中文字体。
 
-## 参考项目学习方式
+## 3. 完整离线启动（比赛推荐）
 
-- 后端按 `api / schemas / models / services / core` 分层。
-- RAG 管线围绕文档解析、embedding、hybrid search、rerank、引用和后续流式生成逐步演进。
-- 回答必须和引用片段绑定。
-- 前端围绕文档上传、问答、引用、运行状态组织。
+在项目根目录打开 PowerShell。
 
-## 技术栈
-
-- Backend: Python, FastAPI, Pydantic, SQLAlchemy, SQLite, Qdrant, Uvicorn
-- Frontend: React, TypeScript, Vite
-- Document parsing: python-docx, pypdf
-- RAG v0: SQLite metadata + Qdrant vector index + BGE-M3 + BGE reranker
-- Deployment/dev run: Docker Compose
-
-## 一键启动（推荐）
-
-评审或演示环境推荐使用 Docker Compose：
+### 3.1 验证并导入镜像
 
 ```powershell
-docker compose up --build
+Get-FileHash -Algorithm SHA256 .\dist-delivery\regumate-images.tar
+Get-Content .\dist-delivery\SHA256SUMS.txt
+.\scripts\verify_delivery.ps1
+docker load --input .\dist-delivery\regumate-images.tar
+```
+
+`Get-FileHash` 的结果应与 `SHA256SUMS.txt` 中对应记录一致。
+
+### 3.2 配置环境变量
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+在 `.env` 中填写自己的 key：
+
+```dotenv
+DEEPSEEK_API_KEY=请填写评测专用Key
+QDRANT_COLLECTION=regumate_contest_v3
+QUERY_PLANNER_MODEL=deepseek-v4-flash
+ANSWER_GENERATION_MODEL=deepseek-v4-flash
+```
+
+不要把 `.env`、真实 key 或银行真实数据提交到 Git。
+
+### 3.3 预检并启动
+
+```powershell
+.\scripts\preflight.ps1
+.\scripts\start_demo.ps1
+```
+
+也可以在项目根目录双击 `run.bat`。该脚本默认是正式启动入口的 Windows 包装：先调用 `scripts\start_demo.ps1`，由它完成预检、`docker compose up -d --no-build`、Qdrant 和后端健康等待。默认不重新构建镜像，因此适合离线演示和比赛现场。
+
+如果刚修改了前端或后端源码，需要让 Docker 使用当前代码，请运行：
+
+```powershell
+.\run.bat --build
+```
+
+或双击开发入口 `run-dev.bat`，它会先执行 `docker compose build app`，再启动服务。
+
+等价的手动启动命令：
+
+```powershell
+docker compose up -d --no-build
+docker compose ps
 ```
 
 访问：
 
-- http://127.0.0.1:8000
-- http://127.0.0.1:8000/docs
-- Qdrant Dashboard: http://127.0.0.1:6333/dashboard
+- 前端：<http://127.0.0.1:8000>
+- OpenAPI：<http://127.0.0.1:8000/docs>
+- RAG状态：<http://127.0.0.1:8000/api/health/rag>
+- Qdrant：<http://127.0.0.1:6333/dashboard>
 
-数据会持久化在本机 `data/` 目录：
+首次尚未入库时，app 的 readiness 显示未就绪是正常现象；完成下一节后应变为 ready。
 
-- SQLite：`data/app.db`
-- 上传原文：`data/documents/originals/`
-- Qdrant 向量：`data/qdrant/`
-- Docker 模型缓存：`data/models/`
+## 4. 首次官方数据入库
 
-Docker 首次后台索引会下载 BGE-M3 和 reranker 模型，耗时较长；后续会复用 `data/models/`。
+正式评测使用隔离SQLite目录 `data/evaluation/final_runtime`、暂存collection `regumate_contest_v3_build` 和公开alias `regumate_contest_v3`。分成解析和向量索引两步，意外中断后可重复执行。
 
+Docker Desktop在部分Windows机器上无法枚举深层中文附件路径。先生成内容不变、文件名可回溯的ASCII短路径副本：
 
-Windows 本地开发默认使用 `D:\AI-Cache` 作为统一 AI 模型缓存目录，BGE-M3、BGE reranker 和后续其他 embedding 模型都会放在这里。其他机器或容器环境可以通过 `REGUMATE_MODEL_CACHE_DIR` 覆盖；`HF_HOME`、`HF_HUB_CACHE`、`SENTENCE_TRANSFORMERS_HOME` 和 `TORCH_HOME` 默认会落在该目录下。项目不再主动设置已弃用的 `TRANSFORMERS_CACHE`。
+```powershell
+.\scripts\prepare_contest_data.ps1
+```
 
-停止服务：
+该脚本核对500份附件并生成 `data/contest_staging/source_manifest.json`；入库时仍把官方原始文件名写入元数据。
+
+### 4.1 解析500份附件
+
+```powershell
+docker compose run --rm --no-deps app python scripts/ingest_contest_dataset.py `
+  --source /app/data/contest_staging `
+  --source-manifest /app/data/contest_staging/source_manifest.json `
+  --data-dir /app/data/evaluation/final_runtime `
+  --collection regumate_contest_v3_build `
+  --parse-only --retry-failed `
+  --manifest /app/data/evaluation/final/parse_manifest.json
+```
+
+`.doc` 优先由容器内 LibreOffice 转为 `.docx`；转换失败时 antiword 提取纯文本，并在manifest中设置 `degraded=true`。
+
+### 4.2 构建向量并发布alias
+
+```powershell
+docker compose run --rm app python scripts/ingest_contest_dataset.py `
+  --source /app/data/contest_staging `
+  --source-manifest /app/data/contest_staging/source_manifest.json `
+  --data-dir /app/data/evaluation/final_runtime `
+  --collection regumate_contest_v3_build `
+  --index-existing --retry-failed --promote-alias `
+  --alias regumate_contest_v3 `
+  --manifest /app/data/evaluation/final/ingest_manifest.json
+```
+
+只有500份附件全部成功且Qdrant point数与chunk数一致时才切换alias。失败后修复原因并原样重跑，不会重复写入。
+
+网页上传的单文件索引使用容量为8的持久化有界队列；任务状态、重试次数和错误写入SQLite，应用重启后自动恢复。队列统计可在 `/api/health/rag` 的 `index_tasks` 字段查看。
+
+检查：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/health/ready | ConvertTo-Json -Depth 5
+Get-Content .\data\evaluation\final\ingest_manifest.json -Encoding utf8 -TotalCount 60
+```
+
+核对官方 100 道 Excel 题 evidence 中的全部 265 个标准单元格坐标和值：
+
+```powershell
+docker compose exec app python scripts/validate_official_excel_cells.py `
+  --qa /app/data/contest_staging/qa.xlsx `
+  --database /app/data/evaluation/final_runtime/app.db `
+  --output /app/data/evaluation/final/official_excel_cells.json
+```
+
+只有 `expected=located=values_matched=265` 才通过该项验收。
+
+## 5. 官方300题与拒答评测
+
+评测固定按种子 `20260713` 分成240题开发集和60题留出集。正式冻结参数后依次运行：
+
+```powershell
+docker compose exec app python scripts/evaluate_contest_qa.py `
+  --qa /app/data/contest_staging/qa.xlsx --split dev --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/dev
+
+docker compose exec app python scripts/evaluate_contest_qa.py `
+  --qa /app/data/contest_staging/qa.xlsx --split holdout --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/holdout
+
+docker compose exec app python scripts/evaluate_contest_qa.py `
+  --qa /app/data/contest_staging/qa.xlsx --split all --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/all
+
+docker compose exec app python scripts/evaluate_contest_qa.py `
+  --qa /app/data/contest_staging/qa.xlsx --split ood --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/ood
+```
+
+报告位于 `data/evaluation/final/<split>/`，每个目录包含固定划分、逐题checkpoint、JSON明细和Markdown报告。不得用文件命中率代替答案准确率。
+
+合并500份入库结果、300题和30题拒答结果，生成比赛总报告：
+
+```powershell
+docker compose exec app python scripts/build_contest_report.py `
+  --evaluation-dir /app/data/evaluation/final `
+  --output /app/data/evaluation/final/final_contest_report.md
+```
+
+若任一冻结验收阈值未达标，报告仍会正常生成，但命令返回退出码 `2`，用于 CI 明确标记未通过项，不能把它误认为报告生成失败。
+
+### 5.1 本次冻结实测结果（2026-07-13）
+
+- 500/500 附件解析并索引，45,530 chunks、133,001 个有效表格单元格、45,530 个 Qdrant points。
+- 32/32 个 `.doc` 经容器内 LibreOffice 完整解析；人为关闭 LibreOffice 时 25/32 可由 antiword 文本降级，其余文件会明确标记失败而非伪造结构。
+- 官方 265/265 个标准 Excel 单元格成功定位且值一致。
+- 开发集 240/240；冻结后的留出集 59/60（98.33%）。
+- 300 题全量 299/300（99.67%）：Excel 100%、Word 100%、PDF 99%；来源命中 100%，关键实体错误率 0.33%，温启动 P95 4.49 秒。
+- v4 针对无答案拒答修复后，30 道派生无答案题拒答 30/30（100%）：Word/PDF/Excel 各 10/10；Excel 官方 100 题重跑 100/100，标准单元格召回 100%，温启动 P95 约 397 毫秒。
+
+冻结参数见 `data/evaluation/final/frozen_parameters.json`，正式报告见 `docs/evaluation/final_contest_report.md`。v4 修复报告见 `data/evaluation/v4_after/excel/contest_qa_all_report.md` 和 `data/evaluation/v4_after/ood/contest_qa_ood_report.md`；若用于正式提交，应重新执行 300 题全量冻结评测并生成新版总报告。
+
+延迟口径：4.49 秒 P95 来自本机 RTX 5070 GPU 的正式300题运行。兼容性优先的离线 Docker 镜像内置 CPU PyTorch；该镜像实测 Word 首题约50秒、后续同题约35秒，准确性不变但不满足GPU延迟。比赛现场若需要快速演示，应在已配置CUDA的开发机按开发者方式启动后端，或提前预热并避免临场重启容器；评委通用离线包仍保证只装Docker即可运行。
+
+## 6. 停止、重启和故障排查
+
+停止但保留数据：
 
 ```powershell
 docker compose down
-
 ```
 
-## 本地开发启动
-
-本地脚本会缓存依赖和构建状态：首次运行会安装依赖、构建前端；后续运行若 `requirements.txt`、`frontend/package-lock.json` 或前端源码没有变化，会直接启动服务。
-
-Windows：
+重新启动：
 
 ```powershell
-.\run.bat
+docker compose up -d --no-build
 ```
 
-Linux / macOS：
-
-```bash
-bash run.sh
-```
-
-手动启动：
+查看日志：
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-docker compose up -d qdrant
-cd frontend
-npm install
-npm run build
-cd ..
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+docker compose logs --tail 200 app
+docker compose logs --tail 200 qdrant
 ```
 
-如本机有 NVIDIA GPU，建议安装 CUDA 版 PyTorch 以加速 BGE-M3 embedding 和 BGE reranker：
+常见状态：
+
+- `embedding_model_ready=false`：检查 `data/models/bge-m3`。
+- `reranker_model_ready=false`：检查 `data/models/bge-reranker-v2-m3`。
+- `qdrant_collection_ready=false`：尚未完成入库或alias发布。
+- `libreoffice_ready=false`：镜像不完整，应重新导入官方离线镜像。
+- DeepSeek不可用：Excel仍确定性回答；文本题降级为引用摘录或拒答。
+- Windows 下若日志出现 SQLite `disk I/O error`：不要同时运行主机 Uvicorn 和 Docker app 访问 `data/evaluation/final_runtime/app.db`。先停止主机 Python/Uvicorn 进程，再执行 `docker compose restart app`；SQLite WAL 数据库必须由一种运行方式独占。
+
+如需完全重新生成比赛索引，保留官方原件和模型，使用入库脚本的 `--force-rebuild --reset-collection`；不要直接删除不确定的宿主目录。
+
+## 7. 联网从源码构建（开发者）
+
+该方式需要访问Docker Hub、Debian、npm和PyPI，不用于弱网比赛现场：
 
 ```powershell
-.\scripts\install_cuda_torch.ps1
+Copy-Item .env.example .env
+docker compose build app
+docker compose up -d
 ```
 
-系统默认 `MODEL_DEVICE=auto`，会优先使用 CUDA；CUDA 不可用时回退 CPU。问答调试摘要中的 `model_device` 会显示实际设备和 CUDA 状态。
+开发调试时可使用 `run-dev.bat` 或 `.\run.bat --build`，确保 Docker 镜像包含当前源码。注意不要让主机 Uvicorn 和 Docker app 同时访问 `data/evaluation/final_runtime/app.db`，否则 Windows bind mount 下可能触发 SQLite `disk I/O error`。
 
-如果已有旧数据库 chunk，需要重建向量索引：
+生成正式离线镜像归档：
+
+```powershell
+.\scripts\build_offline_bundle.ps1
+```
+
+## 8. 开发测试
 
 ```powershell
 $env:PYTHONIOENCODING='utf-8'
-.\.venv\Scripts\python.exe scripts\rebuild_vector_index.py
-```
-
-## 离线模型交付
-
-本项目默认支持模型离线加载，不依赖 HuggingFace 网络访问。首次 Docker 构建仍需安装基础依赖和拉取基础镜像；如评审环境完全无外网，需要提前准备 Docker 镜像包或在有网络环境下完成构建。
-
-Git 仓库默认不提交大模型。比赛交付包需要额外包含以下普通模型目录：
-
-- `data/models/bge-m3`
-- `data/models/bge-reranker-v2-m3`
-
-这两个目录应直接包含模型运行文件，例如 `config.json`、tokenizer 相关文件和 `model.safetensors` 或 `pytorch_model.bin`。启动前建议检查：
-
-```powershell
-python scripts/check_offline_models.py
-```
-
-如果本机已经有 HuggingFace 缓存，可运行辅助脚本整理为普通模型目录：
-
-```powershell
-.\scripts\prepare_offline_models.ps1
-```
-
-Docker Compose 默认设置 `REGUMATE_OFFLINE_MODE=true`，并把容器内模型路径固定为 `/app/data/models/bge-m3` 和 `/app/data/models/bge-reranker-v2-m3`。只有显式设置 `REGUMATE_OFFLINE_MODE=false` 时，系统才允许 fallback 到在线模型名。
-
-## API
-
-- `GET /api/health`
-- `GET /api/health/rag`
-- `POST /api/documents/upload`
-- `GET /api/documents`
-- `GET /api/documents/{document_id}`
-- `POST /api/documents/{document_id}/index`
-- `DELETE /api/documents/{document_id}`
-- `POST /api/qa/ask`
-- `GET /api/audit/logs`
-
-## 测试
-
-后端：
-
-```powershell
 .\.venv\Scripts\python.exe -m pytest
-```
-
-前端：
-
-```powershell
 cd frontend
 npm run build
 ```
 
+密钥扫描：
 
+```powershell
+.\.venv\Scripts\python.exe scripts\scan_secrets.py
+```
+
+详细设计见 `docs/开发文档`，学习路线见 `docs/代码学习指南.md`，比赛讲解见 `docs/比赛演示与答辩说明.md`。

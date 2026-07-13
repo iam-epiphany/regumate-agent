@@ -5,6 +5,7 @@ from typing import Any
 from backend.app.core.config import RERANK_TOP_K
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_reranker_model_path
 from backend.app.services.model_device_service import selected_model_device
+from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -51,11 +52,13 @@ def rerank_candidates(
         return []
 
     pairs = [[question, candidate.embedding_text or candidate.text] for candidate in candidates]
-    reranker = _get_reranker()
     try:
-        scores = reranker.compute_score(pairs, normalize=True, max_length=1024)
+        with MODEL_INFERENCE_LOCK:
+            reranker = _get_reranker()
+            scores = reranker.compute_score(pairs, normalize=True, max_length=1024)
     except TypeError:
-        scores = reranker.compute_score(pairs, normalize=True)
+        with MODEL_INFERENCE_LOCK:
+            scores = reranker.compute_score(pairs, normalize=True)
     except Exception as exc:
         raise RerankServiceError("BGE reranker 评分失败") from exc
 

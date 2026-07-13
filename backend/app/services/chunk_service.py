@@ -10,7 +10,11 @@ from backend.app.core.config import (
     CHUNK_TARGET_TOKENS,
     SEMANTIC_BREAK_THRESHOLD,
 )
-from backend.app.services.embedding_service import cosine_similarity, embed_for_semantic_split
+from backend.app.services.embedding_service import (
+    EmbeddingServiceError,
+    cosine_similarity,
+    embed_for_semantic_split,
+)
 from backend.app.services.document_types import ParsedBlock, ParsedDocument
 
 
@@ -273,7 +277,13 @@ def _split_group(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPiece]:
 
 
 def _split_by_semantic_breaks(paragraphs: list[str]) -> list[str]:
-    vectors = embed_for_semantic_split(paragraphs)
+    try:
+        vectors = embed_for_semantic_split(paragraphs)
+    except EmbeddingServiceError:
+        # Parsing must remain available when the embedding model is temporarily
+        # unavailable. Empty vectors keep the same token-aware grouping while
+        # disabling only the optional semantic-distance break condition.
+        vectors = []
     pieces: list[str] = []
     buffer: list[str] = []
 
@@ -400,6 +410,10 @@ def build_contextual_embedding_text(
         labels.append("内容类型：表格")
         labels.append(_table_header_label(text))
         table_title = _metadata_text(chunk_metadata.get("table_title"))
+        sheet_name = _metadata_text(chunk_metadata.get("sheet_name"))
+        unit = _metadata_text(chunk_metadata.get("unit"))
+        period = chunk_metadata.get("period")
+        row_label = _metadata_text(chunk_metadata.get("row_label"))
         headers = [
             str(header)
             for header in chunk_metadata.get("table_headers") or chunk_metadata.get("headers") or []
@@ -407,12 +421,20 @@ def build_contextual_embedding_text(
         ]
         row_cells = chunk_metadata.get("row_cells") or {}
         labels.append("内容类型：表格")
+        if sheet_name:
+            labels.append(f"工作表：{sheet_name}")
         if table_title:
             labels.append(f"表格标题：{table_title}")
+        if isinstance(period, dict) and period.get("raw"):
+            labels.append(f"期间：{period.get('raw')}")
+        if unit:
+            labels.append(f"单位：{unit}")
         if headers:
             labels.append("表头：" + "、".join(headers))
         if chunk_metadata.get("row_index") is not None:
             labels.append(f"表格行号：{chunk_metadata.get('row_index')}")
+        if row_label:
+            labels.append(f"行标签：{row_label}")
         if isinstance(row_cells, dict) and row_cells:
             labels.append("行数据：" + "；".join(f"{key}={value}" for key, value in row_cells.items()))
     else:
@@ -433,6 +455,10 @@ def _split_table_text(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPie
     cleaned = group.text.strip()
     if not cleaned:
         return []
+
+    if group.metadata and group.metadata.get("spreadsheet_table"):
+        metadata = _base_table_metadata(group, document_id)
+        return [_ChunkPiece(text=cleaned, metadata=metadata)]
 
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     table_indexes = [index for index, line in enumerate(lines) if _looks_like_table_line(line)]

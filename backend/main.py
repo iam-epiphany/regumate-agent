@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -11,11 +12,20 @@ from backend.app.api.health import router as health_router
 from backend.app.api.qa import router as qa_router
 from backend.app.core.config import API_TITLE
 from backend.app.core.database import init_db
+from backend.app.services.index_task_service import start_index_task_worker
+
+
+init_db()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    start_index_task_worker()
+    yield
 
 
 # FastAPI 应用对象，应用启动入口。
-app = FastAPI(title=API_TITLE)
-init_db()
+app = FastAPI(title=API_TITLE, lifespan=_lifespan)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"

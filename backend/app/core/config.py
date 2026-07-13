@@ -45,7 +45,7 @@ if REGUMATE_OFFLINE_MODE:
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx"}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
@@ -53,19 +53,22 @@ CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 80
 SEMANTIC_BREAK_THRESHOLD = 0.62
 
-INDEX_VERSION = "bge-m3-qdrant-v1"
+INDEX_VERSION = "bge-m3-qdrant-v3-grounded-cells"
 QDRANT_URL = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "regumate_chunks")
+QDRANT_AUTO_CREATE_COLLECTION = _env_bool("QDRANT_AUTO_CREATE_COLLECTION", True)
+QDRANT_UPSERT_BATCH_SIZE = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "128"))
 QDRANT_DENSE_VECTOR_NAME = "dense"
 QDRANT_SPARSE_VECTOR_NAME = "sparse"
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-m3")
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3")
 EMBEDDING_DIMENSION = 1024
-EMBEDDING_BATCH_SIZE = 8
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "8"))
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24
-MAX_PROMPT_CHUNKS = 5
+MAX_PROMPT_CHUNKS = 12
+MAX_PROMPT_TOKENS = int(os.getenv("MAX_PROMPT_TOKENS", "3600"))
 MIN_PROMPT_CHUNKS = 0
 FORCE_MIN_CHUNKS = False
 RERANK_PROMPT_THRESHOLD = 0.45
@@ -74,6 +77,7 @@ FINAL_CITATION_LIMIT = MAX_PROMPT_CHUNKS
 MIN_RERANK_SCORE = 0.30
 MIN_EVIDENCE_COVERAGE = 0.25
 DIRECT_EVIDENCE_COVERAGE = 0.45
+TABLE_STRICT_EVIDENCE_VALIDATION = _env_bool("TABLE_STRICT_EVIDENCE_VALIDATION", True)
 
 QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", True)
 QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", "deepseek")
@@ -84,18 +88,38 @@ QUERY_PLANNER_TIMEOUT_SECONDS = float(os.getenv("QUERY_PLANNER_TIMEOUT_SECONDS",
 QUERY_PLANNER_MAX_ASPECTS = int(os.getenv("QUERY_PLANNER_MAX_ASPECTS", "12"))
 QUERY_PLANNER_MAX_SEARCH_QUERIES = int(os.getenv("QUERY_PLANNER_MAX_SEARCH_QUERIES", "3"))
 
+ANSWER_GENERATION_ENABLED = _env_bool("ANSWER_GENERATION_ENABLED", True)
+ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", QUERY_PLANNER_BASE_URL)
+ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", "deepseek-v4-flash")
+ANSWER_GENERATION_TIMEOUT_SECONDS = float(os.getenv("ANSWER_GENERATION_TIMEOUT_SECONDS", "18"))
+ANSWER_GENERATION_MAX_TOKENS = int(os.getenv("ANSWER_GENERATION_MAX_TOKENS", "900"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+INDEX_QUEUE_CAPACITY = int(os.getenv("INDEX_QUEUE_CAPACITY", "8"))
+INDEX_TASK_MAX_RETRIES = int(os.getenv("INDEX_TASK_MAX_RETRIES", "3"))
+OFFICE_CONVERSION_TIMEOUT_SECONDS = int(os.getenv("OFFICE_CONVERSION_TIMEOUT_SECONDS", "120"))
+OFFICE_CONVERSION_MAX_BYTES = int(
+    os.getenv("OFFICE_CONVERSION_MAX_BYTES", str(200 * 1024 * 1024))
+)
+
 SUPPORTED_DOCUMENT_MIME_TYPES = {
     ".txt": {"text/plain"},
     ".md": {"text/markdown", "text/plain"},
+    ".doc": {"application/msword", "application/octet-stream"},
     ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+    ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
+    ".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
     ".pdf": {"application/pdf"},
 }
 
 DOCUMENT_LOADER_ORDER = {
     ".txt": ["text", "unstructured"],
     ".md": ["markdown", "unstructured"],
+    ".doc": ["libreoffice-doc", "antiword-doc"],
     ".docx": ["python-docx", "docling", "unstructured"],
     ".pdf": ["pymupdf4llm", "docling", "unstructured", "pypdf"],
+    ".xls": ["spreadsheet-xls"],
+    ".xlsx": ["spreadsheet-xlsx"],
 }
 
 

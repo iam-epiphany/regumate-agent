@@ -6,6 +6,7 @@ from typing import Any
 from backend.app.core.config import EMBEDDING_BATCH_SIZE
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
 from backend.app.services.model_device_service import selected_model_device
+from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -52,15 +53,16 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
     if any(not text for text in cleaned):
         raise EmbeddingServiceError("embedding 输入文本不能为空")
 
-    model = _get_bge_m3_model()
     try:
-        encoded = model.encode(
-            cleaned,
-            batch_size=batch_size,
-            return_dense=True,
-            return_sparse=True,
-            return_colbert_vecs=False,
-        )
+        with MODEL_INFERENCE_LOCK:
+            model = _get_bge_m3_model()
+            encoded = model.encode(
+                cleaned,
+                batch_size=batch_size,
+                return_dense=True,
+                return_sparse=True,
+                return_colbert_vecs=False,
+            )
     except Exception as exc:
         raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from exc
 

@@ -7,6 +7,15 @@ class AuditLogItem(BaseModel):
     target_type: str
     target_id: str | None = None
     detail: str
+    severity: str = "info"
+    event_key: str | None = None
+    summary: str | None = None
+    user_message: str | None = None
+    details_json: str | None = None
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    occurrence_count: int = 1
+    resolved: bool = False
     created_at: str
 
 

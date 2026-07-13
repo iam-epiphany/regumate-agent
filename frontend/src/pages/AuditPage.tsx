@@ -11,8 +11,10 @@ export function AuditPage() {
   const [archives, setArchives] = useState<AuditArchiveSummary[]>([]);
   const [selectedArchive, setSelectedArchive] = useState<AuditArchiveDetailResponse | null>(null);
   const [message, setMessage] = useState("仅显示当天审计日志，过期日志会自动归档。");
+  const [severityFilter, setSeverityFilter] = useState<"all" | "info" | "warning" | "error">("all");
   const parsedArchive = selectedArchive ? parseAuditArchiveContent(selectedArchive.content) : null;
   const selectedArchiveSummary = selectedArchive ? archives.find((archive) => archive.date === selectedArchive.date) : null;
+  const visibleLogs = severityFilter === "all" ? logs : logs.filter((log) => log.severity === severityFilter);
 
   useEffect(() => {
     void loadAuditData();
@@ -66,31 +68,50 @@ export function AuditPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-title">
+        <div className="document-list-toolbar">
           <h2>今日日志</h2>
+          <label>
+            级别筛选
+            <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value as typeof severityFilter)}>
+              <option value="all">全部（{logs.length}）</option>
+              <option value="info">普通</option>
+              <option value="warning">警告</option>
+              <option value="error">严重</option>
+            </select>
+          </label>
         </div>
         <p className="hint">{message}</p>
-        {logs.length > 0 ? (
+        {visibleLogs.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>时间</th>
+                  <th>级别</th>
                   <th>动作</th>
                   <th>对象</th>
+                  <th>次数</th>
                   <th>详情</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => {
+                {visibleLogs.map((log) => {
                   const display = formatAuditLog(log);
                   return (
                     <tr key={log.id}>
-                      <td>{formatDateTime(log.created_at)}</td>
+                      <td>{formatDateTime(log.last_seen_at || log.created_at)}</td>
+                      <td><SeverityBadge severity={log.severity} /></td>
                       <td>{display.action}</td>
                       <td>{display.target}</td>
+                      <td>{log.occurrence_count || 1}</td>
                       <td className="audit-detail">
                         <ExpandableText text={display.detail} maxChars={160} />
+                        {log.details_json ? (
+                          <details className="source-details">
+                            <summary>技术详情</summary>
+                            <pre className="prompt-preview">{log.details_json}</pre>
+                          </details>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -99,7 +120,7 @@ export function AuditPage() {
             </table>
           </div>
         ) : (
-          <p className="muted">今天暂无日志。</p>
+          <p className="muted">当前筛选条件下暂无日志。</p>
         )}
       </section>
 
@@ -227,4 +248,10 @@ function formatFileSize(value: number): string {
 
 function formatArchiveTime(value: string | undefined): string {
   return value ? formatDateTime(value) : "未知";
+}
+
+function SeverityBadge({ severity }: { severity: AuditLogItem["severity"] }) {
+  const label = severity === "error" ? "严重" : severity === "warning" ? "警告" : "普通";
+  const className = severity === "error" ? "severity-badge error" : severity === "warning" ? "severity-badge warning" : "severity-badge";
+  return <span className={className}>{label}</span>;
 }

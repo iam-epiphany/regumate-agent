@@ -1,3 +1,5 @@
+import pytest
+
 from backend.app.services.chunk_service import build_chunks_from_parsed, count_tokens
 from backend.app.services.document_types import ParsedBlock, ParsedDocument
 from backend.app.services.document_parser import available_loader_names, parse_document
@@ -19,8 +21,11 @@ def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
 def test_loader_order_is_configured_by_file_type(tmp_path) -> None:
     assert available_loader_names(tmp_path / "rules.txt") == ["text", "unstructured"]
     assert available_loader_names(tmp_path / "rules.md") == ["markdown", "unstructured"]
+    assert available_loader_names(tmp_path / "rules.doc") == ["libreoffice-doc", "antiword-doc"]
     assert available_loader_names(tmp_path / "rules.docx") == ["python-docx", "docling", "unstructured"]
     assert available_loader_names(tmp_path / "rules.pdf") == ["pymupdf4llm", "docling", "unstructured", "pypdf"]
+    assert available_loader_names(tmp_path / "rules.xls") == ["spreadsheet-xls"]
+    assert available_loader_names(tmp_path / "rules.xlsx") == ["spreadsheet-xlsx"]
 
 
 def test_markdown_table_block_carries_structured_metadata(tmp_path) -> None:
@@ -181,6 +186,37 @@ def test_semantic_break_splits_topic_shift(monkeypatch) -> None:
     assert all(count_tokens(chunk.text) <= 800 for chunk in chunks)
 
 
+def test_semantic_chunking_falls_back_when_embedding_is_unavailable(monkeypatch) -> None:
+    from backend.app.services.embedding_service import EmbeddingServiceError
+
+    paragraphs = [
+        "资产合计应等于各项资产分项金额合计。" * 80,
+        "资本充足率指标应按照监管口径计算。" * 80,
+    ]
+    parsed = ParsedDocument(
+        text="\n\n".join(paragraphs),
+        blocks=[
+            ParsedBlock(
+                text=paragraph,
+                block_type="paragraph",
+                order_index=index,
+                section_title="监管指标",
+            )
+            for index, paragraph in enumerate(paragraphs, start=1)
+        ],
+    )
+    monkeypatch.setattr(
+        "backend.app.services.chunk_service.embed_for_semantic_split",
+        lambda texts: (_ for _ in ()).throw(EmbeddingServiceError("model unavailable")),
+    )
+
+    chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed)
+
+    assert chunks
+    assert any("资本充足率" in chunk.text for chunk in chunks)
+    assert all(count_tokens(chunk.text) <= 800 for chunk in chunks)
+
+
 def test_table_block_becomes_independent_chunk() -> None:
     parsed = ParsedDocument(
         text="监管填报说明\n\n字段 | 口径\n资产合计 | 资产分项合计",
@@ -294,6 +330,197 @@ def test_docx_table_exports_standard_markdown(tmp_path) -> None:
         "| --- | --- |",
         "| 同一合同拆分为多笔 | 合并判断 |",
     ]
+
+
+def test_docx_loader_preserves_paragraph_and_table_order(tmp_path) -> None:
+    from docx import Document as DocxDocument
+
+    path = tmp_path / "rules.docx"
+    document = DocxDocument()
+    document.add_paragraph("一、填报说明")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "指标"
+    table.cell(0, 1).text = "口径"
+    table.cell(1, 0).text = "资产合计"
+    table.cell(1, 1).text = "资产分项合计"
+    document.add_paragraph("二、留痕要求")
+    document.save(path)
+
+    parsed = parse_document(path)
+
+    assert [block.block_type for block in parsed.blocks] == ["paragraph", "table", "paragraph"]
+    assert parsed.blocks[0].text == "一、填报说明"
+    assert "资产合计" in parsed.blocks[1].text
+    assert parsed.blocks[2].text == "二、留痕要求"
+
+
+def test_office_conversion_rejects_oversized_output(tmp_path, monkeypatch) -> None:
+    from backend.app.services import office_conversion
+
+    output_dir = tmp_path / "regumate-office-test"
+    output_dir.mkdir()
+    converted = output_dir / "oversized.docx"
+    converted.write_bytes(b"123456789")
+    monkeypatch.setattr(office_conversion, "OFFICE_CONVERSION_MAX_BYTES", 8)
+
+    with pytest.raises(office_conversion.OfficeConversionError, match="exceeds 8 bytes"):
+        office_conversion._validate_conversion_output(converted, output_dir)
+
+    assert not output_dir.exists()
+
+
+def test_legacy_doc_loader_uses_libreoffice_conversion(tmp_path, monkeypatch) -> None:
+    from docx import Document as DocxDocument
+
+    converted_path = tmp_path / "converted.docx"
+    document = DocxDocument()
+    document.add_paragraph("监管制度正文")
+    document.save(converted_path)
+    legacy_path = tmp_path / "legacy.doc"
+    legacy_path.write_bytes(b"legacy-binary-placeholder")
+
+    from backend.app.services.office_conversion import OfficeConversionResult
+
+    monkeypatch.setattr(
+        "backend.app.services.office_conversion.convert_with_libreoffice_detailed",
+        lambda file_path, target_extension: OfficeConversionResult(
+            path=converted_path, backend="libreoffice", elapsed_ms=12.5
+        ),
+    )
+
+    parsed = parse_document(legacy_path)
+
+    assert parsed.metadata["loader_name"] == "libreoffice-doc"
+    assert parsed.metadata["converted_from"] == "doc"
+    assert parsed.metadata["parser_backend"] == "libreoffice"
+    assert parsed.metadata["degraded"] is False
+    assert "监管制度正文" in parsed.text
+
+
+def test_legacy_doc_falls_back_to_antiword(tmp_path, monkeypatch) -> None:
+    import subprocess
+
+    legacy_path = tmp_path / "legacy.doc"
+    legacy_path.write_bytes(b"legacy-binary-placeholder")
+
+    monkeypatch.setattr(
+        "backend.app.services.office_conversion.convert_with_libreoffice_detailed",
+        lambda file_path, target_extension: (_ for _ in ()).throw(
+            __import__(
+                "backend.app.services.office_conversion", fromlist=["OfficeConversionError"]
+            ).OfficeConversionError("forced failure")
+        ),
+    )
+    monkeypatch.setattr("shutil.which", lambda name: "antiword" if name == "antiword" else None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="监管制度降级正文".encode("utf-8"), stderr=b""
+        ),
+    )
+
+    parsed = parse_document(legacy_path)
+
+    assert parsed.metadata["loader_name"] == "antiword-doc"
+    assert parsed.metadata["parser_backend"] == "antiword"
+    assert parsed.metadata["degraded"] is True
+    assert "监管制度降级正文" in parsed.text
+
+
+def test_xlsx_parser_builds_spreadsheet_semantic_blocks(tmp_path) -> None:
+    from openpyxl import Workbook
+
+    path = tmp_path / "2024年一季度全国各地区原保险保费收入情况表.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "2024年一季度"
+    sheet.merge_cells("A1:D1")
+    sheet["A1"] = "2024年一季度全国各地区原保险保费收入情况表"
+    sheet["A2"] = "单位：亿元"
+    sheet.append(["地区", "指标", "本年累计", "本年累计"])
+    sheet.append(["", "", "原保险保费收入", "同比增长"])
+    sheet.append(["全国合计", "原保险保费收入", 123.45, "6.5%"])
+    sheet.append(["北京", "原保险保费收入", 11.2, "5.0%"])
+    workbook.save(path)
+
+    parsed = parse_document(path)
+    chunks = build_chunks_from_parsed(document_id="DOC-TEST-0001", parsed=parsed, source_file=path.name)
+    row_block = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
+    cell = next(item for item in row_block.metadata["cells"] if item["coordinate"] == "C5")
+
+    assert parsed.metadata["loader_name"] == "spreadsheet-xlsx"
+    assert parsed.metadata["source_format"] == "xlsx"
+    assert parsed.metadata["inferred_year"] == 2024
+    assert row_block.metadata["spreadsheet_table"] is True
+    assert row_block.metadata["sheet_name"] == "2024年一季度"
+    assert row_block.metadata["table_title"] == "2024年一季度全国各地区原保险保费收入情况表"
+    assert row_block.metadata["unit"] == "亿元"
+    assert row_block.metadata["period"]["quarter"] == 1
+    assert row_block.metadata["row_label"] == "全国合计 / 原保险保费收入"
+    assert cell["column_label"] == "本年累计 / 原保险保费收入"
+    assert cell["normalized_value"] == 123.45
+    assert cell["unit"] == "亿元"
+    assert chunks[1].metadata["cells"][2]["coordinate"] == "C5"
+    assert "工作表：2024年一季度" in chunks[1].embedding_text
+    assert "单位：亿元" in chunks[1].embedding_text
+
+
+def test_xls_loader_uses_libreoffice_conversion_path(tmp_path, monkeypatch) -> None:
+    from openpyxl import Workbook
+
+    converted_path = tmp_path / "converted.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "报表"
+    sheet.append(["统计表"])
+    sheet.append(["单位：亿元"])
+    sheet.append(["地区", "指标", "数值"])
+    sheet.append(["全国合计", "资产合计", 100])
+    workbook.save(converted_path)
+    xls_path = tmp_path / "监管报表.xls"
+    xls_path.write_bytes(b"legacy-xls-placeholder")
+
+    monkeypatch.setattr(
+        "backend.app.services.spreadsheet_parser.convert_with_libreoffice",
+        lambda file_path, target_extension: converted_path,
+    )
+
+    parsed = parse_document(xls_path)
+
+    assert parsed.metadata["loader_name"] == "spreadsheet-xls-libreoffice"
+    assert parsed.metadata["source_format"] == "xls"
+    assert parsed.metadata["converted_from"] == "xls"
+    assert any(block.metadata.get("source_format") == "xls" for block in parsed.blocks)
+
+
+def test_xls_loader_falls_back_when_converted_workbook_is_invalid(tmp_path, monkeypatch) -> None:
+    from backend.app.services.document_types import LoaderResult, ParsedBlock
+    from backend.app.services.spreadsheet_parser import load_xls_workbook
+
+    converted_path = tmp_path / "broken.xlsx"
+    converted_path.write_bytes(b"not-a-valid-ooxml-package")
+    xls_path = tmp_path / "legacy.xls"
+    xls_path.write_bytes(b"legacy-biff-placeholder")
+    fallback = LoaderResult(
+        blocks=[ParsedBlock(text="xlrd fallback", block_type="table", order_index=1)],
+        loader_name="spreadsheet-xls-xlrd",
+    )
+
+    monkeypatch.setattr(
+        "backend.app.services.spreadsheet_parser.convert_with_libreoffice",
+        lambda file_path, target_extension: converted_path,
+    )
+    monkeypatch.setattr(
+        "backend.app.services.spreadsheet_parser._load_xls_with_xlrd",
+        lambda file_path: fallback,
+    )
+
+    result = load_xls_workbook(xls_path)
+
+    assert result.loader_name == "spreadsheet-xls-xlrd"
+    assert result.blocks[0].text == "xlrd fallback"
+    assert tmp_path.exists()
 
 
 def test_pdf_defaults_to_pymupdf4llm_loader(tmp_path) -> None:

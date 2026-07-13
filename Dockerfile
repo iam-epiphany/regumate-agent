@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 
-FROM python:3.13-slim AS app
+FROM python:3.13-bookworm AS app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -26,12 +26,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends --fix-missing \
+        antiword \
+        build-essential \
+        curl \
+        fonts-noto-cjk \
+        libreoffice-calc \
+        libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 RUN python -m pip install --upgrade pip \
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.1+cpu \
     && python -m pip install -r requirements.txt
 
 COPY backend/ ./backend/
