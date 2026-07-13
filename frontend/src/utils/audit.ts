@@ -13,6 +13,15 @@ export interface ParsedAuditArchiveEntry {
   target_type: string;
   target_id: string | null;
   detail: string;
+  severity: "info" | "warning" | "error";
+  event_key: string | null;
+  summary: string | null;
+  user_message: string | null;
+  details_json: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  occurrence_count: number;
+  resolved: boolean;
 }
 
 export interface ParsedAuditArchive {
@@ -25,6 +34,9 @@ interface QAAuditDetail {
   answer?: string;
   refused?: boolean;
   confidence?: number;
+  citation_count?: number;
+  generation_status?: string;
+  refusal_reason?: string | null;
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -45,9 +57,9 @@ const TARGET_LABELS: Record<string, string> = {
 
 export function formatAuditLog(log: AuditLogItem): AuditDisplay {
   return {
-    action: ACTION_LABELS[log.action] ?? log.action,
+    action: log.summary || ACTION_LABELS[log.action] || log.action,
     target: formatTarget(log),
-    detail: formatDetail(log),
+    detail: isQAAuditAction(log.action) ? formatQADetail(log) : log.user_message || formatDetail(log),
   };
 }
 
@@ -62,6 +74,7 @@ export function parseAuditArchiveContent(content: string): ParsedAuditArchive {
     const targetType = matchLine(block, "对象类型") || "unknown";
     const rawTargetId = matchLine(block, "对象编号");
     const detail = matchCodeBlock(block) || matchLine(block, "详情") || "";
+    const severity = cleanSeverity(matchLine(block, "级别"));
 
     return {
       id: index + 1,
@@ -70,10 +83,29 @@ export function parseAuditArchiveContent(content: string): ParsedAuditArchive {
       target_type: targetType,
       target_id: rawTargetId && rawTargetId !== "无" ? rawTargetId : null,
       detail,
+      severity,
+      event_key: null,
+      summary: matchLine(block, "摘要"),
+      user_message: null,
+      details_json: null,
+      first_seen_at: null,
+      last_seen_at: null,
+      occurrence_count: Number(matchLine(block, "出现次数") || 1),
+      resolved: false,
     };
   });
 
   return { archived_at, entries };
+}
+
+function cleanSeverity(value: string | null): "info" | "warning" | "error" {
+  if (value === "warning" || value === "警告") {
+    return "warning";
+  }
+  if (value === "error" || value === "严重") {
+    return "error";
+  }
+  return "info";
 }
 
 function formatTarget(log: AuditLogItem): string {
@@ -85,8 +117,8 @@ function formatDetail(log: AuditLogItem): string {
   if (log.action === "document_indexed") {
     return formatIndexedDetail(log.detail);
   }
-  if (log.action === "qa_answered" || log.action === "qa_refused" || log.action === "qa_context_built") {
-    return formatQADetail(log.detail);
+  if (isQAAuditAction(log.action)) {
+    return formatQADetail(log);
   }
 
   return log.detail || "无补充说明";
@@ -101,10 +133,10 @@ function formatIndexedDetail(detail: string): string {
   return `生成 ${match[1]} 个内容片段`;
 }
 
-function formatQADetail(detail: string): string {
-  const parsed = parseQADetail(detail);
+function formatQADetail(log: AuditLogItem | ParsedAuditArchiveEntry): string {
+  const parsed = parseQADetail(log.detail) || parseQADetail(log.details_json || "");
   if (!parsed?.question && !parsed?.answer) {
-    return detail || "无补充说明";
+    return log.detail || log.user_message || "无补充说明";
   }
   const parts = [];
   if (parsed.question) {
@@ -113,7 +145,20 @@ function formatQADetail(detail: string): string {
   if (parsed.answer) {
     parts.push(`回答：${parsed.answer}`);
   }
+  if (typeof parsed.refused === "boolean") {
+    parts.push(`状态：${parsed.refused ? "已拒答" : "已回答"}`);
+  }
+  if (parsed.refusal_reason) {
+    parts.push(`拒答原因：${parsed.refusal_reason}`);
+  }
+  if (typeof parsed.citation_count === "number") {
+    parts.push(`引用数量：${parsed.citation_count}`);
+  }
   return parts.join("\n");
+}
+
+function isQAAuditAction(action: string): boolean {
+  return action === "qa_answered" || action === "qa_refused" || action === "qa_context_built";
 }
 
 function parseQADetail(detail: string): QAAuditDetail | null {

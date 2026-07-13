@@ -23,6 +23,94 @@ def test_query_planner_fallback_decomposes_asset_difference_question(monkeypatch
     assert first_queries[0].query == "资产合计与分项合计存在差异时应优先检查哪些原因"
     assert "资产合计校验差异处理流程" in first_queries[1].query
     assert plan.aspects[1].evidence_need == "外币折算差异的留痕依据或支持材料"
+    assert all(aspect.modality == "text" for aspect in plan.aspects)
+
+
+def test_query_planner_fallback_recognizes_excel_lookup_question(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据 Excel 附件《2024年一季度全国各地区原保险保费收入情况表》，全国合计的原保险保费收入是多少？")
+
+    assert plan.fallback_used is True
+    assert len(plan.aspects) == 1
+    aspect = plan.aspects[0]
+    assert aspect.modality == "table"
+    assert aspect.table_task == "lookup"
+    assert aspect.operation == "none"
+    assert aspect.table_filters["source_title"] == "2024年一季度全国各地区原保险保费收入情况表"
+    assert aspect.table_filters["year"] == 2024
+    assert aspect.table_filters["quarter"] == 1
+    assert aspect.table_filters["row_label"] == "全国合计"
+    assert any(query.query_type == "table_locator" for query in aspect.search_queries)
+
+
+def test_query_planner_builds_deterministic_mcq_title_and_option_queries(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+    options = [
+        "消费金融公司是非银行金融机构。",
+        "消费贷款不包括住房和汽车贷款。",
+        "名称中应当标明消费金融字样。",
+        "核心数据遭到泄露属于特别重大数据安全事件。",
+    ]
+
+    plan = plan_query(
+        "检索《数据安全事件分级》后，以下哪一项与材料内容一致？",
+        options=options,
+    )
+
+    assert plan.planner == "deterministic-mcq"
+    assert len(plan.aspects) == 1
+    aspect = plan.aspects[0]
+    assert aspect.question == "数据安全事件分级"
+    assert [query.query_type for query in aspect.search_queries[:2]] == [
+        "keyword_anchor",
+        "semantic_question",
+    ]
+    assert all(query.query_type == "document_style_statement" for query in aspect.search_queries[2:])
+    option_queries = "\n".join(query.query for query in aspect.search_queries[2:])
+    assert all(option.rstrip("。") in option_queries for option in options)
+
+    pdf_plan = plan_query(
+        "检索《银行函证工作操作指引（PDF）》后，以下哪一项与材料内容一致？",
+        options=options,
+    )
+    assert pdf_plan.aspects[0].question == "银行函证工作操作指引"
+    assert pdf_plan.aspects[0].table_filters["file_type"] == "pdf"
+
+    repeated = "共同事实。；"
+    multi_fact_plan = plan_query(
+        "关于《意外伤害保险业务监管办法》，下列哪组表述均属于材料内容？",
+        options=[
+            repeated + "保险期限一年及以下的个人意外险平均附加费用率上限为35%。",
+            repeated + "无关事实甲。",
+            repeated + "无关事实乙。",
+            repeated + "无关事实丙。",
+        ],
+    )
+    option_query = "\n".join(query.query for query in multi_fact_plan.aspects[0].search_queries[2:])
+    assert option_query.count("共同事实") == 1
+    assert "35%" in option_query
+
+
+def test_query_planner_fallback_recognizes_excel_compare_and_calculate(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    compare_plan = plan_query("Excel 附件里哪个地区原保险保费收入最高？")
+    calculate_plan = plan_query("Excel 附件里北京和上海的原保险保费收入差值是多少？")
+
+    assert compare_plan.aspects[0].modality == "table"
+    assert compare_plan.aspects[0].table_task == "compare"
+    assert compare_plan.aspects[0].operation == "max"
+    assert calculate_plan.aspects[0].table_task == "calculate"
+    assert calculate_plan.aspects[0].operation == "difference"
+
+
+def test_query_planner_fallback_recognizes_mixed_excel_policy_question(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据监管制度口径和 Excel 附件，2024年一季度全国合计原保险保费收入是多少？")
+
+    assert plan.aspects[0].modality == "mixed"
 
 
 def test_query_planner_llm_returns_structured_multi_view_queries(monkeypatch) -> None:

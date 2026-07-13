@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
@@ -15,6 +15,15 @@ class RagHealthResponse(BaseModel):
     embedding_model_path: str
     reranker_model_path: str
     qdrant_ready: bool
+    qdrant_collection: str
+    qdrant_collection_ready: bool = False
+    sqlite_ready: bool = False
+    libreoffice_ready: bool = False
+    antiword_ready: bool = False
+    libreoffice_version: str | None = None
+    antiword_version: str | None = None
+    index_tasks: dict[str, int] = Field(default_factory=dict)
+    ready: bool = False
     embedding_model_error: str | None = None
     reranker_model_error: str | None = None
     qdrant_error: str | None = None

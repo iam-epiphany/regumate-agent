@@ -1,8 +1,9 @@
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-import re
+from uuid import uuid4
 from zipfile import BadZipFile, ZipFile
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,24 +20,29 @@ class EmptyDocumentError(ValueError):
     pass
 
 
+class DocumentTooLargeError(ValueError):
+    pass
+
+
+class AsyncUploadStream(Protocol):
+    async def read(self, size: int = -1) -> bytes: ...
+
+
 def next_document_id(db: Session) -> str:
+    """Generate a collision-resistant ID without a read-then-increment race.
+
+    Existing sequential ``DOC-YYYYMMDD-0001`` IDs remain valid. New uploads use
+    a UUID suffix, so concurrent workers do not need a shared sequence lock.
+    """
+
     today = datetime.now().strftime("%Y%m%d")
     prefix = f"DOC-{today}-"
-    statement = select(Document.document_id).where(Document.document_id.like(f"{prefix}%"))
-    existing_numbers: set[int] = set()
-    for document_id in db.scalars(statement):
-        number = _document_number(document_id, prefix)
-        if number is not None:
-            existing_numbers.add(number)
-    if DOCUMENT_DIR.exists():
-        for path in DOCUMENT_DIR.glob(f"{prefix}*"):
-            if path.suffix.lower() not in SUPPORTED_DOCUMENT_EXTENSIONS:
-                continue
-            number = _document_number(path.stem, prefix)
-            if number is not None:
-                existing_numbers.add(number)
-    next_number = max(existing_numbers, default=0) + 1
-    return f"{prefix}{next_number:04d}"
+    for _ in range(5):
+        document_id = f"{prefix}{uuid4().hex[:12].upper()}"
+        existing = db.scalar(select(Document.document_id).where(Document.document_id == document_id))
+        if existing is None and not any(DOCUMENT_DIR.glob(f"{document_id}.*")):
+            return document_id
+    raise RuntimeError("无法生成唯一文档编号，请重试上传")
 
 
 def save_original_document(document_id: str, filename: str, content: bytes, content_type: str | None = None) -> Path:
@@ -45,7 +51,7 @@ def save_original_document(document_id: str, filename: str, content: bytes, cont
 
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_EXTENSIONS:
-        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.docx、.pdf 文档")
+        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx 文档")
     _validate_mime_type(suffix, content_type)
     _validate_file_content(suffix, content)
 
@@ -57,9 +63,44 @@ def save_original_document(document_id: str, filename: str, content: bytes, cont
     return storage_path
 
 
-def _document_number(value: str, prefix: str) -> int | None:
-    match = re.fullmatch(rf"{re.escape(prefix)}(\d{{4}})", value)
-    return int(match.group(1)) if match else None
+async def save_original_document_stream(
+    *,
+    document_id: str,
+    filename: str,
+    stream: AsyncUploadStream,
+    content_type: str | None,
+    max_bytes: int,
+) -> tuple[Path, int]:
+    """Write an upload incrementally, validate it, then publish atomically."""
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx 文档")
+    _validate_mime_type(suffix, content_type)
+    DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+    storage_path = DOCUMENT_DIR / f"{document_id}{suffix}"
+    temporary_path = storage_path.with_name(f"{storage_path.name}.upload")
+    if storage_path.exists() or temporary_path.exists():
+        raise UnsupportedDocumentTypeError("文档存储路径已存在，请刷新后重试上传")
+
+    total = 0
+    try:
+        with temporary_path.open("xb") as target:
+            while data := await stream.read(1024 * 1024):
+                total += len(data)
+                if total > max_bytes:
+                    raise DocumentTooLargeError(
+                        f"文件超过上传大小限制（{max_bytes // 1024 // 1024} MB）"
+                    )
+                target.write(data)
+        if total == 0:
+            raise EmptyDocumentError("上传文档不能为空")
+        _validate_file_path(suffix, temporary_path)
+        temporary_path.replace(storage_path)
+        return storage_path, total
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _validate_mime_type(suffix: str, content_type: str | None) -> None:
@@ -78,16 +119,23 @@ def _validate_file_content(suffix: str, content: bytes) -> None:
             raise UnsupportedDocumentTypeError("PDF 文件内容校验失败")
         return
 
-    if suffix == ".docx":
+    if suffix in {".docx", ".xlsx"}:
         if not content.startswith(b"PK"):
-            raise UnsupportedDocumentTypeError("DOCX 文件内容校验失败")
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         try:
             with ZipFile(BytesIO(content)) as archive:
                 names = set(archive.namelist())
         except BadZipFile as exc:
-            raise UnsupportedDocumentTypeError("DOCX 文件内容校验失败") from exc
-        if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败") from exc
+        if suffix == ".docx" and ("[Content_Types].xml" not in names or "word/document.xml" not in names):
             raise UnsupportedDocumentTypeError("DOCX 文件内容校验失败")
+        if suffix == ".xlsx" and ("[Content_Types].xml" not in names or "xl/workbook.xml" not in names):
+            raise UnsupportedDocumentTypeError("XLSX 文件内容校验失败")
+        return
+
+    if suffix in {".doc", ".xls"}:
+        if not content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         return
 
     if suffix in {".txt", ".md"}:
@@ -97,3 +145,37 @@ def _validate_file_content(suffix: str, content: bytes) -> None:
             raise UnsupportedDocumentTypeError("文本文件必须使用 UTF-8 编码") from exc
         if "\x00" in text:
             raise UnsupportedDocumentTypeError("文本文件内容校验失败")
+
+
+def _validate_file_path(suffix: str, path: Path) -> None:
+    with path.open("rb") as stream:
+        signature = stream.read(8)
+    if suffix == ".pdf":
+        if not signature.startswith(b"%PDF-"):
+            raise UnsupportedDocumentTypeError("PDF 文件内容校验失败")
+        return
+    if suffix in {".docx", ".xlsx"}:
+        if not signature.startswith(b"PK"):
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
+        try:
+            with ZipFile(path) as archive:
+                names = set(archive.namelist())
+        except BadZipFile as exc:
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败") from exc
+        if suffix == ".docx" and ("[Content_Types].xml" not in names or "word/document.xml" not in names):
+            raise UnsupportedDocumentTypeError("DOCX 文件内容校验失败")
+        if suffix == ".xlsx" and ("[Content_Types].xml" not in names or "xl/workbook.xml" not in names):
+            raise UnsupportedDocumentTypeError("XLSX 文件内容校验失败")
+        return
+    if suffix in {".doc", ".xls"}:
+        if not signature.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
+        return
+    if suffix in {".txt", ".md"}:
+        try:
+            with path.open("r", encoding="utf-8-sig") as stream:
+                while text := stream.read(1024 * 1024):
+                    if "\x00" in text:
+                        raise UnsupportedDocumentTypeError("文本文件内容校验失败")
+        except UnicodeDecodeError as exc:
+            raise UnsupportedDocumentTypeError("文本文件必须使用 UTF-8 编码") from exc

@@ -28,3 +28,4 @@ class ParsedDocument:
 class LoaderResult:
     blocks: list[ParsedBlock]
     loader_name: str
+    metadata: dict[str, Any] = field(default_factory=dict)

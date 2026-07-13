@@ -1,9 +1,11 @@
 import {
   CheckCircle2,
   CircleDashed,
+  Copy,
   Loader2,
   PauseCircle,
   Search,
+  RotateCcw,
   XCircle,
 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
@@ -11,23 +13,89 @@ import { useEffect, useRef, useState } from "react";
 
 import { askQuestionStream } from "../api/qa";
 import { StatusBadge } from "../components/StatusBadge";
+import { CitationList } from "../components/CitationList";
 import type { QAResponse, RagProgressEvent, RagProgressStage, RetrievalResult } from "../types/api";
 
 const QA_SESSION_KEY = "regumate.qa.session";
 
-const STAGE_ORDER: Array<{ stage: RagProgressStage; pendingTitle: string }> = [
-  { stage: "planning", pendingTitle: "等待理解问题" },
-  { stage: "retrieval", pendingTitle: "等待检索相关依据" },
-  { stage: "rerank", pendingTitle: "等待重排候选片段" },
-  { stage: "context_selection", pendingTitle: "等待精选最终上下文" },
-  { stage: "prompt_build", pendingTitle: "等待构造 LLM Prompt" },
-  { stage: "llm_generation", pendingTitle: "等待接入 LLM 生成" },
+interface StageDefinition {
+  stage: RagProgressStage;
+  pendingTitle: string;
+  runningTitle: string;
+  completedTitle: string;
+  skippedTitle: string;
+  failedTitle: string;
+}
+
+const MAIN_STAGE_ORDER: StageDefinition[] = [
+  {
+    stage: "planning",
+    pendingTitle: "等待理解问题",
+    runningTitle: "正在理解问题",
+    completedTitle: "问题理解完成",
+    skippedTitle: "问题理解已跳过",
+    failedTitle: "问题理解失败",
+  },
+  {
+    stage: "retrieval",
+    pendingTitle: "等待检索相关依据",
+    runningTitle: "正在检索相关依据",
+    completedTitle: "检索相关依据完成",
+    skippedTitle: "检索相关依据已跳过",
+    failedTitle: "检索相关依据失败",
+  },
+  {
+    stage: "rerank",
+    pendingTitle: "等待重排候选片段",
+    runningTitle: "正在重排候选片段",
+    completedTitle: "重排候选片段完成",
+    skippedTitle: "重排候选片段已跳过",
+    failedTitle: "重排候选片段失败",
+  },
+  {
+    stage: "llm_generation",
+    pendingTitle: "等待生成回答",
+    runningTitle: "正在生成回答",
+    completedTitle: "答案生成完成",
+    skippedTitle: "答案生成已跳过",
+    failedTitle: "答案生成失败",
+  },
+  {
+    stage: "grounding_validation",
+    pendingTitle: "等待完成问答处理",
+    runningTitle: "正在校验事实与引用",
+    completedTitle: "问答处理完成",
+    skippedTitle: "问答处理已跳过",
+    failedTitle: "问答处理失败",
+  },
+];
+
+const DEBUG_STAGE_ORDER: StageDefinition[] = [
+  ...MAIN_STAGE_ORDER.slice(0, 3),
+  {
+    stage: "context_selection",
+    pendingTitle: "等待精选最终上下文",
+    runningTitle: "正在精选最终上下文",
+    completedTitle: "上下文精选完成",
+    skippedTitle: "上下文精选已跳过",
+    failedTitle: "上下文精选失败",
+  },
+  {
+    stage: "prompt_build",
+    pendingTitle: "等待构造 LLM Prompt",
+    runningTitle: "正在构造 LLM Prompt",
+    completedTitle: "Prompt 构造完成",
+    skippedTitle: "Prompt 构造已跳过",
+    failedTitle: "Prompt 构造失败",
+  },
+  ...MAIN_STAGE_ORDER.slice(3),
 ];
 
 interface QASessionState {
   question: string;
   answer: QAResponse | null;
   message: string;
+  history: string[];
 }
 
 type RetrievalSummary = NonNullable<QAResponse["context_package"]>["retrieval_summary"];
@@ -44,7 +112,7 @@ function evidenceLabel(confidence: number) {
 
 function contextLabel(answer: QAResponse) {
   if (!answer.context_package) {
-    return "未检索";
+    return answer.refused ? "依据不足" : evidenceLabel(answer.confidence);
   }
   if (!answer.context_package.retrieval_summary.has_sufficient_context) {
     return "依据不足";
@@ -52,31 +120,45 @@ function contextLabel(answer: QAResponse) {
   return evidenceLabel(answer.confidence);
 }
 
+function refusalReasonLabel(reason: string | null) {
+  const labels: Record<string, string> = {
+    insufficient_context: "当前知识库未检索到足够的直接依据",
+    related_context_only: "只找到相关背景，缺少能够直接回答问题的证据",
+    grounding_validation_failed: "生成结论中的关键事实未通过证据校验",
+    table_evidence_not_found: "未找到满足文件、期间、指标和行列口径的有效表格证据",
+  };
+  return reason ? labels[reason] ?? "当前证据不足以给出确定结论" : "当前证据不足以给出确定结论";
+}
+
 export function RagPage() {
   const [initialState] = useState(loadQASessionState);
   const [question, setQuestion] = useState(initialState.question);
   const [answer, setAnswer] = useState<QAResponse | null>(initialState.answer);
   const [message, setMessage] = useState(initialState.message);
+  const [history, setHistory] = useState(initialState.history);
+  const [technicalDetails, setTechnicalDetails] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [progressEvents, setProgressEvents] = useState<RagProgressEvent[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    saveQASessionState({ question, answer, message });
-  }, [question, answer, message]);
+    saveQASessionState({ question, answer, message, history });
+  }, [question, answer, message, history]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmittingRef.current) {
-      return;
-    }
+    await runQuestion(question);
+  }
 
-    const trimmedQuestion = question.trim();
+  async function runQuestion(rawQuestion: string) {
+    const trimmedQuestion = rawQuestion.trim();
     if (!trimmedQuestion) {
       setMessage("请输入制度、填报说明或指标口径问题。");
       return;
     }
+    setQuestion(trimmedQuestion);
 
     abortControllerRef.current?.abort();
     const abortController = new AbortController();
@@ -101,9 +183,11 @@ export function RagPage() {
           setProgressEvents((current) => [...current, progressEvent]);
         },
         abortController.signal,
+        technicalDetails,
       );
       setAnswer(result);
       setMessage("");
+      setHistory((current) => [trimmedQuestion, ...current.filter((item) => item !== trimmedQuestion)].slice(0, 5));
     } catch (error) {
       if (abortController.signal.aborted) {
         return;
@@ -123,10 +207,23 @@ export function RagPage() {
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
       }
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
     }
+  }
+
+  async function copyAnswer() {
+    if (!answer?.answer) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(answer.answer);
+      setCopyStatus("已复制");
+    } catch {
+      setCopyStatus("复制失败");
+    }
+    window.setTimeout(() => setCopyStatus(""), 1800);
   }
 
   const contextPackage = answer?.context_package ?? null;
@@ -137,7 +234,7 @@ export function RagPage() {
       <section className="page-head">
         <div>
           <p className="eyebrow">Trusted RAG</p>
-          <h1>可信 RAG 上下文</h1>
+          <h1>可信监管问答</h1>
         </div>
       </section>
 
@@ -153,11 +250,25 @@ export function RagPage() {
             {isSubmitting ? "查询中" : "查询"}
           </button>
         </form>
+        <div className="qa-options">
+          <label>
+            <input type="checkbox" checked={technicalDetails} onChange={(event) => setTechnicalDetails(event.target.checked)} />
+            展示技术详情（Prompt、检索计划与诊断）
+          </label>
+        </div>
+        {history.length ? (
+          <div className="recent-questions">
+            <span>最近提问</span>
+            {history.map((item) => (
+              <button key={item} className="history-button" type="button" onClick={() => setQuestion(item)}>{item}</button>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="panel">
         <div className="panel-title">
-          <h2>检索上下文</h2>
+          <h2>回答</h2>
           {answer ? (
             <StatusBadge tone={answer.refused ? "warning" : "ok"}>
               {contextLabel(answer)}
@@ -165,26 +276,51 @@ export function RagPage() {
           ) : null}
         </div>
         {answer ? (
-          <p className="muted">
-            当前系统已检索到以下相关依据，后续接入 LLM 后将基于这些片段生成回答。
-          </p>
+          <div className={`answer-card ${answer.refused ? "answer-card--refused" : ""}`}>
+            <p className="answer-text">{answer.answer || "当前未生成回答。"}</p>
+            {answer.refused ? <p className="refusal-reason">拒答原因：{refusalReasonLabel(answer.refusal_reason)}</p> : null}
+            <p className="muted">
+              处理结果：{answerResultLabel(answer)}
+              {answer.degraded ? " / 当前为降级回答" : ""}
+            </p>
+            <div className="answer-actions">
+              <button className="secondary-button" type="button" onClick={() => void copyAnswer()}><Copy size={15} />{copyStatus || "复制答案"}</button>
+              <button className="secondary-button" type="button" disabled={isSubmitting} onClick={() => void runQuestion(question)}><RotateCcw size={15} />重试</button>
+            </div>
+          </div>
         ) : (
           <p className="muted">{message || "输入问题后，系统会实时展示检索和上下文构造过程。"}</p>
         )}
       </section>
 
-      {showDiagnostics ? (
+      {showDiagnostics && technicalDetails ? (
         <RetrievalDiagnosticsPanel
           progressEvents={progressEvents}
           summary={contextPackage?.retrieval_summary ?? null}
           llmPrompt={contextPackage?.llm_prompt ?? ""}
           isSubmitting={isSubmitting}
+          answer={answer}
         />
+      ) : showDiagnostics ? (
+        <section className="panel">
+          <h2>处理进度</h2>
+          <ProgressTimeline
+            progressEvents={progressEvents}
+            summary={contextPackage?.retrieval_summary ?? null}
+            isSubmitting={isSubmitting}
+            answer={answer}
+            stages={MAIN_STAGE_ORDER}
+          />
+        </section>
       ) : null}
 
       <section className="panel">
-        <h2>依据片段</h2>
-        <ContextChunkList chunks={contextPackage?.context_chunks ?? []} />
+        <h2>引用依据</h2>
+        <CitationList citations={answer?.citations ?? []} />
+        {technicalDetails ? <details className="debug-details">
+          <summary>查看进入 Prompt 的上下文片段</summary>
+          <ContextChunkList chunks={contextPackage?.context_chunks ?? []} />
+        </details> : null}
       </section>
     </main>
   );
@@ -195,11 +331,13 @@ function RetrievalDiagnosticsPanel({
   summary,
   llmPrompt,
   isSubmitting,
+  answer,
 }: {
   progressEvents: RagProgressEvent[];
   summary: RetrievalSummary | null;
   llmPrompt: string;
   isSubmitting: boolean;
+  answer: QAResponse | null;
 }) {
   const citationValidation = summary?.citation_validation;
   const queryPlan = summary?.query_plan ?? latestPlanningSummary(progressEvents);
@@ -225,7 +363,13 @@ function RetrievalDiagnosticsPanel({
         </StatusBadge>
       </div>
 
-      <ProgressTimeline progressEvents={progressEvents} summary={summary} isSubmitting={isSubmitting} />
+      <ProgressTimeline
+        progressEvents={progressEvents}
+        summary={summary}
+        isSubmitting={isSubmitting}
+        answer={answer}
+        stages={DEBUG_STAGE_ORDER}
+      />
 
       {queryPlan?.aspects.length ? (
         <section className="runtime-section">
@@ -409,18 +553,20 @@ function ProgressTimeline({
   progressEvents,
   summary,
   isSubmitting,
+  answer,
+  stages,
 }: {
   progressEvents: RagProgressEvent[];
   summary: RetrievalSummary | null;
   isSubmitting: boolean;
+  answer: QAResponse | null;
+  stages: StageDefinition[];
 }) {
   const failedEvent = progressEvents.find((event) => event.status === "failed" && !event.aspect_id);
   return (
     <ol className="progress-timeline">
-      {STAGE_ORDER.map((step) => {
-        const event = latestStageEvent(progressEvents, step.stage);
-        const synthesized = synthesizeCompletedEvent(step.stage, summary);
-        const displayEvent = event ?? synthesized;
+      {stages.map((step) => {
+        const displayEvent = resolveStageEvent(progressEvents, step, summary, answer, isSubmitting);
         const status = displayEvent?.status ?? (isSubmitting && step.stage === "planning" ? "running" : "pending");
         const title = displayEvent?.title ?? step.pendingTitle;
         const detail = displayEvent?.detail ?? "";
@@ -428,6 +574,7 @@ function ProgressTimeline({
           <li key={step.stage} className={`progress-step ${status}`}>
             <ProgressIcon status={status} />
             <p className="progress-step-text">
+              <span className={`progress-status progress-status--${status}`}>{progressStatusLabel(status)}</span>
               <strong>{title}</strong>
               {detail ? <span className="muted">：{detail}</span> : null}
             </p>
@@ -447,6 +594,76 @@ function ProgressTimeline({
   );
 }
 
+function resolveStageEvent(
+  events: RagProgressEvent[],
+  step: StageDefinition,
+  summary: RetrievalSummary | null,
+  answer: QAResponse | null,
+  isSubmitting: boolean,
+): RagProgressEvent | null {
+  const globalEvent = latestStageEvent(events, step.stage, false);
+  const synthesized = synthesizeCompletedEvent(step.stage, summary, answer);
+  if (globalEvent) {
+    return globalEvent;
+  }
+  const aggregated = aggregateAspectStageEvent(events, step);
+  if (aggregated) {
+    return aggregated;
+  }
+  if (synthesized) {
+    return synthesized;
+  }
+  if (isSubmitting && step.stage === "planning") {
+    return {
+      stage: step.stage,
+      status: "running",
+      title: step.runningTitle,
+      detail: "正在拆分问题并生成检索计划……",
+    };
+  }
+  return null;
+}
+
+function aggregateAspectStageEvent(events: RagProgressEvent[], step: StageDefinition): RagProgressEvent | null {
+  const stageEvents = events.filter((event) => event.stage === step.stage && event.aspect_id);
+  if (stageEvents.length === 0) {
+    return null;
+  }
+  const runningCount = stageEvents.filter((event) => event.status === "running").length;
+  const completedCount = stageEvents.filter((event) => event.status === "completed").length;
+  const skippedCount = stageEvents.filter((event) => event.status === "skipped").length;
+  const failedCount = stageEvents.filter((event) => event.status === "failed").length;
+  const totalCount = uniqueValues(stageEvents.map((event) => event.aspect_id ?? "")).length || stageEvents.length;
+
+  if (runningCount > 0) {
+    return {
+      stage: step.stage,
+      status: "running",
+      title: step.runningTitle,
+      detail: `已收到 ${stageEvents.length} 条阶段事件。`,
+    };
+  }
+  if (completedCount > 0 || failedCount > 0) {
+    return {
+      stage: step.stage,
+      status: "completed",
+      title: step.completedTitle,
+      detail: failedCount > 0
+        ? `已处理 ${totalCount} 个方面，其中 ${failedCount} 个方面未找到足够依据。`
+        : `已处理 ${totalCount} 个方面。`,
+    };
+  }
+  if (skippedCount > 0) {
+    return {
+      stage: step.stage,
+      status: "skipped",
+      title: step.skippedTitle,
+      detail: "该阶段未产生需要继续处理的候选内容。",
+    };
+  }
+  return null;
+}
+
 function ProgressIcon({ status }: { status: RagProgressEvent["status"] }) {
   const className = `progress-icon ${status}`;
   const iconByStatus: Record<RagProgressEvent["status"], ReactNode> = {
@@ -459,10 +676,21 @@ function ProgressIcon({ status }: { status: RagProgressEvent["status"] }) {
   return <span className={className}>{iconByStatus[status]}</span>;
 }
 
-function latestStageEvent(events: RagProgressEvent[], stage: RagProgressStage): RagProgressEvent | null {
+function progressStatusLabel(status: RagProgressEvent["status"]): string {
+  const labels: Record<RagProgressEvent["status"], string> = {
+    pending: "等待处理",
+    running: "正在处理",
+    completed: "已完成",
+    skipped: "已跳过",
+    failed: "处理失败",
+  };
+  return labels[status];
+}
+
+function latestStageEvent(events: RagProgressEvent[], stage: RagProgressStage, includeAspect = false): RagProgressEvent | null {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.stage === stage && !event.aspect_id) {
+    if (event.stage === stage && (includeAspect || !event.aspect_id)) {
       return event;
     }
   }
@@ -508,38 +736,63 @@ function isQueryPlanAspect(value: unknown): value is NonNullable<RetrievalSummar
   );
 }
 
-function synthesizeCompletedEvent(stage: RagProgressStage, summary: RetrievalSummary | null): RagProgressEvent | null {
-  if (!summary) {
-    return null;
-  }
-  const totalAspects = summary.query_plan?.aspects.length ?? 0;
-  const promptCoveredAspects = summary.prompt_covered_aspect_count ?? summary.prompt_selection?.covered_aspects.length ?? 0;
-  const retrievalCoveredAspects = summary.retrieval_covered_aspect_count ?? summary.prompt_selection?.retrieval_covered_aspects?.length ?? 0;
+function synthesizeCompletedEvent(
+  stage: RagProgressStage,
+  summary: RetrievalSummary | null,
+  answer: QAResponse | null,
+): RagProgressEvent | null {
+  const totalAspects = summary?.query_plan?.aspects.length ?? summary?.aspect_count ?? 0;
+  const promptCoveredAspects = summary?.prompt_covered_aspect_count ?? summary?.prompt_selection?.covered_aspects.length ?? 0;
+  const retrievalCoveredAspects = summary?.retrieval_covered_aspect_count ?? summary?.prompt_selection?.retrieval_covered_aspects?.length ?? 0;
   if (stage === "planning") {
+    if (!summary && !answer) {
+      return null;
+    }
     return {
       stage,
       status: "completed",
       title: "问题理解完成",
-      detail: `已拆分为 ${totalAspects} 个方面`,
+      detail: totalAspects ? `已拆分为 ${totalAspects} 个方面` : "已完成问题预处理",
     };
   }
   if (stage === "retrieval") {
+    if (!summary && !answer) {
+      return null;
+    }
+    const candidateCount = summary?.candidate_count ?? answer?.citations.length ?? 0;
     return {
       stage,
       status: "completed",
-      title: "依据检索完成",
-      detail: `已召回 ${summary.candidate_count ?? 0} 个候选片段`,
+      title: "检索相关依据完成",
+      detail: `已召回 ${candidateCount} 个候选片段`,
     };
   }
   if (stage === "rerank") {
+    if (!summary && !answer) {
+      return null;
+    }
+    const rerankInputCount = summary?.rerank_input_count ?? 0;
+    const rerankCallCount = summary?.rerank_call_count ?? 0;
+    const rerankedCount = summary?.reranked_count ?? 0;
+    if (rerankInputCount === 0 && rerankCallCount === 0 && rerankedCount === 0 && (summary || answer?.citations.length === 0)) {
+      return {
+        stage,
+        status: "skipped",
+        title: "重排候选片段已跳过",
+        detail: "没有产生需要重排的候选片段",
+      };
+    }
     return {
       stage,
       status: "completed",
-      title: "候选重排完成",
-      detail: `已完成 ${summary.reranked_count ?? 0} 个片段重排`,
+      title: "重排候选片段完成",
+      detail: `已完成 ${rerankedCount || answer?.citations.length || 0} 个片段重排`,
     };
   }
   if (stage === "context_selection") {
+    if (!summary) {
+      return null;
+    }
     return {
       stage,
       status: "completed",
@@ -548,6 +801,9 @@ function synthesizeCompletedEvent(stage: RagProgressStage, summary: RetrievalSum
     };
   }
   if (stage === "prompt_build") {
+    if (!summary) {
+      return null;
+    }
     return {
       stage,
       status: "completed",
@@ -555,12 +811,48 @@ function synthesizeCompletedEvent(stage: RagProgressStage, summary: RetrievalSum
       detail: "已完成 Prompt 构造",
     };
   }
-  return {
-    stage,
-    status: "skipped",
-    title: "LLM 生成暂未接入",
-    detail: "当前阶段未接入最终 LLM 生成。",
+  if (stage === "llm_generation" && answer) {
+    const skipped = answer.generation_status === "skipped";
+    return {
+      stage,
+      status: skipped ? "skipped" : "completed",
+      title: skipped ? "答案生成已跳过" : "答案生成完成",
+      detail: answerGenerationDetail(answer),
+    };
+  }
+  if (stage === "grounding_validation" && answer) {
+    const passed = answer.grounding_validation?.passed;
+    return {
+      stage,
+      status: passed === false ? "failed" : "completed",
+      title: passed === false ? "问答处理失败" : "问答处理完成",
+      detail: passed === false ? "关键事实未能由当前证据支持。" : "最终结果已与处理状态同步。",
+    };
+  }
+  return null;
+}
+
+function answerResultLabel(answer: QAResponse): string {
+  if (answer.refused) {
+    return answer.generation_status === "skipped" ? "依据不足，已拒答" : "证据校验后拒答";
+  }
+  const labels: Record<string, string> = {
+    table_deterministic: "表格证据直接回答",
+    llm_grounded: "基于引用生成回答",
+    extractive_fallback: "基于片段摘录回答",
+    clarification: "需要补充问题信息",
   };
+  return labels[answer.answer_type] ?? "已生成回答";
+}
+
+function answerGenerationDetail(answer: QAResponse): string {
+  if (answer.generation_status === "skipped" && answer.refused) {
+    return "系统根据检索结果直接形成拒答结论。";
+  }
+  if (answer.generation_status === "skipped") {
+    return "该业务分支不需要继续调用生成模型。";
+  }
+  return answer.refused ? "生成结果未通过证据要求，已转为拒答。" : "已基于选定证据生成回答。";
 }
 
 function failedStageFromEvents(events: RagProgressEvent[]): RagProgressStage {
@@ -585,6 +877,7 @@ function formatQueryType(value: string): string {
     semantic_question: "语义问题",
     document_style_statement: "文档式证据句",
     keyword_anchor: "关键词锚点",
+    table_locator: "表格定位",
     legacy: "兼容查询",
     fallback: "兜底查询",
     aspect_fused: "方面融合重排",
@@ -604,13 +897,14 @@ function ContextChunkList({ chunks }: { chunks: RetrievalResult[] }) {
   return (
     <ol className="evidence-list">
       {chunks.map((chunk) => (
-        <li key={chunk.chunk_id}>
+        <li key={contextChunkKey(chunk)}>
           <div className="evidence-head">
             <span>
               {chunk.citation_label} {chunk.source_doc}
             </span>
             <span>{chunk.score === null ? "-" : chunk.score.toFixed(3)}</span>
           </div>
+          <TableContextMeta chunk={chunk} />
           <pre className="chunk-text">{chunk.text}</pre>
           <p className="muted">
             {chunk.section_title ? `章节：${chunk.section_title}` : "章节：-"}
@@ -627,8 +921,38 @@ function ContextChunkList({ chunks }: { chunks: RetrievalResult[] }) {
   );
 }
 
+function TableContextMeta({ chunk }: { chunk: RetrievalResult }) {
+  const metadata = chunk.metadata ?? {};
+  const parts = [
+    labelUnknown("工作表", metadata.sheet_name),
+    labelUnknown("单元格", metadata.cell),
+    labelUnknown("单位", metadata.unit),
+    labelUnknown("原始值", metadata.value),
+    labelUnknown("行标签", metadata.row_label),
+    labelUnknown("列标签", metadata.column_label),
+  ].filter(Boolean);
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return <p className="muted">{parts.join(" / ")}</p>;
+}
+
+function contextChunkKey(chunk: RetrievalResult): string {
+  const evidenceId = chunk.metadata?.evidence_id;
+  return typeof evidenceId === "string" && evidenceId ? evidenceId : chunk.chunk_id;
+}
+
+function labelUnknown(label: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  return `${label}：${String(value)}`;
+}
+
 function loadQASessionState(): QASessionState {
-  const fallback = { question: "", answer: null, message: "暂无问答结果。" };
+  const fallback = { question: "", answer: null, message: "暂无问答结果。", history: [] };
   try {
     const raw = window.sessionStorage.getItem(QA_SESSION_KEY);
     if (!raw) {
@@ -639,6 +963,7 @@ function loadQASessionState(): QASessionState {
       question: typeof parsed.question === "string" ? parsed.question : "",
       answer: parsed.answer ?? null,
       message: typeof parsed.message === "string" ? parsed.message : fallback.message,
+      history: Array.isArray(parsed.history) ? parsed.history.filter((item): item is string => typeof item === "string").slice(0, 5) : [],
     };
   } catch {
     return fallback;

@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.app.core.config import DATABASE_PATH, ensure_runtime_dirs
@@ -8,6 +8,15 @@ from backend.app.core.config import DATABASE_PATH, ensure_runtime_dirs
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -23,6 +32,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _upgrade_sqlite_schema()
+    _recover_interrupted_states()
 
 
 def _upgrade_sqlite_schema() -> None:
@@ -32,7 +42,9 @@ def _upgrade_sqlite_schema() -> None:
         return
 
     document_columns = {column["name"] for column in inspector.get_columns("documents")} if "documents" in table_names else set()
+    audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")} if "audit_logs" in table_names else set()
     document_migrations = {
+        "document_metadata": "ALTER TABLE documents ADD COLUMN document_metadata TEXT",
         "index_version": "ALTER TABLE documents ADD COLUMN index_version VARCHAR(80)",
         "index_error": "ALTER TABLE documents ADD COLUMN index_error TEXT",
     }
@@ -51,6 +63,21 @@ def _upgrade_sqlite_schema() -> None:
         for column_name, statement in chunk_migrations.items():
             if column_name not in chunk_columns:
                 connection.execute(text(statement))
+        audit_migrations = {
+            "severity": "ALTER TABLE audit_logs ADD COLUMN severity VARCHAR(20) DEFAULT 'info'",
+            "event_key": "ALTER TABLE audit_logs ADD COLUMN event_key VARCHAR(255)",
+            "summary": "ALTER TABLE audit_logs ADD COLUMN summary VARCHAR(500)",
+            "user_message": "ALTER TABLE audit_logs ADD COLUMN user_message TEXT",
+            "details_json": "ALTER TABLE audit_logs ADD COLUMN details_json TEXT",
+            "first_seen_at": "ALTER TABLE audit_logs ADD COLUMN first_seen_at DATETIME",
+            "last_seen_at": "ALTER TABLE audit_logs ADD COLUMN last_seen_at DATETIME",
+            "occurrence_count": "ALTER TABLE audit_logs ADD COLUMN occurrence_count INTEGER DEFAULT 1",
+            "resolved": "ALTER TABLE audit_logs ADD COLUMN resolved BOOLEAN DEFAULT 0",
+        }
+        if "audit_logs" in table_names:
+            for column_name, statement in audit_migrations.items():
+                if column_name not in audit_columns:
+                    connection.execute(text(statement))
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -59,3 +86,19 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _recover_interrupted_states() -> None:
+    """Make process-interrupted index jobs visible and safely retryable."""
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE documents SET status='index_failed', "
+                "index_error='应用重启时检测到未完成的索引任务，请重试构建索引。' "
+                "WHERE status='indexing'"
+            )
+        )
+        connection.execute(
+            text("UPDATE document_chunks SET index_status='index_failed' WHERE index_status='indexing'")
+        )

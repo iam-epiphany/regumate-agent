@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from typing import Protocol
 
 from backend.app.core.config import DOCUMENT_LOADER_ORDER
@@ -23,7 +24,11 @@ def parse_document_text(file_path: Path) -> str:
     return parse_document(file_path).text
 
 
-def parse_document(file_path: Path, loader_name: str | None = None) -> ParsedDocument:
+def parse_document(
+    file_path: Path,
+    loader_name: str | None = None,
+    source_name: str | None = None,
+) -> ParsedDocument:
     """Extract structured text blocks through the configured loader adapter chain."""
 
     errors: list[str] = []
@@ -31,14 +36,18 @@ def parse_document(file_path: Path, loader_name: str | None = None) -> ParsedDoc
         try:
             result = loader.load(file_path)
             blocks = _ensure_blocks(result.blocks)
+            if source_name:
+                _apply_source_name(blocks, result, source_name)
             return ParsedDocument(
                 text=_join_blocks(blocks),
                 blocks=blocks,
                 metadata={
+                    **result.metadata,
                     "source_format": file_path.suffix.lower().lstrip("."),
                     "parser_version": PARSER_VERSION,
                     "loader_name": result.loader_name,
                     "block_count": len(blocks),
+                    "source_filename": source_name or file_path.name,
                 },
             )
         except DocumentParseError as exc:
@@ -49,6 +58,36 @@ def parse_document(file_path: Path, loader_name: str | None = None) -> ParsedDoc
     if errors:
         raise DocumentParseError("；".join(errors))
     raise DocumentParseError("暂不支持该文档格式")
+
+
+def _apply_source_name(blocks: list[ParsedBlock], result: LoaderResult, source_name: str) -> None:
+    source_path = Path(source_name)
+    stem = source_path.stem
+    source_title = stem.split("_", maxsplit=1)[-1] if "_" in stem else stem
+    result.metadata["source_title"] = source_title
+    result.metadata["source_filename"] = source_name
+    year_match = re.search(r"(20\d{2})年", source_name)
+    month_match = re.search(r"(?:20\d{2}年)?(\d{1,2})月", source_name)
+    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", source_name)
+    quarter_value = None
+    if quarter_match:
+        raw = quarter_match.group(1) or quarter_match.group(2)
+        quarter_value = {"一": 1, "二": 2, "三": 3, "四": 4}.get(raw, int(raw) if raw.isdigit() else None)
+    for block in blocks:
+        if block.metadata.get("spreadsheet_table"):
+            block.metadata["source_title"] = source_title
+            block.metadata["source_filename"] = source_name
+            block.metadata["inferred_year"] = int(year_match.group(1)) if year_match else None
+            block.metadata["inferred_month"] = int(month_match.group(1)) if month_match else None
+            block.metadata["inferred_quarter"] = quarter_value
+            period = block.metadata.get("period") if isinstance(block.metadata.get("period"), dict) else {}
+            if year_match:
+                period["year"] = int(year_match.group(1))
+            if month_match:
+                period["month"] = int(month_match.group(1))
+            if quarter_value:
+                period["quarter"] = quarter_value
+            block.metadata["period"] = period
 
 
 def parse_document_with_loader(file_path: Path, loader_name: str) -> ParsedDocument:
@@ -94,6 +133,8 @@ class DocxDocumentLoader:
     def load(self, file_path: Path) -> LoaderResult:
         try:
             from docx import Document as DocxDocument
+            from docx.table import Table
+            from docx.text.paragraph import Paragraph
         except ImportError as exc:
             raise DocumentParseError("缺少 python-docx 依赖，无法解析 docx") from exc
 
@@ -105,47 +146,161 @@ class DocxDocumentLoader:
         blocks: list[ParsedBlock] = []
         current_section: str | None = None
 
-        for paragraph in document.paragraphs:
-            text = _normalize_text(paragraph.text)
-            if not text:
+        table_index = 0
+        for child in document.element.body.iterchildren():
+            if child.tag.endswith("}p"):
+                paragraph = Paragraph(child, document)
+                text = _normalize_text(paragraph.text)
+                if not text:
+                    continue
+
+                style_name = (paragraph.style.name if paragraph.style is not None else "") or ""
+                heading_level = _docx_heading_level(style_name)
+                if heading_level is not None:
+                    current_section = text
+                    blocks.append(
+                        ParsedBlock(
+                            text=text,
+                            block_type="heading",
+                            order_index=len(blocks) + 1,
+                            section_title=current_section,
+                            level=heading_level,
+                        )
+                    )
+                else:
+                    blocks.append(
+                        ParsedBlock(
+                            text=text,
+                            block_type="paragraph",
+                            order_index=len(blocks) + 1,
+                            section_title=current_section,
+                        )
+                    )
                 continue
 
-            style_name = (paragraph.style.name if paragraph.style is not None else "") or ""
-            heading_level = _docx_heading_level(style_name)
-            if heading_level is not None:
-                current_section = text
-                blocks.append(
-                    ParsedBlock(
-                        text=text,
-                        block_type="heading",
-                        order_index=len(blocks) + 1,
-                        section_title=current_section,
-                        level=heading_level,
+            if child.tag.endswith("}tbl"):
+                table = Table(child, document)
+                table_text = _docx_table_to_text(table)
+                if table_text:
+                    table_index += 1
+                    blocks.append(
+                        ParsedBlock(
+                            text=table_text,
+                            block_type="table",
+                            order_index=len(blocks) + 1,
+                            section_title=current_section,
+                            metadata=_table_metadata(table_text, table_index),
+                        )
                     )
-                )
-            else:
-                blocks.append(
-                    ParsedBlock(
-                        text=text,
-                        block_type="paragraph",
-                        order_index=len(blocks) + 1,
-                        section_title=current_section,
-                    )
-                )
-
-        for table in document.tables:
-            table_text = _docx_table_to_text(table)
-            if table_text:
-                blocks.append(
-                    ParsedBlock(
-                        text=table_text,
-                        block_type="table",
-                        order_index=len(blocks) + 1,
-                        section_title=current_section,
-                        metadata=_table_metadata(table_text, len([block for block in blocks if block.block_type == "table"]) + 1),
-                    )
-                )
         return LoaderResult(blocks=blocks, loader_name=self.name)
+
+
+class LegacyDocDocumentLoader:
+    name = "libreoffice-doc"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".doc"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        from backend.app.services.office_conversion import (
+            OfficeConversionError,
+            cleanup_conversion_output,
+            convert_with_libreoffice_detailed,
+        )
+
+        try:
+            conversion = convert_with_libreoffice_detailed(file_path, "docx")
+        except OfficeConversionError as exc:
+            raise DocumentParseError(str(exc)) from exc
+
+        try:
+            result = DocxDocumentLoader().load(conversion.path)
+        finally:
+            cleanup_conversion_output(conversion.path)
+        return LoaderResult(
+            blocks=result.blocks,
+            loader_name=self.name,
+            metadata={
+                "converted_from": "doc",
+                "conversion_loader": result.loader_name,
+                "parser_backend": "libreoffice",
+                "degraded": False,
+                "degradation_reason": None,
+                "conversion_elapsed_ms": conversion.elapsed_ms,
+            },
+        )
+
+
+class AntiwordDocDocumentLoader:
+    name = "antiword-doc"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".doc"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        import shutil
+        import subprocess
+        from time import perf_counter
+
+        executable = shutil.which("antiword")
+        if not executable:
+            raise DocumentParseError("antiword executable not found")
+        started = perf_counter()
+        try:
+            completed = subprocess.run(
+                [executable, "-m", "UTF-8.txt", str(file_path)],
+                check=False,
+                capture_output=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise DocumentParseError(f"antiword extraction failed: {exc}") from exc
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise DocumentParseError(f"antiword extraction failed: {detail or completed.returncode}")
+        text = completed.stdout.decode("utf-8", errors="replace")
+        normalized = _normalize_text(text)
+        if not normalized:
+            raise DocumentParseError("antiword did not produce text")
+        blocks = [
+            ParsedBlock(text=paragraph, block_type="paragraph", order_index=index)
+            for index, paragraph in enumerate(normalized.split("\n\n"), start=1)
+            if paragraph.strip()
+        ]
+        return LoaderResult(
+            blocks=blocks,
+            loader_name=self.name,
+            metadata={
+                "parser_backend": "antiword",
+                "degraded": True,
+                "degradation_reason": "LibreOffice conversion unavailable or failed; text-only extraction used",
+                "conversion_elapsed_ms": round((perf_counter() - started) * 1000, 2),
+            },
+        )
+
+
+class SpreadsheetXlsxLoader:
+    name = "spreadsheet-xlsx"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".xlsx"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        from backend.app.services.spreadsheet_parser import load_xlsx_workbook
+
+        return load_xlsx_workbook(file_path, loader_name=self.name)
+
+
+class SpreadsheetXlsLoader:
+    name = "spreadsheet-xls"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".xls"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        from backend.app.services.spreadsheet_parser import load_xls_workbook
+
+        return load_xls_workbook(file_path)
 
 
 class PyMuPDF4LLMLoader:
@@ -288,7 +443,11 @@ def _candidate_loaders(file_path: Path, loader_name: str | None = None) -> list[
     registry: dict[str, DocumentLoader] = {
         "text": TextDocumentLoader(),
         "markdown": MarkdownDocumentLoader(),
+        "libreoffice-doc": LegacyDocDocumentLoader(),
+        "antiword-doc": AntiwordDocDocumentLoader(),
         "python-docx": DocxDocumentLoader(),
+        "spreadsheet-xlsx": SpreadsheetXlsxLoader(),
+        "spreadsheet-xls": SpreadsheetXlsLoader(),
         "pymupdf4llm": PyMuPDF4LLMLoader(),
         "docling": DoclingDocumentLoader(),
         "unstructured": UnstructuredDocumentLoader(),

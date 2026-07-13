@@ -48,6 +48,9 @@ data/model_cache/
 data/documents/originals/*
 !data/documents/originals/.gitkeep
 data/test_documents/parser_samples/*
+data/evaluation/
+data/contest_staging/
+dist-delivery/
 .cache/
 models/
 model_cache/

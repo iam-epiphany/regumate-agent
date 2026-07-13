@@ -7,8 +7,10 @@ from backend.app.core.config import (
     EMBEDDING_DIMENSION,
     INDEX_VERSION,
     QDRANT_COLLECTION,
+    QDRANT_AUTO_CREATE_COLLECTION,
     QDRANT_DENSE_VECTOR_NAME,
     QDRANT_SPARSE_VECTOR_NAME,
+    QDRANT_UPSERT_BATCH_SIZE,
     QDRANT_URL,
 )
 from backend.app.services.chunk_service import ChunkDraft
@@ -43,6 +45,10 @@ def ensure_vector_collection() -> None:
     client, models = _qdrant()
     try:
         if not client.collection_exists(QDRANT_COLLECTION):
+            if not QDRANT_AUTO_CREATE_COLLECTION:
+                raise VectorStoreError(
+                    f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
+                )
             client.create_collection(
                 collection_name=QDRANT_COLLECTION,
                 vectors_config={
@@ -58,6 +64,8 @@ def ensure_vector_collection() -> None:
                 },
             )
         _ensure_payload_indexes(client, models)
+    except VectorStoreError:
+        raise
     except Exception as exc:
         raise VectorStoreError("Qdrant collection 初始化失败") from exc
 
@@ -87,6 +95,7 @@ def upsert_chunk_embeddings(
                     "chunk_id": chunk.chunk_id,
                     "document_id": chunk.document_id,
                     "filename": filename,
+                    "source_file": filename,
                     "section_title": chunk.section_title,
                     "page_number": chunk.page_number,
                     "text": chunk.text,
@@ -99,10 +108,20 @@ def upsert_chunk_embeddings(
                     "previous_chunk_id": chunk.previous_chunk_id,
                     "next_chunk_id": chunk.next_chunk_id,
                     "chunk_metadata": chunk_metadata,
+                    "file_type": chunk_metadata.get("source_format"),
+                    "source_title": chunk_metadata.get("source_title"),
                     "table_id": chunk_metadata.get("table_id"),
                     "table_title": chunk_metadata.get("table_title"),
+                    "sheet_name": chunk_metadata.get("sheet_name"),
+                    "period": chunk_metadata.get("period"),
+                    "year": _period_value(chunk_metadata, "year"),
+                    "month": _period_value(chunk_metadata, "month"),
+                    "quarter": _period_value(chunk_metadata, "quarter"),
+                    "unit": chunk_metadata.get("unit"),
+                    "row_label": chunk_metadata.get("row_label"),
                     "table_headers": chunk_metadata.get("table_headers") or chunk_metadata.get("headers"),
                     "row_index": chunk_metadata.get("row_index"),
+                    "row_cells": chunk_metadata.get("row_cells"),
                     "raw_table_preview": chunk_metadata.get("raw_table_preview"),
                     "index_version": INDEX_VERSION,
                 },
@@ -110,7 +129,12 @@ def upsert_chunk_embeddings(
         )
 
     try:
-        client.upsert(collection_name=QDRANT_COLLECTION, points=points, wait=True)
+        for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
+            client.upsert(
+                collection_name=QDRANT_COLLECTION,
+                points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
+                wait=True,
+            )
     except Exception as exc:
         raise VectorStoreError("Qdrant chunk 向量写入失败") from exc
 
@@ -215,6 +239,12 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
     indexes = {
         "document_id": models.PayloadSchemaType.KEYWORD,
         "index_version": models.PayloadSchemaType.KEYWORD,
+        "source_file": models.PayloadSchemaType.KEYWORD,
+        "chunk_type": models.PayloadSchemaType.KEYWORD,
+        "sheet_name": models.PayloadSchemaType.KEYWORD,
+        "year": models.PayloadSchemaType.INTEGER,
+        "month": models.PayloadSchemaType.INTEGER,
+        "quarter": models.PayloadSchemaType.INTEGER,
     }
     for field_name, field_schema in indexes.items():
         try:
@@ -268,3 +298,11 @@ def _payload_string_list(value: Any) -> list[str] | None:
 
 def _payload_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _period_value(metadata: dict[str, Any], key: str) -> Any:
+    direct = metadata.get(f"inferred_{key}")
+    if direct is not None:
+        return direct
+    period = metadata.get("period")
+    return period.get(key) if isinstance(period, dict) else None

@@ -13,23 +13,24 @@
 当前阶段只做 RAG-only MVP：
 
 - 监管制度、统计报表填报说明、指标口径文档上传。
-- txt / md / docx / 可提取文本 pdf 的文本解析。
-- 文档 token-aware chunk 切分，SQLite 元数据入库，Qdrant 向量索引。
+- txt / md / doc / docx / 可提取文本 pdf / xls / xlsx 的解析。
+- 文档 token-aware chunk 切分，Excel sheet/table/row/cell 语义 metadata 入库，SQLite 元数据入库，Qdrant 向量索引。
 - BGE-M3 embedding + Qdrant dense/sparse hybrid search + BGE reranker。
-- 基于检索 chunk 的带引用回答。
+- QueryPlanner 支持 text/table/mixed 检索计划；Excel 取数、比较和基础计算先返回可信上下文证据。
+- 基于检索 chunk 的 DeepSeek 结构化带引用回答与生成后事实校验。
 - 没有依据时明确拒答。
 - 上传、索引、问答的审计日志。
+- 官方 contest dataset 的固定划分评测、批量幂等入库与拒答测试。
 
 当前阶段不做：
 
-- 真实报表文件上传校验。
 - 规则引擎。
 - 异常排查详情页。
 - 人工复核流程。
 - 审查报告生成。
 - 复杂任务编排。
 
-“统计报表”在当前阶段仅指统计报表制度、填报说明、指标口径等知识文档。
+当前阶段可以上传 Excel 统计报表作为 RAG 知识源和表格证据源，但仍不做完整报表规则校验、异常排查工作流或正式审查报告。
 
 ## 2. 学习参考边界
 
@@ -45,7 +46,7 @@
 
 - 后端：Python + FastAPI + Pydantic + SQLAlchemy + SQLite + Qdrant + Uvicorn。
 - 前端：React + TypeScript + Vite。
-- 文档解析：txt / md / docx / 可提取文本 pdf。
+- 文档解析：txt / md / doc / docx / 可提取文本 pdf / xls / xlsx。
 - RAG v0：SQLite 元数据 + Qdrant 向量索引 + BGE-M3 embedding + BGE reranker。
 - 标准启动：Docker Compose 一键启动 app + Qdrant。
 - 测试：pytest；前端用 TypeScript build 验证。

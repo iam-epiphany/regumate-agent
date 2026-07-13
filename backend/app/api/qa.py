@@ -18,10 +18,15 @@ router = APIRouter(prefix="/qa", tags=["qa"])
 
 @router.post("/ask", response_model=QAResponse)
 def ask_question(payload: QARequest, db: Session = Depends(get_db)) -> QAResponse:
-    """可信问答：当前 RAG-only 阶段仅返回 LLM 上下文包，不生成最终答案。"""
+    """Return a deterministic table answer or a generated, grounded text answer."""
 
     try:
-        return answer_question(db, payload.question)
+        return answer_question(
+            db,
+            payload.question,
+            options=payload.options,
+            include_debug=payload.include_debug,
+        )
     except RetrievalServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -31,7 +36,7 @@ def ask_question_stream(payload: QARequest) -> StreamingResponse:
     """可信问答流式观测：通过 SSE 推送 RAG 阶段进度，最终返回 QAResponse。"""
 
     return StreamingResponse(
-        _stream_qa_events(payload.question),
+        _stream_qa_events(payload.question, payload.options, payload.include_debug),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -45,12 +50,16 @@ def retrieve_context(payload: QARequest, db: Session = Depends(get_db)) -> LLMCo
     """检索知识库并组装后续 LLM 可直接使用的上下文包。"""
 
     try:
-        return retrieve_context_package(db, payload.question)
+        return retrieve_context_package(db, payload.question, options=payload.options)
     except RetrievalServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-def _stream_qa_events(question: str) -> Iterator[str]:
+def _stream_qa_events(
+    question: str,
+    options: list[str] | None = None,
+    include_debug: bool = False,
+) -> Iterator[str]:
     events: Queue[tuple[str, dict[str, Any]] | None] = Queue()
 
     def progress_reporter(event: dict[str, Any]) -> None:
@@ -59,7 +68,13 @@ def _stream_qa_events(question: str) -> Iterator[str]:
     def run_qa() -> None:
         db = SessionLocal()
         try:
-            response = answer_question(db, question, progress_reporter=progress_reporter)
+            response = answer_question(
+                db,
+                question,
+                options=options,
+                include_debug=include_debug,
+                progress_reporter=progress_reporter,
+            )
             events.put(("final", response.model_dump(mode="json")))
         except RetrievalServiceUnavailable as exc:
             events.put(
