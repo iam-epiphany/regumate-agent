@@ -9,7 +9,7 @@ ReguMate 是“面向银行业监管制度与统计报表的可信 RAG 问答”
 - Windows 10/11 + Docker Desktop（Linux 容器模式）。
 - 建议内存不低于 16GB，项目所在磁盘至少预留 15GB。
 - 不要求安装 Python、Node.js、LibreOffice、antiword 或 CUDA。
-- GPU 可选；离线演示镜像默认可在 CPU 上运行，首次模型加载会较慢。
+- GPU 可选但推荐：Embedding、BGE reranker 等耗时模型优先使用 NVIDIA GPU。若需更快处理速度，建议配置 NVIDIA 驱动、CUDA 与匹配版本的 PyTorch；未配置或不可用时系统会自动降级到 CPU，准确性不变但速度较慢。
 - 文本题使用 DeepSeek 时需要可访问 `https://api.deepseek.com`；未配置 key 时系统只返回可信摘录或拒答，不会编造。
 
 ## 2. 离线交付包结构
@@ -61,6 +61,32 @@ QDRANT_COLLECTION=regumate_contest_v3
 QUERY_PLANNER_MODEL=deepseek-v4-flash
 ANSWER_GENERATION_MODEL=deepseek-v4-flash
 ```
+
+模型设备配置可选：
+
+```dotenv
+# auto 为默认值：优先 GPU，CUDA 不可用或显存不足时自动降级 CPU
+MODEL_DEVICE=auto
+# 可选：cpu 强制 CPU；cuda 优先请求 GPU，失败时仍会记录原因并降级 CPU
+# MODEL_DEVICE=cpu
+# MODEL_DEVICE=cuda
+MODEL_GPU_MIN_FREE_MEMORY_GB=1.0
+EMBEDDING_MAX_BATCH_SIZE=16
+```
+
+启动后可在 `/api/health/rag` 的 `model_device` 查看最终设备、CUDA 状态、GPU 名称、显存和降级原因。若显示 `selected_device=cpu` 且存在 `fallback_reason`，说明当前正在 CPU 模式运行，处理速度可能较慢。
+
+Docker 启动会自动探测 GPU：`scripts/start_demo.ps1` 会先用 app 镜像测试 Docker 是否能通过 NVIDIA Container Toolkit 访问 CUDA；可用时自动叠加 `docker-compose.gpu.yml`，不可用时仍按 CPU fallback 启动。可用以下变量手动控制：
+
+```powershell
+# 禁用 Docker GPU，即使机器有显卡也按 CPU 跑
+$env:REGUMATE_DOCKER_GPU="0"
+
+# 强制使用 docker-compose.gpu.yml；仅建议排查 GPU 配置时使用
+$env:REGUMATE_DOCKER_GPU="1"
+```
+
+Windows 评委机若想启用 Docker GPU，需要 Docker Desktop 使用 WSL2 backend，并安装支持 WSL2 的 NVIDIA 驱动；启动预检会报告 WSL2、GPU override 配置和容器内 CUDA 是否可用。没有 NVIDIA GPU 或容器 GPU 支持时，系统不应启动失败，而是自动使用 CPU。
 
 不要把 `.env`、真实 key 或银行真实数据提交到 Git。
 

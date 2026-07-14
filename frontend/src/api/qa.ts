@@ -1,5 +1,11 @@
 import { apiFetch } from "./client";
-import type { LLMContextPackage, QAResponse, RagProgressEvent } from "../types/api";
+import type {
+  LLMContextPackage,
+  QAResponse,
+  QATaskCreateResponse,
+  QATaskStatusResponse,
+  RagProgressEvent,
+} from "../types/api";
 
 export function askQuestion(question: string): Promise<QAResponse> {
   return apiFetch<QAResponse>("/api/qa/ask", {
@@ -15,6 +21,22 @@ export function retrieveQuestionContext(question: string): Promise<LLMContextPac
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, include_debug: true }),
   });
+}
+
+export function createQuestionTask(question: string, includeDebug = false): Promise<QATaskCreateResponse> {
+  return apiFetch<QATaskCreateResponse>("/api/qa/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, include_debug: includeDebug }),
+  });
+}
+
+export function getQuestionTask(taskId: string): Promise<QATaskStatusResponse> {
+  return apiFetch<QATaskStatusResponse>(`/api/qa/tasks/${taskId}`);
+}
+
+export function listQuestionTasks(limit = 5): Promise<QATaskStatusResponse[]> {
+  return apiFetch<QATaskStatusResponse[]>(`/api/qa/tasks?limit=${limit}`);
 }
 
 export async function askQuestionStream(

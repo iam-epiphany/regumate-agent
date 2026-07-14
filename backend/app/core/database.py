@@ -102,3 +102,14 @@ def _recover_interrupted_states() -> None:
         connection.execute(
             text("UPDATE document_chunks SET index_status='index_failed' WHERE index_status='indexing'")
         )
+        inspector = inspect(engine)
+        if "qa_tasks" in inspector.get_table_names():
+            connection.execute(
+                text(
+                    "UPDATE qa_tasks SET status='failed', "
+                    "error='应用重启时检测到问答任务中断，请重新提问。', "
+                    "completed_at=CURRENT_TIMESTAMP, "
+                    "updated_at=CURRENT_TIMESTAMP "
+                    "WHERE status IN ('queued', 'running')"
+                )
+            )

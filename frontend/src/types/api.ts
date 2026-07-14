@@ -26,6 +26,17 @@ export interface RagHealthResponse {
   antiword_version: string | null;
   index_tasks: Record<string, number>;
   ready: boolean;
+  model_device: {
+    requested_device: string;
+    selected_device: string;
+    torch_version: string | null;
+    cuda_available: boolean;
+    cuda_device_count: number;
+    cuda_device_name: string | null;
+    cuda_total_memory_gb?: number | null;
+    cuda_free_memory_gb?: number | null;
+    fallback_reason: string | null;
+  };
 }
 
 export interface DocumentUploadResponse {
@@ -155,6 +166,8 @@ export interface LLMContextPackage {
       cuda_available: boolean;
       cuda_device_count: number;
       cuda_device_name: string | null;
+      cuda_total_memory_gb?: number | null;
+      cuda_free_memory_gb?: number | null;
       fallback_reason: string | null;
     };
     query_plan?: {
@@ -267,6 +280,11 @@ export interface QAResponse {
   degraded: boolean;
 }
 
+export interface QATaskCreateResponse {
+  task_id: string;
+  status: string;
+}
+
 export type RagProgressStage =
   | "planning"
   | "retrieval"
@@ -286,6 +304,20 @@ export interface RagProgressEvent {
   elapsed_ms?: number | null;
   summary?: Record<string, unknown>;
   aspect_id?: string;
+}
+
+export interface QATaskStatusResponse {
+  task_id: string;
+  question: string;
+  options: string[];
+  include_debug: boolean;
+  status: "queued" | "running" | "completed" | "refused" | "failed" | string;
+  progress_events: RagProgressEvent[];
+  answer: QAResponse | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
 }
 
 export interface AuditLogItem {

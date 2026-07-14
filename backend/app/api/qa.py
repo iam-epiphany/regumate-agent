@@ -8,7 +8,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import SessionLocal, get_db
-from backend.app.schemas.qa import LLMContextPackage, QARequest, QAResponse
+from backend.app.schemas.qa import (
+    LLMContextPackage,
+    QARequest,
+    QAResponse,
+    QATaskCreateResponse,
+    QATaskStatusResponse,
+)
+from backend.app.services.qa_task_service import create_qa_task, get_qa_task_status, list_recent_qa_task_statuses
 from backend.app.services.rag_service import answer_question, retrieve_context_package
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
 
@@ -29,6 +36,28 @@ def ask_question(payload: QARequest, db: Session = Depends(get_db)) -> QARespons
         )
     except RetrievalServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/tasks", response_model=QATaskCreateResponse)
+def create_question_task(payload: QARequest) -> QATaskCreateResponse:
+    """Create a durable QA task that can be polled after page switches or reloads."""
+
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+    return create_qa_task(payload)
+
+
+@router.get("/tasks", response_model=list[QATaskStatusResponse])
+def list_question_tasks(limit: int = 5, db: Session = Depends(get_db)) -> list[QATaskStatusResponse]:
+    return list_recent_qa_task_statuses(db, limit=limit)
+
+
+@router.get("/tasks/{task_id}", response_model=QATaskStatusResponse)
+def get_question_task(task_id: str, db: Session = Depends(get_db)) -> QATaskStatusResponse:
+    task = get_qa_task_status(db, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="问答任务不存在或已过期")
+    return task
 
 
 @router.post("/ask/stream")

@@ -10,6 +10,7 @@ from backend.app.services.model_path_resolver import (
 )
 from backend.app.services.office_conversion import office_tool_status
 from backend.app.services.index_task_service import index_task_status_counts
+from backend.app.services.model_device_service import get_model_device_info
 
 
 router = APIRouter()
@@ -68,6 +69,7 @@ def _rag_health() -> RagHealthResponse:
         embedding_model_error=embedding_error,
         reranker_model_error=reranker_error,
         qdrant_error=qdrant_error,
+        model_device=get_model_device_info().to_debug_dict(),
     )
 
 

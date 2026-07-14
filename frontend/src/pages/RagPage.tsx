@@ -11,12 +11,13 @@ import {
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { askQuestionStream } from "../api/qa";
+import { createQuestionTask, getQuestionTask } from "../api/qa";
 import { StatusBadge } from "../components/StatusBadge";
 import { CitationList } from "../components/CitationList";
-import type { QAResponse, RagProgressEvent, RagProgressStage, RetrievalResult } from "../types/api";
+import type { QAResponse, QATaskStatusResponse, RagProgressEvent, RagProgressStage, RetrievalResult } from "../types/api";
 
 const QA_SESSION_KEY = "regumate.qa.session";
+const QA_TASK_POLL_INTERVAL_MS = 1000;
 
 interface StageDefinition {
   stage: RagProgressStage;
@@ -92,6 +93,7 @@ const DEBUG_STAGE_ORDER: StageDefinition[] = [
 ];
 
 interface QASessionState {
+  taskId: string | null;
   question: string;
   answer: QAResponse | null;
   message: string;
@@ -130,22 +132,90 @@ function refusalReasonLabel(reason: string | null) {
   return reason ? labels[reason] ?? "当前证据不足以给出确定结论" : "当前证据不足以给出确定结论";
 }
 
+function isActiveTaskStatus(status: string): boolean {
+  return status === "queued" || status === "running";
+}
+
+function taskStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    queued: "已提交",
+    running: "处理中",
+    completed: "已完成",
+    refused: "已拒答",
+    failed: "处理失败",
+  };
+  return labels[status] ?? "等待状态";
+}
+
+function resizeQuestionTextarea(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) {
+    return;
+  }
+  const minHeight = 112;
+  const maxHeight = 360;
+  textarea.style.height = "auto";
+  const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
 export function RagPage() {
   const [initialState] = useState(loadQASessionState);
   const [question, setQuestion] = useState(initialState.question);
   const [answer, setAnswer] = useState<QAResponse | null>(initialState.answer);
   const [message, setMessage] = useState(initialState.message);
   const [history, setHistory] = useState(initialState.history);
+  const [taskId, setTaskId] = useState<string | null>(initialState.taskId);
+  const [taskStatus, setTaskStatus] = useState<string>(initialState.answer ? (initialState.answer.refused ? "refused" : "completed") : "");
   const [technicalDetails, setTechnicalDetails] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [progressEvents, setProgressEvents] = useState<RagProgressEvent[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const isSubmittingRef = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const questionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    saveQASessionState({ question, answer, message, history });
-  }, [question, answer, message, history]);
+    saveQASessionState({ taskId, question, answer, message, history });
+  }, [taskId, question, answer, message, history]);
+
+  useEffect(() => {
+    resizeQuestionTextarea(questionTextareaRef.current);
+  }, [question]);
+
+  useEffect(() => {
+    if (!taskId) {
+      return;
+    }
+    let stopped = false;
+    let timer: number | undefined;
+
+    async function pollTask() {
+      try {
+        const task = await getQuestionTask(taskId as string);
+        if (stopped) {
+          return;
+        }
+        applyTaskSnapshot(task);
+        if (isActiveTaskStatus(task.status)) {
+          timer = window.setTimeout(pollTask, QA_TASK_POLL_INTERVAL_MS);
+        }
+      } catch (error) {
+        if (stopped) {
+          return;
+        }
+        const detail = error instanceof Error ? error.message : "问答任务状态暂时无法获取。";
+        setMessage(detail);
+        setIsSubmitting(false);
+      }
+    }
+
+    void pollTask();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [taskId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -159,12 +229,8 @@ export function RagPage() {
       return;
     }
     setQuestion(trimmedQuestion);
-
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    isSubmittingRef.current = true;
     setIsSubmitting(true);
+    setTaskStatus("queued");
     setAnswer(null);
     setMessage("");
     setProgressEvents([
@@ -177,23 +243,15 @@ export function RagPage() {
     ]);
 
     try {
-      const result = await askQuestionStream(
-        trimmedQuestion,
-        (progressEvent) => {
-          setProgressEvents((current) => [...current, progressEvent]);
-        },
-        abortController.signal,
-        technicalDetails,
-      );
-      setAnswer(result);
+      const created = await createQuestionTask(trimmedQuestion, true);
+      setTaskId(created.task_id);
+      setTaskStatus(created.status);
       setMessage("");
       setHistory((current) => [trimmedQuestion, ...current.filter((item) => item !== trimmedQuestion)].slice(0, 5));
     } catch (error) {
-      if (abortController.signal.aborted) {
-        return;
-      }
       const detail = error instanceof Error ? error.message : "问答接口暂未返回数据。";
       setAnswer(null);
+      setTaskStatus("failed");
       setMessage(detail);
       setProgressEvents((current) => [
         ...current,
@@ -204,12 +262,23 @@ export function RagPage() {
           detail,
         },
       ]);
-    } finally {
-      if (abortControllerRef.current === abortController) {
-        abortControllerRef.current = null;
-        isSubmittingRef.current = false;
-        setIsSubmitting(false);
-      }
+      setIsSubmitting(false);
+    }
+  }
+
+  function applyTaskSnapshot(task: QATaskStatusResponse) {
+    setQuestion(task.question);
+    setTaskStatus(task.status);
+    setProgressEvents(task.progress_events);
+    setAnswer(task.answer);
+    setIsSubmitting(isActiveTaskStatus(task.status));
+    if (task.error) {
+      setMessage(task.error);
+    } else if (task.answer) {
+      setMessage("");
+      setHistory((current) => [task.question, ...current.filter((item) => item !== task.question)].slice(0, 5));
+    } else if (isActiveTaskStatus(task.status)) {
+      setMessage("");
     }
   }
 
@@ -218,7 +287,7 @@ export function RagPage() {
       return;
     }
     try {
-      await navigator.clipboard.writeText(answer.answer);
+      await navigator.clipboard.writeText(stripInlineCitationLabels(answer.answer));
       setCopyStatus("已复制");
     } catch {
       setCopyStatus("复制失败");
@@ -228,6 +297,8 @@ export function RagPage() {
 
   const contextPackage = answer?.context_package ?? null;
   const showDiagnostics = progressEvents.length > 0 || contextPackage !== null;
+  const cleanAnswerText = stripInlineCitationLabels(answer?.answer ?? "");
+  const evidenceLabels = answer ? answerEvidenceLabels(answer) : [];
 
   return (
     <main className="page">
@@ -241,8 +312,13 @@ export function RagPage() {
       <section className="panel">
         <form className="query-form" onSubmit={handleSubmit}>
           <textarea
+            ref={questionTextareaRef}
+            className="query-input"
             value={question}
-            onChange={(event) => setQuestion(event.target.value)}
+            onChange={(event) => {
+              setQuestion(event.target.value);
+              resizeQuestionTextarea(event.target);
+            }}
             placeholder="输入监管制度、统计报表填报说明或指标口径问题"
           />
           <button className="icon-button" type="submit" disabled={isSubmitting}>
@@ -273,11 +349,20 @@ export function RagPage() {
             <StatusBadge tone={answer.refused ? "warning" : "ok"}>
               {contextLabel(answer)}
             </StatusBadge>
+          ) : isSubmitting || taskStatus ? (
+            <StatusBadge tone={taskStatus === "failed" ? "error" : isSubmitting ? "neutral" : "warning"}>
+              {taskStatusLabel(taskStatus)}
+            </StatusBadge>
           ) : null}
         </div>
         {answer ? (
           <div className={`answer-card ${answer.refused ? "answer-card--refused" : ""}`}>
-            <p className="answer-text">{answer.answer || "当前未生成回答。"}</p>
+            <p className="answer-text">{cleanAnswerText || "当前未生成回答。"}</p>
+            {evidenceLabels.length ? (
+              <p className="answer-evidence-note">
+                答案依据：第 {evidenceLabels.join("、")} 条证据片段。
+              </p>
+            ) : null}
             {answer.refused ? <p className="refusal-reason">拒答原因：{refusalReasonLabel(answer.refusal_reason)}</p> : null}
             <p className="muted">
               处理结果：{answerResultLabel(answer)}
@@ -479,6 +564,9 @@ function RetrievalDiagnosticsPanel({
 
       <details className="source-details debug-details">
         <summary>调试详情</summary>
+        {!summary ? (
+          <p className="muted">暂无调试上下文。请重新提交一次问题，系统会保存 Prompt、检索计划和上下文片段。</p>
+        ) : null}
         <div className="diagnostic-detail-grid">
           <p className="muted">候选片段：{summary?.candidate_count ?? "-"}</p>
           <p className="muted">原始召回：{summary?.raw_candidate_count ?? "-"}</p>
@@ -514,7 +602,7 @@ function RetrievalDiagnosticsPanel({
         ) : null}
         <p className="muted">LLM 原始输出：当前阶段未接入。</p>
         {summary?.fusion_method ? <p className="muted">融合方法：{summary.fusion_method}</p> : null}
-        {llmPrompt ? <pre className="prompt-preview">{llmPrompt}</pre> : null}
+        {llmPrompt ? <pre className="prompt-preview">{llmPrompt}</pre> : <p className="muted">Prompt 暂无可展示内容。</p>}
       </details>
     </section>
   );
@@ -855,6 +943,31 @@ function answerGenerationDetail(answer: QAResponse): string {
   return answer.refused ? "生成结果未通过证据要求，已转为拒答。" : "已基于选定证据生成回答。";
 }
 
+function stripInlineCitationLabels(value: string): string {
+  return value
+    .replace(/\s*(?:\[\d+\]\s*)+/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function answerEvidenceLabels(answer: QAResponse): string[] {
+  const labels = new Set<string>();
+  const answerText = answer.answer ?? "";
+  for (const match of answerText.matchAll(/\[(\d+)\]/g)) {
+    labels.add(match[1]);
+  }
+  for (const claim of answer.claims) {
+    for (const citationId of claim.citation_ids) {
+      const match = citationId.match(/^\[(\d+)\]$/);
+      if (match) {
+        labels.add(match[1]);
+      }
+    }
+  }
+  return Array.from(labels).sort((left, right) => Number(left) - Number(right));
+}
+
 function failedStageFromEvents(events: RagProgressEvent[]): RagProgressStage {
   const runningEvent = [...events].reverse().find((event) => event.status === "running" && !event.aspect_id);
   return runningEvent?.stage ?? "planning";
@@ -891,7 +1004,7 @@ function uniqueValues(values: string[]): string[] {
 
 function ContextChunkList({ chunks }: { chunks: RetrievalResult[] }) {
   if (chunks.length === 0) {
-    return <p className="muted">暂无检索到的依据片段。</p>;
+    return <p className="muted">暂无进入 Prompt 的上下文片段。请重新提交一次问题，系统会保存调试上下文。</p>;
   }
 
   return (
@@ -952,14 +1065,15 @@ function labelUnknown(label: string, value: unknown): string {
 }
 
 function loadQASessionState(): QASessionState {
-  const fallback = { question: "", answer: null, message: "暂无问答结果。", history: [] };
+  const fallback = { taskId: null, question: "", answer: null, message: "暂无问答结果。", history: [] };
   try {
-    const raw = window.sessionStorage.getItem(QA_SESSION_KEY);
+    const raw = window.localStorage.getItem(QA_SESSION_KEY) ?? window.sessionStorage.getItem(QA_SESSION_KEY);
     if (!raw) {
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<QASessionState>;
     return {
+      taskId: typeof parsed.taskId === "string" ? parsed.taskId : null,
       question: typeof parsed.question === "string" ? parsed.question : "",
       answer: parsed.answer ?? null,
       message: typeof parsed.message === "string" ? parsed.message : fallback.message,
@@ -972,7 +1086,7 @@ function loadQASessionState(): QASessionState {
 
 function saveQASessionState(state: QASessionState): void {
   try {
-    window.sessionStorage.setItem(QA_SESSION_KEY, JSON.stringify(state));
+    window.localStorage.setItem(QA_SESSION_KEY, JSON.stringify(state));
   } catch {
     // Ignore browser storage failures; the QA flow itself should still work.
   }

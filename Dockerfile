@@ -36,10 +36,11 @@ RUN apt-get -o Acquire::Retries=5 update \
         libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY requirements.txt requirements-cuda.txt ./
 RUN python -m pip install --upgrade pip \
-    && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.1+cpu \
-    && python -m pip install -r requirements.txt
+    && python -m pip install -r requirements-cuda.txt \
+    && grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt \
+    && python -m pip install -r /tmp/requirements-no-torch.txt
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/

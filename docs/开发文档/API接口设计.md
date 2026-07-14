@@ -21,6 +21,9 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | DELETE | `/api/documents/{document_id}` | 删除文档、chunk 和向量索引 |
 | POST | `/api/qa/ask` | 提交问题并获得可信回答 |
 | POST | `/api/qa/ask/stream` | 提交流式问答请求并通过 SSE 观察 RAG 执行过程 |
+| POST | `/api/qa/tasks` | 创建可恢复的可信问答任务 |
+| GET | `/api/qa/tasks` | 查看最近问答任务快照 |
+| GET | `/api/qa/tasks/{task_id}` | 查询单个问答任务状态、进度和最终答案 |
 | GET | `/api/audit/logs` | 获取当天审计日志，并自动归档过期日志 |
 | GET | `/api/audit/archives` | 获取历史审计日志归档列表 |
 | GET | `/api/audit/archives/{archive_date}` | 查看某天审计日志归档内容 |
@@ -102,6 +105,9 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 
 - `POST /api/qa/ask`：返回完整 `QAResponse`。Excel 取数与计算由程序确定性完成；Word/PDF 使用 DeepSeek 生成结构化答案并校验引用和关键实体。`include_debug=true` 时才附带 `context_package`。
 - `POST /api/qa/ask/stream`：返回 `text/event-stream`，先推送 RAG 阶段进度事件，最后推送完整 `QAResponse`；用于前端动态“检索观测”面板。
+- `POST /api/qa/tasks`：创建持久化问答任务并返回 `task_id`。任务在后端线程继续执行，前端页面切换或刷新不会重新提交问题。
+- `GET /api/qa/tasks/{task_id}`：返回 `question/options/include_debug/status/progress_events/answer/error/created_at/updated_at/completed_at`。`status` 包括 `queued/running/completed/refused/failed`；返回的 `progress_events` 是完整快照，可用于断线重连后恢复时间线。
+- `GET /api/qa/tasks?limit=5`：返回最近任务快照，主要用于调试或恢复入口。
 - `POST /api/qa/retrieve`：仅返回 `LLMContextPackage`，用于调试检索和后续 LLM 输入。
 
 `/api/qa/ask/stream` 的 SSE 事件：
@@ -153,6 +159,8 @@ DeepSeek 未配置或暂不可用时，`llm_generation` 显示降级/跳过；Ex
 问答审计日志会为每次请求记录独立事件，不参与重复异常聚合。`detail` 和 `details_json` 均保存结构化问答摘要，包括 `question`、`answer`、`refused`、`refusal_reason`、`generation_status`、`used_chunks`、`confidence` 和 `citation_count`；不写入完整引用正文，避免日志膨胀。前端默认展示缩短后的问题和回答，用户点击详情文本后可展开查看完整内容。
 
 问答入口会先做选择题预处理：如果请求已提供 `options`，直接使用；如果用户把选项粘贴在 `question` 中，系统会尝试抽取 2–8 个内嵌选项，支持 `A/B/C`、`1/2/3`、`①②③`、换行、多空格、竖线等常见格式，不要求固定 A–D 四项。抽取成功后，后续 QueryPlanner、检索和答案生成均使用“剥离选项后的题干 + 结构化 options”。只有问题明显属于选择题但既没有 `options`、也无法从题干中抽取选项时，接口才会快速返回 `answer_type=clarification`、`refusal_reason=missing_options_for_choice_question`，提示用户补充选项或改成普通问法。普通开放式问题不需要 `options`，仍按可信 RAG 流程检索和回答。
+
+选择题会保留用户原始选项编号。用户提供 `A/B/C/D`、数字、`①②③④` 或括号编号时，最终答案必须使用原始编号并输出完整选项正文；用户没有提供编号时，不得生成编号或回答“第几项”，只能输出正确选项完整正文。所有选择题结论仍必须由检索到的知识库证据支持，证据不足时拒答。
 
 ## 审计日志
 
@@ -222,4 +230,4 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 }
 ```
 
-正式交付版额外返回 `qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个Office工具版本、`index_tasks` 队列计数和总 `ready` 状态。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
+正式交付版额外返回 `qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个Office工具版本、`index_tasks` 队列计数、`model_device` 和总 `ready` 状态。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。

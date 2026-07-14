@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import create_engine
@@ -14,7 +15,7 @@ from backend.app.core.config import AUDIT_ARCHIVE_DIR
 from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
 from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
-from backend.app.schemas.qa import Citation, LLMContextPackage
+from backend.app.schemas.qa import Citation, LLMContextPackage, QAResponse
 from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
@@ -1239,6 +1240,62 @@ def test_qa_extracts_inline_options_before_retrieval(monkeypatch) -> None:
     assert body["answer_type"] == "refusal"
     assert captured["question"] == "关于《材料》，以下哪项正确？"
     assert captured["options"] == ["第一项事实", "第二项事实", "第三项事实"]
+
+
+def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
+    reset_database()
+    calls: list[str] = []
+
+    def fake_answer_question(db, question, options=None, include_debug=False, progress_reporter=None):
+        calls.append(question)
+        assert include_debug is True
+        if progress_reporter is not None:
+            progress_reporter(
+                {
+                    "stage": "planning",
+                    "status": "completed",
+                    "title": "问题理解完成",
+                    "detail": "测试进度",
+                    "elapsed_ms": 1.0,
+                }
+            )
+        return QAResponse(
+            answer="资产合计应等于资产分项金额合计。[1]",
+            citations=[],
+            confidence=0.9,
+            refused=False,
+            context_package=None,
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[],
+            grounding_validation={"passed": True},
+        )
+
+    monkeypatch.setattr("backend.app.services.qa_task_service.answer_question", fake_answer_question)
+
+    created = client.post(
+        "/api/qa/tasks",
+        json={"question": "资产合计如何校验？", "include_debug": True},
+    )
+
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+
+    body = None
+    for _ in range(20):
+        response = client.get(f"/api/qa/tasks/{task_id}")
+        assert response.status_code == 200
+        body = response.json()
+        if body["status"] == "completed":
+            break
+        time.sleep(0.05)
+
+    assert body is not None
+    assert body["question"] == "资产合计如何校验？"
+    assert body["status"] == "completed"
+    assert body["progress_events"][0]["stage"] == "planning"
+    assert body["answer"]["answer"] == "资产合计应等于资产分项金额合计。[1]"
+    assert calls == ["资产合计如何校验？"]
 
 
 def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None:

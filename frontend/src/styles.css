@@ -595,6 +595,12 @@ textarea {
   line-height: 1.65;
 }
 
+.query-input {
+  max-height: 360px;
+  resize: none;
+  overflow-y: hidden;
+}
+
 .query-form {
   display: grid;
   gap: 12px;
@@ -667,6 +673,13 @@ textarea {
   color: #0f172a;
   font-size: 16px;
   line-height: 1.8;
+}
+
+.answer-evidence-note {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .refusal-reason {

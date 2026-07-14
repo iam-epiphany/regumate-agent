@@ -106,6 +106,7 @@ def answer_question(
     preprocessed = preprocess_qa_request(cleaned_question, options)
     cleaned_question = preprocessed.question
     normalized_options = preprocessed.options
+    option_labels = preprocessed.option_labels or [None] * len(normalized_options)
     if is_option_selection_question(cleaned_question) and not normalized_options:
         _report_progress(
             progress_reporter,
@@ -174,6 +175,7 @@ def answer_question(
         cleaned_question,
         package.context_chunks,
         options=normalized_options,
+        option_labels=option_labels,
         has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
     )
     table_refusal_reasons = [

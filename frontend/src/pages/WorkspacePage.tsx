@@ -136,6 +136,11 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
               <RuntimeFact label="向量检索" ready={ragHealth.qdrant_ready && ragHealth.qdrant_collection_ready} />
               <RuntimeFact label="语义模型" ready={ragHealth.embedding_model_ready} />
               <RuntimeFact label="重排模型" ready={ragHealth.reranker_model_ready} />
+              <RuntimeFact
+                label="模型设备"
+                ready={!ragHealth.model_device?.fallback_reason}
+                detail={formatModelDevice(ragHealth)}
+              />
               <RuntimeFact label="Office 解析" ready={ragHealth.libreoffice_ready} />
               <RuntimeFact
                 label="索引队列"
@@ -168,6 +173,17 @@ function RuntimeFact({ label, ready, detail }: RuntimeFactProps) {
       </dd>
     </div>
   );
+}
+
+function formatModelDevice(ragHealth: RagHealthResponse): string {
+  const device = ragHealth.model_device;
+  if (!device) {
+    return "未检测";
+  }
+  const gpu = device.cuda_device_name ? ` / ${device.cuda_device_name}` : "";
+  const memory = typeof device.cuda_free_memory_gb === "number" ? ` / 空闲 ${device.cuda_free_memory_gb}GB` : "";
+  const fallback = device.fallback_reason ? ` / ${device.fallback_reason}` : "";
+  return `${device.selected_device}${gpu}${memory}${fallback}`;
 }
 
 interface ActionCardProps {

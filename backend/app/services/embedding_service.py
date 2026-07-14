@@ -3,9 +3,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from backend.app.core.config import EMBEDDING_BATCH_SIZE
+from backend.app.core.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MAX_BATCH_SIZE
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
-from backend.app.services.model_device_service import selected_model_device
+from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
 
 
@@ -52,19 +52,35 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
     cleaned = [text.strip() for text in texts]
     if any(not text for text in cleaned):
         raise EmbeddingServiceError("embedding 输入文本不能为空")
+    safe_batch_size = min(max(int(batch_size or 1), 1), EMBEDDING_MAX_BATCH_SIZE)
 
     try:
         with MODEL_INFERENCE_LOCK:
             model = _get_bge_m3_model()
             encoded = model.encode(
                 cleaned,
-                batch_size=batch_size,
+                batch_size=safe_batch_size,
                 return_dense=True,
                 return_sparse=True,
                 return_colbert_vecs=False,
             )
     except Exception as exc:
-        raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from exc
+        if selected_model_device() == "cuda" and is_cuda_failure(exc):
+            _fallback_embedding_to_cpu(exc)
+            try:
+                with MODEL_INFERENCE_LOCK:
+                    model = _get_bge_m3_model()
+                    encoded = model.encode(
+                        cleaned,
+                        batch_size=max(1, min(safe_batch_size, 2)),
+                        return_dense=True,
+                        return_sparse=True,
+                        return_colbert_vecs=False,
+                    )
+            except Exception as retry_exc:
+                raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from retry_exc
+        else:
+            raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from exc
 
     dense_vectors = encoded.get("dense_vecs")
     sparse_vectors = encoded.get("lexical_weights")
@@ -123,3 +139,15 @@ def _to_sparse_embedding(lexical_weights: Any) -> SparseEmbedding:
         indices.append(index)
         values.append(value)
     return SparseEmbedding(indices=indices, values=values)
+
+
+def _fallback_embedding_to_cpu(exc: BaseException) -> None:
+    force_cpu_fallback(f"BGE-M3 embedding CUDA failure: {exc}")
+    _get_bge_m3_model.cache_clear()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass

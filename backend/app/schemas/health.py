@@ -27,3 +27,4 @@ class RagHealthResponse(BaseModel):
     embedding_model_error: str | None = None
     reranker_model_error: str | None = None
     qdrant_error: str | None = None
+    model_device: dict[str, object] = Field(default_factory=dict)

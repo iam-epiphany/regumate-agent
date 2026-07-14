@@ -4,7 +4,7 @@ from typing import Any
 
 from backend.app.core.config import RERANK_TOP_K
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_reranker_model_path
-from backend.app.services.model_device_service import selected_model_device
+from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
 from backend.app.services.vector_store_service import VectorSearchResult
 
@@ -51,7 +51,8 @@ def rerank_candidates(
     if not candidates:
         return []
 
-    pairs = [[question, candidate.embedding_text or candidate.text] for candidate in candidates]
+    limited_candidates = candidates[: max(limit * 2, limit)]
+    pairs = [[question, candidate.embedding_text or candidate.text] for candidate in limited_candidates]
     try:
         with MODEL_INFERENCE_LOCK:
             reranker = _get_reranker()
@@ -60,14 +61,38 @@ def rerank_candidates(
         with MODEL_INFERENCE_LOCK:
             scores = reranker.compute_score(pairs, normalize=True)
     except Exception as exc:
-        raise RerankServiceError("BGE reranker 评分失败") from exc
+        if selected_model_device() == "cuda" and is_cuda_failure(exc):
+            _fallback_reranker_to_cpu(exc)
+            try:
+                with MODEL_INFERENCE_LOCK:
+                    reranker = _get_reranker()
+                    scores = reranker.compute_score(pairs, normalize=True, max_length=768)
+            except TypeError:
+                with MODEL_INFERENCE_LOCK:
+                    scores = reranker.compute_score(pairs, normalize=True)
+            except Exception as retry_exc:
+                raise RerankServiceError("BGE reranker 评分失败") from retry_exc
+        else:
+            raise RerankServiceError("BGE reranker 评分失败") from exc
 
     if isinstance(scores, (float, int)):
         scores = [float(scores)]
 
     reranked = [
         RerankedChunk(candidate=candidate, rerank_score=float(score))
-        for candidate, score in zip(candidates, scores, strict=True)
+        for candidate, score in zip(limited_candidates, scores, strict=True)
     ]
     reranked.sort(key=lambda item: item.rerank_score, reverse=True)
     return reranked[:limit]
+
+
+def _fallback_reranker_to_cpu(exc: BaseException) -> None:
+    force_cpu_fallback(f"BGE reranker CUDA failure: {exc}")
+    _get_reranker.cache_clear()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass

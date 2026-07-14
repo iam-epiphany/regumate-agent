@@ -129,3 +129,23 @@ class QALog(Base):
     confidence: Mapped[float] = mapped_column(default=0.0)
     citation_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class QATask(Base):
+    """Persistent QA task snapshot for page reloads and reconnects."""
+
+    __tablename__ = "qa_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
+    question: Mapped[str] = mapped_column(Text)
+    options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    include_debug: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
+    progress_json: Mapped[str] = mapped_column(Text, default="[]")
+    answer_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -9,6 +9,21 @@ class QARequest(BaseModel):
     include_debug: bool = False
 
 
+class QATaskCreateResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class RagProgressEvent(BaseModel):
+    stage: str
+    status: str
+    title: str
+    detail: str
+    elapsed_ms: float | None = None
+    summary: dict[str, Any] | None = None
+    aspect_id: str | None = None
+
+
 class AnswerClaim(BaseModel):
     text: str
     citation_ids: list[str] = Field(default_factory=list)
@@ -67,3 +82,17 @@ class QAResponse(BaseModel):
     grounding_validation: dict[str, Any] = Field(default_factory=dict)
     refusal_reason: str | None = None
     degraded: bool = False
+
+
+class QATaskStatusResponse(BaseModel):
+    task_id: str
+    question: str
+    options: list[str] = Field(default_factory=list)
+    include_debug: bool = False
+    status: str
+    progress_events: list[RagProgressEvent] = Field(default_factory=list)
+    answer: QAResponse | None = None
+    error: str | None = None
+    created_at: str
+    updated_at: str
+    completed_at: str | None = None
