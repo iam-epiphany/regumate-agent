@@ -1,4 +1,4 @@
-import { FileText, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { deleteAuditArchive, getAuditArchive, listAuditArchives, listAuditLogs } from "../api/audit";
@@ -12,18 +12,31 @@ export function AuditPage() {
   const [selectedArchive, setSelectedArchive] = useState<AuditArchiveDetailResponse | null>(null);
   const [message, setMessage] = useState("仅显示当天审计日志，过期日志会自动归档。");
   const [severityFilter, setSeverityFilter] = useState<"all" | "info" | "warning" | "error">("all");
+  const [isLoading, setIsLoading] = useState(false);
   const parsedArchive = selectedArchive ? parseAuditArchiveContent(selectedArchive.content) : null;
   const selectedArchiveSummary = selectedArchive ? archives.find((archive) => archive.date === selectedArchive.date) : null;
   const visibleLogs = severityFilter === "all" ? logs : logs.filter((log) => log.severity === severityFilter);
+  const errorCount = logs.filter((log) => log.severity === "error").length;
+  const warningCount = logs.filter((log) => log.severity === "warning").length;
+  const qaCount = logs.filter((log) => log.target_type === "question" || log.action.startsWith("qa_")).length;
+  const documentCount = logs.filter((log) => log.target_type === "document" || log.action.startsWith("document_")).length;
 
   useEffect(() => {
     void loadAuditData();
   }, []);
 
   async function loadAuditData() {
-    const [logResult, archiveResult] = await Promise.all([listAuditLogs(), listAuditArchives()]);
-    setLogs(logResult.logs);
-    setArchives(archiveResult.archives);
+    setIsLoading(true);
+    try {
+      const [logResult, archiveResult] = await Promise.all([listAuditLogs(), listAuditArchives()]);
+      setLogs(logResult.logs);
+      setArchives(archiveResult.archives);
+      setMessage("仅显示当天审计日志，过期日志会自动归档。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "读取审计日志失败。");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function showArchive(date: string) {
@@ -56,20 +69,48 @@ export function AuditPage() {
 
   return (
     <main className="page">
-      <section className="page-head">
+      <section className="page-head page-head--product">
         <div>
-          <p className="eyebrow">Audit</p>
-          <h1>审计日志</h1>
+          <p className="eyebrow">审计追踪</p>
+          <div className="title-row">
+            <h1>问答与知识库操作记录</h1>
+            <span className={errorCount ? "severity-badge error" : warningCount ? "severity-badge warning" : "severity-badge"}>
+              {errorCount ? `${errorCount} 条严重` : warningCount ? `${warningCount} 条警告` : "状态正常"}
+            </span>
+          </div>
+          <p className="page-lead">记录文档上传、解析、索引、可信问答、拒答决策和系统异常，技术细节默认折叠。</p>
         </div>
         <button className="icon-button" type="button" onClick={() => void loadAuditData()}>
-          <RefreshCw size={17} />
-          刷新
+          {isLoading ? <Loader2 size={17} className="spinning" /> : <RefreshCw size={17} />}
+          {isLoading ? "读取中" : "刷新"}
         </button>
+      </section>
+
+      <section className="audit-summary" aria-label="审计摘要">
+        <div>
+          <span>今日日志</span>
+          <strong>{logs.length}</strong>
+        </div>
+        <div>
+          <span>问答相关</span>
+          <strong>{qaCount}</strong>
+        </div>
+        <div>
+          <span>文档相关</span>
+          <strong>{documentCount}</strong>
+        </div>
+        <div>
+          <span>待关注</span>
+          <strong>{warningCount + errorCount}</strong>
+        </div>
       </section>
 
       <section className="panel">
         <div className="document-list-toolbar">
-          <h2>今日日志</h2>
+          <div>
+            <h2>今日审计记录</h2>
+            <p className="toolbar-summary">{message}</p>
+          </div>
           <label>
             级别筛选
             <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value as typeof severityFilter)}>
@@ -80,18 +121,25 @@ export function AuditPage() {
             </select>
           </label>
         </div>
-        <p className="hint">{message}</p>
-        {visibleLogs.length > 0 ? (
+        {isLoading ? (
+          <div className="task-placeholder">
+            <Loader2 size={20} className="spinning" />
+            <div>
+              <strong>正在读取审计日志</strong>
+              <p className="muted">正在加载今日记录和历史归档。</p>
+            </div>
+          </div>
+        ) : visibleLogs.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>时间</th>
-                  <th>级别</th>
-                  <th>动作</th>
-                  <th>对象</th>
-                  <th>次数</th>
-                  <th>详情</th>
+                  <th>操作类型</th>
+                  <th>操作对象</th>
+                  <th>执行结果</th>
+                  <th>出现次数</th>
+                  <th>说明</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,9 +148,9 @@ export function AuditPage() {
                   return (
                     <tr key={log.id}>
                       <td>{formatDateTime(log.last_seen_at || log.created_at)}</td>
-                      <td><SeverityBadge severity={log.severity} /></td>
                       <td>{display.action}</td>
                       <td>{display.target}</td>
+                      <td><SeverityBadge severity={log.severity} /></td>
                       <td>{log.occurrence_count || 1}</td>
                       <td className="audit-detail">
                         <ExpandableText text={display.detail} maxChars={160} />
@@ -120,7 +168,11 @@ export function AuditPage() {
             </table>
           </div>
         ) : (
-          <p className="muted">当前筛选条件下暂无日志。</p>
+          <div className="empty-state">
+            {message.includes("失败") ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
+            <h2>当前筛选条件下暂无日志</h2>
+            <p>{message.includes("失败") ? message : "上传文档、建立索引或提交问答后会生成可追溯记录。"}</p>
+          </div>
         )}
       </section>
 

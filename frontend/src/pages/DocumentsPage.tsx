@@ -19,7 +19,7 @@ interface ToastNotice {
 
 const DOCUMENT_PAGE_SIZE = 20;
 const CHUNK_PAGE_SIZE = 50;
-const CONTEST_COLLECTION = "regumate_contest_v3";
+const PRIMARY_COLLECTION = "regumate_contest_v3";
 
 export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -193,14 +193,23 @@ export function DocumentsPage() {
     (activePage - 1) * DOCUMENT_PAGE_SIZE,
     activePage * DOCUMENT_PAGE_SIZE,
   );
+  const indexedCount = documents.filter((document) => document.status === "indexed").length;
+  const processingCount = documents.filter((document) => ["uploaded", "index_queued", "indexing"].includes(document.status)).length;
+  const failedCount = documents.filter((document) => ["index_failed", "source_missing", "delete_failed"].includes(document.status)).length;
 
   return (
     <main className="page">
       {toastNotice ? <Toast notice={toastNotice} /> : null}
-      <section className="page-head">
+      <section className="page-head page-head--product">
         <div>
-          <p className="eyebrow">Knowledge Base</p>
-          <h1>文档知识库</h1>
+          <p className="eyebrow">知识库台账</p>
+          <div className="title-row">
+            <h1>监管与报表口径文档</h1>
+            <StatusBadge tone={ragHealth?.ready && indexedCount > 0 ? "ok" : "warning"}>
+              {ragHealth?.ready && indexedCount > 0 ? "可支撑问答" : "待完善"}
+            </StatusBadge>
+          </div>
+          <p className="page-lead">上传监管制度、填报说明和指标口径文件；系统解析、分块并建立可追溯索引。</p>
         </div>
         <button className="icon-button" type="button" onClick={() => void refreshKnowledgeBaseView()}>
           <RefreshCw size={17} />
@@ -231,7 +240,7 @@ export function DocumentsPage() {
           <div>
             <dt>文档记录</dt>
             <dd>
-              <span className="runtime-value">{documents.length} 个</span>
+              <span className="runtime-value">{documents.length} 份 / {indexedCount} 份可问答</span>
             </dd>
           </div>
           <div>
@@ -259,25 +268,33 @@ export function DocumentsPage() {
         ) : null}
       </section>
 
-      <section className="panel">
+      <section className="document-command-panel">
         <div className="panel-title">
           <FileUp size={20} />
-          <h2>上传监管与报表口径文档</h2>
+          <h2>新增知识源</h2>
         </div>
-        <label className="file-input">
-          选择文档
-          <input
-            type="file"
-            accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
-            onChange={(event) => void handleFileChange(event)}
-          />
-        </label>
-        <p className="hint">请选择 .txt、.md、.doc、.docx、.pdf、.xls 或 .xlsx 文档上传</p>
+        <div className="document-command-panel__body">
+          <p>支持制度原文、统计报表填报说明、指标口径文档和可提取文本的表格文件。</p>
+          <label className="file-input">
+            选择文档
+            <input
+              type="file"
+              accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
+              onChange={(event) => void handleFileChange(event)}
+            />
+          </label>
+        </div>
+        <p className="hint">可上传 .txt、.md、.doc、.docx、.pdf、.xls 或 .xlsx 文件。</p>
       </section>
 
       <section className="panel">
         <div className="document-list-toolbar">
-          <h2>文档列表</h2>
+          <div>
+            <h2>文档台账</h2>
+            <p className="toolbar-summary">
+              共 {documents.length} 份，{indexedCount} 份可问答，{processingCount} 份处理中，{failedCount} 份需处理
+            </p>
+          </div>
           <label>
             状态筛选
             <select
@@ -301,11 +318,10 @@ export function DocumentsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>文档编号</th>
-                  <th>文件名</th>
-                  <th>类型</th>
-                  <th>片段数</th>
-                  <th>知识库状态</th>
+                  <th>文件名称</th>
+                  <th>文档分类</th>
+                  <th>解析与索引状态</th>
+                  <th>分块数量</th>
                   <th>上传时间</th>
                   <th>操作</th>
                 </tr>
@@ -313,14 +329,23 @@ export function DocumentsPage() {
               <tbody>
                 {visibleDocuments.map((document) => (
                   <tr key={document.document_id}>
-                    <td className="mono">{document.document_id}</td>
-                    <td>{document.filename}</td>
-                    <td>{document.file_type}</td>
-                    <td>{document.chunk_count}</td>
+                    <td>
+                      <strong className="document-title">{document.filename}</strong>
+                      <span className="document-subtle">编号：{document.document_id}</span>
+                    </td>
+                    <td>{documentTypeLabel(document)}</td>
                     <td title={document.index_error ?? undefined}>
                       <StatusBadge tone={statusTone(document.status)}>{statusLabel(document.status)}</StatusBadge>
-                      {document.index_error ? <span className="document-error">{document.index_error}</span> : null}
+                      {document.index_error ? (
+                        <details className="source-details">
+                          <summary>{friendlyIndexError(document.index_error)}</summary>
+                          <p className="muted">
+                            技术详情：<code>{document.index_error}</code>
+                          </p>
+                        </details>
+                      ) : null}
                     </td>
+                    <td>{document.chunk_count}</td>
                     <td>{formatDateTime(document.uploaded_at)}</td>
                     <td>
                       <button className="secondary-button" type="button" onClick={() => void showDetail(document.document_id)}>
@@ -367,13 +392,17 @@ export function DocumentsPage() {
             </div>
           </div>
         ) : (
-          <p className="muted">当前筛选条件下暂无文档。</p>
+          <div className="empty-state">
+            <FileUp size={24} />
+            <h2>当前筛选条件下暂无文档</h2>
+            <p>上传文档或调整筛选条件后，系统会展示解析、分块和索引状态。</p>
+          </div>
         )}
       </section>
 
       <section className="panel">
         <div className="document-list-toolbar">
-          <h2>内容片段</h2>
+          <h2>文档内容预览</h2>
           {selectedDetail ? (
             <span className="muted">
               {selectedDetail.filename}：第 {selectedDetail.chunk_offset + 1}-
@@ -386,7 +415,7 @@ export function DocumentsPage() {
           <>
           <ol className="evidence-list">
             {selectedDetail.chunks.map((chunk, index) => (
-              <li key={chunk.chunk_id}>
+              <li key={chunk.chunk_id} className="evidence-item">
                 <div className="evidence-head">
                   <span>{chunk.section_title ?? "未命名章节"}</span>
                   <span className="muted">第 {selectedDetail.chunk_offset + index + 1} 条</span>
@@ -429,7 +458,7 @@ export function DocumentsPage() {
           </div>
           </>
         ) : (
-          <p className="muted">点击文档列表中的“查看内容”。大文档会分页展示，避免一次渲染过多片段。</p>
+          <p className="muted">点击文档台账中的“查看内容”。大文档会分页展示，避免一次渲染过多片段。</p>
         )}
       </section>
 
@@ -536,13 +565,51 @@ function statusLabel(status: string): string {
   return status;
 }
 
+function documentTypeLabel(document: DocumentSummary): string {
+  const metadataCategory = document.metadata?.category;
+  if (typeof metadataCategory === "string" && metadataCategory.trim()) {
+    return metadataCategory;
+  }
+  const type = document.file_type.toLowerCase();
+  if (type === "xls" || type === "xlsx") {
+    return "统计报表/表格证据";
+  }
+  if (type === "pdf") {
+    return "制度或说明 PDF";
+  }
+  if (type === "doc" || type === "docx") {
+    return "制度或填报说明";
+  }
+  if (type === "md" || type === "txt") {
+    return "文本知识源";
+  }
+  return document.file_type || "未分类文档";
+}
+
+function friendlyIndexError(error: string): string {
+  const normalized = error.toLowerCase();
+  if (normalized.includes("document_marked_source_missing") || normalized.includes("source_missing")) {
+    return "原始文件缺失，当前文档无法重新解析。";
+  }
+  if (normalized.includes("parse")) {
+    return "解析失败，请检查文件是否可提取文本。";
+  }
+  if (normalized.includes("qdrant") || normalized.includes("vector")) {
+    return "索引写入失败，请检查向量检索服务。";
+  }
+  if (normalized.includes("timeout")) {
+    return "处理超时，可稍后重试。";
+  }
+  return "处理失败，可展开查看技术详情。";
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
 function buildRuntimeWarning(ragHealth: RagHealthResponse): string | null {
-  if (ragHealth.qdrant_collection !== CONTEST_COLLECTION) {
-    return `当前连接的是 ${ragHealth.qdrant_collection}，不是比赛正式库 ${CONTEST_COLLECTION}。文档列表可能不是当前问答索引的真实状态。`;
+  if (ragHealth.qdrant_collection !== PRIMARY_COLLECTION) {
+    return `当前连接的是 ${ragHealth.qdrant_collection}，不是标准知识库 ${PRIMARY_COLLECTION}。文档列表可能不是当前问答索引的真实状态。`;
   }
   if (!ragHealth.ready) {
     return "RAG 依赖未完全就绪。即使文档列表显示很多文件，问答仍可能因模型、SQLite、Qdrant 或解析器状态异常而拒答。";
