@@ -264,6 +264,18 @@ python scripts/check_offline_models.py
 
 流式观测接口不会改变答案语义。它在同一执行过程中推送问题理解、依据检索、候选重排、上下文精选、Prompt 构造、LLM 生成和事实校验状态。检索和重排会同时推送阶段级事件和 aspect 级事件：阶段级事件驱动普通前端进度条，aspect 级事件用于技术详情。空检索、无重排候选、选择题缺少选项和依据不足拒答属于已处理业务分支，应使用 `completed` 或 `skipped`；检索依赖不可用、reranker 报错或上下文构造异常才使用 `failed`。
 
+### 可信答案的 claim 级流式发布
+
+DeepSeek 上游开启 `stream: true`，输出顺序固定为 `refused/refusal_reason/claims`。服务端兼容 SSE 注释心跳、空行和 `[DONE]`，按完整 JSON claim 而不是 token 建立发布边界：
+
+1. 首条必须是结论 claim，并且引用编号、数字、日期、机构和文号都绑定到对应 chunk；选择题还必须包含完整选项正文且选项证据校验通过。
+2. 结论通过后才允许发布解释和建议；无效解释可被单独丢弃，不会污染已核验结论。
+3. 每次发布把已通过 claim 组合成完整 `QAAnswerPreview`，同时只附带当前正文实际引用的证据。
+4. 最终回答由同一批已核验 claim 组成；上游不支持流式、流格式损坏或没有可解析 claim 时回退原完整响应与抽取式降级流程。
+5. 每个上游块之间检查取消状态；取消会关闭上游连接并清空预览，迟到响应不能覆盖 `cancelled`。
+
+技术摘要记录 `first_verified_claim_ms`、`generation_total_ms` 和 `verified_claim_count`，只在技术详情与验收中使用，不作为装饰性运行指标。
+
 ## 单元格索引与可信计算
 
 Excel 解析除行级 chunk 外，还将有效单元格写入 `spreadsheet_cells`：记录文档、sheet、期间、坐标、行列标签、原始值、数值、单位和公式状态，并为来源/sheet/期间/标签/坐标建立组合索引。查询计划使用 `selectors[] + operation + expected_unit` 描述操作数，严格先按文件、sheet、年份和期间过滤，再定位单元格。候选不唯一、值缺失、单位冲突或除零时拒绝计算。
@@ -289,7 +301,11 @@ LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两
 
 正式数据进入容器前通过 `source_manifest.json` 将ASCII暂存名映射回官方原始文件名。文档ID、展示文件名、source metadata和QA来源判断均使用原始名；暂存名只解决Docker Desktop文件共享兼容性。
 
-在线上传的向量构建不再直接占用无界 FastAPI 后台任务。上传请求只把任务持久化到 `document_index_tasks` 并送入容量默认为8的单工作线程队列；任务记录 `queued/running/completed/failed`、重试次数和最后错误，最多重试3次。队列已满时任务仍保留在SQLite，工作线程会继续从数据库补充；应用启动时把中断的 `running` 任务恢复为 `queued`。BGE-M3 embedding 与reranker共用推理锁，防止索引和问答同时占满GPU显存。队列状态可在 `/api/health/rag` 的 `index_tasks` 查看。
+在线上传不再在 HTTP 请求中解析文档，也不再依赖 FastAPI BackgroundTask。原文件安全落盘后，在同一 SQLite 事务中创建 Document 与 `document_index_tasks`；容量默认为 8 的单 worker 依次持久化 `parsing → chunking → metadata_indexing → embedding → vector_upsert → verifying` 阶段、已完成数/总数、重试次数和统一错误。队列已满时任务仍保留在 SQLite，worker 会继续从数据库补充；应用启动时把中断的 `running` 任务恢复为 `queued`。BGE-M3 embedding 与 reranker 共用推理锁，防止索引和问答同时占满 GPU 显存。队列状态可在 `/api/health/rag` 的 `index_tasks` 查看，单文档快照由 `/api/documents/{id}/processing` 返回。
+
+上传解析硬限制可配置，默认 ZIP 条目 20,000、总解压大小 500 MB、Excel 实际逻辑单元格 500 万。OOXML 在解压前核对条目与声明大小；工作簿在双份加载公式版/数值版前后执行维度检查，只遍历实际 materialized cells，并在所有分支关闭 workbook。超限、伪格式和解析失败均记录稳定错误并清理文件。
+
+检索只接受 SQLite 中活跃文档，并在 rerank 前完成过滤；Qdrant dense/sparse 查询附带当前 `index_version` payload 条件并适度 overfetch，避免失效 point 占据 top-K。文档恢复为 `indexed` 前，必须核对当前版本 point ID 集合与 SQLite 全部 chunk ID 精确一致，而不只比较一个近似数量。
 
 上下文组装会尽量利用章节结构补足相邻依据。例如命中 `3. 资产合计与校验关系` 时，如果同一文档存在 `3.1 资产合计差异处理`，且问题涉及差异、处理、外币折算、保留依据等词，系统会优先补充该子章节。随后最终 Prompt 选择会按 QueryPlanner 拆出的 aspect 覆盖进行二次筛选：每个 aspect 至少尝试保留 1 条可回溯依据；像 `4. 逾期贷款与风险分类` 这类不覆盖当前 aspect 的片段即使 rerank 分数不低也不会进入 Prompt。若某个 aspect 没有可回溯候选，`retrieval_summary.missing_aspects` 会标记缺失点，提醒后续 LLM 不要硬编。`aspect_retrievals[].diagnostics` 会展示每条结构化 query 的 `query_type`、召回候选、rerank 数量和可用命中数，`retrieved_chunks[].query_hits` 会展示该 chunk 由哪些 query 召回。
 
@@ -316,7 +332,7 @@ LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两
 
 官方 Word/PDF 选择题不再把完整题干和四个长选项拼成一次语义检索。QueryPlanner 会先锁定书名号中的目标材料和文件类型，再把去重后的每条选项事实分别作为 `document_style_statement` 检索；dense 与 sparse 候选保持独立，经 RRF 融合后一次性进入 BGE rerank。目标文件存在时，候选限定在该材料内，防止同名、不同年份或 PDF/Word 副本互相污染。
 
-对于百分比、`属于` 类主体和高字符覆盖的选项事实，`rag_service` 会回查目标文档 SQLite chunks，补入每条事实的最佳直接证据。该补充只接受字符二元组覆盖不低于 45% 的片段，最多 10 条，并继续受最终 12 个 Prompt chunk 预算约束。
+对于百分比、`属于` 类主体和高字符覆盖的选项事实，`rag_service` 会回查目标文档 SQLite chunks，补入每条事实的最佳直接证据。该补充只接受字符二元组覆盖不低于 45% 的片段，最多 10 条，并继续受最终 12 个 Prompt chunk 预算约束。精确片段即使已经以低分 direct candidate 或 expanded context 出现在候选中，也会重新提升为 `mcq_exact_support`，避免通用 Prompt 阈值把它过滤掉。
 
 生成前会向 DeepSeek提供每个选项的逐事实覆盖矩阵。生成后同时执行：
 
@@ -324,6 +340,7 @@ LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两
 - 数字、日期、机构和文号必须由对应 claim 引用的证据支持；
 - 选择项不能明显落后于证据最佳项；
 - 多事实选项取最低事实覆盖，避免“第一句正确、第二句无关”仍被选中。
+- 每条选项事实的 citation 先通过实体到单片段的 grounding 校验，再比较字符覆盖；`35%/25%/50%/3月31日` 不会再绑定到措辞相似但缺少该数值的相邻段落。全角百分号、分隔空格和常见负号会归一化，但不会放宽数值一致性。
 
 如果 LLM 的解释文字因引用摆放或实体绑定失败，但某一选项每条事实覆盖均不低于 30%，且相对次优选项的最低覆盖领先至少 0.12 或平均覆盖领先至少 0.18，系统只返回程序生成的最小选择结论和对应引用；证据接近时仍拒答。该机制不读取官方答案，也不按题号硬编码。
 

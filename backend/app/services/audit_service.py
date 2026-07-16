@@ -1,7 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import json
+import re
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -12,6 +14,7 @@ from backend.app.models.audit import AuditLog
 
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 AGGREGATION_WINDOW = timedelta(minutes=10)
+_ARCHIVE_LOCK = Lock()
 
 
 @dataclass
@@ -101,38 +104,45 @@ def log_action(db: Session, action: str, target_type: str, target_id: str | None
     )
 
 
-def list_audit_logs(db: Session, limit: int = 50) -> list[AuditLog]:
-    archive_expired_audit_logs(db)
+def list_audit_logs(db: Session, limit: int = 50, offset: int = 0) -> list[AuditLog]:
     today = datetime.now(LOCAL_TZ).date()
     logs = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc())).all()
     today_logs = [log for log in logs if _local_date(log.created_at) == today]
-    return today_logs[:limit]
+    return today_logs[max(0, offset) : max(0, offset) + limit]
 
 
 def archive_expired_audit_logs(db: Session) -> None:
-    today = datetime.now(LOCAL_TZ).date()
-    logs = db.scalars(select(AuditLog).order_by(AuditLog.created_at.asc())).all()
-    expired_logs = [log for log in logs if _local_date(log.created_at) < today]
-    if not expired_logs:
-        return
+    with _ARCHIVE_LOCK:
+        today = datetime.now(LOCAL_TZ).date()
+        logs = db.scalars(select(AuditLog).order_by(AuditLog.created_at.asc())).all()
+        expired_logs = [log for log in logs if _local_date(log.created_at) < today]
+        if not expired_logs:
+            return
 
-    grouped: dict[str, list[AuditLog]] = {}
-    for log in expired_logs:
-        grouped.setdefault(_local_date(log.created_at).isoformat(), []).append(log)
+        grouped: dict[str, list[AuditLog]] = {}
+        for log in expired_logs:
+            grouped.setdefault(_local_date(log.created_at).isoformat(), []).append(log)
 
-    AUDIT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    for archive_date, day_logs in grouped.items():
-        path = _archive_path(archive_date)
-        content = _render_archive_markdown(archive_date, day_logs)
-        if path.exists():
-            existing = path.read_text(encoding="utf-8").rstrip()
-            path.write_text(f"{existing}\n\n---\n\n{content}", encoding="utf-8")
-        else:
-            path.write_text(content, encoding="utf-8")
+        AUDIT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        for archive_date, day_logs in grouped.items():
+            path = _archive_path(archive_date)
+            existing = path.read_text(encoding="utf-8") if path.exists() else ""
+            archived_ids = {
+                int(value)
+                for value in re.findall(r"<!-- audit-id:(\d+) -->", existing)
+            }
+            new_logs = [log for log in day_logs if log.id not in archived_ids]
+            if not new_logs:
+                continue
+            rendered = _render_archive_markdown(archive_date, new_logs)
+            content = f"{existing.rstrip()}\n\n---\n\n{rendered}" if existing else rendered
+            temporary = path.with_suffix(".md.tmp")
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
 
-    for log in expired_logs:
-        db.delete(log)
-    db.commit()
+        for log in expired_logs:
+            db.delete(log)
+        db.commit()
 
 
 def list_audit_archives() -> list[AuditArchive]:
@@ -177,7 +187,11 @@ def delete_audit_archive(archive_date: str) -> None:
 
 
 def _archive_path(archive_date: str) -> Path:
-    if len(archive_date) != 10 or archive_date[4] != "-" or archive_date[7] != "-":
+    try:
+        parsed = date.fromisoformat(archive_date)
+    except ValueError as exc:
+        raise FileNotFoundError(archive_date) from exc
+    if parsed.isoformat() != archive_date:
         raise FileNotFoundError(archive_date)
     return AUDIT_ARCHIVE_DIR / f"audit-{archive_date}.md"
 
@@ -203,6 +217,7 @@ def _render_archive_markdown(archive_date: str, logs: list[AuditLog]) -> str:
         created_at = _local_datetime(log.created_at).isoformat(timespec="seconds")
         lines.extend(
             [
+                f"<!-- audit-id:{log.id} -->",
                 f"## {created_at} · {log.action}",
                 "",
                 f"- 对象类型：{log.target_type}",
@@ -238,6 +253,7 @@ def _display_fields(action: str, detail: str) -> dict[str, str]:
         "document_marked_source_missing": ("原文件缺失", "系统检测到原文件不可用，该文档已暂停源文件校验。"),
         "document_source_restored": ("原文件已恢复", "系统重新找到原文件，文档状态已恢复。"),
         "qa_context_built": ("问答完成", "系统已完成一次可信问答。"),
+        "qa_cancelled": ("问答生成已停止", "用户主动停止了本次回答生成。"),
     }
     summary, message = labels.get(action, (action, detail or "系统记录了一次操作。"))
     return {"summary": summary, "user_message": message}

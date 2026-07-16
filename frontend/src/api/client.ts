@@ -5,7 +5,7 @@ export class ApiError extends Error {
   readonly body: ApiErrorBody | null;
 
   constructor(status: number, body: ApiErrorBody | null) {
-    const message = body?.message ?? body?.detail ?? `HTTP ${status}`;
+    const message = body?.error?.message ?? body?.message ?? body?.detail ?? `HTTP ${status}`;
     super(message);
     this.status = status;
     this.body = body;

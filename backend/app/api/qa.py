@@ -1,6 +1,7 @@
 import json
 from queue import Queue
 from threading import Thread
+from time import monotonic, sleep
 from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,10 +13,16 @@ from backend.app.schemas.qa import (
     LLMContextPackage,
     QARequest,
     QAResponse,
+    QATaskRequest,
     QATaskCreateResponse,
     QATaskStatusResponse,
 )
-from backend.app.services.qa_task_service import create_qa_task, get_qa_task_status, list_recent_qa_task_statuses
+from backend.app.services.qa_task_service import (
+    cancel_qa_task,
+    create_qa_task,
+    get_qa_task_status,
+    list_recent_qa_task_statuses,
+)
 from backend.app.services.rag_service import answer_question, retrieve_context_package
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
 
@@ -39,7 +46,7 @@ def ask_question(payload: QARequest, db: Session = Depends(get_db)) -> QARespons
 
 
 @router.post("/tasks", response_model=QATaskCreateResponse)
-def create_question_task(payload: QARequest) -> QATaskCreateResponse:
+def create_question_task(payload: QATaskRequest) -> QATaskCreateResponse:
     """Create a durable QA task that can be polled after page switches or reloads."""
 
     if not payload.question.strip():
@@ -55,6 +62,32 @@ def list_question_tasks(limit: int = 5, db: Session = Depends(get_db)) -> list[Q
 @router.get("/tasks/{task_id}", response_model=QATaskStatusResponse)
 def get_question_task(task_id: str, db: Session = Depends(get_db)) -> QATaskStatusResponse:
     task = get_qa_task_status(db, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="问答任务不存在或已过期")
+    return task
+
+
+@router.get("/tasks/{task_id}/stream")
+def stream_question_task(task_id: str, db: Session = Depends(get_db)) -> StreamingResponse:
+    """Stream durable task snapshots, including verified answer previews."""
+
+    if get_qa_task_status(db, task_id) is None:
+        raise HTTPException(status_code=404, detail="问答任务不存在或已过期")
+    return StreamingResponse(
+        _stream_qa_task_snapshots(task_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=QATaskStatusResponse)
+def cancel_question_task(task_id: str, db: Session = Depends(get_db)) -> QATaskStatusResponse:
+    """Cancel a queued or running QA task without losing its audit trail."""
+
+    task = cancel_qa_task(db, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="问答任务不存在或已过期")
     return task
@@ -148,3 +181,27 @@ def _stream_qa_events(
 def _sse_frame(event_name: str, payload: dict[str, Any]) -> str:
     data = json.dumps(payload, ensure_ascii=False)
     return f"event: {event_name}\ndata: {data}\n\n"
+
+
+def _stream_qa_task_snapshots(task_id: str) -> Iterator[str]:
+    last_payload = ""
+    last_heartbeat = monotonic()
+    terminal_statuses = {"completed", "refused", "failed", "cancelled"}
+    while True:
+        with SessionLocal() as db:
+            task = get_qa_task_status(db, task_id)
+        if task is None:
+            yield _sse_frame("error", {"detail": "问答任务不存在或已过期"})
+            return
+
+        serialized = task.model_dump_json()
+        if serialized != last_payload:
+            last_payload = serialized
+            last_heartbeat = monotonic()
+            yield _sse_frame("task", task.model_dump(mode="json"))
+        if task.status in terminal_statuses:
+            return
+        if monotonic() - last_heartbeat >= 15:
+            last_heartbeat = monotonic()
+            yield ": keep-alive\n\n"
+        sleep(0.25)

@@ -1,21 +1,24 @@
 ﻿from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 import json
+from io import BytesIO
 import os
 from pathlib import Path
 import re
 import tempfile
+from threading import Event
 import time
+from zipfile import ZIP_DEFLATED, ZipFile
 from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import select
 
-from backend.app.core.config import AUDIT_ARCHIVE_DIR
+from backend.app.core.config import AUDIT_ARCHIVE_DIR, INDEX_VERSION
 from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
 from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
-from backend.app.schemas.qa import Citation, LLMContextPackage, QAResponse
+from backend.app.schemas.qa import Citation, LLMContextPackage, QAAnswerPreview, QAResponse
 from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
@@ -73,8 +76,18 @@ def fake_indexing_services(monkeypatch, tmp_path):
             document = db.scalar(select(Document).where(Document.document_id == document_id))
             assert document is not None
             from backend.app.services.document_indexing_service import index_document
+            from backend.app.services.document_processing_service import ensure_document_chunks
+            from backend.app.models.document import DocumentIndexTask
 
+            ensure_document_chunks(db, document)
             index_document(db, document)
+            task = db.scalar(
+                select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id)
+            )
+            assert task is not None
+            task.status = "completed"
+            task.stage = "completed"
+            db.commit()
         return True
 
     monkeypatch.setattr(
@@ -188,13 +201,8 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert app.openapi()["info"]["title"] == "ReguMate API"
 
 
-def test_upload_txt_document_creates_chunks_and_triggers_background_index(monkeypatch, fake_indexing_services) -> None:
+def test_upload_txt_document_creates_durable_processing_task(fake_indexing_services) -> None:
     reset_database()
-    background_calls = []
-    monkeypatch.setattr(
-        "backend.app.api.documents._index_document_background",
-        lambda document_id: background_calls.append(document_id),
-    )
 
     response = client.post(
         "/api/documents/upload",
@@ -207,14 +215,32 @@ def test_upload_txt_document_creates_chunks_and_triggers_background_index(monkey
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
     assert body["document_id"].startswith("DOC-")
-    assert body["chunk_count"] == 1
-    assert fake_indexing_services == []
-    assert background_calls == [body["document_id"]]
+    assert body["task_id"]
+    assert body["chunk_count"] in {0, 1}
+    assert len(fake_indexing_services) == 1
     documents = client.get("/api/documents").json()["documents"]
-    assert documents[0]["status"] == "uploaded"
+    assert documents[0]["status"] == "indexed"
+    assert documents[0]["chunk_count"] == 1
+    processing = client.get(f"/api/documents/{body['document_id']}/processing")
+    assert processing.status_code == 200
+    assert processing.json()["status"] == "completed"
+
+
+def test_upload_is_idempotent_by_header(fake_indexing_services) -> None:
+    reset_database()
+    headers = {"Idempotency-Key": "document-upload-idempotency-0001"}
+    files = {"file": ("rules.txt", "资产合计应等于分项合计。", "text/plain")}
+
+    first = client.post("/api/documents/upload", files=files, headers=headers)
+    second = client.post("/api/documents/upload", files=files, headers=headers)
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["document_id"] == second.json()["document_id"]
+    assert first.json()["task_id"] == second.json()["task_id"]
 
 
 def test_next_document_id_is_collision_resistant_and_keeps_date_prefix() -> None:
@@ -308,7 +334,6 @@ def test_running_index_task_is_requeued_after_restart() -> None:
 
 def test_build_document_index_persists_bounded_queue_task(monkeypatch) -> None:
     reset_database()
-    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
     monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
     monkeypatch.setattr("backend.app.services.index_task_service._schedule_in_memory", lambda value: False)
     from backend.app.services.index_task_service import enqueue_document_index
@@ -332,7 +357,6 @@ def test_build_document_index_persists_bounded_queue_task(monkeypatch) -> None:
 
 def test_queued_index_failure_is_recorded_for_retry(monkeypatch) -> None:
     reset_database()
-    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
     monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
     monkeypatch.setattr("backend.app.services.index_task_service._schedule_in_memory", lambda value: False)
     from backend.app.services.index_task_service import _run_task, enqueue_document_index
@@ -387,6 +411,50 @@ def test_upload_stream_rejects_limit_and_removes_temporary_file(monkeypatch, tmp
 
     assert response.status_code == 413
     assert list((tmp_path / "documents" / "originals").glob("*")) == []
+
+
+def test_upload_rejects_ooxml_with_excessive_uncompressed_size(monkeypatch, tmp_path) -> None:
+    reset_database()
+    monkeypatch.setattr(
+        "backend.app.services.document_storage.MAX_OOXML_UNCOMPRESSED_BYTES",
+        64,
+    )
+    payload = BytesIO()
+    with ZipFile(payload, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types />")
+        archive.writestr("xl/workbook.xml", "<workbook />")
+        archive.writestr("xl/oversized.bin", b"0" * 128)
+
+    response = client.post(
+        "/api/documents/upload",
+        files={
+            "file": (
+                "oversized.xlsx",
+                payload.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert "解压后超过大小限制" in response.json()["detail"]
+    assert list((tmp_path / "documents" / "originals").glob("*")) == []
+
+
+def test_spreadsheet_limit_uses_materialized_cells_not_declared_dimension() -> None:
+    from backend.app.services.spreadsheet_parser import _used_bounds
+
+    class FakeSheet:
+        _cells = {(1, 1): object(), (2, 3): object()}
+        max_row = 999_999
+        max_column = 16_384
+
+        class MergedCells:
+            ranges = []
+
+        merged_cells = MergedCells()
+
+    assert _used_bounds(FakeSheet()) == (1, 2, 1, 3)
 
 
 def test_upload_rejects_pdf_extension_with_executable_content() -> None:
@@ -538,6 +606,37 @@ def test_delete_document_keeps_record_when_qdrant_cleanup_fails(monkeypatch) -> 
     assert client.get("/api/documents").json()["documents"] == []
 
 
+def test_delete_document_records_file_cleanup_failure_for_retry(monkeypatch) -> None:
+    reset_database()
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    document_id = upload_response.json()["document_id"]
+    with SessionLocal() as db:
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        assert document is not None
+        target_path = Path(document.storage_path)
+
+    original_unlink = Path.unlink
+
+    def failing_unlink(path: Path, *args, **kwargs):
+        if path == target_path:
+            raise PermissionError("file is locked")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", failing_unlink)
+    response = client.delete(f"/api/documents/{document_id}")
+
+    assert response.status_code == 503
+    with SessionLocal() as db:
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        assert document is not None
+        assert document.status == "delete_failed"
+        assert document.lifecycle_stage == "deleting_file"
+        assert "原文件删除失败" in (document.index_error or "")
+
+
 def test_list_documents_marks_record_when_source_repair_is_requested() -> None:
     reset_database()
     upload_response = client.post(
@@ -564,12 +663,16 @@ def test_list_documents_marks_record_when_source_repair_is_requested() -> None:
     assert documents[0]["status"] == "source_missing"
 
 
-def test_list_documents_restores_windows_storage_path_marked_source_missing(tmp_path) -> None:
+def test_list_documents_restores_windows_storage_path_marked_source_missing(tmp_path, monkeypatch) -> None:
     reset_database()
     document_dir = tmp_path / "documents" / "originals"
     document_dir.mkdir(parents=True, exist_ok=True)
     stored = document_dir / "DOC-WINDOWS-0001.xls"
     stored.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setattr(
+        "backend.app.services.document_lifecycle_service.document_vector_chunk_ids",
+        lambda document_id: {"DOC-WINDOWS-0001-CHUNK-0001"},
+    )
 
     with SessionLocal() as db:
         db.add(
@@ -581,6 +684,7 @@ def test_list_documents_restores_windows_storage_path_marked_source_missing(tmp_
                 size=100,
                 storage_path=r"D:\Agent-Project\ReguMate Agent\data\evaluation\final_runtime\documents\originals\DOC-WINDOWS-0001.xls",
                 status="source_missing",
+                index_version=INDEX_VERSION,
                 index_error="原始文件缺失",
                 chunk_count=1,
             )
@@ -951,7 +1055,6 @@ def test_qa_retrieve_filters_untraceable_citation(monkeypatch) -> None:
 
 def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, fake_indexing_services) -> None:
     reset_database()
-    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
     upload_response = client.post(
         "/api/documents/upload",
         files={
@@ -1047,7 +1150,6 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
 
 def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_indexing_services) -> None:
     reset_database()
-    monkeypatch.setattr("backend.app.api.documents._index_document_background", lambda document_id: None)
     upload_response = client.post(
         "/api/documents/upload",
         files={
@@ -1246,7 +1348,7 @@ def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
     reset_database()
     calls: list[str] = []
 
-    def fake_answer_question(db, question, options=None, include_debug=False, progress_reporter=None):
+    def fake_answer_question(db, question, options=None, include_debug=False, progress_reporter=None, **kwargs):
         calls.append(question)
         assert include_debug is True
         if progress_reporter is not None:
@@ -1275,7 +1377,11 @@ def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
 
     created = client.post(
         "/api/qa/tasks",
-        json={"question": "资产合计如何校验？", "include_debug": True},
+        json={
+            "question": "资产合计如何校验？",
+            "client_request_id": "qa-task-persistence-0001",
+            "include_debug": True,
+        },
     )
 
     assert created.status_code == 200
@@ -1296,6 +1402,180 @@ def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
     assert body["progress_events"][0]["stage"] == "planning"
     assert body["answer"]["answer"] == "资产合计应等于资产分项金额合计。[1]"
     assert calls == ["资产合计如何校验？"]
+
+
+def test_qa_task_stream_snapshot_contains_verified_preview_and_cancel_clears_it(monkeypatch) -> None:
+    from backend.app.api.qa import _stream_qa_task_snapshots
+
+    reset_database()
+    preview_saved = Event()
+    release = Event()
+
+    def previewing_answer_question(
+        db,
+        question,
+        options=None,
+        include_debug=False,
+        progress_reporter=None,
+        answer_preview_reporter=None,
+        cancellation_checker=None,
+    ):
+        assert answer_preview_reporter is not None
+        answer_preview_reporter(QAAnswerPreview(
+            answer="资产合计应等于资产分项金额合计。[1]",
+            citations=[],
+            verified_claim_count=1,
+            revision=1,
+        ))
+        preview_saved.set()
+        assert release.wait(timeout=3)
+        if cancellation_checker is not None:
+            cancellation_checker()
+        return QAResponse(
+            answer="资产合计应等于资产分项金额合计。[1]",
+            citations=[],
+            confidence=0.9,
+            refused=False,
+            context_package=None,
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[],
+            grounding_validation={"passed": True},
+        )
+
+    monkeypatch.setattr("backend.app.services.qa_task_service.answer_question", previewing_answer_question)
+    created = client.post("/api/qa/tasks", json={
+        "question": "资产合计如何校验？",
+        "client_request_id": "qa-task-preview-0001",
+        "include_debug": False,
+    })
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+    assert preview_saved.wait(timeout=3)
+
+    status = client.get(f"/api/qa/tasks/{task_id}").json()
+    assert status["answer_preview"]["verified_claim_count"] == 1
+    assert status["answer"] is None
+
+    stream = _stream_qa_task_snapshots(task_id)
+    first_frame = next(stream)
+    assert "event: task" in first_frame
+    assert '"answer_preview"' in first_frame
+    assert '"revision": 1' in first_frame
+    stream.close()
+
+    cancelled = client.post(f"/api/qa/tasks/{task_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["answer_preview"] is None
+    release.set()
+
+
+def test_running_qa_task_can_be_cancelled_without_saving_late_answer(monkeypatch) -> None:
+    reset_database()
+    started = Event()
+    release = Event()
+
+    def slow_answer_question(db, question, options=None, include_debug=False, progress_reporter=None, **kwargs):
+        if progress_reporter is not None:
+            progress_reporter(
+                {
+                    "stage": "llm_generation",
+                    "status": "running",
+                    "title": "正在生成回答",
+                    "detail": "测试中的慢任务",
+                }
+            )
+        started.set()
+        assert release.wait(timeout=3)
+        return QAResponse(
+            answer="这条迟到的回答不应被保存。[1]",
+            citations=[],
+            confidence=0.9,
+            refused=False,
+            context_package=None,
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[],
+            grounding_validation={"passed": True},
+        )
+
+    monkeypatch.setattr("backend.app.services.qa_task_service.answer_question", slow_answer_question)
+    created = client.post(
+        "/api/qa/tasks",
+        json={
+            "question": "请生成一个可以被停止的回答",
+            "client_request_id": "qa-task-cancel-0001",
+            "include_debug": False,
+        },
+    )
+    assert created.status_code == 200
+    task_id = created.json()["task_id"]
+    assert started.wait(timeout=3)
+
+    cancelled = client.post(f"/api/qa/tasks/{task_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["answer"] is None
+    with SessionLocal() as db:
+        audit = db.scalar(select(AuditLog).where(AuditLog.action == "qa_cancelled"))
+        assert audit is not None
+        assert audit.target_id == task_id
+
+    release.set()
+    for _ in range(20):
+        body = client.get(f"/api/qa/tasks/{task_id}").json()
+        if body["status"] == "cancelled":
+            time.sleep(0.05)
+            break
+    body = client.get(f"/api/qa/tasks/{task_id}").json()
+    assert body["status"] == "cancelled"
+    assert body["answer"] is None
+
+    repeated = client.post(f"/api/qa/tasks/{task_id}/cancel")
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "cancelled"
+
+
+def test_qa_task_creation_is_idempotent_by_client_request_id(monkeypatch) -> None:
+    reset_database()
+    calls: list[str] = []
+
+    def fake_answer_question(db, question, options=None, include_debug=False, progress_reporter=None, **kwargs):
+        calls.append(question)
+        return QAResponse(
+            answer="依据已核验。[1]",
+            citations=[],
+            confidence=0.9,
+            refused=False,
+            context_package=None,
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[],
+            grounding_validation={"passed": True},
+        )
+
+    monkeypatch.setattr("backend.app.services.qa_task_service.answer_question", fake_answer_question)
+    payload = {
+        "question": "同一个请求只能执行一次",
+        "client_request_id": "qa-idempotent-request-0001",
+        "include_debug": False,
+    }
+    first = client.post("/api/qa/tasks", json=payload)
+    second = client.post("/api/qa/tasks", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["task_id"] == second.json()["task_id"]
+    assert second.json()["client_request_id"] == payload["client_request_id"]
+
+    task_id = first.json()["task_id"]
+    for _ in range(20):
+        body = client.get(f"/api/qa/tasks/{task_id}").json()
+        if body["status"] == "completed":
+            break
+        time.sleep(0.05)
+    assert body["status"] == "completed"
+    assert calls == [payload["question"]]
 
 
 def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None:
@@ -1481,6 +1761,11 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
         )
         db.commit()
 
+    from backend.app.services.audit_service import archive_expired_audit_logs
+
+    with SessionLocal() as db:
+        archive_expired_audit_logs(db)
+
     log_response = client.get("/api/audit/logs")
     archive_response = client.get("/api/audit/archives")
 
@@ -1596,6 +1881,7 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
     monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
     monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
     monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
+    monkeypatch.setattr(rag_service, "filter_active_candidates", lambda candidates: candidates)
     monkeypatch.setattr(rag_service, "_filter_indexed_matches", lambda db, matches: matches)
 
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)

@@ -15,6 +15,9 @@ class Document(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     document_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    client_request_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True, index=True, nullable=True
+    )
     filename: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     file_type: Mapped[str] = mapped_column(String(20))
@@ -24,6 +27,7 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(30), default="indexed")
     index_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     index_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lifecycle_stage: Mapped[str | None] = mapped_column(String(40), nullable=True)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -107,12 +111,17 @@ class DocumentIndexTask(Base):
     __tablename__ = "document_index_tasks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     document_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("documents.document_id", ondelete="CASCADE"), unique=True, index=True
     )
     status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
+    stage: Mapped[str] = mapped_column(String(40), default="queued")
+    completed_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc
@@ -137,13 +146,21 @@ class QATask(Base):
     __tablename__ = "qa_tasks"
 
     task_id: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
+    client_request_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True, index=True, nullable=True
+    )
     question: Mapped[str] = mapped_column(Text)
     options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     include_debug: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
     progress_json: Mapped[str] = mapped_column(Text, default="[]")
+    answer_preview_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_retryable: Mapped[bool] = mapped_column(Boolean, default=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now_utc, onupdate=now_utc

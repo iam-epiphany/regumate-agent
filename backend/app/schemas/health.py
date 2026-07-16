@@ -6,9 +6,11 @@ class HealthResponse(BaseModel):
 
     status: str
     message: str
+    build_id: str = "dev"
 
 
 class RagHealthResponse(BaseModel):
+    build_id: str = "dev"
     offline_mode: bool
     embedding_model_ready: bool
     reranker_model_ready: bool
@@ -23,6 +25,8 @@ class RagHealthResponse(BaseModel):
     libreoffice_version: str | None = None
     antiword_version: str | None = None
     index_tasks: dict[str, int] = Field(default_factory=dict)
+    qa_tasks: dict[str, int] = Field(default_factory=dict)
+    model_runtime: dict[str, object] = Field(default_factory=dict)
     ready: bool = False
     embedding_model_error: str | None = None
     reranker_model_error: str | None = None

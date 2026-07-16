@@ -42,6 +42,10 @@ RUN python -m pip install --upgrade pip \
     && grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt \
     && python -m pip install -r /tmp/requirements-no-torch.txt
 
+ARG REGUMATE_BUILD_ID=dev
+ENV REGUMATE_BUILD_ID=${REGUMATE_BUILD_ID}
+LABEL org.opencontainers.image.version=${REGUMATE_BUILD_ID}
+
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 COPY data/regulations/ ./data/regulations/

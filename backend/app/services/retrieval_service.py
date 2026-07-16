@@ -7,12 +7,15 @@ from typing import Any, Callable
 from backend.app.core.config import (
     DIRECT_EVIDENCE_COVERAGE,
     FINAL_CITATION_LIMIT,
+    INDEX_VERSION,
     MIN_EVIDENCE_COVERAGE,
     MIN_RERANK_SCORE,
     RERANK_CANDIDATE_LIMIT,
     RERANK_TOP_K,
     RETRIEVAL_TOP_K,
 )
+from backend.app.core.database import SessionLocal
+from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
 from backend.app.services.embedding_service import EmbeddingServiceError, embed_texts
 from backend.app.services.rerank_service import RerankServiceError, RerankedChunk, rerank_candidates
@@ -82,6 +85,26 @@ def reset_retrieval_diagnostics() -> None:
     _LAST_RETRIEVAL_DIAGNOSTICS.set(RetrievalDiagnostics())
 
 
+def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+    """Keep only candidates backed by the current active SQLite index."""
+
+    document_ids = {candidate.document_id for candidate in candidates if candidate.document_id}
+    if not document_ids:
+        return []
+    with SessionLocal() as db:
+        rows = (
+            db.query(Document.document_id)
+            .filter(
+                Document.document_id.in_(document_ids),
+                Document.status == "indexed",
+                Document.index_version == INDEX_VERSION,
+            )
+            .all()
+        )
+    active_ids = {row[0] for row in rows}
+    return [candidate for candidate in candidates if candidate.document_id in active_ids]
+
+
 def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
     diagnostics = RetrievalDiagnostics()
     _LAST_RETRIEVAL_DIAGNOSTICS.set(diagnostics)
@@ -97,7 +120,8 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "summary": {"query": question},
             },
         )
-        candidates = _collect_candidates(question, diagnostics)
+        candidates = filter_active_candidates(_collect_candidates(question, diagnostics))
+        diagnostics.candidate_count = len(candidates)
         rerank_candidates_input = _limit_rerank_candidates(candidates)
         diagnostics.rerank_input_count = len(rerank_candidates_input)
         _report_progress(
@@ -116,6 +140,9 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 },
             },
         )
+        if not rerank_candidates_input:
+            diagnostics.timings_ms["total"] = _elapsed_ms(total_started_at)
+            return []
         rerank_started_at = perf_counter()
         _report_progress(
             progress_reporter,

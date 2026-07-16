@@ -18,8 +18,6 @@ export function AuditPage() {
   const visibleLogs = severityFilter === "all" ? logs : logs.filter((log) => log.severity === severityFilter);
   const errorCount = logs.filter((log) => log.severity === "error").length;
   const warningCount = logs.filter((log) => log.severity === "warning").length;
-  const qaCount = logs.filter((log) => log.target_type === "question" || log.action.startsWith("qa_")).length;
-  const documentCount = logs.filter((log) => log.target_type === "document" || log.action.startsWith("document_")).length;
 
   useEffect(() => {
     void loadAuditData();
@@ -86,25 +84,6 @@ export function AuditPage() {
         </button>
       </section>
 
-      <section className="audit-summary" aria-label="审计摘要">
-        <div>
-          <span>今日日志</span>
-          <strong>{logs.length}</strong>
-        </div>
-        <div>
-          <span>问答相关</span>
-          <strong>{qaCount}</strong>
-        </div>
-        <div>
-          <span>文档相关</span>
-          <strong>{documentCount}</strong>
-        </div>
-        <div>
-          <span>待关注</span>
-          <strong>{warningCount + errorCount}</strong>
-        </div>
-      </section>
-
       <section className="panel">
         <div className="document-list-toolbar">
           <div>
@@ -147,12 +126,12 @@ export function AuditPage() {
                   const display = formatAuditLog(log);
                   return (
                     <tr key={log.id}>
-                      <td>{formatDateTime(log.last_seen_at || log.created_at)}</td>
-                      <td>{display.action}</td>
-                      <td>{display.target}</td>
-                      <td><SeverityBadge severity={log.severity} /></td>
-                      <td>{log.occurrence_count || 1}</td>
-                      <td className="audit-detail">
+                      <td data-label="时间">{formatDateTime(log.last_seen_at || log.created_at)}</td>
+                      <td data-label="操作类型">{display.action}</td>
+                      <td data-label="操作对象">{display.target}</td>
+                      <td data-label="执行结果"><SeverityBadge severity={log.severity} /></td>
+                      <td data-label="出现次数">{log.occurrence_count || 1}</td>
+                      <td data-label="说明" className="audit-detail">
                         <ExpandableText text={display.detail} maxChars={160} />
                         {log.details_json ? (
                           <details className="source-details">
@@ -196,11 +175,11 @@ export function AuditPage() {
               <tbody>
                 {archives.map((archive) => (
                   <tr key={archive.date}>
-                    <td>{archive.date}</td>
-                    <td>{archive.filename}</td>
-                    <td>{formatFileSize(archive.size)}</td>
-                    <td>{formatDateTime(archive.updated_at)}</td>
-                    <td>
+                    <td data-label="日期">{archive.date}</td>
+                    <td data-label="文件">{archive.filename}</td>
+                    <td data-label="大小">{formatFileSize(archive.size)}</td>
+                    <td data-label="更新时间">{formatDateTime(archive.updated_at)}</td>
+                    <td data-label="操作">
                       <button className="secondary-button" type="button" onClick={() => void showArchive(archive.date)}>
                         查看
                       </button>
@@ -262,10 +241,10 @@ export function AuditPage() {
                     const display = formatAuditLog(entry);
                     return (
                       <tr key={`${entry.created_at}-${entry.id}`}>
-                        <td>{formatDateTime(entry.created_at)}</td>
-                        <td>{display.action}</td>
-                        <td>{display.target}</td>
-                        <td className="audit-detail">
+                        <td data-label="时间">{formatDateTime(entry.created_at)}</td>
+                        <td data-label="动作">{display.action}</td>
+                        <td data-label="对象">{display.target}</td>
+                        <td data-label="详情" className="audit-detail">
                           <ExpandableText text={display.detail} maxChars={160} />
                         </td>
                       </tr>

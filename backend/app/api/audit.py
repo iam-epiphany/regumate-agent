@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
@@ -23,8 +23,12 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("/logs", response_model=AuditLogListResponse)
-def get_audit_logs(db: Session = Depends(get_db)) -> AuditLogListResponse:
-    logs = list_audit_logs(db)
+def get_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> AuditLogListResponse:
+    logs = list_audit_logs(db, limit=limit, offset=offset)
     return AuditLogListResponse(
         logs=[
             AuditLogItem(
@@ -45,7 +49,10 @@ def get_audit_logs(db: Session = Depends(get_db)) -> AuditLogListResponse:
                 created_at=log.created_at.isoformat(),
             )
             for log in logs
-        ]
+        ],
+        limit=limit,
+        offset=offset,
+        returned=len(logs),
     )
 
 

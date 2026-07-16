@@ -13,6 +13,9 @@ class EmbeddingServiceError(RuntimeError):
     pass
 
 
+_EMBEDDING_WARMED = False
+
+
 @dataclass
 class SparseEmbedding:
     indices: list[int]
@@ -49,6 +52,7 @@ def _get_bge_m3_model() -> Any:
 
 
 def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> list[TextEmbedding]:
+    global _EMBEDDING_WARMED
     cleaned = [text.strip() for text in texts]
     if any(not text for text in cleaned):
         raise EmbeddingServiceError("embedding 输入文本不能为空")
@@ -95,6 +99,7 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
                 sparse=_to_sparse_embedding(sparse),
             )
         )
+    _EMBEDDING_WARMED = True
     return results
 
 
@@ -106,6 +111,13 @@ def embed_for_semantic_split(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     return [embedding.dense for embedding in embed_texts(texts)]
+
+
+def embedding_runtime_status() -> dict[str, bool]:
+    return {
+        "loaded": _get_bge_m3_model.cache_info().currsize > 0,
+        "warmed": _EMBEDDING_WARMED,
+    }
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

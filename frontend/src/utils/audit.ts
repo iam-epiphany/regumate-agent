@@ -48,6 +48,7 @@ const ACTION_LABELS: Record<string, string> = {
   qa_answered: "提问",
   qa_refused: "提问未回答",
   qa_context_built: "提问",
+  qa_cancelled: "停止生成",
 };
 
 const TARGET_LABELS: Record<string, string> = {

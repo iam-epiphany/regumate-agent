@@ -1,6 +1,6 @@
 # ReguMate
 
-ReguMate 是“面向银行业监管制度与统计报表的可信 RAG 问答”比赛作品。系统支持监管制度、填报说明和 Excel 报表入库，通过 BGE-M3 dense/sparse hybrid retrieval、Qdrant、BGE reranker、确定性表格计算与 DeepSeek 事实校验生成带引用答案；没有依据时明确拒答。
+ReguMate 是面向银行业监管制度与统计报表的可信 RAG 问答系统。系统支持监管制度、填报说明和 Excel 报表入库，通过 BGE-M3 dense/sparse hybrid retrieval、Qdrant、BGE reranker、确定性表格计算与 DeepSeek 事实校验生成带引用答案；没有依据时明确拒答。
 
 当前范围是可信 RAG MVP，不包含完整规则引擎、正式审查报告、人工复核或复杂 Agent 编排。
 
@@ -29,9 +29,9 @@ ReguMate Agent/
   docker-compose.yml
 ```
 
-模型约6.4GB，通过只读逻辑路径挂载进容器，不打入应用镜像。评委宿主机不需要安装 LibreOffice：镜像内已经包含 LibreOffice Writer/Calc、antiword和中文字体。
+模型约6.4GB，通过只读逻辑路径挂载进容器，不打入应用镜像。目标宿主机不需要安装 LibreOffice：镜像内已经包含 LibreOffice Writer/Calc、antiword和中文字体。
 
-## 3. 完整离线启动（比赛推荐）
+## 3. 完整离线部署（推荐）
 
 在项目根目录打开 PowerShell。
 
@@ -76,7 +76,7 @@ EMBEDDING_MAX_BATCH_SIZE=16
 
 启动后可在 `/api/health/rag` 的 `model_device` 查看最终设备、CUDA 状态、GPU 名称、显存和降级原因。若显示 `selected_device=cpu` 且存在 `fallback_reason`，说明当前正在 CPU 模式运行，处理速度可能较慢。
 
-Docker 启动会自动探测 GPU：`scripts/start_demo.ps1` 会先用 app 镜像测试 Docker 是否能通过 NVIDIA Container Toolkit 访问 CUDA；可用时自动叠加 `docker-compose.gpu.yml`，不可用时仍按 CPU fallback 启动。可用以下变量手动控制：
+正式启动入口会自动探测 GPU：先用 app 镜像测试 Docker 是否能通过 NVIDIA Container Toolkit 访问 CUDA；可用时自动叠加 `docker-compose.gpu.yml`，不可用时仍按 CPU fallback 启动。可用以下变量手动控制：
 
 ```powershell
 # 禁用 Docker GPU，即使机器有显卡也按 CPU 跑
@@ -86,7 +86,7 @@ $env:REGUMATE_DOCKER_GPU="0"
 $env:REGUMATE_DOCKER_GPU="1"
 ```
 
-Windows 评委机若想启用 Docker GPU，需要 Docker Desktop 使用 WSL2 backend，并安装支持 WSL2 的 NVIDIA 驱动；启动预检会报告 WSL2、GPU override 配置和容器内 CUDA 是否可用。没有 NVIDIA GPU 或容器 GPU 支持时，系统不应启动失败，而是自动使用 CPU。
+Windows 宿主机若想启用 Docker GPU，需要 Docker Desktop 使用 WSL2 backend，并安装支持 WSL2 的 NVIDIA 驱动；启动预检会报告 WSL2、GPU override 配置和容器内 CUDA 是否可用。没有 NVIDIA GPU 或容器 GPU 支持时，系统不应启动失败，而是自动使用 CPU。
 
 不要把 `.env`、真实 key 或银行真实数据提交到 Git。
 
@@ -94,10 +94,10 @@ Windows 评委机若想启用 Docker GPU，需要 Docker Desktop 使用 WSL2 bac
 
 ```powershell
 .\scripts\preflight.ps1
-.\scripts\start_demo.ps1
+.\run.bat
 ```
 
-也可以在项目根目录双击 `run.bat`。该脚本默认是正式启动入口的 Windows 包装：先调用 `scripts\start_demo.ps1`，由它完成预检、`docker compose up -d --no-build`、Qdrant 和后端健康等待。默认不重新构建镜像，因此适合离线演示和比赛现场。
+也可以在项目根目录双击 `run.bat`。该入口会完成预检、`docker compose up -d --no-build`、Qdrant 和后端健康等待。默认不重新构建镜像，适合稳定的离线部署环境。
 
 如果刚修改了前端或后端源码，需要让 Docker 使用当前代码，请运行：
 
@@ -184,48 +184,76 @@ docker compose exec app python scripts/validate_official_excel_cells.py `
 
 只有 `expected=located=values_matched=265` 才通过该项验收。
 
-## 5. 官方300题与拒答评测
+## 5. 自动评测与结果复核
 
-评测固定按种子 `20260713` 分成240题开发集和60题留出集。正式冻结参数后依次运行：
+系统提供统一的一键评测入口。脚本会先读取真实的 RAG 健康状态和知识库文档数量，再运行有答案问题与无答案问题检查，并把逐题 JSON 和 Markdown 摘要写入独立时间戳目录；不会重建知识库，也不会覆盖冻结结果。
+
+日常快速回归（默认抽取 12 道有答案问题和 6 道无答案问题）：
+
+```powershell
+.\scripts\run_evaluation.ps1
+```
+
+指定快速检查数量：
+
+```powershell
+.\scripts\run_evaluation.ps1 -Mode Quick -Limit 20
+```
+
+运行 300 道有答案问题与 30 道无答案问题的全量检查：
+
+```powershell
+.\scripts\run_evaluation.ps1 -Mode Full
+```
+
+完成后终端会输出摘要路径，结果默认位于 `data/evaluation/runs/<时间戳>/`：
+
+- `evaluation_summary.md`：系统状态、真实文档数、准确率、拒答率、依据核对通过率和 P95 延迟；
+- `all/contest_qa_all_results.json`：有答案问题逐题明细；
+- `ood/contest_qa_ood_results.json`：无答案问题逐题明细。
+
+运行前只需启动 ReguMate 并确保知识库已有可问答文档。脚本优先使用 ASCII 暂存 QA 文件；暂存目录不存在时会把官方 QA 工作簿复制到本次结果目录后再运行，不改动原文件。该入口可供维护者、测试人员和独立评审人员复现结果。
+
+### 5.1 手动运行完整数据集
+
+评测固定按种子 `20260713` 分成 240 题开发集和 60 题留出集。正式评测只执行一次 300 题全量和一次 30 题 OOD；dev/holdout 指标由同一份全量结果派生，避免重复调用模型造成统计口径漂移：
 
 ```powershell
 docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split dev --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/dev
+  --split all --timeout 40 --retries 1 --request-delay 0.05 `
+  --output /app/data/evaluation/20260715_final/all
 
 docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split holdout --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/holdout
-
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split all --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/all
-
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split ood --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/ood
+  --split ood --timeout 40 --retries 1 --request-delay 0.05 `
+  --output /app/data/evaluation/20260715_final/ood
 ```
 
-报告位于 `data/evaluation/final/<split>/`，每个目录包含固定划分、逐题checkpoint、JSON明细和Markdown报告。不得用文件命中率代替答案准确率。
+本轮明细位于 `data/evaluation/20260715_final/<split>/`，每个目录包含固定划分、逐题 checkpoint、JSON 明细和 Markdown 报告。不得用文件命中率代替答案准确率。
 
-合并500份入库结果、300题和30题拒答结果，生成比赛总报告：
+合并500份入库结果、300题和30题拒答结果，生成完整评测报告：
 
 ```powershell
 docker compose exec app python scripts/build_contest_report.py `
   --evaluation-dir /app/data/evaluation/final `
-  --output /app/data/evaluation/final/final_contest_report.md
+  --all-results /app/data/evaluation/20260715_final/all/contest_qa_all_results.json `
+  --ood-results /app/data/evaluation/20260715_final/ood/contest_qa_ood_results.json `
+  --output /app/docs/evaluation/final_contest_report.md
 ```
 
 若任一冻结验收阈值未达标，报告仍会正常生成，但命令返回退出码 `2`，用于 CI 明确标记未通过项，不能把它误认为报告生成失败。
 
-### 5.1 本次冻结实测结果（2026-07-13）
+### 5.2 本次冻结实测结果（2026-07-15）
 
 - 500/500 附件解析并索引，45,530 chunks、133,001 个有效表格单元格、45,530 个 Qdrant points。
 - 32/32 个 `.doc` 经容器内 LibreOffice 完整解析；人为关闭 LibreOffice 时 25/32 可由 antiword 文本降级，其余文件会明确标记失败而非伪造结构。
 - 官方 265/265 个标准 Excel 单元格成功定位且值一致。
-- 开发集 240/240；冻结后的留出集 59/60（98.33%）。
-- 300 题全量 299/300（99.67%）：Excel 100%、Word 100%、PDF 99%；来源命中 100%，关键实体错误率 0.33%，温启动 P95 4.49 秒。
-- v4 针对无答案拒答修复后，30 道派生无答案题拒答 30/30（100%）：Word/PDF/Excel 各 10/10；Excel 官方 100 题重跑 100/100，标准单元格召回 100%，温启动 P95 约 397 毫秒。
+- 由同一轮结果派生：开发集 240/240；留出集 59/60（98.33%）。
+- 300 题全量 299/300（99.67%）：Excel 100%、PDF 100%、Word 99%；来源命中 100%，所有非拒答答案 grounding 通过，关键实体错误率 0%，整体 P95 5.64 秒、温启动 P95 5.71 秒。
+- 30 道派生无答案题拒答 30/30（100%）：Word/PDF/Excel 各 10/10；OOD P95 7.15 秒。
 
-冻结参数见 `data/evaluation/final/frozen_parameters.json`，正式报告见 `docs/evaluation/final_contest_report.md`。v4 修复报告见 `data/evaluation/v4_after/excel/contest_qa_all_report.md` 和 `data/evaluation/v4_after/ood/contest_qa_ood_report.md`；若用于正式提交，应重新执行 300 题全量冻结评测并生成新版总报告。
+冻结参数见 `data/evaluation/final/frozen_parameters.json`，唯一正式报告见 `docs/evaluation/final_contest_report.md` 和同名 JSON。报告记录 Build ID、QA 数据、评测器及结果文件 SHA-256；README 只引用该报告，不再维护另一套评测口径。
 
-延迟口径：4.49 秒 P95 来自本机 RTX 5070 GPU 的正式300题运行。兼容性优先的离线 Docker 镜像内置 CPU PyTorch；该镜像实测 Word 首题约50秒、后续同题约35秒，准确性不变但不满足GPU延迟。比赛现场若需要快速演示，应在已配置CUDA的开发机按开发者方式启动后端，或提前预热并避免临场重启容器；评委通用离线包仍保证只装Docker即可运行。
+延迟口径：5.64 秒 P95 来自本机 RTX 5070 GPU 的正式 300 题运行。当前离线镜像包含 CUDA PyTorch，并在无可用 CUDA 时自动回退 CPU；CPU 路径准确性不变但文本生成显著更慢。服务启动后可调用 `POST /api/health/warmup` 完成 embedding/reranker 预热，并通过 `/api/health/rag` 确认 `configured/loaded/warmed` 和 Build ID。
 
 ## 6. 停止、重启和故障排查
 
@@ -257,11 +285,11 @@ docker compose logs --tail 200 qdrant
 - DeepSeek不可用：Excel仍确定性回答；文本题降级为引用摘录或拒答。
 - Windows 下若日志出现 SQLite `disk I/O error`：不要同时运行主机 Uvicorn 和 Docker app 访问 `data/evaluation/final_runtime/app.db`。先停止主机 Python/Uvicorn 进程，再执行 `docker compose restart app`；SQLite WAL 数据库必须由一种运行方式独占。
 
-如需完全重新生成比赛索引，保留官方原件和模型，使用入库脚本的 `--force-rebuild --reset-collection`；不要直接删除不确定的宿主目录。
+如需完全重新生成评测索引，保留官方原件和模型，使用入库脚本的 `--force-rebuild --reset-collection`；不要直接删除不确定的宿主目录。
 
 ## 7. 联网从源码构建（开发者）
 
-该方式需要访问Docker Hub、Debian、npm和PyPI，不用于弱网比赛现场：
+该方式需要访问 Docker Hub、Debian、npm 和 PyPI，不用于弱网或严格离线环境：
 
 ```powershell
 Copy-Item .env.example .env
@@ -281,8 +309,10 @@ docker compose up -d
 
 ```powershell
 $env:PYTHONIOENCODING='utf-8'
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pytest backend/app/tests
 cd frontend
+npm run lint
+npm test
 npm run build
 ```
 
@@ -292,4 +322,4 @@ npm run build
 .\.venv\Scripts\python.exe scripts\scan_secrets.py
 ```
 
-详细设计见 `docs/开发文档`，学习路线见 `docs/代码学习指南.md`，比赛讲解见 `docs/比赛演示与答辩说明.md`。
+详细设计见 `docs/开发文档`，版本控制边界见 `docs/开发文档/版本控制与交付清单.md`，学习路线见 `docs/代码学习指南.md`。

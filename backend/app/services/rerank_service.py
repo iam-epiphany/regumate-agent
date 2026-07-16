@@ -13,6 +13,9 @@ class RerankServiceError(RuntimeError):
     pass
 
 
+_RERANKER_WARMED = False
+
+
 @dataclass
 class RerankedChunk:
     candidate: VectorSearchResult
@@ -48,6 +51,7 @@ def rerank_candidates(
     candidates: list[VectorSearchResult],
     limit: int = RERANK_TOP_K,
 ) -> list[RerankedChunk]:
+    global _RERANKER_WARMED
     if not candidates:
         return []
 
@@ -83,7 +87,15 @@ def rerank_candidates(
         for candidate, score in zip(limited_candidates, scores, strict=True)
     ]
     reranked.sort(key=lambda item: item.rerank_score, reverse=True)
+    _RERANKER_WARMED = True
     return reranked[:limit]
+
+
+def reranker_runtime_status() -> dict[str, bool]:
+    return {
+        "loaded": _get_reranker.cache_info().currsize > 0,
+        "warmed": _RERANKER_WARMED,
+    }
 
 
 def _fallback_reranker_to_cpu(exc: BaseException) -> None:

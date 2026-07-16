@@ -8,7 +8,13 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import DOCUMENT_DIR, SUPPORTED_DOCUMENT_EXTENSIONS, SUPPORTED_DOCUMENT_MIME_TYPES
+from backend.app.core.config import (
+    DOCUMENT_DIR,
+    MAX_OOXML_ENTRIES,
+    MAX_OOXML_UNCOMPRESSED_BYTES,
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    SUPPORTED_DOCUMENT_MIME_TYPES,
+)
 from backend.app.models.document import Document
 
 
@@ -124,6 +130,7 @@ def _validate_file_content(suffix: str, content: bytes) -> None:
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         try:
             with ZipFile(BytesIO(content)) as archive:
+                _validate_ooxml_resource_limits(archive)
                 names = set(archive.namelist())
         except BadZipFile as exc:
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败") from exc
@@ -159,6 +166,7 @@ def _validate_file_path(suffix: str, path: Path) -> None:
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         try:
             with ZipFile(path) as archive:
+                _validate_ooxml_resource_limits(archive)
                 names = set(archive.namelist())
         except BadZipFile as exc:
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败") from exc
@@ -179,3 +187,17 @@ def _validate_file_path(suffix: str, path: Path) -> None:
                         raise UnsupportedDocumentTypeError("文本文件内容校验失败")
         except UnicodeDecodeError as exc:
             raise UnsupportedDocumentTypeError("文本文件必须使用 UTF-8 编码") from exc
+
+
+def _validate_ooxml_resource_limits(archive: ZipFile) -> None:
+    entries = archive.infolist()
+    if len(entries) > MAX_OOXML_ENTRIES:
+        raise DocumentTooLargeError(
+            f"Office 文档包含过多压缩条目（上限 {MAX_OOXML_ENTRIES}）"
+        )
+    uncompressed_bytes = sum(max(0, entry.file_size) for entry in entries)
+    if uncompressed_bytes > MAX_OOXML_UNCOMPRESSED_BYTES:
+        limit_mb = MAX_OOXML_UNCOMPRESSED_BYTES // 1024 // 1024
+        raise DocumentTooLargeError(
+            f"Office 文档解压后超过大小限制（{limit_mb} MB）"
+        )
