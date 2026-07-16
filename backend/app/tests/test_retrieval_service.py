@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from backend.app.services.rerank_service import RerankedChunk
 from backend.app.services.retrieval_service import (
     get_last_retrieval_diagnostics,
@@ -8,6 +10,14 @@ from backend.app.services.retrieval_service import (
     retrieve_citations,
 )
 from backend.app.services.vector_store_service import VectorSearchResult
+
+
+@pytest.fixture(autouse=True)
+def keep_synthetic_candidates_active(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.services.retrieval_service.filter_active_candidates",
+        lambda candidates: candidates,
+    )
 
 
 def candidate() -> VectorSearchResult:

@@ -3,14 +3,40 @@ export interface ApiErrorBody {
   error_code?: string;
   message?: string;
   details?: unknown[];
+  error?: ApiError;
 }
 
 export interface HealthResponse {
   status: string;
   message: string;
+  build_id: string;
 }
 
+export type DocumentStatus =
+  | "uploaded"
+  | "index_queued"
+  | "indexing"
+  | "indexed"
+  | "index_failed"
+  | "deleting"
+  | "delete_failed"
+  | "source_missing";
+
+export type DocumentTaskStatus = "queued" | "running" | "completed" | "failed";
+
+export type DocumentStage =
+  | "queued"
+  | "parsing"
+  | "chunking"
+  | "metadata_indexing"
+  | "embedding"
+  | "vector_upsert"
+  | "verifying"
+  | "completed"
+  | "failed";
+
 export interface RagHealthResponse {
+  build_id: string;
   offline_mode: boolean;
   embedding_model_ready: boolean;
   reranker_model_ready: boolean;
@@ -25,6 +51,11 @@ export interface RagHealthResponse {
   libreoffice_version: string | null;
   antiword_version: string | null;
   index_tasks: Record<string, number>;
+  qa_tasks: Record<string, number>;
+  model_runtime: {
+    embedding?: { loaded?: boolean; warmed?: boolean };
+    reranker?: { loaded?: boolean; warmed?: boolean };
+  };
   ready: boolean;
   model_device: {
     requested_device: string;
@@ -41,12 +72,29 @@ export interface RagHealthResponse {
 
 export interface DocumentUploadResponse {
   document_id: string;
+  task_id: string;
+  status: DocumentTaskStatus;
+  stage: DocumentStage;
   filename: string;
   content_type: string | null;
   size: number;
   chunk_count: number;
   uploaded_at: string;
   metadata: Record<string, unknown>;
+}
+
+export interface DocumentProcessingResponse {
+  document_id: string;
+  task_id: string;
+  status: DocumentTaskStatus;
+  stage: DocumentStage;
+  completed_units: number | null;
+  total_units: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  error: ApiError | null;
+  retry_count: number;
+  updated_at: string;
 }
 
 export interface DocumentSummary {
@@ -56,7 +104,7 @@ export interface DocumentSummary {
   size: number;
   chunk_count: number;
   uploaded_at: string;
-  status: string;
+  status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
   metadata: Record<string, unknown>;
@@ -94,7 +142,7 @@ export interface DocumentDetailResponse {
   size: number;
   chunk_count: number;
   uploaded_at: string;
-  status: string;
+  status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
   metadata: Record<string, unknown>;
@@ -280,9 +328,27 @@ export interface QAResponse {
   degraded: boolean;
 }
 
+export interface QAAnswerPreview {
+  answer: string;
+  citations: Citation[];
+  verified_claim_count: number;
+  revision: number;
+}
+
 export interface QATaskCreateResponse {
   task_id: string;
-  status: string;
+  client_request_id: string;
+  status: QATaskStatus;
+}
+
+export type QATaskStatus = "queued" | "running" | "completed" | "refused" | "failed" | "cancelled";
+
+export interface ApiError {
+  code: string;
+  message: string;
+  stage: string | null;
+  retryable: boolean;
+  request_id: string | null;
 }
 
 export type RagProgressStage =
@@ -308,13 +374,15 @@ export interface RagProgressEvent {
 
 export interface QATaskStatusResponse {
   task_id: string;
+  client_request_id: string | null;
   question: string;
   options: string[];
   include_debug: boolean;
-  status: "queued" | "running" | "completed" | "refused" | "failed" | string;
+  status: QATaskStatus;
   progress_events: RagProgressEvent[];
+  answer_preview?: QAAnswerPreview | null;
   answer: QAResponse | null;
-  error: string | null;
+  error: ApiError | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -340,6 +408,9 @@ export interface AuditLogItem {
 
 export interface AuditLogListResponse {
   logs: AuditLogItem[];
+  limit: number;
+  offset: number;
+  returned: number;
 }
 
 export interface AuditArchiveSummary {

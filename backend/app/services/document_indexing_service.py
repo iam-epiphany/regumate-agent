@@ -1,6 +1,7 @@
 from sqlalchemy import select
 import json
 from sqlalchemy.orm import Session
+from typing import Callable
 
 from backend.app.core.config import INDEX_VERSION
 from backend.app.models.document import Document, DocumentChunk
@@ -18,7 +19,12 @@ class DocumentIndexingError(RuntimeError):
     pass
 
 
-def index_document(db: Session, document: Document) -> None:
+def index_document(
+    db: Session,
+    document: Document,
+    *,
+    stage_reporter: Callable[[str, int | None, int | None], None] | None = None,
+) -> None:
     if document.status in {"deleting", "delete_failed"}:
         raise DocumentIndexingError("文档正在删除或删除失败待重试，不能构建向量索引")
 
@@ -40,11 +46,21 @@ def index_document(db: Session, document: Document) -> None:
         chunk.index_version = INDEX_VERSION
     db.commit()
     try:
+        if stage_reporter is not None:
+            stage_reporter("embedding", 0, len(drafts))
         embeddings = embed_texts([chunk.embedding_text for chunk in drafts])
+        if stage_reporter is not None:
+            stage_reporter("embedding", len(drafts), len(drafts))
+            stage_reporter("vector_upsert", 0, len(drafts))
         upsert_chunk_embeddings(chunks=drafts, embeddings=embeddings, filename=document.filename)
+        if stage_reporter is not None:
+            stage_reporter("vector_upsert", len(drafts), len(drafts))
+            stage_reporter("verifying", 0, len(drafts))
         vector_count = count_document_vectors(document.document_id)
         if vector_count < len(drafts):
             raise VectorStoreError(f"Qdrant 向量数量不完整：expected={len(drafts)}, actual={vector_count}")
+        if stage_reporter is not None:
+            stage_reporter("verifying", vector_count, len(drafts))
     except (EmbeddingServiceError, VectorStoreError) as exc:
         _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])
         _mark_index_failed(db, document, chunks, str(exc))

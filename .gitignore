@@ -50,7 +50,16 @@ data/documents/originals/*
 data/test_documents/parser_samples/*
 data/evaluation/
 data/contest_staging/
+data/contest dataset/
+data/dev_runtime/
 dist-delivery/
+delivery/
+release/
+ReguMate-Agent-Delivery*/
+*.zip
+*.7z
+*.tar
+.agents/
 .cache/
 models/
 model_cache/
@@ -59,3 +68,6 @@ hf_cache/
 # Large or generated files
 *.sqlite3
 *.db
+
+# External contest briefs and raw binary source material
+/docs/*.docx

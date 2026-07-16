@@ -26,21 +26,35 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends --fix-missing \
-        antiword \
-        build-essential \
-        curl \
-        fonts-noto-cjk \
-        libreoffice-calc \
-        libreoffice-writer \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    for attempt in 1 2 3; do \
+        apt-get -o Acquire::Retries=5 update; \
+        if DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            antiword \
+            build-essential \
+            curl \
+            fonts-noto-cjk \
+            libreoffice-calc \
+            libreoffice-writer; then \
+            break; \
+        fi; \
+        if [ "$attempt" = "3" ]; then exit 1; fi; \
+        apt-get -f install -y || true; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+        sleep 10; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-cuda.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-cuda.txt \
     && grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt \
     && python -m pip install -r /tmp/requirements-no-torch.txt
+
+ARG REGUMATE_BUILD_ID=dev
+ENV REGUMATE_BUILD_ID=${REGUMATE_BUILD_ID}
+LABEL org.opencontainers.image.version=${REGUMATE_BUILD_ID}
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/

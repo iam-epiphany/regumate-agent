@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import json
 import re
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -21,7 +21,14 @@ from backend.app.core.config import (
     RETRIEVAL_TOP_K,
 )
 from backend.app.models.document import Document, DocumentChunk, QALog
-from backend.app.schemas.qa import Citation, LLMContextPackage, QAResponse, RetrievalResult
+from backend.app.schemas.qa import (
+    AnswerClaim,
+    Citation,
+    LLMContextPackage,
+    QAAnswerPreview,
+    QAResponse,
+    RetrievalResult,
+)
 from backend.app.services.audit_service import record_event
 from backend.app.services.answer_generation_service import generate_answer, is_option_selection_question
 from backend.app.services.prompt_builder import RAGPromptBuilder
@@ -34,6 +41,7 @@ from backend.app.services.retrieval_service import (
     ProgressReporter,
     collect_candidates_with_query_hits,
     evidence_coverage,
+    filter_active_candidates,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
     matches_from_reranked,
@@ -98,6 +106,8 @@ def answer_question(
     options: list[str] | None = None,
     include_debug: bool = False,
     progress_reporter: ProgressReporter | None = None,
+    answer_preview_reporter: Callable[[QAAnswerPreview], None] | None = None,
+    cancellation_checker: Callable[[], None] | None = None,
 ) -> QAResponse:
     cleaned_question = question.strip()
     if not cleaned_question:
@@ -162,6 +172,39 @@ def answer_question(
         options=normalized_options,
         progress_reporter=progress_reporter,
     )
+    generation_started = perf_counter()
+    first_preview_ms: float | None = None
+    preview_revision = 0
+    preview_claims: list[AnswerClaim] = []
+    preview_keys: set[tuple[str, tuple[str, ...]]] = set()
+
+    def report_verified_claim(claim: AnswerClaim) -> None:
+        nonlocal first_preview_ms, preview_revision
+        key = (claim.text, tuple(claim.citation_ids))
+        if key in preview_keys:
+            return
+        preview_keys.add(key)
+        preview_claims.append(claim)
+        if first_preview_ms is None:
+            first_preview_ms = round((perf_counter() - generation_started) * 1000, 2)
+        if answer_preview_reporter is None:
+            return
+        preview_revision += 1
+        cited_labels = {
+            citation_id
+            for item in preview_claims
+            for citation_id in item.citation_ids
+        }
+        answer_preview_reporter(QAAnswerPreview(
+            answer="\n\n".join(item.text for item in preview_claims),
+            citations=[
+                _citation_from_result(result)
+                for result in package.context_chunks
+                if result.citation_label in cited_labels
+            ],
+            verified_claim_count=len(preview_claims),
+            revision=preview_revision,
+        ))
     _report_progress(
         progress_reporter,
         {
@@ -177,7 +220,16 @@ def answer_question(
         options=normalized_options,
         option_labels=option_labels,
         has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
+        verified_claim_reporter=report_verified_claim,
+        cancellation_checker=cancellation_checker,
     )
+    if not generated.refused and not bool(generated.grounding_validation.get("passed")):
+        generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
+        generated.answer_type = "refusal"
+        generated.refused = True
+        generated.refusal_reason = "grounding_validation_failed"
+        generated.claims = []
+        generated.degraded = True
     table_refusal_reasons = [
         str(reason)
         for reason in package.retrieval_summary.get("table_refusal_reasons", [])
@@ -194,6 +246,9 @@ def answer_question(
             "reason": "table_evidence_not_found",
             "table_refusal_reasons": table_refusal_reasons,
         }
+    if not generated.refused and bool(generated.grounding_validation.get("passed")):
+        for claim in generated.claims:
+            report_verified_claim(claim)
     _report_progress(
         progress_reporter,
         {
@@ -206,6 +261,9 @@ def answer_question(
                 "answer_type": generated.answer_type,
                 "refused": generated.refused,
                 "refusal_reason": generated.refusal_reason,
+                "first_verified_claim_ms": first_preview_ms,
+                "generation_total_ms": round((perf_counter() - generation_started) * 1000, 2),
+                "verified_claim_count": len(preview_claims),
             },
         },
     )
@@ -597,6 +655,8 @@ def _retrieve_aspect_matches(
             candidates = title_matched
             diagnostics.candidate_count = len(candidates)
 
+    candidates = filter_active_candidates(candidates)
+    diagnostics.candidate_count = len(candidates)
     preferred_file_type = str(aspect.table_filters.get("file_type") or "").lower()
     document_style_scores = {
         candidate.chunk_id: _document_style_evidence_score(candidate, aspect)
@@ -1027,7 +1087,7 @@ def _mcq_exact_support_matches(
     anchors_by_document: dict[str, RetrievalMatch] = {}
     for match in matches:
         anchors_by_document.setdefault(match.citation.document_id, match)
-    existing_ids = {match.citation.chunk_id for match in matches}
+    existing_by_id = {match.citation.chunk_id: match for match in matches}
     supplements_by_chunk_id: dict[str, tuple[float, int, RetrievalMatch]] = {}
     for document_id, anchor in anchors_by_document.items():
         document_chunks = (
@@ -1041,14 +1101,15 @@ def _mcq_exact_support_matches(
             searchable_raw = "\n".join(
                 part for part in [chunk.embedding_text or "", chunk.text] if part
             )
-            if chunk.chunk_id in existing_ids:
-                searchable = _normalize_exact_support_text(searchable_raw)
-            else:
-                searchable = _normalize_exact_support_text(searchable_raw)
+            searchable = _normalize_exact_support_text(searchable_raw)
+            existing_match = existing_by_id.get(chunk.chunk_id)
+            should_promote = existing_match is None or str(
+                existing_match.metadata.get("evidence_role") or ""
+            ) == "expanded_context"
             matched_terms = [
                 term for term in critical_terms if _normalize_exact_support_text(term) in searchable
             ]
-            if matched_terms and chunk.chunk_id not in existing_ids:
+            if matched_terms and should_promote:
                 supplement = _match_from_chunk(
                     chunk,
                     anchor,
@@ -1073,7 +1134,11 @@ def _mcq_exact_support_matches(
         # contains many near-duplicate headings.  Add the best direct support
         # for every option fact, but only when the wording overlap is strong.
         for statement, (statement_score, chunk) in best_statement_matches.items():
-            if statement_score < 0.45 or chunk.chunk_id in existing_ids:
+            # The exact chunk may already be a low-ranked direct candidate.
+            # Re-emit it as an exact-support match so prompt selection does
+            # not discard it solely because its original rerank score was
+            # below the generic prose threshold.
+            if statement_score < 0.45:
                 continue
             supplement = _match_from_chunk(
                 chunk,
@@ -1387,6 +1452,8 @@ def _mark_chunk_for_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> None:
 
 
 def _chunk_matches_query_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> bool:
+    if chunk.metadata.get("evidence_role") == "mcq_exact_support":
+        return True
     if not aspect.keywords:
         return True
     text = _chunk_match_text(chunk)

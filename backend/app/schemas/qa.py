@@ -1,22 +1,43 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class QARequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=8000)
     options: list[str] = Field(default_factory=list, max_length=8)
     include_debug: bool = False
 
 
+class QATaskRequest(QARequest):
+    client_request_id: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class QATaskCreateResponse(BaseModel):
     task_id: str
-    status: str
+    client_request_id: str
+    status: Literal["queued", "running", "completed", "refused", "failed", "cancelled"]
+
+
+class ApiError(BaseModel):
+    code: str
+    message: str
+    stage: str | None = None
+    retryable: bool = False
+    request_id: str | None = None
 
 
 class RagProgressEvent(BaseModel):
-    stage: str
-    status: str
+    stage: Literal[
+        "planning",
+        "retrieval",
+        "rerank",
+        "context_selection",
+        "prompt_build",
+        "llm_generation",
+        "grounding_validation",
+    ]
+    status: Literal["pending", "running", "completed", "skipped", "failed"]
     title: str
     detail: str
     elapsed_ms: float | None = None
@@ -84,15 +105,24 @@ class QAResponse(BaseModel):
     degraded: bool = False
 
 
+class QAAnswerPreview(BaseModel):
+    answer: str
+    citations: list[Citation] = Field(default_factory=list)
+    verified_claim_count: int = 0
+    revision: int = 0
+
+
 class QATaskStatusResponse(BaseModel):
     task_id: str
+    client_request_id: str | None = None
     question: str
     options: list[str] = Field(default_factory=list)
     include_debug: bool = False
-    status: str
+    status: Literal["queued", "running", "completed", "refused", "failed", "cancelled"]
     progress_events: list[RagProgressEvent] = Field(default_factory=list)
+    answer_preview: QAAnswerPreview | None = None
     answer: QAResponse | None = None
-    error: str | None = None
+    error: ApiError | None = None
     created_at: str
     updated_at: str
     completed_at: str | None = None

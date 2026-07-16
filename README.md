@@ -1,235 +1,280 @@
-# ReguMate
+# ReguMate 可信 RAG 问答系统
 
-ReguMate 是“面向银行业监管制度与统计报表的可信 RAG 问答”比赛作品。系统支持监管制度、填报说明和 Excel 报表入库，通过 BGE-M3 dense/sparse hybrid retrieval、Qdrant、BGE reranker、确定性表格计算与 DeepSeek 事实校验生成带引用答案；没有依据时明确拒答。
+ReguMate 面向银行业监管制度、填报说明和统计报表问答。用户上传 txt、md、Word、可提取文本 PDF、Excel 等材料后，系统会构建本地知识库，并基于检索到的 chunk 和表格证据回答问题；没有依据时会拒答或只返回可追溯证据。
 
-当前范围是可信 RAG MVP，不包含完整规则引擎、正式审查报告、人工复核或复杂 Agent 编排。
+当前压缩包名为 `ReguMate-Agent.zip`，解压后的文件夹名为 `ReguMate-Agent`。这是小体积交付包，不包含离线 Docker 镜像、BGE 模型文件或冻结 Qdrant 向量库；已包含官方 `contest_dataset`。第一次启动需要联网构建镜像、拉取 Qdrant 镜像，并在首次预热或问答时下载 BGE 模型。
 
-## 1. 环境要求
+## 开发与交付脚本
 
-- Windows 10/11 + Docker Desktop（Linux 容器模式）。
-- 建议内存不低于 16GB，项目所在磁盘至少预留 15GB。
-- 不要求安装 Python、Node.js、LibreOffice、antiword 或 CUDA。
-- GPU 可选但推荐：Embedding、BGE reranker 等耗时模型优先使用 NVIDIA GPU。若需更快处理速度，建议配置 NVIDIA 驱动、CUDA 与匹配版本的 PyTorch；未配置或不可用时系统会自动降级到 CPU，准确性不变但速度较慢。
-- 文本题使用 DeepSeek 时需要可访问 `https://api.deepseek.com`；未配置 key 时系统只返回可信摘录或拒答，不会编造。
+本项目有两套启动入口，避免把日常开发和交付验证混在一起：
 
-## 2. 离线交付包结构
+- `dev.bat`：日常开发入口。单文件启动开发依赖的 Qdrant，并分别打开后端 `uvicorn --reload` 和前端 Vite 热重载窗口。后端默认使用 `data/dev_runtime` 和 `regumate_dev_chunks`，避免污染交付运行数据；改 Python/React/CSS 后通常会自动生效。
+- `check.bat`：提交前本地检查，依次运行后端 pytest、前端 lint、前端测试和前端生产构建。
+- `ship-check.bat`：交付前检查，先跑 `check.bat`，再进入 Docker 交付验证。
+- `run-dev.bat`：重 Docker 集成验证入口，会尝试重建 app 镜像，适合交付前使用，不适合每次改代码后运行。
+- `run.bat`：测试者/交付包标准启动入口，优先使用已有镜像。
+- `stop.bat`：停止 Docker 版 ReguMate 服务。
+
+日常开发推荐双击或运行：
+
+```powershell
+.\dev.bat
+```
+
+交付前推荐运行：
+
+```powershell
+.\ship-check.bat
+```
+
+## 1. 环境准备
+
+需要安装 Docker Desktop，并确保本机 NVIDIA GPU 能被 Docker 容器识别。不需要安装 Python、Node.js、LibreOffice、CUDA Toolkit 或数据库软件。
+
+本系统当前的 GPU 加速路径是 PyTorch CUDA，CUDA 只支持 NVIDIA 显卡。AMD、Intel 或其他非 NVIDIA 显卡不能使用当前 GPU 加速路径；这类客户如需运行，只能显式设置 `REGUMATE_ALLOW_CPU=1` 使用 CPU 模式，embedding 和 reranker 处理会明显变慢。这属于硬件与 CUDA 支持边界，不是系统故障。
+
+最低建议：
+
+- 操作系统：Windows 10/11 64 位。
+- 内存：至少 16GB，推荐 24GB 以上。
+- 磁盘空间：至少预留 25GB，用于 Docker 构建、镜像、模型缓存和上传文档。
+- 网络：第一次启动需要访问 Docker Hub、Debian apt、npm、PyPI、HuggingFace 和 `https://api.deepseek.com`。
+- GPU：必需。评测和交付默认要求 NVIDIA GPU；如果 Docker 无法识别 NVIDIA CUDA GPU，启动脚本会报错，不会静默回退到 CPU。非 NVIDIA 显卡只能按 CPU 模式运行，速度较慢。
+
+安装 Docker Desktop：
+
+1. 打开 <https://www.docker.com/products/docker-desktop/> 下载 Windows 版 Docker Desktop。
+2. 按安装器提示完成安装。
+3. 安装完成后启动 Docker Desktop，等待左下角或主界面显示 Docker 正在运行。
+4. Docker Desktop 设置里保持默认的 Linux containers 模式。
+
+## 2. 解压项目和打开命令窗口
+
+建议把压缩包解压到一个短路径，例如：
 
 ```text
-ReguMate Agent/
-  backend/ frontend/ scripts/
+D:\ReguMate
+```
+
+解压后目录中应能看到这些文件和文件夹：
+
+```text
+ReguMate-Agent/
+  backend/
   data/
-    contest dataset/                 官方500份附件和QA数据
-    models/
-      bge-m3/
-      bge-reranker-v2-m3/
-  dist-delivery/
-    regumate-images.tar              已验证的app与Qdrant镜像
-    SHA256SUMS.txt
-  .env.example
+  docs/
+  frontend/
+  scripts/
+  .env
   docker-compose.yml
+  docker-compose.gpu.yml
+  Dockerfile
+  README.md
+  run.bat
+  stop.bat
 ```
 
-模型约6.4GB，通过只读逻辑路径挂载进容器，不打入应用镜像。评委宿主机不需要安装 LibreOffice：镜像内已经包含 LibreOffice Writer/Calc、antiword和中文字体。
+后续命令都在解压后的 `ReguMate-Agent` 根目录运行。打开方式：
 
-## 3. 完整离线启动（比赛推荐）
+1. 进入 `ReguMate-Agent` 文件夹。
+2. 在空白处按住 Shift 并点击鼠标右键。
+3. 选择“在终端中打开”或“在 PowerShell 中打开”。
+4. 终端标题或提示符路径应显示当前目录是项目根目录。
 
-在项目根目录打开 PowerShell。
+也可以直接在资源管理器中双击 `run.bat` 启动。
 
-### 3.1 验证并导入镜像
+## 3. 必要配置
 
-```powershell
-Get-FileHash -Algorithm SHA256 .\dist-delivery\regumate-images.tar
-Get-Content .\dist-delivery\SHA256SUMS.txt
-.\scripts\verify_delivery.ps1
-docker load --input .\dist-delivery\regumate-images.tar
-```
-
-`Get-FileHash` 的结果应与 `SHA256SUMS.txt` 中对应记录一致。
-
-### 3.2 配置环境变量
+提交版保留 `.env`，里面默认使用我的 API Key。如果需要修改 DeepSeek API Key，用记事本打开配置文件：
 
 ```powershell
-Copy-Item .env.example .env
 notepad .env
 ```
 
-在 `.env` 中填写自己的 key：
+把下面这一行的等号后面改成实际 Key：
 
 ```dotenv
-DEEPSEEK_API_KEY=请填写评测专用Key
-QDRANT_COLLECTION=regumate_contest_v3
-QUERY_PLANNER_MODEL=deepseek-v4-flash
-ANSWER_GENERATION_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY=你的Key
 ```
 
-模型设备配置可选：
+保存并关闭记事本。不要把 `.env` 发给无关人员，也不要把真实 Key 写进 README 或代码。
+
+## 4. 启动后台服务（用于模型预热）
+
+在项目根目录双击：
+
+```text
+run.bat
+```
+
+也可以在 PowerShell 中运行：
+
+```powershell
+.\run.bat
+```
+
+首次运行时脚本会自动完成：
+
+1. 检查 Docker Desktop 是否正在运行。
+2. 如果本机没有 `regumate/app:contest-v3` 镜像，则从当前源码执行 `docker compose build app`。
+3. 如果本机没有 `qdrant/qdrant:v1.18.0`，Docker Compose 会联网拉取。
+4. 启动 Qdrant、后端和前端静态页面。
+
+成功时会看到：
+
+```text
+ReguMate is running at http://127.0.0.1:<实际端口>
+```
+
+如果下载过程中出现“连接被重置”“连接超时”或下载中断等问题，通常与当前网络环境或访问链路不稳定有关。建议检查网络连接，并根据实际情况**使用网络代理或网络加速工具后重试**。
+
+第一次构建镜像可能较慢，取决于网络速度。启动脚本会自动启用 `docker-compose.gpu.yml`；如果没有检测到 Docker 内可用的 NVIDIA CUDA GPU 支持，会直接报错。AMD、Intel 或其他非 NVIDIA 显卡不会被当前 CUDA 路径识别为可用 GPU；只有明确设置 `REGUMATE_ALLOW_CPU=1` 时才允许 CPU 模式，处理速度会较慢。
+
+注意：看到 `ReguMate is running` 只表示服务已经启动，不表示 BGE 模型已经下载完成，也不表示知识库已经有文档。请继续执行第 5 步模型预热和第 6 步上传文档。默认优先使用本机端口 `8000`、`6333`、`6334`；如果这些端口被其他程序占用，启动脚本会自动选择可用端口，并把实际地址写入 `.run-state/runtime.json`。
+
+测试人员需要以自己电脑上的实际端口为准，不要假设一定是 `8000`。默认优先端口和用途如下：
+
+```text
+REGUMATE_APP_PORT=8000              # 浏览器访问、后端 API、模型预热、QA 调用
+REGUMATE_QDRANT_HTTP_PORT=6333      # Qdrant 控制台和点数检查
+REGUMATE_QDRANT_GRPC_PORT=6334      # Qdrant gRPC 端口
+```
+
+如果测试机这些端口已经被占用，可以先直接运行 `run.bat`，脚本会自动换空闲端口；也可以在 `.env` 里主动改成该电脑可用的端口，例如：
 
 ```dotenv
-# auto 为默认值：优先 GPU，CUDA 不可用或显存不足时自动降级 CPU
-MODEL_DEVICE=auto
-# 可选：cpu 强制 CPU；cuda 优先请求 GPU，失败时仍会记录原因并降级 CPU
-# MODEL_DEVICE=cpu
-# MODEL_DEVICE=cuda
-MODEL_GPU_MIN_FREE_MEMORY_GB=1.0
-EMBEDDING_MAX_BATCH_SIZE=16
+REGUMATE_APP_PORT=18000
+REGUMATE_QDRANT_HTTP_PORT=16333
+REGUMATE_QDRANT_GRPC_PORT=16334
 ```
 
-启动后可在 `/api/health/rag` 的 `model_device` 查看最终设备、CUDA 状态、GPU 名称、显存和降级原因。若显示 `selected_device=cpu` 且存在 `fallback_reason`，说明当前正在 CPU 模式运行，处理速度可能较慢。
-
-Docker 启动会自动探测 GPU：`scripts/start_demo.ps1` 会先用 app 镜像测试 Docker 是否能通过 NVIDIA Container Toolkit 访问 CUDA；可用时自动叠加 `docker-compose.gpu.yml`，不可用时仍按 CPU fallback 启动。可用以下变量手动控制：
+改完后重新运行 `.\run.bat`。实际访问地址以终端输出的 `ReguMate is running at ...` 为准，也可以用下面命令查看：
 
 ```powershell
-# 禁用 Docker GPU，即使机器有显卡也按 CPU 跑
-$env:REGUMATE_DOCKER_GPU="0"
-
-# 强制使用 docker-compose.gpu.yml；仅建议排查 GPU 配置时使用
-$env:REGUMATE_DOCKER_GPU="1"
+$runtimePath = ".run-state\runtime.json"
+if (Test-Path -LiteralPath $runtimePath) {
+  Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+} else {
+  Write-Host "未找到 .run-state\runtime.json，请先运行 .\run.bat；默认地址通常是 http://127.0.0.1:8000。"
+}
 ```
 
-Windows 评委机若想启用 Docker GPU，需要 Docker Desktop 使用 WSL2 backend，并安装支持 WSL2 的 NVIDIA 驱动；启动预检会报告 WSL2、GPU override 配置和容器内 CUDA 是否可用。没有 NVIDIA GPU 或容器 GPU 支持时，系统不应启动失败，而是自动使用 CPU。
-
-不要把 `.env`、真实 key 或银行真实数据提交到 Git。
-
-### 3.3 预检并启动
+后台服务启动后建议确认 GPU 状态：
 
 ```powershell
-.\scripts\preflight.ps1
-.\scripts\start_demo.ps1
+nvidia-smi
+docker run --rm --gpus all --entrypoint python regumate/app:contest-v3 -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NO CUDA')"
+$runtimePath = ".run-state\runtime.json"
+if (-not (Test-Path -LiteralPath $runtimePath)) { throw "未找到 .run-state\runtime.json，请先运行 .\run.bat。" }
+$runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+Invoke-RestMethod -Uri "$($runtime.app_url)/api/health/ready" | ConvertTo-Json -Depth 8
 ```
 
-也可以在项目根目录双击 `run.bat`。该脚本默认是正式启动入口的 Windows 包装：先调用 `scripts\start_demo.ps1`，由它完成预检、`docker compose up -d --no-build`、Qdrant 和后端健康等待。默认不重新构建镜像，因此适合离线演示和比赛现场。
+`/api/health/ready` 中应看到 `model_device.selected_device` 为 `cuda`，`cuda_available` 为 `true`。
 
-如果刚修改了前端或后端源码，需要让 Docker 使用当前代码，请运行：
+同时应确认 `qdrant_collection` 为 `.env` 中的 `regumate_chunks`。启动脚本会优先使用 `.env`/默认集合名，并忽略外层 PowerShell 中残留的 `QDRANT_COLLECTION`，避免误连到历史测试集合。正常使用时不要在命令行临时设置 `QDRANT_COLLECTION`；上传其他业务文档也会进入同一个当前知识库。
+
+## 5. 首次模型预热
+
+启动成功后，不要先开始问答。请先在项目根目录的 PowerShell 运行：
 
 ```powershell
-.\run.bat --build
+$runtimePath = ".run-state\runtime.json"
+if (-not (Test-Path -LiteralPath $runtimePath)) { throw "未找到 .run-state\runtime.json，请先运行 .\run.bat。" }
+$runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+Invoke-RestMethod -Method Post -Uri "$($runtime.app_url)/api/health/warmup" | ConvertTo-Json -Depth 8
 ```
 
-或双击开发入口 `run-dev.bat`，它会先执行 `docker compose build app`，再启动服务。
+首次预热会把模型下载到 `data/model_cache`：
 
-等价的手动启动命令：
+- `BAAI/bge-m3`
+- `BAAI/bge-reranker-v2-m3`
+
+首次预热可能需要几分钟。如果这一步报连接重置、超时或无法访问 HuggingFace，通常是 VPN/代理没有正确作用到 Docker 容器或命令行网络。模型下载成功后会缓存，后续启动不需要重复下载。
+
+## 6. 首次进入系统并上传文档
+
+模型预热成功后，打开浏览器访问：
+
+```text
+run.bat 输出的 ReguMate is running at 地址
+```
+
+可选检查页面：
+
+- 后端健康检查：`<实际 app_url>/api/health`
+- RAG 就绪状态：`<实际 app_url>/api/health/ready`
+- API 调试页面：`<实际 app_url>/docs`
+- Qdrant 控制台：`<实际 qdrant_url>/dashboard`
+
+小包初始知识库为空。只完成模型预热还不能直接回答文档问题，必须先上传并索引文档。上传文档前，`/api/health/ready` 可能不是 `true`，这是正常现象。
+
+### 6.1 上传文档后问答
+
+打开网页中的文档上传页面，上传自己的制度、填报说明或 Excel。等待索引完成后，再进入“可信问答”页面提问。官方数据建议使用下一节的一键上传脚本，不需要手动上传 `data/regulations`。
+
+系统回答必须来自检索证据；如果没有找到依据，会拒答或提示证据不足。
+
+### 6.2 官方数据 contest_dataset 一键上传知识库
+
+交付包已经包含官方数据目录：
+
+```text
+data/contest_dataset/
+  QA数据.xlsx
+  dataset/nfra_page_attachments_500/
+```
+
+如果只想把官方 500 个附件导入知识库，然后进入网页手动提问，运行：
 
 ```powershell
-docker compose up -d --no-build
-docker compose ps
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\upload_contest_knowledge_base.ps1
 ```
 
-访问：
+该脚本只负责启动系统、检查 GPU、预热模型、上传 `nfra_page_attachments_500` 中的 500 个附件并等待索引完成，不会自动执行 QA 测试。完成后可以直接打开 `run.bat` 输出的实际地址手动提问。
 
-- 前端：<http://127.0.0.1:8000>
-- OpenAPI：<http://127.0.0.1:8000/docs>
-- RAG状态：<http://127.0.0.1:8000/api/health/rag>
-- Qdrant：<http://127.0.0.1:6333/dashboard>
+### 6.3 官方 QA 问答题目 一键测试
 
-首次尚未入库时，app 的 readiness 显示未就绪是正常现象；完成下一节后应变为 ready。
-
-## 4. 首次官方数据入库
-
-正式评测使用隔离SQLite目录 `data/evaluation/final_runtime`、暂存collection `regumate_contest_v3_build` 和公开alias `regumate_contest_v3`。分成解析和向量索引两步，意外中断后可重复执行。
-
-Docker Desktop在部分Windows机器上无法枚举深层中文附件路径。先生成内容不变、文件名可回溯的ASCII短路径副本：
+确认知识库已经完成上传后，再运行 QA 测试：
 
 ```powershell
-.\scripts\prepare_contest_data.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_qa_test.ps1
 ```
 
-该脚本核对500份附件并生成 `data/contest_staging/source_manifest.json`；入库时仍把官方原始文件名写入元数据。
+QA 脚本只读取 `QA数据.xlsx` 并逐题调用问答接口，不会自动上传文件。如果知识库没有准备好，或当前 Qdrant collection 的向量点数明显不对，脚本会报错提示先执行一键上传知识库。
 
-### 4.1 解析500份附件
+运行 QA 前可以再确认一次服务地址和状态：
 
 ```powershell
-docker compose run --rm --no-deps app python scripts/ingest_contest_dataset.py `
-  --source /app/data/contest_staging `
-  --source-manifest /app/data/contest_staging/source_manifest.json `
-  --data-dir /app/data/evaluation/final_runtime `
-  --collection regumate_contest_v3_build `
-  --parse-only --retry-failed `
-  --manifest /app/data/evaluation/final/parse_manifest.json
+$runtimePath = ".run-state\runtime.json"
+if (-not (Test-Path -LiteralPath $runtimePath)) { throw "未找到 .run-state\runtime.json，请先运行 .\run.bat。" }
+$runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
+Invoke-RestMethod -Uri "$($runtime.app_url)/api/health/ready" | ConvertTo-Json -Depth 8
 ```
 
-`.doc` 优先由容器内 LibreOffice 转为 `.docx`；转换失败时 antiword 提取纯文本，并在manifest中设置 `degraded=true`。
+其中 `qdrant_collection` 应为 `regumate_chunks`，`model_device.selected_device` 应为 `cuda`。
 
-### 4.2 构建向量并发布alias
+只想快速确认 QA 流程可运行时，可以执行：
 
 ```powershell
-docker compose run --rm app python scripts/ingest_contest_dataset.py `
-  --source /app/data/contest_staging `
-  --source-manifest /app/data/contest_staging/source_manifest.json `
-  --data-dir /app/data/evaluation/final_runtime `
-  --collection regumate_contest_v3_build `
-  --index-existing --retry-failed --promote-alias `
-  --alias regumate_contest_v3 `
-  --manifest /app/data/evaluation/final/ingest_manifest.json
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_qa_test.ps1 -Mode Quick -Limit 20
 ```
 
-只有500份附件全部成功且Qdrant point数与chunk数一致时才切换alias。失败后修复原因并原样重跑，不会重复写入。
+QA 结果会写入：
 
-网页上传的单文件索引使用容量为8的持久化有界队列；任务状态、重试次数和错误写入SQLite，应用重启后自动恢复。队列统计可在 `/api/health/rag` 的 `index_tasks` 字段查看。
+```text
+data/evaluation/contest_qa_test/<时间戳>/
+```
 
-检查：
+## 7. 正确关闭和重新启动
+
+关闭系统但保留数据：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/api/health/ready | ConvertTo-Json -Depth 5
-Get-Content .\data\evaluation\final\ingest_manifest.json -Encoding utf8 -TotalCount 60
+.\stop.bat
 ```
 
-核对官方 100 道 Excel 题 evidence 中的全部 265 个标准单元格坐标和值：
-
-```powershell
-docker compose exec app python scripts/validate_official_excel_cells.py `
-  --qa /app/data/contest_staging/qa.xlsx `
-  --database /app/data/evaluation/final_runtime/app.db `
-  --output /app/data/evaluation/final/official_excel_cells.json
-```
-
-只有 `expected=located=values_matched=265` 才通过该项验收。
-
-## 5. 官方300题与拒答评测
-
-评测固定按种子 `20260713` 分成240题开发集和60题留出集。正式冻结参数后依次运行：
-
-```powershell
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split dev --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/dev
-
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split holdout --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/holdout
-
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split all --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/all
-
-docker compose exec app python scripts/evaluate_contest_qa.py `
-  --qa /app/data/contest_staging/qa.xlsx --split ood --resume --timeout 180 --retries 2 --request-delay 0.15 --output /app/data/evaluation/final/ood
-```
-
-报告位于 `data/evaluation/final/<split>/`，每个目录包含固定划分、逐题checkpoint、JSON明细和Markdown报告。不得用文件命中率代替答案准确率。
-
-合并500份入库结果、300题和30题拒答结果，生成比赛总报告：
-
-```powershell
-docker compose exec app python scripts/build_contest_report.py `
-  --evaluation-dir /app/data/evaluation/final `
-  --output /app/data/evaluation/final/final_contest_report.md
-```
-
-若任一冻结验收阈值未达标，报告仍会正常生成，但命令返回退出码 `2`，用于 CI 明确标记未通过项，不能把它误认为报告生成失败。
-
-### 5.1 本次冻结实测结果（2026-07-13）
-
-- 500/500 附件解析并索引，45,530 chunks、133,001 个有效表格单元格、45,530 个 Qdrant points。
-- 32/32 个 `.doc` 经容器内 LibreOffice 完整解析；人为关闭 LibreOffice 时 25/32 可由 antiword 文本降级，其余文件会明确标记失败而非伪造结构。
-- 官方 265/265 个标准 Excel 单元格成功定位且值一致。
-- 开发集 240/240；冻结后的留出集 59/60（98.33%）。
-- 300 题全量 299/300（99.67%）：Excel 100%、Word 100%、PDF 99%；来源命中 100%，关键实体错误率 0.33%，温启动 P95 4.49 秒。
-- v4 针对无答案拒答修复后，30 道派生无答案题拒答 30/30（100%）：Word/PDF/Excel 各 10/10；Excel 官方 100 题重跑 100/100，标准单元格召回 100%，温启动 P95 约 397 毫秒。
-
-冻结参数见 `data/evaluation/final/frozen_parameters.json`，正式报告见 `docs/evaluation/final_contest_report.md`。v4 修复报告见 `data/evaluation/v4_after/excel/contest_qa_all_report.md` 和 `data/evaluation/v4_after/ood/contest_qa_ood_report.md`；若用于正式提交，应重新执行 300 题全量冻结评测并生成新版总报告。
-
-延迟口径：4.49 秒 P95 来自本机 RTX 5070 GPU 的正式300题运行。兼容性优先的离线 Docker 镜像内置 CPU PyTorch；该镜像实测 Word 首题约50秒、后续同题约35秒，准确性不变但不满足GPU延迟。比赛现场若需要快速演示，应在已配置CUDA的开发机按开发者方式启动后端，或提前预热并避免临场重启容器；评委通用离线包仍保证只装Docker即可运行。
-
-## 6. 停止、重启和故障排查
-
-停止但保留数据：
+或：
 
 ```powershell
 docker compose down
@@ -238,58 +283,71 @@ docker compose down
 重新启动：
 
 ```powershell
-docker compose up -d --no-build
+.\run.bat
 ```
 
-查看日志：
+查看当前容器状态：
+
+```powershell
+docker compose ps
+```
+
+查看最近日志：
 
 ```powershell
 docker compose logs --tail 200 app
 docker compose logs --tail 200 qdrant
 ```
 
-常见状态：
+## 8. 常见问题排查
 
-- `embedding_model_ready=false`：检查 `data/models/bge-m3`。
-- `reranker_model_ready=false`：检查 `data/models/bge-reranker-v2-m3`。
-- `qdrant_collection_ready=false`：尚未完成入库或alias发布。
-- `libreoffice_ready=false`：镜像不完整，应重新导入官方离线镜像。
-- DeepSeek不可用：Excel仍确定性回答；文本题降级为引用摘录或拒答。
-- Windows 下若日志出现 SQLite `disk I/O error`：不要同时运行主机 Uvicorn 和 Docker app 访问 `data/evaluation/final_runtime/app.db`。先停止主机 Python/Uvicorn 进程，再执行 `docker compose restart app`；SQLite WAL 数据库必须由一种运行方式独占。
+### 下载压缩包到 20% 左右提示服务器连接被重置
 
-如需完全重新生成比赛索引，保留官方原件和模型，使用入库脚本的 `--force-rebuild --reset-collection`；不要直接删除不确定的宿主目录。
+这通常发生在网盘、浏览器、代理或服务器连接层，和压缩包内部安装步骤无关。建议重新上传当前最终版 `ReguMate-Agent.zip`，同时提供 `ReguMate-Agent.zip.sha256.txt`；朋友下载后先核对文件大小和 SHA256。如果仍然在固定进度断开，换浏览器、换网络、关闭代理或改用支持断点续传的下载工具。
 
-## 7. 联网从源码构建（开发者）
+### Docker 命令提示无法连接
 
-该方式需要访问Docker Hub、Debian、npm和PyPI，不用于弱网比赛现场：
+先启动 Docker Desktop，等它显示正在运行，再回到项目根目录重试：
 
 ```powershell
-Copy-Item .env.example .env
-docker compose build app
-docker compose up -d
+docker info
 ```
 
-开发调试时可使用 `run-dev.bat` 或 `.\run.bat --build`，确保 Docker 镜像包含当前源码。注意不要让主机 Uvicorn 和 Docker app 同时访问 `data/evaluation/final_runtime/app.db`，否则 Windows bind mount 下可能触发 SQLite `disk I/O error`。
+如果 `docker info` 能输出 Server 信息，说明 Docker 已可用。
 
-生成正式离线镜像归档：
+### Docker 构建失败
+
+小包需要联网构建镜像。请检查是否能访问 Docker Hub、Debian apt、npm registry、PyPI。如果公司网络拦截这些地址，需要换网络或配置代理后重试：
 
 ```powershell
-.\scripts\build_offline_bundle.ps1
+.\run.bat
 ```
 
-## 8. 开发测试
+### 模型预热或首次问答失败
+
+请检查是否能访问 HuggingFace，并确认磁盘剩余空间足够。模型下载成功后会缓存在 `data/model_cache`，后续启动不需要重复下载。
+
+### PowerShell 拒绝运行脚本
+
+使用带执行策略的完整命令：
 
 ```powershell
-$env:PYTHONIOENCODING='utf-8'
-.\.venv\Scripts\python.exe -m pytest
-cd frontend
-npm run build
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\preflight.ps1
 ```
 
-密钥扫描：
+`run.bat` 内部已经使用这个方式调用启动脚本。
+
+### 端口被占用
+
+ReguMate 默认优先使用本机端口 `8000`、`6333`、`6334`。如果这些端口已被非 ReguMate 进程占用，`run.bat` 会自动选择可用端口，并在启动成功时打印实际访问地址；实际端口也会写入 `.run-state/runtime.json`。如需固定端口，可在 `.env` 中修改 `REGUMATE_APP_PORT`、`REGUMATE_QDRANT_HTTP_PORT`、`REGUMATE_QDRANT_GRPC_PORT`。
+
+如果旧的 `regumate-app`、`regumate-qdrant` 容器状态异常，先停止后重启：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\scan_secrets.py
+docker compose down
+.\run.bat
 ```
 
-详细设计见 `docs/开发文档`，学习路线见 `docs/代码学习指南.md`，比赛讲解见 `docs/比赛演示与答辩说明.md`。
+### `/api/health/ready` 不是 `true`
+
+小包没有预置知识库。首次启动后先上传并索引文档，再检查 ready 状态和执行问答。

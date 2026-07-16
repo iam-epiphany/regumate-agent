@@ -141,10 +141,6 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
         has_body = False
 
     for block in blocks:
-        page_changed = current_page is not None and block.page_number is not None and block.page_number != current_page
-        if page_changed:
-            flush()
-
         if block.block_type == "heading":
             if has_body:
                 flush()
@@ -212,7 +208,7 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                     block.level,
                     current_section_number,
                 )
-        if block.page_number is not None:
+        if block.page_number is not None and (current_page is None or not has_body):
             current_page = block.page_number
 
         buffer.append(block.text)
@@ -512,27 +508,6 @@ def _table_context_text(prefix_lines: list[str]) -> str:
 
 def _table_cells(line: str) -> list[str]:
     return [cell.strip() for cell in line.strip("|").split("|")]
-
-
-def _table_row_to_evidence(context: str, headers: list[str], cells: list[str]) -> str:
-    width = max(len(headers), len(cells))
-    padded_headers = headers + [f"列{index + 1}" for index in range(len(headers), width)]
-    padded_cells = cells + [""] * (width - len(cells))
-    pairs = [
-        (header, cell)
-        for header, cell in zip(padded_headers, padded_cells, strict=True)
-        if header.strip() and cell.strip()
-    ]
-    if not pairs:
-        return context
-
-    if len(pairs) == 2:
-        row_sentence = f"表格行证据：{pairs[0][0]}为“{pairs[0][1]}”时，{pairs[1][0]}为“{pairs[1][1]}”。"
-    else:
-        row_sentence = "表格行证据：" + "；".join(f"{header}为“{cell}”" for header, cell in pairs) + "。"
-    if context:
-        return f"{context}\n\n{row_sentence}"
-    return row_sentence
 
 
 def _normalize_table_header(header: str, index: int) -> str:

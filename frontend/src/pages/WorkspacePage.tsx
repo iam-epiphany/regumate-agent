@@ -30,6 +30,7 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
   const [ragHealth, setRagHealth] = useState<RagHealthResponse | null>(null);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadDashboard();
@@ -37,6 +38,7 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
 
   async function loadDashboard() {
     setHealth("checking");
+    setDashboardError(null);
     try {
       const [, ragResult] = await Promise.all([getHealth(), getRagHealth()]);
       setHealth("ok");
@@ -50,15 +52,14 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
       const [documentResult, auditResult] = await Promise.all([listDocuments(), listAuditLogs()]);
       setDocuments(documentResult.documents);
       setLogs(auditResult.logs);
-    } catch {
-      setDocuments([]);
-      setLogs([]);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "工作台数据暂时无法读取。");
     }
   }
 
   const indexedDocuments = documents.filter((document) => document.status === "indexed");
   const runningDocuments = documents.filter((document) => ["uploaded", "index_queued", "indexing", "deleting"].includes(document.status));
-  const recentActivities = buildRecentActivities(logs, qa.question).slice(0, 5);
+  const recentActivities = buildRecentActivities(logs, qa.currentQuestion).slice(0, 5);
   const canAnswer = health === "ok" && Boolean(ragHealth?.ready) && indexedDocuments.length > 0;
   const readinessTone = health === "error" ? "error" : canAnswer ? "ok" : "warning";
 
@@ -75,11 +76,19 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
             面向监管制度、统计报表填报说明和指标口径的可信 RAG 问答。首页只展示可用性、能力和最近运行情况。
           </p>
         </div>
-        <button className="icon-button" type="button" onClick={loadDashboard}>
+        <button className="icon-button" type="button" disabled={health === "checking"} onClick={loadDashboard}>
           <Activity size={18} />
           刷新状态
         </button>
       </section>
+
+      {dashboardError ? (
+        <div className="page-load-error" role="alert">
+          <AlertTriangle size={18} />
+          <span>{dashboardError} 已保留上一次成功读取的内容。</span>
+          <button className="secondary-button" type="button" onClick={loadDashboard}>重试</button>
+        </div>
+      ) : null}
 
       <section className="readiness-band" aria-label="系统可用性概览">
         <ReadinessItem
@@ -94,7 +103,7 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
           label="最近问答"
           value={qa.answer ? (qa.answer.refused ? "可信拒答" : "已回答") : qa.taskStatus ? taskStatusLabel(qa.taskStatus) : "暂无"}
           tone={qa.answer?.refused ? "warning" : qa.taskStatus === "failed" ? "error" : qa.answer ? "ok" : "neutral"}
-          detail={qa.question || "提交问题后会在此保留最近任务"}
+          detail={qa.currentQuestion || "提交问题后会在此保留最近任务"}
         />
       </section>
 
@@ -171,7 +180,7 @@ export function WorkspacePage({ onNavigate }: WorkspacePageProps) {
               <RuntimeFact label="语义模型" ready={ragHealth.embedding_model_ready} />
               <RuntimeFact label="重排模型" ready={ragHealth.reranker_model_ready} />
               <RuntimeFact label="SQLite 元数据" ready={ragHealth.sqlite_ready} />
-              <RuntimeFact label="Office 解析" ready={ragHealth.libreoffice_ready || ragHealth.antiword_ready} />
+              <RuntimeFact label="Office 解析" ready={ragHealth.libreoffice_ready && ragHealth.antiword_ready} />
               <RuntimeFact
                 label="索引队列"
                 ready={(ragHealth.index_tasks.failed ?? 0) === 0}
@@ -290,6 +299,7 @@ function taskStatusLabel(status: string): string {
     completed: "已完成",
     refused: "可信拒答",
     failed: "失败",
+    cancelled: "已停止",
   };
   return labels[status] ?? "暂无";
 }

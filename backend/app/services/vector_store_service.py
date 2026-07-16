@@ -145,19 +145,41 @@ def count_document_vectors(document_id: str) -> int:
     try:
         response = client.count(
             collection_name=QDRANT_COLLECTION,
-            count_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="document_id",
-                        match=models.MatchValue(value=document_id),
-                    )
-                ]
-            ),
+            count_filter=_document_filter(document_id, models),
             exact=True,
         )
     except Exception as exc:
         raise VectorStoreError(f"Qdrant 文档向量计数失败：{exc}") from exc
     return int(getattr(response, "count", 0) or 0)
+
+
+def document_vector_chunk_ids(document_id: str) -> set[str]:
+    """Return current-index chunk IDs for exact cross-store verification."""
+
+    ensure_vector_collection()
+    client, models = _qdrant()
+    chunk_ids: set[str] = set()
+    offset = None
+    try:
+        while True:
+            points, offset = client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter=_document_filter(document_id, models),
+                limit=256,
+                offset=offset,
+                with_payload=["chunk_id"],
+                with_vectors=False,
+            )
+            chunk_ids.update(
+                str(point.payload.get("chunk_id"))
+                for point in points
+                if point.payload and point.payload.get("chunk_id")
+            )
+            if offset is None:
+                break
+    except Exception as exc:
+        raise VectorStoreError(f"Qdrant 文档向量明细核对失败：{exc}") from exc
+    return chunk_ids
 
 
 def delete_document_vectors(document_id: str, chunk_ids: list[str] | None = None) -> None:
@@ -200,11 +222,13 @@ def hybrid_search(query_embedding: TextEmbedding, *, limit: int) -> list[VectorS
                     query=query_embedding.dense,
                     using=QDRANT_DENSE_VECTOR_NAME,
                     limit=limit,
+                    filter=_index_version_filter(models),
                 ),
                 models.Prefetch(
                     query=_sparse_vector(query_embedding.sparse, models),
                     using=QDRANT_SPARSE_VECTOR_NAME,
                     limit=limit,
+                    filter=_index_version_filter(models),
                 ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
@@ -262,6 +286,32 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
 
 def _point_id(chunk_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"regumate:{chunk_id}"))
+
+
+def _index_version_filter(models: Any) -> Any:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="index_version",
+                match=models.MatchValue(value=INDEX_VERSION),
+            )
+        ]
+    )
+
+
+def _document_filter(document_id: str, models: Any) -> Any:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="document_id",
+                match=models.MatchValue(value=document_id),
+            ),
+            models.FieldCondition(
+                key="index_version",
+                match=models.MatchValue(value=INDEX_VERSION),
+            ),
+        ]
+    )
 
 
 def _sparse_vector(sparse: SparseEmbedding, models: Any) -> Any:

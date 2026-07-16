@@ -23,6 +23,11 @@ data/contest dataset/
 data/contest_staging/
 data/evaluation/
 dist-delivery/
+delivery/
+release/
+ReguMate-Agent-Delivery*/
+*.zip
+*.7z
 .env
 .env.*
 !.env.example

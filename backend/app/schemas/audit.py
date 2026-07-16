@@ -21,6 +21,9 @@ class AuditLogItem(BaseModel):
 
 class AuditLogListResponse(BaseModel):
     logs: list[AuditLogItem]
+    limit: int = 50
+    offset: int = 0
+    returned: int = 0
 
 
 class AuditArchiveSummary(BaseModel):

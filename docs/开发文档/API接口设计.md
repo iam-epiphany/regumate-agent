@@ -9,12 +9,20 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - 所有响应结构由 Pydantic schema 定义。
 - 问答接口必须返回引用列表，或明确拒答。
 
+## 时间字段约定
+
+文档上传、处理快照和 chunk 摘要中的 `uploaded_at`、`updated_at`、`created_at` 统一返回带时区偏移的 ISO 8601 UTC 字符串，例如 `2026-07-18T02:14:14.360582+00:00`。前端按浏览器本地时区展示，不能依赖无时区字符串推断本地时间。
+
 ## 接口列表
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/api/health` | 后端健康检查 |
+| GET | `/api/health/rag` | RAG 依赖、模型运行态与 Build ID 诊断 |
+| GET | `/api/health/ready` | 正式依赖就绪检查 |
+| POST | `/api/health/warmup` | 预热 embedding 与 reranker，不写业务数据 |
 | POST | `/api/documents/upload` | 上传知识库文档 |
+| GET | `/api/documents/{document_id}/processing` | 查询解析、切片和索引的持久化处理快照 |
 | GET | `/api/documents` | 获取文档列表 |
 | GET | `/api/documents/{document_id}` | 获取文档详情与 chunk |
 | POST | `/api/documents/{document_id}/index` | 手动重建单个文档的向量索引 |
@@ -24,7 +32,9 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | POST | `/api/qa/tasks` | 创建可恢复的可信问答任务 |
 | GET | `/api/qa/tasks` | 查看最近问答任务快照 |
 | GET | `/api/qa/tasks/{task_id}` | 查询单个问答任务状态、进度和最终答案 |
-| GET | `/api/audit/logs` | 获取当天审计日志，并自动归档过期日志 |
+| GET | `/api/qa/tasks/{task_id}/stream` | 通过 SSE 订阅持久化任务的完整快照与已核验答案预览 |
+| POST | `/api/qa/tasks/{task_id}/cancel` | 停止排队中或运行中的问答生成 |
+| GET | `/api/audit/logs` | 分页获取审计日志（只读） |
 | GET | `/api/audit/archives` | 获取历史审计日志归档列表 |
 | GET | `/api/audit/archives/{archive_date}` | 查看某天审计日志归档内容 |
 | DELETE | `/api/audit/archives/{archive_date}` | 删除某天审计日志归档文件 |
@@ -40,8 +50,11 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - `.doc` 和 `.xls` 校验 OLE 签名；`.docx` 和 `.xlsx` 校验 ZIP 结构和核心内部文件。
 - `.doc` 通过 LibreOffice headless 转 `.docx` 后进入统一 Word parser；`.xls` 优先通过 LibreOffice headless 转 `.xlsx`，失败时使用 `xlrd` 抽值兜底；`.xlsx` 使用 `openpyxl` 做结构化解析。
 - PDF 默认使用 PyMuPDF4LLM 解析，候选 Docling / Unstructured，最终回退 pypdf；当前不启用 OCR。
-- 上传保存原始文件、解析文本、切分 chunk 并写入 SQLite，随后由后台任务自动构建向量索引。
-- 成功返回：文档编号、文件名、大小、chunk 数量、上传时间和 `metadata`。Excel 文档的 `metadata` 会包含推断标题、来源格式、年份、月份、季度、报表类型和业务域等字段。
+- 浏览器可通过上传字节进度展示网络传输。原文件安全落盘后，后端在同一 SQLite 事务中创建 Document 和持久化处理任务；请求返回后由单个有界 worker 执行解析、切片、单元格元数据写入、embedding、向量写入和核验，不再在 HTTP 请求内同步解析。
+- 请求支持 `Idempotency-Key`。同一键重复提交返回原 `document_id/task_id`，不会重复解析或索引。
+- 成功返回 HTTP `202`，字段包括 `document_id`、`task_id`、任务 `status/stage`、文件名、大小、上传时间和兼容字段。初始 `chunk_count` 可以为 0，不能把收到 202 解释为已经可问答。
+- `GET /api/documents/{document_id}/processing` 返回真实持久化阶段：`queued/parsing/chunking/metadata_indexing/embedding/vector_upsert/verifying/completed/failed`，并返回 `completed_units/total_units`、重试次数、统一错误对象和更新时间。前端不得自行模拟阶段完成。
+- OOXML 处理限制默认为 ZIP 条目不超过 20,000、总解压大小不超过 500 MB、单工作簿逻辑单元格不超过 500 万；超限返回稳定错误并清理已保存文件。Excel 在维度检查后只遍历实际存在的单元格，同时保留公式版与数值版工作簿用于可信证据。
 - 失败返回：不支持格式、MIME 不匹配、内容校验失败、空文件、无法解析文本等 400 错误。
 
 ## 手动重建知识库
@@ -81,13 +94,13 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 
 `DELETE /api/documents/{document_id}`
 
-- 先删除 Qdrant 中对应文档的向量。
-- Qdrant 清理成功后，再删除原始上传文件、SQLite 中的 document 和 chunk 记录。
+- 删除生命周期持久化为 `deleting_vectors → deleting_file → deleting_metadata`，每一步均可幂等重试；服务启动时恢复中断的 `deleting` 记录。
+- 先按 `document_id + index_version` 删除 Qdrant 向量，再删除原文件，最后删除 SQLite 元数据。
 - 成功后文档列表不再返回该文档。
 - 如果文档正在 `indexing` 或 `deleting`，返回 409，避免边索引边删除。
-- 如果 Qdrant 删除失败，返回 503；文档不会从 SQLite 删除，状态会保留为 `delete_failed`，可稍后重试删除。
+- Qdrant、文件删除或 SQLite 提交任一步失败都返回 503；文档保留为 `delete_failed` 并记录失败阶段，可稍后重试，不会出现异常直接越过状态记录。
 
-`GET /api/documents?repair_sources=true` 会扫描 `data/documents/originals/` 中仍存在但 SQLite 缺失的 `DOC-*` 原始文件，并尽力恢复 document/chunk 元数据；如果 Qdrant 中对应向量数量完整，恢复后状态为 `indexed`，否则为 `uploaded` 并提示需要重建索引。该显式修复模式发现 SQLite 记录指向的原始文件缺失时，不会自动删除数据库和 Qdrant 记录，而是将文档标记为 `source_missing`；用户可以恢复原始文件，或通过删除接口显式清理。
+`GET /api/documents?repair_sources=true` 会扫描 `data/documents/originals/` 中仍存在但 SQLite 缺失的 `DOC-*` 原始文件，并尽力恢复 document/chunk 元数据；只有当前 `index_version` 的 Qdrant point ID 集合与 SQLite 全部 chunk ID 精确一致时才恢复为 `indexed`，否则标记为待重建。该显式修复模式发现 SQLite 记录指向的原始文件缺失时，不会自动删除数据库和 Qdrant 记录，而是将文档标记为 `source_missing`；用户可以恢复原始文件，或通过删除接口显式清理。
 
 ## 可信问答
 
@@ -105,16 +118,32 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 
 - `POST /api/qa/ask`：返回完整 `QAResponse`。Excel 取数与计算由程序确定性完成；Word/PDF 使用 DeepSeek 生成结构化答案并校验引用和关键实体。`include_debug=true` 时才附带 `context_package`。
 - `POST /api/qa/ask/stream`：返回 `text/event-stream`，先推送 RAG 阶段进度事件，最后推送完整 `QAResponse`；用于前端动态“检索观测”面板。
-- `POST /api/qa/tasks`：创建持久化问答任务并返回 `task_id`。任务在后端线程继续执行，前端页面切换或刷新不会重新提交问题。
-- `GET /api/qa/tasks/{task_id}`：返回 `question/options/include_debug/status/progress_events/answer/error/created_at/updated_at/completed_at`。`status` 包括 `queued/running/completed/refused/failed`；返回的 `progress_events` 是完整快照，可用于断线重连后恢复时间线。
+- `POST /api/qa/tasks`：请求必须提供 8–128 字符的 `client_request_id`。该字段在 SQLite 中唯一；相同 ID 重复提交返回原任务，不重复推理。任务进入持久化积压，由默认 1 个有界 worker 执行，服务重启会恢复 `queued/running` 任务，不再为每个请求创建 daemon thread。
+- `GET /api/qa/tasks/{task_id}`：返回 `client_request_id/question/options/include_debug/status/progress_events/answer/error/created_at/updated_at/completed_at`。`status` 固定为 `queued/running/completed/refused/failed/cancelled`；`error` 使用统一对象。返回的 `progress_events` 是完整后端快照，可用于断线重连后恢复时间线。
+- `POST /api/qa/tasks/{task_id}/cancel`：幂等停止任务。`queued` 任务不再进入问答管线；`running` 任务立即持久化为 `cancelled`，worker 在阶段边界协作退出，并在任何迟到结果写入前再次检查状态。已完成、已拒答、失败或已取消任务返回当前快照，不倒退状态。取消操作写入审计追踪。
 - `GET /api/qa/tasks?limit=5`：返回最近任务快照，主要用于调试或恢复入口。
 - `POST /api/qa/retrieve`：仅返回 `LLMContextPackage`，用于调试检索和后续 LLM 输入。
 
-`/api/qa/ask/stream` 的 SSE 事件：
+持久化任务 SSE 是活动工作区的主要事实源，退避轮询是断线回退。浏览器只在 POST 结果尚未确认时持久化最小 `pending-receipt`（`client_request_id/question/include_debug`），取得 task ID 后立即删除；网络失败或此时刷新页面会用相同 ID 静默幂等补交。站内路由切换由内存态 Provider 保留当前工作区和 SSE 连接；完整刷新后工作区为空，任务仍在服务端执行并通过 `GET /api/qa/tasks` 历史入口恢复。轮询回退按 1、2、4、8、10 秒退避，短暂网络错误不把后端任务擅自判定为失败。`/api/qa/ask/stream` 保留为兼容/诊断接口，其 SSE 事件为：
 
 - `progress`：阶段进度，字段包括 `stage`、`status`、`title`、`detail`、可选 `elapsed_ms`、`summary`、`aspect_id`。`stage` 取值为 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build`、`llm_generation`、`grounding_validation`；`status` 取值为 `running`、`completed`、`failed`、`skipped`。
 - `final`：完整 `QAResponse`，结构与 `/api/qa/ask` 相同。
 - `error`：流式执行失败时返回 `{ "detail": "..." }`；此时不会再推送 `final`。
+
+`GET /api/qa/tasks/{task_id}/stream` 返回 `text/event-stream`。连接后立即发送 `event: task`，其 `data` 是完整 `QATaskStatusResponse`；进度、预览或状态变化时继续发送最新完整快照，约 15 秒无变化时发送 SSE 注释心跳，终态快照发送后关闭。不存在的任务返回 404。完整快照避免客户端断线后依赖易丢失的增量 delta。
+
+`QATaskStatusResponse` 新增可空字段 `answer_preview`：
+
+```json
+{
+  "answer": "已通过逐句核验的正文。[1]",
+  "citations": [],
+  "verified_claim_count": 1,
+  "revision": 1
+}
+```
+
+该字段只包含已经通过引用编号、数字、日期、机构、文号以及选择题完整选项校验的 claim。完成后由原有 `answer` 接管；失败、取消或应用重启恢复时清空预览。SQLite 通过兼容升级新增可空 `qa_tasks.answer_preview_json`，旧消费者仍可只读取原有字段。
 
 进度事件同时包含阶段级事件和可选的 aspect 级事件。没有 `aspect_id` 的事件用于前端主时间线，带 `aspect_id` 的事件用于调试每个问题方面的召回状态。检索结果为空、重排没有候选片段、选择题缺少选项、依据不足直接拒答等业务分支必须返回 `completed` 或 `skipped`，不能长期停留在等待状态；只有 Qdrant、embedding、reranker、上下文构造等执行异常才使用 `failed`。
 
@@ -154,6 +183,24 @@ DeepSeek 未配置或暂不可用时，`llm_generation` 显示降级/跳过；Ex
 
 `QARequest` 可选 `options` 和 `include_debug`。`QAResponse` 除 `answer/citations/confidence/refused` 外，还包含 `answer_type`、`generation_status`、`claims`、`grounding_validation`、`refusal_reason`、`degraded`。仅当 `include_debug=true` 时返回 `context_package`。
 
+可信回答硬性不变量：任何 `refused=false` 的最终响应都必须满足 `grounding_validation.passed=true`。生成修复失败时可返回逐条带引用的抽取式降级答案，但该降级答案也必须重新通过校验；仍不通过则返回 `refused=true`。列表序号和引用编号不会被误当作监管数字，比例、日期、金额和机构仍按其绑定 citation 逐条核验。`confidence` 为“证据强度”，不是校准后的正确概率。
+
+HTTP 错误保留兼容字段 `detail`，同时固定返回：
+
+```json
+{
+  "error": {
+    "code": "service_unavailable",
+    "message": "可读错误说明",
+    "stage": "retrieval",
+    "retryable": true,
+    "request_id": "..."
+  }
+}
+```
+
+响应头同步返回 `X-Request-ID`。任务失败与文档处理失败的 `error` 使用同一结构；前端普通模式只显示 `message`，技术模式才展示 code、stage 和 request ID。
+
 无依据时返回 `200` 且 `refused=true`；embedding、Qdrant 或 reranker 不可用时返回 503。
 
 问答审计日志会为每次请求记录独立事件，不参与重复异常聚合。`detail` 和 `details_json` 均保存结构化问答摘要，包括 `question`、`answer`、`refused`、`refusal_reason`、`generation_status`、`used_chunks`、`confidence` 和 `citation_count`；不写入完整引用正文，避免日志膨胀。前端默认展示缩短后的问题和回答，用户点击详情文本后可展开查看完整内容。
@@ -166,9 +213,8 @@ DeepSeek 未配置或暂不可用时，`llm_generation` 显示降级/跳过；Ex
 
 `GET /api/audit/logs`
 
-- 返回当天审计日志。
-- 调用时会把今天之前的 SQLite 日志按日期归档到 `data/audit_archives/audit-YYYY-MM-DD.md`。
-- 归档完成后，过期日志会从 SQLite 删除，SQLite 只保留当天实时日志。
+- 分页返回审计日志；GET 是只读操作，不再在用户查询时执行文件写入或数据库删除。
+- 过期日志由服务启动维护或显式归档脚本处理：先写临时文件并原子替换，成功后才删除 SQLite 记录；严格校验日期并使用幂等标识，归档失败绝不删库。
 
 ### v4 审计事件模型
 
@@ -230,4 +276,4 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 }
 ```
 
-正式交付版额外返回 `qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个Office工具版本、`index_tasks` 队列计数、`model_device` 和总 `ready` 状态。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
+正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。

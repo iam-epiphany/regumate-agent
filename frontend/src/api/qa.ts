@@ -23,16 +23,52 @@ export function retrieveQuestionContext(question: string): Promise<LLMContextPac
   });
 }
 
-export function createQuestionTask(question: string, includeDebug = false): Promise<QATaskCreateResponse> {
+export function createQuestionTask(
+  question: string,
+  clientRequestId: string,
+  includeDebug = false,
+): Promise<QATaskCreateResponse> {
   return apiFetch<QATaskCreateResponse>("/api/qa/tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, include_debug: includeDebug }),
+    body: JSON.stringify({
+      question,
+      client_request_id: clientRequestId,
+      include_debug: includeDebug,
+    }),
   });
 }
 
 export function getQuestionTask(taskId: string): Promise<QATaskStatusResponse> {
   return apiFetch<QATaskStatusResponse>(`/api/qa/tasks/${taskId}`);
+}
+
+export function streamQuestionTask(
+  taskId: string,
+  onTask: (task: QATaskStatusResponse) => void,
+  onConnectionChange: (connected: boolean) => void,
+): () => void {
+  if (typeof EventSource === "undefined") {
+    onConnectionChange(false);
+    return () => undefined;
+  }
+  const source = new EventSource(`/api/qa/tasks/${taskId}/stream`);
+  source.onopen = () => onConnectionChange(true);
+  source.addEventListener("task", (event) => {
+    try {
+      onTask(JSON.parse((event as MessageEvent<string>).data) as QATaskStatusResponse);
+    } catch {
+      onConnectionChange(false);
+    }
+  });
+  source.onerror = () => onConnectionChange(false);
+  return () => source.close();
+}
+
+export function cancelQuestionTask(taskId: string): Promise<QATaskStatusResponse> {
+  return apiFetch<QATaskStatusResponse>(`/api/qa/tasks/${taskId}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function listQuestionTasks(limit = 5): Promise<QATaskStatusResponse[]> {
