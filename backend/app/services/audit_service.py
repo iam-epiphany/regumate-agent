@@ -233,6 +233,17 @@ def _render_archive_markdown(archive_date: str, logs: list[AuditLog]) -> str:
                 "",
             ]
         )
+        if log.details_json:
+            lines.extend(
+                [
+                    "- 结构化详情：",
+                    "",
+                    "```json",
+                    log.details_json.replace("```", "'''"),
+                    "```",
+                    "",
+                ]
+            )
     return "\n".join(lines).rstrip() + "\n"
 
 

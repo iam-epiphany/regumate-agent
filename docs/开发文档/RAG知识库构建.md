@@ -8,13 +8,17 @@ ReguMate 使用 SQLite 保存文档元数据与表格单元格索引，使用服
 
 上传内容按 1MB 分块写入临时文件，达到配置的大小上限即停止；文件签名、OOXML 容器和文本编码校验通过后再原子发布为原始文件。解析失败时删除尚未进入数据库的原始文件。
 
+上传保存原文件时同步计算 `file_sha256`，并将浏览器展示文件名规范化为 `filename_norm`。知识库内 `filename_norm` 唯一；`size + file_sha256` 完全一致的文件视为已存在，不再创建新的 Document 或索引任务。同名但内容不同的文件只能覆盖旧知识源或以新文件名入库，避免同名文档在引用和审计中混淆。
+
+批量上传入口 `/api/documents/batch-upload` 只扩展上传编排，不改变 RAG 入库主线。每个成功接收的文件都会复用同一套原文件校验、SQLite `Document` 元数据、持久化索引任务、审计日志和后台 worker；单个文件失败不会回滚同批次其他文件，前端继续按每个 `document_id` 查询真实处理快照。
+
 1. 用户上传 `.txt`、`.md`、`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls` 或 `.xlsx`。
-2. `document_storage` 校验后缀、MIME 类型和文件内容签名，再保存原始文件到 `data/documents/originals/`。
+2. `document_storage` 校验后缀、MIME 类型和文件内容签名，再保存原始文件到 `data/documents/originals/`，同时返回文件大小和 SHA-256。
 3. `document_parser` 通过 loader adapter 输出结构化 `ParsedDocument`，包含 heading、paragraph、table、page 等 block。`.doc/.xls` 通过 LibreOffice headless 转换进入统一解析；`.xlsx` 会先构建工作簿/工作表/行/单元格语义模型。
 4. `chunk_service` 基于 block 生成 token-aware chunk，继承章节标题、页码、章节路径、章节号、父章节号和前后 chunk 指针；表格优先独立成 chunk。
 5. 长文本先按结构递归分组，再用 BGE-M3 语义相似度辅助选择断点；超过最大 token 时强制切分并保留 overlap。
    语义切分属于可选增强：embedding 暂不可用时自动退回结构与 token 长度断点，上传解析仍可完成，向量索引任务随后按持久化队列重试。
-6. `documents` API 将 document 和 chunk 写入 SQLite，状态为 `uploaded`。
+6. `documents` API 将 document 写入 SQLite，状态为 `uploaded`，并保存 `filename_norm/file_sha256`；后续处理任务再写入 chunk 和表格单元格索引。
 7. 上传响应返回后，轻量后台任务把索引任务持久化到 SQLite，并交给容量受限的单工作线程；文档依次显示 `index_queued`、`indexing`、`indexed`，应用重启后会恢复未完成任务。
 8. `embedding_service` 基于增强后的 `embedding_text` 为每个 chunk 生成 BGE-M3 dense 和 sparse embedding。
 9. `vector_store_service` 将 chunk 向量和 payload 写入 Qdrant。

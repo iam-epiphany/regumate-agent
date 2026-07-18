@@ -1,22 +1,29 @@
 from datetime import datetime, timezone
+import hashlib
 import json
-from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import INDEX_TASK_MAX_RETRIES, INDEX_VERSION, MAX_UPLOAD_BYTES
+from backend.app.core.config import INDEX_TASK_MAX_RETRIES, MAX_BATCH_UPLOAD_FILES, MAX_UPLOAD_BYTES
 from backend.app.core.database import get_db
 from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
 from backend.app.schemas.documents import (
+    DocumentBatchUploadItem,
+    DocumentBatchUploadResponse,
     ChunkSummary,
     DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentProcessingResponse,
     DocumentSummary,
+    DocumentConflictExistingDocument,
+    DocumentUploadPreflightItem,
+    DocumentUploadPreflightRequest,
+    DocumentUploadPreflightResponse,
     DocumentUploadResponse,
 )
 from backend.app.schemas.qa import ApiError
@@ -25,8 +32,6 @@ from backend.app.services.document_storage import (
     EmptyDocumentError,
     DocumentTooLargeError,
     UnsupportedDocumentTypeError,
-    next_document_id,
-    save_original_document_stream,
 )
 from backend.app.services.index_task_service import enqueue_document_index
 from backend.app.services.document_lifecycle_service import (
@@ -36,6 +41,15 @@ from backend.app.services.document_lifecycle_service import (
     recover_documents_from_originals,
     remove_documents_with_missing_originals,
     restore_documents_with_available_originals,
+)
+from backend.app.services.document_upload_service import (
+    DocumentUploadConflictError,
+    ExactDuplicateDocumentError,
+    FilenameConflictDocumentError,
+    UploadTaskMissingError,
+    UploadPreflightInput,
+    build_upload_preflight,
+    create_document_upload,
 )
 
 
@@ -49,75 +63,154 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 )
 async def upload_document(
     file: UploadFile = File(...),
+    filename_override: str | None = Form(None),
+    overwrite_document_id: str | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
-    filename = file.filename or "unknown"
     request_id = (idempotency_key or uuid4().hex).strip()[:128]
-    existing = db.scalar(
-        select(Document).where(Document.client_request_id == request_id)
-    )
-    if existing is not None:
-        task = db.scalar(
-            select(DocumentIndexTask).where(
-                DocumentIndexTask.document_id == existing.document_id
-            )
-        )
-        if task is None:
-            raise HTTPException(status_code=409, detail="重复上传记录缺少处理任务，请重试索引")
-        return _to_upload_response(existing, task)
-
-    document_id = next_document_id(db)
-    storage_path: Path | None = None
     try:
-        storage_path, file_size = await save_original_document_stream(
-            document_id=document_id,
-            filename=filename,
-            stream=file,
-            content_type=file.content_type,
+        document, task = await create_document_upload(
+            db,
+            file=file,
+            request_id=request_id,
+            filename_override=filename_override,
+            overwrite_document_id=overwrite_document_id,
             max_bytes=MAX_UPLOAD_BYTES,
+            enqueue_index=enqueue_document_index,
         )
+        return _to_upload_response(document, task)
     except DocumentTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except (UnsupportedDocumentTypeError, EmptyDocumentError) as exc:
-        if storage_path is not None:
-            storage_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UploadTaskMissingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DocumentUploadConflictError as exc:
+        return _upload_conflict_response(exc)
 
-    document = Document(
-        document_id=document_id,
-        client_request_id=request_id,
-        filename=filename,
-        content_type=file.content_type,
-        file_type=Path(filename).suffix.lower().lstrip("."),
-        size=file_size,
-        storage_path=str(storage_path),
-        document_metadata=json.dumps({}, ensure_ascii=False),
-        status="uploaded",
-        index_version=INDEX_VERSION,
-        index_error=None,
-        chunk_count=0,
+
+@router.post(
+    "/upload-preflight",
+    response_model=DocumentUploadPreflightResponse,
+)
+def preflight_document_upload(
+    payload: DocumentUploadPreflightRequest,
+    db: Session = Depends(get_db),
+) -> DocumentUploadPreflightResponse:
+    results = build_upload_preflight(
+        db,
+        [
+            UploadPreflightInput(
+                client_file_id=item.client_file_id,
+                filename=item.filename,
+                size=item.size,
+                file_sha256=item.file_sha256.lower(),
+            )
+            for item in payload.items
+        ],
     )
-    task = DocumentIndexTask(
-        task_id=uuid4().hex,
-        document_id=document_id,
-        status="queued",
-        stage="queued",
+    return DocumentUploadPreflightResponse(
+        items=[
+            DocumentUploadPreflightItem(
+                client_file_id=item.client_file_id,
+                filename=item.filename,
+                status=item.status,
+                existing_document=_to_conflict_existing_document(item.existing_document)
+                if item.existing_document is not None
+                else None,
+                error_message=item.error_message,
+            )
+            for item in results
+        ]
     )
-    db.add(document)
-    db.add(task)
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        storage_path.unlink(missing_ok=True)
-        raise
-    db.refresh(document)
-    db.refresh(task)
-    log_action(db, "document_uploaded", "document", document_id, filename)
-    enqueue_document_index(document_id)
-    db.refresh(task)
-    return _to_upload_response(document, task)
+
+@router.post(
+    "/batch-upload",
+    response_model=DocumentBatchUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_documents_batch(
+    files: list[UploadFile] = File(...),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+) -> DocumentBatchUploadResponse:
+    if len(files) > MAX_BATCH_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次批量上传最多支持 {MAX_BATCH_UPLOAD_FILES} 个文件",
+        )
+
+    batch_id = (idempotency_key or uuid4().hex).strip()[:96]
+    items: list[DocumentBatchUploadItem] = []
+    for index, file in enumerate(files):
+        filename = file.filename or "unknown"
+        request_id = _batch_file_request_id(batch_id, index, filename)
+        try:
+            document, task = await create_document_upload(
+                db,
+                file=file,
+                request_id=request_id,
+                max_bytes=MAX_UPLOAD_BYTES,
+                enqueue_index=enqueue_document_index,
+            )
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="accepted",
+                    document_id=document.document_id,
+                    task_id=task.task_id or str(task.id),
+                    stage=task.stage,
+                    size=document.size,
+                    error_message=None,
+                )
+            )
+        except ExactDuplicateDocumentError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="duplicate",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except FilenameConflictDocumentError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="conflict",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except DocumentUploadConflictError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="conflict",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except (UnsupportedDocumentTypeError, EmptyDocumentError, DocumentTooLargeError, UploadTaskMissingError) as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="failed",
+                    error_message=str(exc),
+                )
+            )
+
+    accepted_count = sum(1 for item in items if item.status == "accepted")
+    return DocumentBatchUploadResponse(
+        batch_id=batch_id,
+        accepted_count=accepted_count,
+        failed_count=sum(1 for item in items if item.status != "accepted"),
+        items=items,
+    )
 
 
 @router.post("/{document_id}/index", response_model=DocumentDetailResponse)
@@ -233,6 +326,11 @@ def delete_document(document_id: str, db: Session = Depends(get_db)) -> Document
     return DocumentDeleteResponse(document_id=document_id, deleted=True, vector_warning=None)
 
 
+def _batch_file_request_id(batch_id: str, index: int, filename: str) -> str:
+    fingerprint = hashlib.sha256(f"{index}:{filename}".encode("utf-8")).hexdigest()[:16]
+    return f"batch:{batch_id}:{index}:{fingerprint}"[:128]
+
+
 def _to_detail(
     document: Document,
     db: Session,
@@ -340,6 +438,46 @@ def _to_upload_response(
         chunk_count=document.chunk_count,
         uploaded_at=_iso_utc(document.uploaded_at),
         metadata=_document_metadata(document),
+    )
+
+
+def _to_conflict_existing_document(
+    document: Document | None,
+) -> DocumentConflictExistingDocument | None:
+    if document is None:
+        return None
+    return DocumentConflictExistingDocument(
+        document_id=document.document_id,
+        filename=document.filename,
+        size=document.size,
+        file_sha256=document.file_sha256,
+        status=document.status,
+        uploaded_at=_iso_utc(document.uploaded_at),
+        chunk_count=document.chunk_count,
+    )
+
+
+def _upload_conflict_response(exc: DocumentUploadConflictError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "detail": str(exc),
+            "error": {
+                "code": exc.code,
+                "message": str(exc),
+                "stage": "upload_preflight",
+                "retryable": False,
+                "request_id": None,
+            },
+            "conflict": {
+                "code": exc.code,
+                "existing_document": (
+                    _to_conflict_existing_document(exc.existing_document).model_dump()
+                    if exc.existing_document is not None
+                    else None
+                ),
+            },
+        },
     )
 
 

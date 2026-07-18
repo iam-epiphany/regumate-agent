@@ -19,9 +19,11 @@ class Document(Base):
         String(128), unique=True, index=True, nullable=True
     )
     filename: Mapped[str] = mapped_column(String(255))
+    filename_norm: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     file_type: Mapped[str] = mapped_column(String(20))
     size: Mapped[int] = mapped_column(Integer)
+    file_sha256: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     storage_path: Mapped[str] = mapped_column(String(500))
     document_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="indexed")

@@ -336,7 +336,7 @@ def build_context_package(
             "stage": "planning",
             "status": "completed",
             "title": "问题理解完成",
-            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {planning_elapsed_ms:.0f}ms",
+            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {_format_elapsed_seconds(planning_elapsed_ms)}",
             "elapsed_ms": planning_elapsed_ms,
             "summary": {
                 "aspect_count": len(query_plan.aspects),
@@ -413,7 +413,7 @@ def build_context_package(
             "stage": "prompt_build",
             "status": "completed",
             "title": "Prompt 构造完成",
-            "detail": f"已完成 Prompt 构造，用时 {prompt_elapsed_ms:.0f}ms",
+            "detail": f"已完成 Prompt 构造，用时 {_format_elapsed_seconds(prompt_elapsed_ms)}",
             "elapsed_ms": prompt_elapsed_ms,
             "summary": {"prompt_chunk_count": len(context_chunks)},
         },
@@ -2109,6 +2109,12 @@ def _elapsed_ms(started_at: float) -> float:
     return round((perf_counter() - started_at) * 1000, 2)
 
 
+def _format_elapsed_seconds(elapsed_ms: float | None) -> str:
+    if elapsed_ms is None:
+        return "0.000s"
+    return f"{elapsed_ms / 1000:.3f}s"
+
+
 def _int_or_none(value: Any) -> int | None:
     return int(value) if value is not None else None
 
@@ -2159,7 +2165,7 @@ def _save_qa_log(db: Session, question: str, response: QAResponse) -> None:
 def _log_qa_audit(db: Session, action: str, question: str, response: QAResponse) -> None:
     package = response.context_package
     used_chunks = package.retrieval_summary["used_chunks"] if package else len(response.citations)
-    payload = {
+    detail_payload = {
         "question": question,
         "answer": response.answer,
         "is_final_answer": bool(response.answer),
@@ -2171,7 +2177,11 @@ def _log_qa_audit(db: Session, action: str, question: str, response: QAResponse)
         "confidence": response.confidence,
         "citation_count": len(response.citations),
     }
-    detail = json.dumps(payload, ensure_ascii=False)
+    details_payload = {
+        **detail_payload,
+        "citations": [_audit_citation_payload(citation) for citation in response.citations],
+    }
+    detail = json.dumps(detail_payload, ensure_ascii=False)
     status_text = "已拒答" if response.refused else "已回答"
     summary = "问答拒答" if response.refused else "问答完成"
     user_message = f"{status_text}：{_compact_audit_text(question, 80)}"
@@ -2185,8 +2195,24 @@ def _log_qa_audit(db: Session, action: str, question: str, response: QAResponse)
         event_key=f"{action}:question:{uuid4().hex}",
         summary=summary,
         user_message=user_message,
-        details=payload,
+        details=details_payload,
     )
+
+
+def _audit_citation_payload(citation: Citation) -> dict[str, Any]:
+    return {
+        "document_id": citation.document_id,
+        "chunk_id": citation.chunk_id,
+        "filename": citation.filename,
+        "section_title": citation.section_title,
+        "page_number": citation.page_number,
+        "excerpt": citation.excerpt,
+        "score": citation.score,
+        "rerank_score": citation.rerank_score,
+        "chunk_type": citation.chunk_type,
+        "evidence_role": citation.evidence_role,
+        "metadata": citation.metadata,
+    }
 
 
 def _compact_audit_text(value: str | None, max_chars: int) -> str:

@@ -11,7 +11,7 @@ ReguMate 面向银行业监管制度、填报说明和统计报表问答。用�
 - `dev.bat`：日常开发入口。单文件启动开发依赖的 Qdrant，并分别打开后端 `uvicorn --reload` 和前端 Vite 热重载窗口。后端默认使用 `data/dev_runtime` 和 `regumate_dev_chunks`，避免污染交付运行数据；改 Python/React/CSS 后通常会自动生效。
 - `check.bat`：提交前本地检查，依次运行后端 pytest、前端 lint、前端测试和前端生产构建。
 - `ship-check.bat`：交付前检查，先跑 `check.bat`，再进入 Docker 交付验证。
-- `run-dev.bat`：重 Docker 集成验证入口，会尝试重建 app 镜像，适合交付前使用，不适合每次改代码后运行。
+- `run-dev.bat`：重 Docker 集成验证入口，会尝试重建 app 镜像，构建失败默认重试 5 次；成功启动新容器后会自动清理旧的 ReguMate app 镜像，但保留 Docker build cache 来加快后续构建。适合交付前使用，不适合每次改代码后运行。
 - `run.bat`：测试者/交付包标准启动入口，优先使用已有镜像。
 - `stop.bat`：停止 Docker 版 ReguMate 服务。
 
@@ -116,7 +116,7 @@ run.bat
 首次运行时脚本会自动完成：
 
 1. 检查 Docker Desktop 是否正在运行。
-2. 如果本机没有 `regumate/app:contest-v3` 镜像，则从当前源码执行 `docker compose build app`。
+2. 如果本机没有 `regumate/app:contest-v3` 镜像，则从当前源码执行 `docker compose build app`，构建失败会自动重试 5 次。
 3. 如果本机没有 `qdrant/qdrant:v1.18.0`，Docker Compose 会联网拉取。
 4. 启动 Qdrant、后端和前端静态页面。
 
@@ -126,7 +126,7 @@ run.bat
 ReguMate is running at http://127.0.0.1:<实际端口>
 ```
 
-如果下载过程中出现“连接被重置”“连接超时”或下载中断等问题，通常与当前网络环境或访问链路不稳定有关。建议检查网络连接，并根据实际情况**使用网络代理或网络加速工具后重试**。
+如果下载过程中出现“连接被重置”“连接超时”或下载中断等问题，脚本会自动重试构建 5 次；若全部失败，通常与当前网络环境或访问链路不稳定有关。建议检查网络连接，并根据实际情况**使用网络代理或网络加速工具后重试**。
 
 第一次构建镜像可能较慢，取决于网络速度。启动脚本会自动启用 `docker-compose.gpu.yml`；如果没有检测到 Docker 内可用的 NVIDIA CUDA GPU 支持，会直接报错。AMD、Intel 或其他非 NVIDIA 显卡不会被当前 CUDA 路径识别为可用 GPU；只有明确设置 `REGUMATE_ALLOW_CPU=1` 时才允许 CPU 模式，处理速度会较慢。
 
@@ -179,10 +179,7 @@ Invoke-RestMethod -Uri "$($runtime.app_url)/api/health/ready" | ConvertTo-Json -
 启动成功后，不要先开始问答。请先在项目根目录的 PowerShell 运行：
 
 ```powershell
-$runtimePath = ".run-state\runtime.json"
-if (-not (Test-Path -LiteralPath $runtimePath)) { throw "未找到 .run-state\runtime.json，请先运行 .\run.bat。" }
-$runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
-Invoke-RestMethod -Method Post -Uri "$($runtime.app_url)/api/health/warmup" | ConvertTo-Json -Depth 8
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\warmup_models.ps1
 ```
 
 首次预热会把模型下载到 `data/model_cache`：
@@ -190,7 +187,7 @@ Invoke-RestMethod -Method Post -Uri "$($runtime.app_url)/api/health/warmup" | Co
 - `BAAI/bge-m3`
 - `BAAI/bge-reranker-v2-m3`
 
-首次预热可能需要几分钟。如果这一步报连接重置、超时或无法访问 HuggingFace，通常是 VPN/代理没有正确作用到 Docker 容器或命令行网络。模型下载成功后会缓存，后续启动不需要重复下载。
+预热脚本会读取 `.run-state/runtime.json` 中的实际后端地址；如果启动脚本自动换过端口，不需要手动改命令。首次预热可能需要几分钟，终端会显示进度条、已等待时间和定期提示，完成后输出 `/api/health/warmup` 的 JSON 结果。如果这一步报连接重置、超时或无法访问 HuggingFace，通常是 VPN/代理没有正确作用到 Docker 容器或命令行网络。模型下载成功后会缓存，后续启动不需要重复下载。
 
 ## 6. 首次进入系统并上传文档
 
@@ -317,15 +314,37 @@ docker info
 
 ### Docker 构建失败
 
-小包需要联网构建镜像。请检查是否能访问 Docker Hub、Debian apt、npm registry、PyPI。如果公司网络拦截这些地址，需要换网络或配置代理后重试：
+小包需要联网构建镜像，启动脚本会对 app 镜像构建自动重试 5 次。若全部失败，请检查是否能访问 Docker Hub、Debian apt、npm registry、PyPI。如果公司网络拦截这些地址，需要换网络或配置代理后重试：
 
 ```powershell
 .\run.bat
 ```
 
+### 频繁运行 `run-dev.bat` 后磁盘占用增加
+
+`run-dev.bat` 每次都会重建 `regumate/app:contest-v3`。脚本会在新容器成功启动后自动清理旧的 ReguMate app 镜像，避免旧 `<none>:<none>` 镜像长期堆积；但 Docker build cache 会保留，这是为了让频繁改代码后的下一次构建更快。如果需要排查清理逻辑，可临时设置 `REGUMATE_SKIP_IMAGE_CLEANUP=1` 跳过自动清理。
+
+查看 Docker 磁盘占用：
+
+```powershell
+docker system df
+```
+
+如需手动释放构建缓存，可以运行：
+
+```powershell
+docker builder prune
+```
+
+不建议日常使用 `docker system prune -a`，它可能删除其他项目或下次构建仍要用到的基础镜像。
+
 ### 模型预热或首次问答失败
 
 请检查是否能访问 HuggingFace，并确认磁盘剩余空间足够。模型下载成功后会缓存在 `data/model_cache`，后续启动不需要重复下载。
+
+### 一键上传显示 500 个文档但索引超时
+
+网页或接口显示 500 个文档，说明 500 个上传记录已经进入 SQLite；这不等于 500 个文档都已经完成解析、chunk、embedding 和 Qdrant 向量写入。一键上传脚本等待的是索引完成状态。如果终端长期停在类似 `indexed=499/500`，需要看同一行里的 `failed`、`missing` 和 `other`：`failed` 表示已有明确失败文档，`missing` 表示脚本等待的 document_id 没有出现在 `/api/documents` 返回里，`other` 表示文档处于删除、异常或未知状态。新脚本会直接打印具体文件名、document_id 和错误信息，不再只等到总超时。
 
 ### PowerShell 拒绝运行脚本
 

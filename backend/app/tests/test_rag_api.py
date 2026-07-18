@@ -1,5 +1,6 @@
 ﻿from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from io import BytesIO
 import os
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import select
+from sqlalchemy import text
 
 from backend.app.core.config import AUDIT_ARCHIVE_DIR, INDEX_VERSION
 from backend.app.core.database import Base, SessionLocal
@@ -192,6 +194,8 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/health/rag" in paths
     assert "/api/health/ready" in paths
     assert "/api/documents/upload" in paths
+    assert "/api/documents/upload-preflight" in paths
+    assert "/api/documents/batch-upload" in paths
     assert "/api/documents/{document_id}/index" in paths
     assert "/api/documents" in paths
     assert "/api/documents/{document_id}" in paths
@@ -255,6 +259,252 @@ def test_upload_is_idempotent_by_header(fake_indexing_services) -> None:
     assert first.json()["task_id"] == second.json()["task_id"]
 
 
+def test_upload_preflight_reports_exact_duplicate_and_upload_rejects_duplicate(fake_indexing_services) -> None:
+    reset_database()
+    content = "资产合计应等于分项合计。"
+    upload_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", content, "text/plain")},
+    )
+    assert upload_response.status_code == 202
+
+    file_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    preflight_response = client.post(
+        "/api/documents/upload-preflight",
+        json={
+            "items": [
+                {
+                    "client_file_id": "duplicate-1",
+                    "filename": "renamed-rules.txt",
+                    "size": len(content.encode("utf-8")),
+                    "file_sha256": file_sha256,
+                }
+            ]
+        },
+    )
+
+    assert preflight_response.status_code == 200
+    item = preflight_response.json()["items"][0]
+    assert item["status"] == "exact_duplicate"
+    assert item["existing_document"]["document_id"] == upload_response.json()["document_id"]
+
+    duplicate_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("renamed-rules.txt", content, "text/plain")},
+    )
+
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["error"]["code"] == "exact_duplicate"
+    assert len(client.get("/api/documents").json()["documents"]) == 1
+
+
+def test_same_filename_different_content_can_be_renamed_or_overwritten(fake_indexing_services) -> None:
+    reset_database()
+    first_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "旧口径。", "text/plain")},
+    )
+    assert first_response.status_code == 202
+    first_document_id = first_response.json()["document_id"]
+    new_content = "新口径。"
+
+    preflight_response = client.post(
+        "/api/documents/upload-preflight",
+        json={
+            "items": [
+                {
+                    "client_file_id": "conflict-1",
+                    "filename": "rules.txt",
+                    "size": len(new_content.encode("utf-8")),
+                    "file_sha256": hashlib.sha256(new_content.encode("utf-8")).hexdigest(),
+                }
+            ]
+        },
+    )
+    assert preflight_response.status_code == 200
+    item = preflight_response.json()["items"][0]
+    assert item["status"] == "name_conflict"
+    assert item["existing_document"]["document_id"] == first_document_id
+
+    conflict_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", new_content, "text/plain")},
+    )
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["error"]["code"] == "name_conflict"
+
+    renamed_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", new_content, "text/plain")},
+        data={"filename_override": "rules (1).txt"},
+    )
+    assert renamed_response.status_code == 202
+    documents = client.get("/api/documents").json()["documents"]
+    assert {document["filename"] for document in documents} == {"rules.txt", "rules (1).txt"}
+
+    overwrite_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "覆盖后的口径。", "text/plain")},
+        data={"overwrite_document_id": first_document_id},
+    )
+    assert overwrite_response.status_code == 202
+    documents = client.get("/api/documents").json()["documents"]
+    assert len(documents) == 2
+    assert first_document_id not in {document["document_id"] for document in documents}
+    assert "rules.txt" in {document["filename"] for document in documents}
+
+
+def test_batch_upload_reports_duplicate_and_conflict_without_rolling_back_ready_file(fake_indexing_services) -> None:
+    reset_database()
+    existing_content = "已有口径。"
+    existing_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", existing_content, "text/plain")},
+    )
+    assert existing_response.status_code == 202
+
+    response = client.post(
+        "/api/documents/batch-upload",
+        files=[
+            ("files", ("ready.txt", "可入库口径。", "text/plain")),
+            ("files", ("duplicate.txt", existing_content, "text/plain")),
+            ("files", ("rules.txt", "同名新口径。", "text/plain")),
+        ],
+        headers={"Idempotency-Key": "batch-upload-duplicate-conflict"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["accepted_count"] == 1
+    assert body["failed_count"] == 2
+    assert [item["status"] for item in body["items"]] == ["accepted", "duplicate", "conflict"]
+    assert len(client.get("/api/documents").json()["documents"]) == 2
+
+
+def test_upload_preflight_reports_selection_name_conflict() -> None:
+    reset_database()
+    response = client.post(
+        "/api/documents/upload-preflight",
+        json={
+            "items": [
+                {
+                    "client_file_id": "a",
+                    "filename": "Rules.TXT",
+                    "size": 1,
+                    "file_sha256": hashlib.sha256(b"a").hexdigest(),
+                },
+                {
+                    "client_file_id": "b",
+                    "filename": "rules.txt",
+                    "size": 1,
+                    "file_sha256": hashlib.sha256(b"b").hexdigest(),
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["status"] for item in response.json()["items"]] == [
+        "selection_name_conflict",
+        "selection_name_conflict",
+    ]
+
+
+def test_batch_upload_accepts_multiple_documents(fake_indexing_services) -> None:
+    reset_database()
+
+    response = client.post(
+        "/api/documents/batch-upload",
+        files=[
+            ("files", ("rules-a.txt", "资产合计应等于分项合计。", "text/plain")),
+            ("files", ("rules-b.md", "# 负债合计\n负债合计应等于分项合计。", "text/markdown")),
+        ],
+        headers={"Idempotency-Key": "batch-upload-accepts-multiple"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["batch_id"] == "batch-upload-accepts-multiple"
+    assert body["accepted_count"] == 2
+    assert body["failed_count"] == 0
+    assert [item["status"] for item in body["items"]] == ["accepted", "accepted"]
+    assert all(item["document_id"].startswith("DOC-") for item in body["items"])
+    assert len(fake_indexing_services) == 2
+    documents = client.get("/api/documents").json()["documents"]
+    assert len(documents) == 2
+    assert {document["status"] for document in documents} == {"indexed"}
+
+
+def test_batch_upload_keeps_partial_success_and_cleans_failed_file(fake_indexing_services, tmp_path) -> None:
+    reset_database()
+
+    response = client.post(
+        "/api/documents/batch-upload",
+        files=[
+            ("files", ("valid.txt", "普惠小微贷款口径应以制度为准。", "text/plain")),
+            ("files", ("empty.txt", b"", "text/plain")),
+        ],
+        headers={"Idempotency-Key": "batch-upload-partial-success"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["accepted_count"] == 1
+    assert body["failed_count"] == 1
+    assert body["items"][0]["status"] == "accepted"
+    assert body["items"][1]["status"] == "failed"
+    assert body["items"][1]["document_id"] is None
+    assert body["items"][1]["error_message"] == "上传文档不能为空"
+    assert len(fake_indexing_services) == 1
+    stored_files = list((tmp_path / "documents" / "originals").glob("*"))
+    assert len(stored_files) == 1
+    assert not list((tmp_path / "documents" / "originals").glob("*.upload"))
+
+
+def test_batch_upload_rejects_too_many_files(monkeypatch) -> None:
+    reset_database()
+    monkeypatch.setattr("backend.app.api.documents.MAX_BATCH_UPLOAD_FILES", 1)
+
+    response = client.post(
+        "/api/documents/batch-upload",
+        files=[
+            ("files", ("a.txt", "A", "text/plain")),
+            ("files", ("b.txt", "B", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "单次批量上传最多支持 1 个文件"
+    assert client.get("/api/documents").json()["documents"] == []
+
+
+def test_batch_upload_is_idempotent_by_header(fake_indexing_services) -> None:
+    reset_database()
+    headers = {"Idempotency-Key": "batch-upload-idempotency-0001"}
+    files = [
+        ("files", ("rules-a.txt", "资产合计应等于分项合计。", "text/plain")),
+        ("files", ("rules-b.txt", "负债合计应等于分项合计。", "text/plain")),
+    ]
+
+    first = client.post("/api/documents/batch-upload", files=files, headers=headers)
+    second = client.post("/api/documents/batch-upload", files=files, headers=headers)
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    first_body = first.json()
+    second_body = second.json()
+    assert first_body["accepted_count"] == 2
+    assert second_body["accepted_count"] == 2
+    assert [item["document_id"] for item in first_body["items"]] == [
+        item["document_id"] for item in second_body["items"]
+    ]
+    assert [item["task_id"] for item in first_body["items"]] == [
+        item["task_id"] for item in second_body["items"]
+    ]
+    assert len(fake_indexing_services) == 2
+    assert len(client.get("/api/documents").json()["documents"]) == 2
+
+
 def test_next_document_id_is_collision_resistant_and_keeps_date_prefix() -> None:
     reset_database()
     today = datetime.now().strftime("%Y%m%d")
@@ -278,6 +528,56 @@ def test_next_document_id_is_collision_resistant_and_keeps_date_prefix() -> None
         assert re.fullmatch(rf"DOC-{today}-[0-9A-F]{{12}}", first)
         assert re.fullmatch(rf"DOC-{today}-[0-9A-F]{{12}}", second)
         assert first != second
+
+
+def test_sqlite_upgrade_backfills_duplicate_filename_norms_and_unique_index(monkeypatch, tmp_path) -> None:
+    from backend.app.core import database as database_module
+
+    legacy_engine = create_engine(
+        f"sqlite:///{(tmp_path / 'legacy.db').as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE documents ("
+                "id INTEGER PRIMARY KEY, "
+                "document_id VARCHAR(32), "
+                "filename VARCHAR(255), "
+                "content_type VARCHAR(100), "
+                "file_type VARCHAR(20), "
+                "size INTEGER, "
+                "storage_path VARCHAR(500), "
+                "status VARCHAR(30), "
+                "chunk_count INTEGER, "
+                "uploaded_at DATETIME"
+                ")"
+            )
+        )
+        connection.execute(text("CREATE TABLE document_chunks (id INTEGER PRIMARY KEY)"))
+        connection.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, document_id, filename, content_type, file_type, size, storage_path, status, chunk_count, uploaded_at) "
+                "VALUES "
+                "(1, 'DOC-OLD-1', 'Rules.TXT', 'text/plain', 'txt', 1, 'a.txt', 'indexed', 0, '2026-07-18 00:00:00'), "
+                "(2, 'DOC-OLD-2', 'rules.txt', 'text/plain', 'txt', 2, 'b.txt', 'indexed', 0, '2026-07-18 00:01:00')"
+            )
+        )
+
+    monkeypatch.setattr(database_module, "engine", legacy_engine)
+
+    database_module._upgrade_sqlite_schema()
+
+    with legacy_engine.connect() as connection:
+        rows = connection.execute(
+            text("SELECT filename, filename_norm FROM documents ORDER BY id")
+        ).all()
+        indexes = connection.execute(text("PRAGMA index_list('documents')")).mappings().all()
+
+    assert rows[0] == ("Rules.TXT", "rules.txt")
+    assert rows[1] == ("rules (历史重复-2).txt", "rules (历史重复-2).txt")
+    assert any(index["name"] == "ix_documents_filename_norm" and index["unique"] for index in indexes)
 
 
 def test_index_task_is_durable_when_memory_queue_is_full(monkeypatch) -> None:
@@ -1702,6 +2002,9 @@ def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
     assert qa_details_json["question"] == question
     assert qa_details_json["answer"] == qa_detail["answer"]
     assert qa_details_json["citation_count"] == 1
+    assert qa_details_json["citations"][0]["filename"] == "rules.txt"
+    assert qa_details_json["citations"][0]["section_title"] == "资产合计"
+    assert qa_details_json["citations"][0]["excerpt"] == "资产合计应等于资产分项金额合计。"
 
 
 def test_audit_logs_aggregate_repeated_warning_events() -> None:

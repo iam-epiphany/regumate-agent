@@ -7,12 +7,20 @@ import {
   getDocument,
   getDocumentProcessing,
   listDocuments,
+  preflightDocumentUploads,
   rebuildDocumentIndex,
   uploadDocument,
+  uploadDocumentsBatch,
 } from "../api/documents";
 import { getRagHealth } from "../api/system";
 import { StatusBadge } from "../components/StatusBadge";
-import type { ChunkSummary, DocumentDetailResponse, DocumentSummary, RagHealthResponse } from "../types/api";
+import type {
+  ChunkSummary,
+  DocumentDetailResponse,
+  DocumentSummary,
+  DocumentUploadPreflightItem,
+  RagHealthResponse,
+} from "../types/api";
 
 interface UploadNotice {
   documentId: string;
@@ -23,9 +31,45 @@ interface UploadNotice {
   completed: boolean;
 }
 
+interface BatchUploadFileNotice {
+  filename: string;
+  documentId: string | null;
+  taskId: string | null;
+  stage: string | null;
+  completedUnits: number | null;
+  totalUnits: number | null;
+  completed: boolean;
+  status: "accepted" | "failed" | "duplicate" | "conflict";
+  errorMessage: string | null;
+}
+
+interface BatchUploadNotice {
+  batchId: string;
+  acceptedCount: number;
+  failedCount: number;
+  completed: boolean;
+  items: BatchUploadFileNotice[];
+}
+
 interface ToastNotice {
   message: string;
   tone: "success" | "error";
+}
+
+interface UploadConflictNotice {
+  file: File;
+  fileSha256: string;
+  result: DocumentUploadPreflightItem;
+  renameValue: string;
+}
+
+interface BatchConflictIssue {
+  id: string;
+  file: File;
+  fileSha256: string;
+  result: DocumentUploadPreflightItem;
+  renameValue: string;
+  resolving: boolean;
 }
 
 const DOCUMENT_PAGE_SIZE = 20;
@@ -34,6 +78,9 @@ export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDetail, setSelectedDetail] = useState<DocumentDetailResponse | null>(null);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
+  const [batchUploadNotice, setBatchUploadNotice] = useState<BatchUploadNotice | null>(null);
+  const [uploadConflict, setUploadConflict] = useState<UploadConflictNotice | null>(null);
+  const [batchConflictIssues, setBatchConflictIssues] = useState<BatchConflictIssue[]>([]);
   const [toastNotice, setToastNotice] = useState<ToastNotice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DocumentSummary | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
@@ -47,7 +94,10 @@ export function DocumentsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [isResolvingBatchIssues, setIsResolvingBatchIssues] = useState(false);
   const [uploadBytes, setUploadBytes] = useState<{ loaded: number; total: number } | null>(null);
+  const [batchUploadBytes, setBatchUploadBytes] = useState<{ loaded: number; total: number; count: number } | null>(null);
   const deleteAbortController = useRef<AbortController | null>(null);
   const deleteDialogRef = useRef<HTMLDivElement | null>(null);
   const deleteCancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -145,6 +195,97 @@ export function DocumentsPage() {
   }, [refreshKnowledgeBaseView, uploadNotice]);
 
   useEffect(() => {
+    if (!batchUploadNotice || batchUploadNotice.completed) {
+      return;
+    }
+    const pendingItems = batchUploadNotice.items.filter(
+      (item) => item.status === "accepted" && item.documentId && !item.completed,
+    );
+    if (pendingItems.length === 0) {
+      setBatchUploadNotice((current) => current ? { ...current, completed: true } : current);
+      return;
+    }
+
+    let stopped = false;
+    let timer: number | undefined;
+
+    async function pollBatchProcessing() {
+      const results = await Promise.allSettled(
+        pendingItems.map((item) => getDocumentProcessing(item.documentId as string)),
+      );
+      if (stopped) {
+        return;
+      }
+
+      const taskByDocumentId = new Map(
+        results
+          .filter((result) => result.status === "fulfilled")
+          .map((result) => [result.value.document_id, result.value]),
+      );
+      let hasTerminalUpdate = false;
+      let hasPending = results.some((result) => result.status === "rejected");
+      let hasFailedTask = false;
+
+      setBatchUploadNotice((current) => {
+        if (!current) {
+          return current;
+        }
+        const nextItems = current.items.map((item) => {
+          if (!item.documentId) {
+            return item;
+          }
+          const task = taskByDocumentId.get(item.documentId);
+          if (!task) {
+            return item;
+          }
+          const completed = task.status === "completed" || task.status === "failed";
+          if (completed && !item.completed) {
+            hasTerminalUpdate = true;
+          }
+          if (task.status === "failed") {
+            hasFailedTask = true;
+          }
+          if (!completed) {
+            hasPending = true;
+          }
+          return {
+            ...item,
+            stage: task.stage,
+            completedUnits: task.completed_units,
+            totalUnits: task.total_units,
+            completed,
+            errorMessage: task.error?.message ?? task.error_message ?? item.errorMessage,
+          };
+        });
+        const allAcceptedDone = nextItems.every(
+          (item) => item.status !== "accepted" || item.completed,
+        );
+        return { ...current, items: nextItems, completed: allAcceptedDone };
+      });
+
+      if (hasTerminalUpdate) {
+        await refreshKnowledgeBaseView(true);
+      }
+      if (hasPending) {
+        timer = window.setTimeout(pollBatchProcessing, 1500);
+        return;
+      }
+      setToastNotice({
+        message: hasFailedTask ? "批量上传中有文档处理失败" : "批量上传文档已处理完成",
+        tone: hasFailedTask ? "error" : "success",
+      });
+    }
+
+    void pollBatchProcessing();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [batchUploadNotice, refreshKnowledgeBaseView]);
+
+  useEffect(() => {
     if (!toastNotice) {
       return;
     }
@@ -199,19 +340,19 @@ export function DocumentsPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedDetail]);
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
+  async function submitSingleUpload(
+    file: File,
+    options: { filenameOverride?: string; overwriteDocumentId?: string; alreadyBusy?: boolean } = {},
+  ) {
+    if (!options.alreadyBusy) {
+      setIsUploading(true);
     }
-
-    setUploadNotice(null);
-    setToastNotice(null);
-    setIsUploading(true);
     setUploadBytes({ loaded: 0, total: file.size });
     try {
       const result = await uploadDocument(file, {
         idempotencyKey: createRequestId(),
+        filenameOverride: options.filenameOverride,
+        overwriteDocumentId: options.overwriteDocumentId,
         onProgress: (loaded, total) => setUploadBytes({ loaded, total }),
       });
       setUploadNotice({
@@ -235,13 +376,291 @@ export function DocumentsPage() {
           completed: true,
         });
       }
-    } catch (error) {
-      setToastNotice({ message: error instanceof Error ? error.message : "上传失败", tone: "error" });
+      return result;
     } finally {
       setIsUploading(false);
       setUploadBytes(null);
+    }
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setUploadNotice(null);
+    setUploadConflict(null);
+    setToastNotice(null);
+    setIsUploading(true);
+    let submitted = false;
+    try {
+      const fileSha256 = await computeFileSha256(file);
+      const preflight = await preflightDocumentUploads([
+        { client_file_id: "single", filename: file.name, size: file.size, file_sha256: fileSha256 },
+      ]);
+      const result = preflight.items[0];
+      if (result.status !== "ready") {
+        setUploadConflict({
+          file,
+          fileSha256,
+          result,
+          renameValue: suggestedFilename(file.name),
+        });
+        setToastNotice({ message: uploadPreflightStatusLabel(result), tone: "error" });
+        return;
+      }
+      submitted = true;
+      await submitSingleUpload(file, { alreadyBusy: true });
+    } catch (error) {
+      setToastNotice({ message: error instanceof Error ? error.message : "上传失败", tone: "error" });
+    } finally {
+      if (!submitted) {
+        setIsUploading(false);
+      }
       event.target.value = "";
     }
+  }
+
+  async function handleBatchFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+
+    setUploadNotice(null);
+    setBatchUploadNotice(null);
+    setBatchConflictIssues([]);
+    setToastNotice(null);
+    setIsBatchUploading(true);
+    try {
+      const preparedFiles = await Promise.all(
+        files.map(async (file, index) => ({
+          id: `batch-${Date.now()}-${index}`,
+          file,
+          fileSha256: await computeFileSha256(file),
+        })),
+      );
+      const preflight = await preflightDocumentUploads(
+        preparedFiles.map((item) => ({
+          client_file_id: item.id,
+          filename: item.file.name,
+          size: item.file.size,
+          file_sha256: item.fileSha256,
+        })),
+      );
+      const preflightById = new Map(preflight.items.map((item) => [item.client_file_id, item]));
+      const readyFiles = preparedFiles.filter((item) => preflightById.get(item.id)?.status === "ready");
+      const issues = preparedFiles
+        .filter((item) => preflightById.get(item.id)?.status !== "ready")
+        .map((item) => ({
+          id: item.id,
+          file: item.file,
+          fileSha256: item.fileSha256,
+          result: preflightById.get(item.id) as DocumentUploadPreflightItem,
+          renameValue: suggestedFilename(item.file.name),
+          resolving: false,
+        }));
+      setBatchConflictIssues(issues);
+
+      if (readyFiles.length === 0) {
+        setToastNotice({
+          message: `批量预检完成，${issues.length} 个文件需要处理`,
+          tone: issues.length > 0 ? "error" : "success",
+        });
+        return;
+      }
+
+      setBatchUploadBytes({
+        loaded: 0,
+        total: readyFiles.reduce((total, item) => total + item.file.size, 0),
+        count: readyFiles.length,
+      });
+      const result = await uploadDocumentsBatch(readyFiles.map((item) => item.file), {
+        idempotencyKey: createRequestId(),
+        onProgress: (loaded, total) => setBatchUploadBytes({ loaded, total, count: readyFiles.length }),
+      });
+      const latestDocuments = await refreshKnowledgeBaseView(true);
+      setBatchUploadNotice({
+        batchId: result.batch_id,
+        acceptedCount: result.accepted_count,
+        failedCount: result.failed_count,
+        completed: result.accepted_count === 0,
+        items: result.items.map((item) => {
+          const uploadedDocument = item.document_id
+            ? latestDocuments.find((document) => document.document_id === item.document_id)
+            : null;
+          const completed = uploadedDocument?.status === "indexed";
+          return {
+            filename: item.filename,
+            documentId: item.document_id,
+            taskId: item.task_id,
+            stage: completed ? "completed" : item.stage,
+            completedUnits: completed ? uploadedDocument.chunk_count : null,
+            totalUnits: completed ? uploadedDocument.chunk_count : null,
+            completed,
+            status: item.status,
+            errorMessage: item.error_message,
+          };
+        }),
+      });
+      setToastNotice({
+        message: issues.length > 0 || result.failed_count > 0
+          ? `批量上传已接收 ${result.accepted_count} 份，${issues.length + result.failed_count} 份需要处理`
+          : `批量上传已提交 ${result.accepted_count} 份文档`,
+        tone: issues.length > 0 || result.failed_count > 0 ? "error" : "success",
+      });
+    } catch (error) {
+      setToastNotice({ message: error instanceof Error ? error.message : "批量上传失败", tone: "error" });
+    } finally {
+      setIsBatchUploading(false);
+      setBatchUploadBytes(null);
+      event.target.value = "";
+    }
+  }
+
+  async function confirmUploadConflict(action: "rename" | "overwrite") {
+    if (!uploadConflict) {
+      return;
+    }
+    setToastNotice(null);
+    try {
+      if (action === "rename") {
+        const renameValue = uploadConflict.renameValue.trim();
+        const preflight = await preflightDocumentUploads([
+          {
+            client_file_id: "single-rename",
+            filename: renameValue,
+            size: uploadConflict.file.size,
+            file_sha256: uploadConflict.fileSha256,
+          },
+        ]);
+        const result = preflight.items[0];
+        if (result.status !== "ready") {
+          setUploadConflict((current) => current ? { ...current, result, renameValue } : current);
+          setToastNotice({ message: uploadPreflightStatusLabel(result), tone: "error" });
+          return;
+        }
+        const file = uploadConflict.file;
+        setUploadConflict(null);
+        await submitSingleUpload(file, { filenameOverride: renameValue });
+        return;
+      }
+      const existingDocumentId = uploadConflict.result.existing_document?.document_id;
+      if (!existingDocumentId) {
+        setToastNotice({ message: "没有可覆盖的已有文档。", tone: "error" });
+        return;
+      }
+      const file = uploadConflict.file;
+      setUploadConflict(null);
+      await submitSingleUpload(file, { overwriteDocumentId: existingDocumentId });
+    } catch (error) {
+      setToastNotice({ message: error instanceof Error ? error.message : "冲突处理失败", tone: "error" });
+    }
+  }
+
+  function updateBatchIssueRename(issueId: string, renameValue: string) {
+    setBatchConflictIssues((current) => current.map((issue) => (
+      issue.id === issueId ? { ...issue, renameValue } : issue
+    )));
+  }
+
+  function skipBatchIssue(issueId: string) {
+    setBatchConflictIssues((current) => current.filter((issue) => issue.id !== issueId));
+  }
+
+  async function resolveBatchIssue(issue: BatchConflictIssue, action: "rename" | "overwrite") {
+    setIsResolvingBatchIssues(true);
+    setBatchConflictIssues((current) => current.map((item) => (
+      item.id === issue.id ? { ...item, resolving: true } : item
+    )));
+    try {
+      if (action === "rename") {
+        const renameValue = issue.renameValue.trim();
+        const preflight = await preflightDocumentUploads([
+          {
+            client_file_id: `${issue.id}-rename`,
+            filename: renameValue,
+            size: issue.file.size,
+            file_sha256: issue.fileSha256,
+          },
+        ]);
+        const result = preflight.items[0];
+        if (result.status !== "ready") {
+          setBatchConflictIssues((current) => current.map((item) => (
+            item.id === issue.id ? { ...item, result, renameValue, resolving: false } : item
+          )));
+          setToastNotice({ message: uploadPreflightStatusLabel(result), tone: "error" });
+          return;
+        }
+        await submitResolvedBatchUpload(issue.file, { filenameOverride: renameValue });
+        skipBatchIssue(issue.id);
+        return;
+      }
+      const existingDocumentId = issue.result.existing_document?.document_id;
+      if (!existingDocumentId) {
+        setToastNotice({ message: "没有可覆盖的已有文档。", tone: "error" });
+        return;
+      }
+      await submitResolvedBatchUpload(issue.file, { overwriteDocumentId: existingDocumentId });
+      skipBatchIssue(issue.id);
+    } catch (error) {
+      setToastNotice({ message: error instanceof Error ? error.message : "问题文件处理失败", tone: "error" });
+    } finally {
+      setBatchConflictIssues((current) => current.map((item) => (
+        item.id === issue.id ? { ...item, resolving: false } : item
+      )));
+      setIsResolvingBatchIssues(false);
+    }
+  }
+
+  async function submitResolvedBatchUpload(
+    file: File,
+    options: { filenameOverride?: string; overwriteDocumentId?: string },
+  ) {
+    const result = await uploadDocument(file, {
+      idempotencyKey: createRequestId(),
+      filenameOverride: options.filenameOverride,
+      overwriteDocumentId: options.overwriteDocumentId,
+    });
+    setBatchUploadNotice((current) => {
+      const notice = current ?? {
+        batchId: "resolved-batch-conflicts",
+        acceptedCount: 0,
+        failedCount: 0,
+        completed: false,
+        items: [],
+      };
+      return {
+        ...notice,
+        acceptedCount: notice.acceptedCount + 1,
+        completed: false,
+        items: [
+          ...notice.items,
+          {
+            filename: result.filename,
+            documentId: result.document_id,
+            taskId: result.task_id,
+            stage: result.stage,
+            completedUnits: null,
+            totalUnits: null,
+            completed: false,
+            status: "accepted",
+            errorMessage: null,
+          },
+        ],
+      };
+    });
+    await refreshKnowledgeBaseView(true);
+    setToastNotice({ message: "问题文件已提交处理", tone: "success" });
+  }
+
+  async function resolveAllBatchIssuesWithRename() {
+    const issues = batchConflictIssues.filter((issue) => issue.result.status !== "exact_duplicate");
+    for (const [index, issue] of issues.entries()) {
+      await resolveBatchIssue({ ...issue, renameValue: suggestedFilename(issue.file.name, index + 1) }, "rename");
+    }
+    setBatchConflictIssues((current) => current.filter((issue) => issue.result.status === "exact_duplicate"));
   }
 
   async function showDetail(documentId: string, chunkOffset = 0) {
@@ -354,15 +773,27 @@ export function DocumentsPage() {
         </div>
         <div className="document-command-panel__body">
           <p>支持制度原文、统计报表填报说明、指标口径文档和可提取文本的表格文件。</p>
-          <label className={`file-input ${isUploading ? "is-disabled" : ""}`}>
-            {isUploading ? "正在上传" : "选择文档"}
-            <input
-              type="file"
-              accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
-              onChange={(event) => void handleFileChange(event)}
-              disabled={isUploading}
-            />
-          </label>
+          <div className="document-upload-actions">
+            <label className={`file-input ${isUploading ? "is-disabled" : ""}`}>
+              {isUploading ? "正在上传" : "选择文档"}
+              <input
+                type="file"
+                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
+                onChange={(event) => void handleFileChange(event)}
+                disabled={isUploading}
+              />
+            </label>
+            <label className={`file-input ${isBatchUploading ? "is-disabled" : ""}`}>
+              {isBatchUploading ? "批量上传中" : "批量上传"}
+              <input
+                type="file"
+                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
+                multiple
+                onChange={(event) => void handleBatchFileChange(event)}
+                disabled={isBatchUploading}
+              />
+            </label>
+          </div>
         </div>
         {uploadBytes ? (
           <div className="upload-progress" role="status" aria-live="polite">
@@ -379,6 +810,25 @@ export function DocumentsPage() {
             />
             <strong>{formatProcessingUnits(uploadNotice.completedUnits, uploadNotice.totalUnits)}</strong>
           </div>
+        ) : null}
+        {batchUploadBytes ? (
+          <div className="upload-progress" role="status" aria-live="polite">
+            <span>正在上传 {batchUploadBytes.count} 个文件</span>
+            <progress value={batchUploadBytes.loaded} max={Math.max(batchUploadBytes.total, 1)} />
+            <strong>{Math.round((batchUploadBytes.loaded / Math.max(batchUploadBytes.total, 1)) * 100)}%</strong>
+          </div>
+        ) : null}
+        {batchUploadNotice ? <BatchUploadSummary notice={batchUploadNotice} /> : null}
+        {batchConflictIssues.length > 0 ? (
+          <BatchConflictPanel
+            issues={batchConflictIssues}
+            disabled={isResolvingBatchIssues}
+            onRenameChange={updateBatchIssueRename}
+            onResolve={(issue, action) => void resolveBatchIssue(issue, action)}
+            onSkip={skipBatchIssue}
+            onRenameAll={() => void resolveAllBatchIssuesWithRename()}
+            onSkipAll={() => setBatchConflictIssues([])}
+          />
         ) : null}
         <p className="hint">可上传 .txt、.md、.doc、.docx、.pdf、.xls 或 .xlsx 文件。</p>
       </section>
@@ -573,6 +1023,16 @@ export function DocumentsPage() {
         </div>
       ) : null}
 
+      {uploadConflict ? (
+        <UploadConflictDialog
+          conflict={uploadConflict}
+          isUploading={isUploading}
+          onRenameChange={(renameValue) => setUploadConflict((current) => current ? { ...current, renameValue } : current)}
+          onCancel={() => setUploadConflict(null)}
+          onResolve={(action) => void confirmUploadConflict(action)}
+        />
+      ) : null}
+
       {deleteTarget ? (
         <div className="modal-backdrop" role="presentation">
           <div ref={deleteDialogRef} className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
@@ -617,6 +1077,183 @@ function Toast({ notice }: { notice: ToastNotice }) {
     <div className={`toast-notice toast-notice--${notice.tone}`} role="status" aria-live="polite">
       <Icon size={18} />
       <span>{notice.message}</span>
+    </div>
+  );
+}
+
+function BatchUploadSummary({ notice }: { notice: BatchUploadNotice }) {
+  const completedCount = notice.items.filter((item) => item.status === "accepted" && item.completed).length;
+  return (
+    <div className="batch-upload-summary" role="status" aria-live="polite">
+      <div className="batch-upload-summary__head">
+        <strong>批量上传结果</strong>
+        <span>
+          已接收 {notice.acceptedCount} 份
+          {notice.failedCount > 0 ? `，${notice.failedCount} 份失败` : ""}
+          {notice.acceptedCount > 0 ? `，${completedCount}/${notice.acceptedCount} 份处理完成` : ""}
+        </span>
+      </div>
+      <ul className="batch-upload-list">
+        {notice.items.map((item, index) => (
+          <li key={`${notice.batchId}-${index}-${item.filename}`}>
+            <span className="batch-upload-list__name" title={item.filename}>{item.filename}</span>
+            <span className={item.status !== "accepted" || (item.completed && item.errorMessage) ? "batch-upload-list__status is-error" : "batch-upload-list__status"}>
+              {batchUploadItemLabel(item)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function UploadConflictDialog({
+  conflict,
+  isUploading,
+  onRenameChange,
+  onCancel,
+  onResolve,
+}: {
+  conflict: UploadConflictNotice;
+  isUploading: boolean;
+  onRenameChange: (value: string) => void;
+  onCancel: () => void;
+  onResolve: (action: "rename" | "overwrite") => void;
+}) {
+  const existing = conflict.result.existing_document;
+  const isExactDuplicate = conflict.result.status === "exact_duplicate";
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="confirm-dialog upload-conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-conflict-title">
+        <div className="confirm-dialog__icon">
+          <AlertTriangle size={22} />
+        </div>
+        <div className="confirm-dialog__body">
+          <h2 id="upload-conflict-title">{isExactDuplicate ? "文件已存在" : "文件名已存在"}</h2>
+          <p>{uploadPreflightStatusLabel(conflict.result)}</p>
+          <dl className="confirm-dialog__facts">
+            <div>
+              <dt>新文件</dt>
+              <dd>{conflict.file.name}（{formatBytes(conflict.file.size)}）</dd>
+            </div>
+            {existing ? (
+              <>
+                <div>
+                  <dt>已有文档</dt>
+                  <dd>{existing.filename}</dd>
+                </div>
+                <div>
+                  <dt>文档编号</dt>
+                  <dd className="mono">{existing.document_id}</dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+          {!isExactDuplicate ? (
+            <label className="rename-field">
+              <span>重命名新文件</span>
+              <input
+                type="text"
+                value={conflict.renameValue}
+                onChange={(event) => onRenameChange(event.target.value)}
+              />
+            </label>
+          ) : null}
+          <div className="button-row">
+            <button className="secondary-button" type="button" onClick={onCancel} disabled={isUploading}>
+              {isExactDuplicate ? "关闭" : "取消"}
+            </button>
+            {!isExactDuplicate ? (
+              <>
+                <button className="secondary-button" type="button" onClick={() => onResolve("rename")} disabled={isUploading || !conflict.renameValue.trim()}>
+                  重命名上传
+                </button>
+                <button className="icon-button danger-solid-button" type="button" onClick={() => onResolve("overwrite")} disabled={isUploading || !existing}>
+                  <Trash2 size={16} />
+                  覆盖旧文件
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BatchConflictPanel({
+  issues,
+  disabled,
+  onRenameChange,
+  onResolve,
+  onSkip,
+  onRenameAll,
+  onSkipAll,
+}: {
+  issues: BatchConflictIssue[];
+  disabled: boolean;
+  onRenameChange: (issueId: string, value: string) => void;
+  onResolve: (issue: BatchConflictIssue, action: "rename" | "overwrite") => void;
+  onSkip: (issueId: string) => void;
+  onRenameAll: () => void;
+  onSkipAll: () => void;
+}) {
+  const resolvableCount = issues.filter((issue) => issue.result.status !== "exact_duplicate").length;
+  return (
+    <div className="batch-conflict-panel" role="status" aria-live="polite">
+      <div className="batch-upload-summary__head">
+        <strong>批量上传待处理</strong>
+        <span>{issues.length} 个文件需要确认</span>
+      </div>
+      <div className="button-row">
+        <button className="secondary-button" type="button" disabled={disabled || resolvableCount === 0} onClick={onRenameAll}>
+          全部自动重命名
+        </button>
+        <button className="secondary-button" type="button" disabled={disabled} onClick={onSkipAll}>
+          全部跳过
+        </button>
+      </div>
+      <ul className="batch-conflict-list">
+        {issues.map((issue) => {
+          const existing = issue.result.existing_document;
+          const isExactDuplicate = issue.result.status === "exact_duplicate";
+          return (
+            <li key={issue.id}>
+              <div className="batch-conflict-list__main">
+                <strong title={issue.file.name}>{issue.file.name}</strong>
+                <span>{uploadPreflightStatusLabel(issue.result)}</span>
+                {existing ? <span className="muted">已有：{existing.filename}</span> : null}
+              </div>
+              {!isExactDuplicate ? (
+                <label className="rename-field batch-conflict-list__rename">
+                  <span>新文件名</span>
+                  <input
+                    type="text"
+                    value={issue.renameValue}
+                    disabled={disabled || issue.resolving}
+                    onChange={(event) => onRenameChange(issue.id, event.target.value)}
+                  />
+                </label>
+              ) : null}
+              <div className="button-row">
+                <button className="secondary-button" type="button" disabled={disabled || issue.resolving} onClick={() => onSkip(issue.id)}>
+                  跳过
+                </button>
+                {!isExactDuplicate ? (
+                  <button className="secondary-button" type="button" disabled={disabled || issue.resolving || !issue.renameValue.trim()} onClick={() => onResolve(issue, "rename")}>
+                    重命名上传
+                  </button>
+                ) : null}
+                {issue.result.status === "name_conflict" ? (
+                  <button className="secondary-button danger-button" type="button" disabled={disabled || issue.resolving || !existing} onClick={() => onResolve(issue, "overwrite")}>
+                    覆盖旧文件
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -731,6 +1368,47 @@ function createRequestId(): string {
     : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
 }
 
+async function computeFileSha256(file: File): Promise<string> {
+  if (!crypto.subtle) {
+    throw new Error("当前浏览器不支持上传前重复检测，请更换现代浏览器后重试。");
+  }
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function suggestedFilename(filename: string, salt = 1): string {
+  const dotIndex = filename.lastIndexOf(".");
+  if (dotIndex <= 0) {
+    return `${filename} (${salt})`;
+  }
+  return `${filename.slice(0, dotIndex)} (${salt})${filename.slice(dotIndex)}`;
+}
+
+function uploadPreflightStatusLabel(item: DocumentUploadPreflightItem): string {
+  if (item.status === "exact_duplicate") {
+    return "该文件内容已存在于知识库中，已跳过上传。";
+  }
+  if (item.status === "name_conflict") {
+    return "知识库中已存在同名文件，请覆盖旧文件或重命名新文件。";
+  }
+  if (item.status === "selection_name_conflict") {
+    return "本次选择中存在同名文件，请重命名或跳过其中一个。";
+  }
+  return item.error_message ?? "文件可以上传。";
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function documentStageLabel(stage: string): string {
   const labels: Record<string, string> = {
     queued: "文件已保存，等待解析",
@@ -746,6 +1424,22 @@ function documentStageLabel(stage: string): string {
 
 function formatProcessingUnits(completed: number | null, total: number | null): string {
   return completed !== null && total !== null ? `${completed}/${total}` : "处理中";
+}
+
+function batchUploadItemLabel(item: BatchUploadFileNotice): string {
+  if (item.status === "failed") {
+    return item.errorMessage ?? "上传失败";
+  }
+  if (item.status === "duplicate") {
+    return item.errorMessage ?? "文件已存在";
+  }
+  if (item.status === "conflict") {
+    return item.errorMessage ?? "文件名冲突";
+  }
+  if (item.completed) {
+    return item.errorMessage ? `处理失败：${item.errorMessage}` : "处理完成";
+  }
+  return item.stage ? documentStageLabel(item.stage) : "等待处理";
 }
 
 function displayChunkText(chunk: ChunkSummary): string {
