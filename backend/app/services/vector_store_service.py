@@ -7,8 +7,10 @@ from backend.app.core.config import (
     EMBEDDING_DIMENSION,
     INDEX_VERSION,
     QDRANT_COLLECTION,
+    QDRANT_AUTO_CREATE_COLLECTION,
     QDRANT_DENSE_VECTOR_NAME,
     QDRANT_SPARSE_VECTOR_NAME,
+    QDRANT_UPSERT_BATCH_SIZE,
     QDRANT_URL,
 )
 from backend.app.services.chunk_service import ChunkDraft
@@ -43,6 +45,10 @@ def ensure_vector_collection() -> None:
     client, models = _qdrant()
     try:
         if not client.collection_exists(QDRANT_COLLECTION):
+            if not QDRANT_AUTO_CREATE_COLLECTION:
+                raise VectorStoreError(
+                    f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
+                )
             client.create_collection(
                 collection_name=QDRANT_COLLECTION,
                 vectors_config={
@@ -58,6 +64,8 @@ def ensure_vector_collection() -> None:
                 },
             )
         _ensure_payload_indexes(client, models)
+    except VectorStoreError:
+        raise
     except Exception as exc:
         raise VectorStoreError("Qdrant collection 初始化失败") from exc
 
@@ -87,6 +95,7 @@ def upsert_chunk_embeddings(
                     "chunk_id": chunk.chunk_id,
                     "document_id": chunk.document_id,
                     "filename": filename,
+                    "source_file": filename,
                     "section_title": chunk.section_title,
                     "page_number": chunk.page_number,
                     "text": chunk.text,
@@ -99,10 +108,20 @@ def upsert_chunk_embeddings(
                     "previous_chunk_id": chunk.previous_chunk_id,
                     "next_chunk_id": chunk.next_chunk_id,
                     "chunk_metadata": chunk_metadata,
+                    "file_type": chunk_metadata.get("source_format"),
+                    "source_title": chunk_metadata.get("source_title"),
                     "table_id": chunk_metadata.get("table_id"),
                     "table_title": chunk_metadata.get("table_title"),
+                    "sheet_name": chunk_metadata.get("sheet_name"),
+                    "period": chunk_metadata.get("period"),
+                    "year": _period_value(chunk_metadata, "year"),
+                    "month": _period_value(chunk_metadata, "month"),
+                    "quarter": _period_value(chunk_metadata, "quarter"),
+                    "unit": chunk_metadata.get("unit"),
+                    "row_label": chunk_metadata.get("row_label"),
                     "table_headers": chunk_metadata.get("table_headers") or chunk_metadata.get("headers"),
                     "row_index": chunk_metadata.get("row_index"),
+                    "row_cells": chunk_metadata.get("row_cells"),
                     "raw_table_preview": chunk_metadata.get("raw_table_preview"),
                     "index_version": INDEX_VERSION,
                 },
@@ -110,7 +129,12 @@ def upsert_chunk_embeddings(
         )
 
     try:
-        client.upsert(collection_name=QDRANT_COLLECTION, points=points, wait=True)
+        for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
+            client.upsert(
+                collection_name=QDRANT_COLLECTION,
+                points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
+                wait=True,
+            )
     except Exception as exc:
         raise VectorStoreError("Qdrant chunk 向量写入失败") from exc
 
@@ -121,19 +145,41 @@ def count_document_vectors(document_id: str) -> int:
     try:
         response = client.count(
             collection_name=QDRANT_COLLECTION,
-            count_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="document_id",
-                        match=models.MatchValue(value=document_id),
-                    )
-                ]
-            ),
+            count_filter=_document_filter(document_id, models),
             exact=True,
         )
     except Exception as exc:
         raise VectorStoreError(f"Qdrant 文档向量计数失败：{exc}") from exc
     return int(getattr(response, "count", 0) or 0)
+
+
+def document_vector_chunk_ids(document_id: str) -> set[str]:
+    """Return current-index chunk IDs for exact cross-store verification."""
+
+    ensure_vector_collection()
+    client, models = _qdrant()
+    chunk_ids: set[str] = set()
+    offset = None
+    try:
+        while True:
+            points, offset = client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter=_document_filter(document_id, models),
+                limit=256,
+                offset=offset,
+                with_payload=["chunk_id"],
+                with_vectors=False,
+            )
+            chunk_ids.update(
+                str(point.payload.get("chunk_id"))
+                for point in points
+                if point.payload and point.payload.get("chunk_id")
+            )
+            if offset is None:
+                break
+    except Exception as exc:
+        raise VectorStoreError(f"Qdrant 文档向量明细核对失败：{exc}") from exc
+    return chunk_ids
 
 
 def delete_document_vectors(document_id: str, chunk_ids: list[str] | None = None) -> None:
@@ -176,11 +222,13 @@ def hybrid_search(query_embedding: TextEmbedding, *, limit: int) -> list[VectorS
                     query=query_embedding.dense,
                     using=QDRANT_DENSE_VECTOR_NAME,
                     limit=limit,
+                    filter=_index_version_filter(models),
                 ),
                 models.Prefetch(
                     query=_sparse_vector(query_embedding.sparse, models),
                     using=QDRANT_SPARSE_VECTOR_NAME,
                     limit=limit,
+                    filter=_index_version_filter(models),
                 ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
@@ -215,6 +263,12 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
     indexes = {
         "document_id": models.PayloadSchemaType.KEYWORD,
         "index_version": models.PayloadSchemaType.KEYWORD,
+        "source_file": models.PayloadSchemaType.KEYWORD,
+        "chunk_type": models.PayloadSchemaType.KEYWORD,
+        "sheet_name": models.PayloadSchemaType.KEYWORD,
+        "year": models.PayloadSchemaType.INTEGER,
+        "month": models.PayloadSchemaType.INTEGER,
+        "quarter": models.PayloadSchemaType.INTEGER,
     }
     for field_name, field_schema in indexes.items():
         try:
@@ -232,6 +286,32 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
 
 def _point_id(chunk_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"regumate:{chunk_id}"))
+
+
+def _index_version_filter(models: Any) -> Any:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="index_version",
+                match=models.MatchValue(value=INDEX_VERSION),
+            )
+        ]
+    )
+
+
+def _document_filter(document_id: str, models: Any) -> Any:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="document_id",
+                match=models.MatchValue(value=document_id),
+            ),
+            models.FieldCondition(
+                key="index_version",
+                match=models.MatchValue(value=INDEX_VERSION),
+            ),
+        ]
+    )
 
 
 def _sparse_vector(sparse: SparseEmbedding, models: Any) -> Any:
@@ -268,3 +348,11 @@ def _payload_string_list(value: Any) -> list[str] | None:
 
 def _payload_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _period_value(metadata: dict[str, Any], key: str) -> Any:
+    direct = metadata.get(f"inferred_{key}")
+    if direct is not None:
+        return direct
+    period = metadata.get("period")
+    return period.get(key) if isinstance(period, dict) else None

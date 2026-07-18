@@ -10,26 +10,7 @@
 
 最终目标：本系统面向银行统计报送人员、合规人员、财务人员使用。用户上传监管制度和填报说明，系统构建可信知识库；用户再上传统计报表，系统根据制度口径检查报表，并支持围绕报表异常进行问答，最终给出有依据的解释和整改建议。
 
-当前阶段只做 RAG-only MVP：
 
-- 监管制度、统计报表填报说明、指标口径文档上传。
-- txt / md / docx / 可提取文本 pdf 的文本解析。
-- 文档 token-aware chunk 切分，SQLite 元数据入库，Qdrant 向量索引。
-- BGE-M3 embedding + Qdrant dense/sparse hybrid search + BGE reranker。
-- 基于检索 chunk 的带引用回答。
-- 没有依据时明确拒答。
-- 上传、索引、问答的审计日志。
-
-当前阶段不做：
-
-- 真实报表文件上传校验。
-- 规则引擎。
-- 异常排查详情页。
-- 人工复核流程。
-- 审查报告生成。
-- 复杂任务编排。
-
-“统计报表”在当前阶段仅指统计报表制度、填报说明、指标口径等知识文档。
 
 ## 2. 学习参考边界
 
@@ -45,7 +26,7 @@
 
 - 后端：Python + FastAPI + Pydantic + SQLAlchemy + SQLite + Qdrant + Uvicorn。
 - 前端：React + TypeScript + Vite。
-- 文档解析：txt / md / docx / 可提取文本 pdf。
+- 文档解析：txt / md / doc / docx / 可提取文本 pdf / xls / xlsx。
 - RAG v0：SQLite 元数据 + Qdrant 向量索引 + BGE-M3 embedding + BGE reranker。
 - 标准启动：Docker Compose 一键启动 app + Qdrant。
 - 测试：pytest；前端用 TypeScript build 验证。
@@ -100,6 +81,9 @@ docs/
 - 没有依据必须拒答。
 - 不编造监管制度、字段、接口或路径。
 - 不提交 `.env`、密钥、真实银行数据、运行时数据库和上传文件。
+- 当前提交版允许并要求在 `.env` 中保留项目所有者配置的 DeepSeek API Key；不再保留重复的 `.env.example`。除交付配置文件外，代码、README、日志和报告仍不得扩散密钥。
+- 未来修改系统代码、README、配置、脚本或前端构建产物时，必须同步更新提交版生成目录或提交包，不能只改本地源码。
+- `AGENTS.md` 只保留在本地完整版，不放入提交版。
 
 ## 7. 文档更新规则
 

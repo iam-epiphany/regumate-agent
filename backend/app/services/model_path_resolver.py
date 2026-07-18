@@ -49,6 +49,19 @@ def resolve_embedding_model_path() -> str:
     )
 
 
+def resolve_embedding_model_local_path() -> str:
+    return _resolve_model_path(
+        display_name="BGE-M3",
+        env_var_name="EMBEDDING_MODEL_PATH",
+        explicit_path=config.EMBEDDING_MODEL_PATH,
+        default_dir=config.DEFAULT_EMBEDDING_MODEL_DIR,
+        hub_cache_dir=config.HF_HUB_CACHE,
+        hub_repo_cache_name="models--BAAI--bge-m3",
+        online_model_name=config.EMBEDDING_MODEL_NAME,
+        offline_mode=True,
+    )
+
+
 def resolve_reranker_model_path() -> str:
     return _resolve_model_path(
         display_name="BGE reranker",
@@ -59,6 +72,19 @@ def resolve_reranker_model_path() -> str:
         hub_repo_cache_name="models--BAAI--bge-reranker-v2-m3",
         online_model_name=config.RERANKER_MODEL_NAME,
         offline_mode=config.REGUMATE_OFFLINE_MODE,
+    )
+
+
+def resolve_reranker_model_local_path() -> str:
+    return _resolve_model_path(
+        display_name="BGE reranker",
+        env_var_name="RERANKER_MODEL_PATH",
+        explicit_path=config.RERANKER_MODEL_PATH,
+        default_dir=config.DEFAULT_RERANKER_MODEL_DIR,
+        hub_cache_dir=config.HF_HUB_CACHE,
+        hub_repo_cache_name="models--BAAI--bge-reranker-v2-m3",
+        online_model_name=config.RERANKER_MODEL_NAME,
+        offline_mode=True,
     )
 
 

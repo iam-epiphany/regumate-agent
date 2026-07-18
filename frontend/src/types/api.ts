@@ -3,20 +3,144 @@ export interface ApiErrorBody {
   error_code?: string;
   message?: string;
   details?: unknown[];
+  error?: ApiError;
 }
 
 export interface HealthResponse {
   status: string;
   message: string;
+  build_id: string;
+}
+
+export type DocumentStatus =
+  | "uploaded"
+  | "index_queued"
+  | "indexing"
+  | "indexed"
+  | "index_failed"
+  | "deleting"
+  | "delete_failed"
+  | "source_missing";
+
+export type DocumentTaskStatus = "queued" | "running" | "completed" | "failed";
+
+export type DocumentStage =
+  | "queued"
+  | "parsing"
+  | "chunking"
+  | "metadata_indexing"
+  | "embedding"
+  | "vector_upsert"
+  | "verifying"
+  | "completed"
+  | "failed";
+
+export interface RagHealthResponse {
+  build_id: string;
+  offline_mode: boolean;
+  embedding_model_ready: boolean;
+  reranker_model_ready: boolean;
+  embedding_model_path: string;
+  reranker_model_path: string;
+  qdrant_ready: boolean;
+  qdrant_collection: string;
+  qdrant_collection_ready: boolean;
+  sqlite_ready: boolean;
+  libreoffice_ready: boolean;
+  antiword_ready: boolean;
+  libreoffice_version: string | null;
+  antiword_version: string | null;
+  index_tasks: Record<string, number>;
+  qa_tasks: Record<string, number>;
+  model_runtime: {
+    embedding?: { loaded?: boolean; warmed?: boolean };
+    reranker?: { loaded?: boolean; warmed?: boolean };
+  };
+  ready: boolean;
+  model_device: {
+    requested_device: string;
+    selected_device: string;
+    torch_version: string | null;
+    cuda_available: boolean;
+    cuda_device_count: number;
+    cuda_device_name: string | null;
+    cuda_total_memory_gb?: number | null;
+    cuda_free_memory_gb?: number | null;
+    fallback_reason: string | null;
+  };
 }
 
 export interface DocumentUploadResponse {
   document_id: string;
+  task_id: string;
+  status: DocumentTaskStatus;
+  stage: DocumentStage;
   filename: string;
   content_type: string | null;
   size: number;
   chunk_count: number;
   uploaded_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface DocumentBatchUploadItem {
+  filename: string;
+  status: "accepted" | "failed" | "duplicate" | "conflict";
+  document_id: string | null;
+  task_id: string | null;
+  stage: DocumentStage | null;
+  size: number | null;
+  error_message: string | null;
+}
+
+export interface DocumentBatchUploadResponse {
+  batch_id: string;
+  accepted_count: number;
+  failed_count: number;
+  items: DocumentBatchUploadItem[];
+}
+
+export interface DocumentConflictExistingDocument {
+  document_id: string;
+  filename: string;
+  size: number;
+  file_sha256: string | null;
+  status: DocumentStatus;
+  uploaded_at: string;
+  chunk_count: number;
+}
+
+export interface DocumentUploadPreflightRequestItem {
+  client_file_id: string;
+  filename: string;
+  size: number;
+  file_sha256: string;
+}
+
+export interface DocumentUploadPreflightItem {
+  client_file_id: string;
+  filename: string;
+  status: "ready" | "exact_duplicate" | "name_conflict" | "selection_name_conflict";
+  existing_document: DocumentConflictExistingDocument | null;
+  error_message: string | null;
+}
+
+export interface DocumentUploadPreflightResponse {
+  items: DocumentUploadPreflightItem[];
+}
+
+export interface DocumentProcessingResponse {
+  document_id: string;
+  task_id: string;
+  status: DocumentTaskStatus;
+  stage: DocumentStage;
+  completed_units: number | null;
+  total_units: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  error: ApiError | null;
+  retry_count: number;
+  updated_at: string;
 }
 
 export interface DocumentSummary {
@@ -26,9 +150,10 @@ export interface DocumentSummary {
   size: number;
   chunk_count: number;
   uploaded_at: string;
-  status: string;
+  status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface DocumentListResponse {
@@ -52,6 +177,7 @@ export interface ChunkSummary {
   token_count: number;
   index_status: string;
   index_version: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 
@@ -62,10 +188,14 @@ export interface DocumentDetailResponse {
   size: number;
   chunk_count: number;
   uploaded_at: string;
-  status: string;
+  status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
+  metadata: Record<string, unknown>;
   chunks: ChunkSummary[];
+  chunk_total: number;
+  chunk_offset: number;
+  chunk_limit: number;
 }
 
 export interface Citation {
@@ -79,6 +209,7 @@ export interface Citation {
   rerank_score: number | null;
   chunk_type: string;
   evidence_role: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface RetrievalResult {
@@ -129,6 +260,8 @@ export interface LLMContextPackage {
       cuda_available: boolean;
       cuda_device_count: number;
       cuda_device_name: string | null;
+      cuda_total_memory_gb?: number | null;
+      cuda_free_memory_gb?: number | null;
       fallback_reason: string | null;
     };
     query_plan?: {
@@ -141,6 +274,10 @@ export interface LLMContextPackage {
         aspect_id: string;
         question: string;
         evidence_need?: string;
+        modality?: "text" | "table" | "mixed" | string;
+        table_task?: "lookup" | "compare" | "calculate" | "locate" | "none" | string;
+        table_filters?: Record<string, unknown>;
+        operation?: "max" | "min" | "difference" | "sum" | "ratio" | "none" | string;
         search_queries: QueryPlanSearchQuery[];
         expected_evidence_type: string;
         keywords: string[];
@@ -150,6 +287,10 @@ export interface LLMContextPackage {
       aspect_id: string;
       question: string;
       evidence_need?: string;
+      modality?: "text" | "table" | "mixed" | string;
+      table_task?: "lookup" | "compare" | "calculate" | "locate" | "none" | string;
+      table_filters?: Record<string, unknown>;
+      operation?: "max" | "min" | "difference" | "sum" | "ratio" | "none" | string;
       search_queries: QueryPlanSearchQuery[];
       expected_evidence_type: string;
       keywords: string[];
@@ -208,7 +349,14 @@ export interface LLMContextPackage {
 
 export interface QueryPlanSearchQuery {
   query: string;
-  query_type: "semantic_question" | "document_style_statement" | "keyword_anchor" | "legacy" | "fallback" | string;
+  query_type:
+    | "semantic_question"
+    | "document_style_statement"
+    | "keyword_anchor"
+    | "table_locator"
+    | "legacy"
+    | "fallback"
+    | string;
   rationale: string;
 }
 
@@ -218,6 +366,35 @@ export interface QAResponse {
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
+  answer_type: "table_deterministic" | "llm_grounded" | "extractive_fallback" | "refusal" | string;
+  generation_status: string;
+  claims: Array<{ text: string; citation_ids: string[] }>;
+  grounding_validation: Record<string, unknown>;
+  refusal_reason: string | null;
+  degraded: boolean;
+}
+
+export interface QAAnswerPreview {
+  answer: string;
+  citations: Citation[];
+  verified_claim_count: number;
+  revision: number;
+}
+
+export interface QATaskCreateResponse {
+  task_id: string;
+  client_request_id: string;
+  status: QATaskStatus;
+}
+
+export type QATaskStatus = "queued" | "running" | "completed" | "refused" | "failed" | "cancelled";
+
+export interface ApiError {
+  code: string;
+  message: string;
+  stage: string | null;
+  retryable: boolean;
+  request_id: string | null;
 }
 
 export type RagProgressStage =
@@ -226,7 +403,8 @@ export type RagProgressStage =
   | "rerank"
   | "context_selection"
   | "prompt_build"
-  | "llm_generation";
+  | "llm_generation"
+  | "grounding_validation";
 
 export type RagProgressStatus = "running" | "completed" | "failed" | "skipped" | "pending";
 
@@ -240,17 +418,45 @@ export interface RagProgressEvent {
   aspect_id?: string;
 }
 
+export interface QATaskStatusResponse {
+  task_id: string;
+  client_request_id: string | null;
+  question: string;
+  options: string[];
+  include_debug: boolean;
+  status: QATaskStatus;
+  progress_events: RagProgressEvent[];
+  answer_preview?: QAAnswerPreview | null;
+  answer: QAResponse | null;
+  error: ApiError | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
 export interface AuditLogItem {
   id: number;
   action: string;
   target_type: string;
   target_id: string | null;
   detail: string;
+  severity: "info" | "warning" | "error";
+  event_key: string | null;
+  summary: string | null;
+  user_message: string | null;
+  details_json: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  occurrence_count: number;
+  resolved: boolean;
   created_at: string;
 }
 
 export interface AuditLogListResponse {
   logs: AuditLogItem[];
+  limit: number;
+  offset: number;
+  returned: number;
 }
 
 export interface AuditArchiveSummary {

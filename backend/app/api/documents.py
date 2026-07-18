@@ -1,116 +1,215 @@
-from pathlib import Path
+from datetime import datetime, timezone
+import hashlib
 import json
+from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import INDEX_VERSION
-from backend.app.core.database import SessionLocal, get_db
-from backend.app.models.document import Document, DocumentChunk
+from backend.app.core.config import INDEX_TASK_MAX_RETRIES, MAX_BATCH_UPLOAD_FILES, MAX_UPLOAD_BYTES
+from backend.app.core.database import get_db
+from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
 from backend.app.schemas.documents import (
+    DocumentBatchUploadItem,
+    DocumentBatchUploadResponse,
     ChunkSummary,
     DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentListResponse,
+    DocumentProcessingResponse,
     DocumentSummary,
+    DocumentConflictExistingDocument,
+    DocumentUploadPreflightItem,
+    DocumentUploadPreflightRequest,
+    DocumentUploadPreflightResponse,
     DocumentUploadResponse,
 )
+from backend.app.schemas.qa import ApiError
 from backend.app.services.audit_service import log_action
-from backend.app.services.chunk_service import build_chunks_from_parsed
-from backend.app.services.document_parser import DocumentParseError, parse_document
 from backend.app.services.document_storage import (
     EmptyDocumentError,
+    DocumentTooLargeError,
     UnsupportedDocumentTypeError,
-    next_document_id,
-    save_original_document,
 )
-from backend.app.services.document_indexing_service import DocumentIndexingError, index_document
+from backend.app.services.index_task_service import enqueue_document_index
 from backend.app.services.document_lifecycle_service import (
     DocumentDeletionError,
     delete_document_record,
     original_file_exists,
     recover_documents_from_originals,
     remove_documents_with_missing_originals,
+    restore_documents_with_available_originals,
+)
+from backend.app.services.document_upload_service import (
+    DocumentUploadConflictError,
+    ExactDuplicateDocumentError,
+    FilenameConflictDocumentError,
+    UploadTaskMissingError,
+    UploadPreflightInput,
+    build_upload_preflight,
+    create_document_upload,
 )
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-@router.post("/upload", response_model=DocumentUploadResponse)
+@router.post(
+    "/upload",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def upload_document(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    filename_override: str | None = Form(None),
+    overwrite_document_id: str | None = Form(None),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
-    filename = file.filename or "unknown"
-    content = await file.read()
-    document_id = next_document_id(db)
-
+    request_id = (idempotency_key or uuid4().hex).strip()[:128]
     try:
-        storage_path = save_original_document(
-            document_id=document_id,
-            filename=filename,
-            content=content,
-            content_type=file.content_type,
+        document, task = await create_document_upload(
+            db,
+            file=file,
+            request_id=request_id,
+            filename_override=filename_override,
+            overwrite_document_id=overwrite_document_id,
+            max_bytes=MAX_UPLOAD_BYTES,
+            enqueue_index=enqueue_document_index,
         )
-        parsed = parse_document(storage_path)
-        chunks = build_chunks_from_parsed(document_id=document_id, parsed=parsed, source_file=filename)
-    except UnsupportedDocumentTypeError as exc:
+        return _to_upload_response(document, task)
+    except DocumentTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except (UnsupportedDocumentTypeError, EmptyDocumentError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except EmptyDocumentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except DocumentParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UploadTaskMissingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DocumentUploadConflictError as exc:
+        return _upload_conflict_response(exc)
 
-    if not chunks:
-        raise HTTPException(status_code=400, detail="文档没有可入库的文本片段")
 
-    #创建文档元信息
-    document = Document(
-        document_id=document_id,
-        filename=filename,
-        content_type=file.content_type,
-        file_type=Path(filename).suffix.lower().lstrip("."),
-        size=len(content),
-        storage_path=str(storage_path),
-        status="uploaded",
-        index_version=INDEX_VERSION,
-        index_error=None,
-        chunk_count=len(chunks),
+@router.post(
+    "/upload-preflight",
+    response_model=DocumentUploadPreflightResponse,
+)
+def preflight_document_upload(
+    payload: DocumentUploadPreflightRequest,
+    db: Session = Depends(get_db),
+) -> DocumentUploadPreflightResponse:
+    results = build_upload_preflight(
+        db,
+        [
+            UploadPreflightInput(
+                client_file_id=item.client_file_id,
+                filename=item.filename,
+                size=item.size,
+                file_sha256=item.file_sha256.lower(),
+            )
+            for item in payload.items
+        ],
     )
-    db.add(document)
-    chunk_models: list[DocumentChunk] = []
-    for chunk in chunks:
-        chunk_model = DocumentChunk(
-            chunk_id=chunk.chunk_id,
-            document_id=document_id,
-            text=chunk.text,
-            embedding_text=chunk.embedding_text,
-            chunk_metadata=json.dumps(chunk.metadata or {}, ensure_ascii=False),
-            token_count=chunk.token_count,
-            index_status="uploaded",
-            index_version=INDEX_VERSION,
-            title=chunk.title,
-            section_title=chunk.section_title,
-            page_number=chunk.page_number,
-            source_file=filename,
-        )
-        chunk_models.append(chunk_model)
-        db.add(chunk_model)
-    db.commit()
-    db.refresh(document)
-    log_action(db, "document_uploaded", "document", document_id, filename)
-    background_tasks.add_task(_index_document_background, document_id)
+    return DocumentUploadPreflightResponse(
+        items=[
+            DocumentUploadPreflightItem(
+                client_file_id=item.client_file_id,
+                filename=item.filename,
+                status=item.status,
+                existing_document=_to_conflict_existing_document(item.existing_document)
+                if item.existing_document is not None
+                else None,
+                error_message=item.error_message,
+            )
+            for item in results
+        ]
+    )
 
-    return DocumentUploadResponse(
-        document_id=document.document_id,
-        filename=document.filename,
-        content_type=document.content_type,
-        size=document.size,
-        chunk_count=document.chunk_count,
-        uploaded_at=document.uploaded_at.isoformat(),
+@router.post(
+    "/batch-upload",
+    response_model=DocumentBatchUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_documents_batch(
+    files: list[UploadFile] = File(...),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+) -> DocumentBatchUploadResponse:
+    if len(files) > MAX_BATCH_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次批量上传最多支持 {MAX_BATCH_UPLOAD_FILES} 个文件",
+        )
+
+    batch_id = (idempotency_key or uuid4().hex).strip()[:96]
+    items: list[DocumentBatchUploadItem] = []
+    for index, file in enumerate(files):
+        filename = file.filename or "unknown"
+        request_id = _batch_file_request_id(batch_id, index, filename)
+        try:
+            document, task = await create_document_upload(
+                db,
+                file=file,
+                request_id=request_id,
+                max_bytes=MAX_UPLOAD_BYTES,
+                enqueue_index=enqueue_document_index,
+            )
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="accepted",
+                    document_id=document.document_id,
+                    task_id=task.task_id or str(task.id),
+                    stage=task.stage,
+                    size=document.size,
+                    error_message=None,
+                )
+            )
+        except ExactDuplicateDocumentError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="duplicate",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except FilenameConflictDocumentError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="conflict",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except DocumentUploadConflictError as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="conflict",
+                    document_id=exc.existing_document.document_id if exc.existing_document else None,
+                    size=exc.existing_document.size if exc.existing_document else None,
+                    error_message=str(exc),
+                )
+            )
+        except (UnsupportedDocumentTypeError, EmptyDocumentError, DocumentTooLargeError, UploadTaskMissingError) as exc:
+            items.append(
+                DocumentBatchUploadItem(
+                    filename=filename,
+                    status="failed",
+                    error_message=str(exc),
+                )
+            )
+
+    accepted_count = sum(1 for item in items if item.status == "accepted")
+    return DocumentBatchUploadResponse(
+        batch_id=batch_id,
+        accepted_count=accepted_count,
+        failed_count=sum(1 for item in items if item.status != "accepted"),
+        items=items,
     )
 
 
@@ -120,28 +219,48 @@ def build_document_index(document_id: str, db: Session = Depends(get_db)) -> Doc
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
 
-    try:
-        index_document(db, document)
-    except DocumentIndexingError as exc:
-        log_action(db, "document_index_failed", "document", document_id, str(exc)[:500])
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    log_action(db, "document_indexed", "document", document_id, f"chunks={document.chunk_count}")
+    enqueue_document_index(document_id)
+    log_action(db, "document_index_queued", "document", document_id, f"chunks={document.chunk_count}")
     db.refresh(document)
     return _to_detail(document, db)
 
 
-@router.get("", response_model=DocumentListResponse)
-def list_documents(db: Session = Depends(get_db)) -> DocumentListResponse:
-    recovered_documents = recover_documents_from_originals(db)
-    for document_id, result in recovered_documents:
-        detail = f"original file recovered into SQLite; result: {result}"
-        log_action(db, "document_recovered_from_original", "document", document_id, detail[:500])
+@router.get("/{document_id}/processing", response_model=DocumentProcessingResponse)
+def get_document_processing(
+    document_id: str,
+    db: Session = Depends(get_db),
+) -> DocumentProcessingResponse:
+    document = db.scalar(select(Document).where(Document.document_id == document_id))
+    if document is None:
+        raise HTTPException(status_code=404, detail="未找到指定文档")
+    task = db.scalar(
+        select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id)
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="未找到文档处理任务")
+    return _to_processing_response(document, task)
 
-    removed_documents = remove_documents_with_missing_originals(db)
-    for document_id, result in removed_documents:
-        detail = f"original file missing; result: {result}"
-        log_action(db, "document_marked_source_missing", "document", document_id, detail[:500])
+
+@router.get("", response_model=DocumentListResponse)
+def list_documents(
+    repair_sources: bool = Query(False, description="Scan original files and repair missing-source states."),
+    db: Session = Depends(get_db),
+) -> DocumentListResponse:
+    restored_documents = restore_documents_with_available_originals(db)
+    for document_id, result in restored_documents:
+        detail = f"original file is available again; result: {result}"
+        log_action(db, "document_source_restored", "document", document_id, detail[:500])
+
+    if repair_sources:
+        recovered_documents = recover_documents_from_originals(db)
+        for document_id, result in recovered_documents:
+            detail = f"original file recovered into SQLite; result: {result}"
+            log_action(db, "document_recovered_from_original", "document", document_id, detail[:500])
+
+        removed_documents = remove_documents_with_missing_originals(db)
+        for document_id, result in removed_documents:
+            detail = f"original file missing; result: {result}"
+            log_action(db, "document_marked_source_missing", "document", document_id, detail[:500])
 
     statement = select(Document).order_by(Document.uploaded_at.desc())
     documents = db.scalars(statement).all()
@@ -149,11 +268,29 @@ def list_documents(db: Session = Depends(get_db)) -> DocumentListResponse:
 
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
-def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDetailResponse:
+def get_document(
+    document_id: str,
+    chunk_offset: int = Query(0, ge=0),
+    chunk_limit: int = Query(50, ge=1, le=200),
+    validate_source: bool = Query(False, description="Mark the document source_missing if the original file is gone."),
+    db: Session = Depends(get_db),
+) -> DocumentDetailResponse:
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
-    if not original_file_exists(document):
+
+    if document.status == "source_missing" and original_file_exists(document):
+        for restored_document_id, result in restore_documents_with_available_originals(db):
+            log_action(
+                db,
+                "document_source_restored",
+                "document",
+                restored_document_id,
+                f"original file is available again; result: {result}"[:500],
+            )
+        db.refresh(document)
+
+    if validate_source and not original_file_exists(document):
         document.status = "source_missing"
         document.index_error = "原始文件缺失，已暂停该文档参与知识库问答；请恢复文件或显式删除文档。"
         chunks = db.scalars(select(DocumentChunk).where(DocumentChunk.document_id == document.document_id)).all()
@@ -163,7 +300,7 @@ def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDet
         log_action(db, "document_marked_source_missing", "document", document_id, "original file missing")
         db.refresh(document)
 
-    return _to_detail(document, db)
+    return _to_detail(document, db, chunk_offset=chunk_offset, chunk_limit=chunk_limit)
 
 
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)
@@ -171,8 +308,8 @@ def delete_document(document_id: str, db: Session = Depends(get_db)) -> Document
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
-    if document.status == "indexing":
-        raise HTTPException(status_code=409, detail="文档正在构建向量索引，请等待索引完成后再删除")
+    if document.status in {"uploaded", "index_queued", "indexing"}:
+        raise HTTPException(status_code=409, detail="文档正在解析或构建索引，请等待处理完成后再删除")
     if document.status == "deleting":
         raise HTTPException(status_code=409, detail="文档正在删除，请稍后刷新列表")
 
@@ -182,16 +319,34 @@ def delete_document(document_id: str, db: Session = Depends(get_db)) -> Document
         log_action(db, "document_delete_failed", "document", document_id, str(exc)[:500])
         raise HTTPException(
             status_code=503,
-            detail=f"Qdrant 向量删除失败，文档已保留为 delete_failed，可稍后重试删除：{exc}",
+            detail=f"文档删除未完成，记录已保留为 delete_failed，可稍后重试：{exc}",
         ) from exc
 
     log_action(db, "document_deleted", "document", document_id, "document deleted")
     return DocumentDeleteResponse(document_id=document_id, deleted=True, vector_warning=None)
 
 
-def _to_detail(document: Document, db: Session) -> DocumentDetailResponse:
+def _batch_file_request_id(batch_id: str, index: int, filename: str) -> str:
+    fingerprint = hashlib.sha256(f"{index}:{filename}".encode("utf-8")).hexdigest()[:16]
+    return f"batch:{batch_id}:{index}:{fingerprint}"[:128]
+
+
+def _to_detail(
+    document: Document,
+    db: Session,
+    *,
+    chunk_offset: int = 0,
+    chunk_limit: int = 50,
+) -> DocumentDetailResponse:
+    chunk_total = db.scalar(
+        select(func.count()).select_from(DocumentChunk).where(DocumentChunk.document_id == document.document_id)
+    ) or 0
     chunks = db.scalars(
-        select(DocumentChunk).where(DocumentChunk.document_id == document.document_id).order_by(DocumentChunk.id.asc())
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document.document_id)
+        .order_by(DocumentChunk.id.asc())
+        .offset(chunk_offset)
+        .limit(chunk_limit)
     ).all()
     return DocumentDetailResponse(
         document_id=document.document_id,
@@ -199,10 +354,11 @@ def _to_detail(document: Document, db: Session) -> DocumentDetailResponse:
         file_type=document.file_type,
         size=document.size,
         chunk_count=document.chunk_count,
-        uploaded_at=document.uploaded_at.isoformat(),
+        uploaded_at=_iso_utc(document.uploaded_at),
         status=document.status,
         index_version=document.index_version,
         index_error=document.index_error,
+        metadata=_document_metadata(document),
         chunks=[
             ChunkSummary(
                 chunk_id=chunk.chunk_id,
@@ -216,10 +372,13 @@ def _to_detail(document: Document, db: Session) -> DocumentDetailResponse:
                 index_status=chunk.index_status,
                 index_version=chunk.index_version,
                 metadata=_chunk_metadata(chunk),
-                created_at=chunk.created_at.isoformat(),
+                created_at=_iso_utc(chunk.created_at),
             )
             for chunk in chunks
         ],
+        chunk_total=chunk_total,
+        chunk_offset=chunk_offset,
+        chunk_limit=chunk_limit,
     )
 
 
@@ -246,21 +405,110 @@ def _to_summary(document: Document) -> DocumentSummary:
         file_type=document.file_type,
         size=document.size,
         chunk_count=document.chunk_count,
-        uploaded_at=document.uploaded_at.isoformat(),
+        uploaded_at=_iso_utc(document.uploaded_at),
         status=document.status,
         index_version=document.index_version,
         index_error=document.index_error,
+        metadata=_document_metadata(document),
     )
 
 
-def _index_document_background(document_id: str) -> None:
-    with SessionLocal() as db:
-        document = db.scalar(select(Document).where(Document.document_id == document_id))
-        if document is None:
-            return
-        try:
-            index_document(db, document)
-        except DocumentIndexingError as exc:
-            log_action(db, "document_index_failed", "document", document_id, str(exc)[:500])
-            return
-        log_action(db, "document_indexed", "document", document_id, f"chunks={document.chunk_count}")
+def _document_metadata(document: Document) -> dict:
+    if not document.document_metadata:
+        return {}
+    try:
+        value = json.loads(document.document_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _to_upload_response(
+    document: Document,
+    task: DocumentIndexTask,
+) -> DocumentUploadResponse:
+    return DocumentUploadResponse(
+        document_id=document.document_id,
+        task_id=task.task_id or str(task.id),
+        status=task.status,
+        stage=task.stage,
+        filename=document.filename,
+        content_type=document.content_type,
+        size=document.size,
+        chunk_count=document.chunk_count,
+        uploaded_at=_iso_utc(document.uploaded_at),
+        metadata=_document_metadata(document),
+    )
+
+
+def _to_conflict_existing_document(
+    document: Document | None,
+) -> DocumentConflictExistingDocument | None:
+    if document is None:
+        return None
+    return DocumentConflictExistingDocument(
+        document_id=document.document_id,
+        filename=document.filename,
+        size=document.size,
+        file_sha256=document.file_sha256,
+        status=document.status,
+        uploaded_at=_iso_utc(document.uploaded_at),
+        chunk_count=document.chunk_count,
+    )
+
+
+def _upload_conflict_response(exc: DocumentUploadConflictError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "detail": str(exc),
+            "error": {
+                "code": exc.code,
+                "message": str(exc),
+                "stage": "upload_preflight",
+                "retryable": False,
+                "request_id": None,
+            },
+            "conflict": {
+                "code": exc.code,
+                "existing_document": (
+                    _to_conflict_existing_document(exc.existing_document).model_dump()
+                    if exc.existing_document is not None
+                    else None
+                ),
+            },
+        },
+    )
+
+
+def _to_processing_response(
+    document: Document,
+    task: DocumentIndexTask,
+) -> DocumentProcessingResponse:
+    error = None
+    if task.error_code:
+        error = ApiError(
+            code=task.error_code,
+            message=task.last_error or "文档处理失败",
+            stage=task.stage or "failed",
+            retryable=task.retry_count <= INDEX_TASK_MAX_RETRIES,
+            request_id=task.task_id,
+        )
+    return DocumentProcessingResponse(
+        document_id=document.document_id,
+        task_id=task.task_id or str(task.id),
+        status=task.status,
+        stage=task.stage or "queued",
+        completed_units=task.completed_units,
+        total_units=task.total_units,
+        error_code=task.error_code,
+        error_message=task.last_error,
+        error=error,
+        retry_count=task.retry_count,
+        updated_at=_iso_utc(task.updated_at),
+    )
+
+
+def _iso_utc(value: datetime) -> str:
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return aware.astimezone(timezone.utc).isoformat()

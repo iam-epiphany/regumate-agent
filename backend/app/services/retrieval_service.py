@@ -7,12 +7,15 @@ from typing import Any, Callable
 from backend.app.core.config import (
     DIRECT_EVIDENCE_COVERAGE,
     FINAL_CITATION_LIMIT,
+    INDEX_VERSION,
     MIN_EVIDENCE_COVERAGE,
     MIN_RERANK_SCORE,
     RERANK_CANDIDATE_LIMIT,
     RERANK_TOP_K,
     RETRIEVAL_TOP_K,
 )
+from backend.app.core.database import SessionLocal
+from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
 from backend.app.services.embedding_service import EmbeddingServiceError, embed_texts
 from backend.app.services.rerank_service import RerankServiceError, RerankedChunk, rerank_candidates
@@ -82,6 +85,26 @@ def reset_retrieval_diagnostics() -> None:
     _LAST_RETRIEVAL_DIAGNOSTICS.set(RetrievalDiagnostics())
 
 
+def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+    """Keep only candidates backed by the current active SQLite index."""
+
+    document_ids = {candidate.document_id for candidate in candidates if candidate.document_id}
+    if not document_ids:
+        return []
+    with SessionLocal() as db:
+        rows = (
+            db.query(Document.document_id)
+            .filter(
+                Document.document_id.in_(document_ids),
+                Document.status == "indexed",
+                Document.index_version == INDEX_VERSION,
+            )
+            .all()
+        )
+    active_ids = {row[0] for row in rows}
+    return [candidate for candidate in candidates if candidate.document_id in active_ids]
+
+
 def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
     diagnostics = RetrievalDiagnostics()
     _LAST_RETRIEVAL_DIAGNOSTICS.set(diagnostics)
@@ -97,7 +120,8 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "summary": {"query": question},
             },
         )
-        candidates = _collect_candidates(question, diagnostics)
+        candidates = filter_active_candidates(_collect_candidates(question, diagnostics))
+        diagnostics.candidate_count = len(candidates)
         rerank_candidates_input = _limit_rerank_candidates(candidates)
         diagnostics.rerank_input_count = len(rerank_candidates_input)
         _report_progress(
@@ -106,7 +130,7 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "stage": "retrieval",
                 "status": "completed",
                 "title": "依据检索完成",
-                "detail": f"已召回 {diagnostics.candidate_count} 个候选片段，用时 {diagnostics.timings_ms.get('qdrant', 0):.0f}ms",
+                "detail": f"已召回 {diagnostics.candidate_count} 个候选片段，用时 {_format_elapsed_seconds(diagnostics.timings_ms.get('qdrant'))}",
                 "elapsed_ms": diagnostics.timings_ms.get("qdrant"),
                 "summary": {
                     "candidate_count": diagnostics.candidate_count,
@@ -116,6 +140,9 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 },
             },
         )
+        if not rerank_candidates_input:
+            diagnostics.timings_ms["total"] = _elapsed_ms(total_started_at)
+            return []
         rerank_started_at = perf_counter()
         _report_progress(
             progress_reporter,
@@ -142,7 +169,7 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "stage": "rerank",
                 "status": "completed",
                 "title": "候选重排完成",
-                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {diagnostics.timings_ms['rerank']:.0f}ms",
+                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {_format_elapsed_seconds(diagnostics.timings_ms.get('rerank'))}",
                 "elapsed_ms": diagnostics.timings_ms["rerank"],
                 "summary": {
                     "rerank_input_count": diagnostics.rerank_input_count,
@@ -230,6 +257,9 @@ def collect_candidates_with_query_hits(
     qdrant_started_at = perf_counter()
     for query, query_embedding, metadata in zip(queries, query_embeddings, metadata_items, strict=True):
         raw_results = hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K)
+        for candidate in raw_results:
+            candidate.score += _query_anchor_boost(query, candidate)
+        raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
         seen_for_query: set[str] = set()
         for rank, candidate in enumerate(raw_results, start=1):
             diagnostics.raw_candidate_count += 1
@@ -268,6 +298,23 @@ def collect_candidates_with_query_hits(
     return list(candidates_by_chunk_id.values()), query_hits_by_chunk_id, per_query_diagnostics
 
 
+def _query_anchor_boost(query: str, candidate: VectorSearchResult) -> float:
+    """Reward exact auditable anchors without replacing semantic retrieval."""
+
+    filename = _normalize_for_match(candidate.filename)
+    boost = 0.0
+    for title in re.findall(r"《([^》]+)》", query):
+        normalized = _normalize_for_match(title)
+        if normalized and normalized in filename:
+            boost = max(boost, 0.30)
+    for document_number in re.findall(r"[\u4e00-\u9fffA-Za-z]+〔\d{4}〕\d+号", query):
+        if _normalize_for_match(document_number) in _normalize_for_match(
+            f"{candidate.filename} {candidate.embedding_text}"
+        ):
+            boost = max(boost, 0.20)
+    return boost
+
+
 def matches_from_reranked(
     *,
     question: str,
@@ -299,9 +346,15 @@ def matches_from_reranked(
     ]
 
 
-def limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+def limit_rerank_candidates(
+    candidates: list[VectorSearchResult],
+    *,
+    preserve_order: bool = False,
+) -> list[VectorSearchResult]:
     if len(candidates) <= RERANK_CANDIDATE_LIMIT:
         return candidates
+    if preserve_order:
+        return candidates[:RERANK_CANDIDATE_LIMIT]
     return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:RERANK_CANDIDATE_LIMIT]
 
 
@@ -344,10 +397,19 @@ def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     )
     if item.rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
         return False
-    if coverage < MIN_EVIDENCE_COVERAGE:
+    # The previous universal lexical-coverage gate discarded 28 official
+    # Word/PDF cases even after BGE reranker had placed the expected document at
+    # the top. Chinese regulatory questions and source clauses frequently use
+    # paraphrases, so a strong cross-encoder match is valid semantic evidence.
+    strong_semantic_match = (
+        item.rerank_score >= 0.55
+        and item.candidate.score >= 0.05
+        and coverage > 0.0
+    )
+    if coverage < MIN_EVIDENCE_COVERAGE and not strong_semantic_match:
         return False
     if _is_table_context(item.candidate, question, coverage):
-        return coverage >= DIRECT_EVIDENCE_COVERAGE
+        return coverage >= DIRECT_EVIDENCE_COVERAGE or strong_semantic_match
     return True
 
 
@@ -414,6 +476,7 @@ def _to_citation(item: _AnnotatedChunk) -> Citation:
         rerank_score=item.rerank_score,
         chunk_type=candidate.chunk_type,
         evidence_role=item.evidence_role,
+        metadata=candidate.metadata or {},
     )
 
 
@@ -591,6 +654,12 @@ def _safe_excerpt(text: str, limit: int = 1200) -> str:
 
 def _elapsed_ms(started_at: float) -> float:
     return round((perf_counter() - started_at) * 1000, 2)
+
+
+def _format_elapsed_seconds(elapsed_ms: float | None) -> str:
+    if elapsed_ms is None:
+        return "0.000s"
+    return f"{elapsed_ms / 1000:.3f}s"
 
 
 def _score_range(candidates: list[VectorSearchResult], reranked: list[RerankedChunk]) -> dict[str, float | None]:

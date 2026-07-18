@@ -9,9 +9,40 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    try:
+        value = default if raw is None else int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer; received {raw!r}") from exc
+    if value < minimum:
+        raise RuntimeError(f"{name} must be >= {minimum}; received {value}")
+    return value
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    try:
+        value = default if raw is None else float(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a number; received {raw!r}") from exc
+    if value < minimum:
+        raise RuntimeError(f"{name} must be >= {minimum}; received {value}")
+    return value
+
+
 APP_NAME = "ReguMate"
 API_TITLE = "ReguMate API"
+BUILD_ID = os.getenv("REGUMATE_BUILD_ID", "dev").strip() or "dev"
 APP_DESCRIPTION = "面向银行业监管制度与统计报表的可信 RAG 问答"
+CORS_ORIGINS = [
+    value.strip()
+    for value in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if value.strip()
+]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(os.getenv("REGUMATE_DATA_DIR", PROJECT_ROOT / "data"))
@@ -35,6 +66,7 @@ REGUMATE_OFFLINE_MODE = _env_bool("REGUMATE_OFFLINE_MODE", True)
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH")
 RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH")
 MODEL_DEVICE = os.getenv("MODEL_DEVICE", "auto").strip().lower()
+MODEL_GPU_MIN_FREE_MEMORY_GB = _env_float("MODEL_GPU_MIN_FREE_MEMORY_GB", 1.0)
 
 os.environ.setdefault("HF_HOME", str(HF_HOME))
 os.environ.setdefault("HF_HUB_CACHE", str(HF_HUB_CACHE))
@@ -45,7 +77,7 @@ if REGUMATE_OFFLINE_MODE:
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx"}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
@@ -53,19 +85,23 @@ CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 80
 SEMANTIC_BREAK_THRESHOLD = 0.62
 
-INDEX_VERSION = "bge-m3-qdrant-v1"
+INDEX_VERSION = "bge-m3-qdrant-v3-grounded-cells"
 QDRANT_URL = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "regumate_chunks")
+QDRANT_AUTO_CREATE_COLLECTION = _env_bool("QDRANT_AUTO_CREATE_COLLECTION", True)
+QDRANT_UPSERT_BATCH_SIZE = _env_int("QDRANT_UPSERT_BATCH_SIZE", 128, minimum=1)
 QDRANT_DENSE_VECTOR_NAME = "dense"
 QDRANT_SPARSE_VECTOR_NAME = "sparse"
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-m3")
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3")
 EMBEDDING_DIMENSION = 1024
-EMBEDDING_BATCH_SIZE = 8
+EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8, minimum=1)
+EMBEDDING_MAX_BATCH_SIZE = _env_int("EMBEDDING_MAX_BATCH_SIZE", 16, minimum=1)
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24
-MAX_PROMPT_CHUNKS = 5
+MAX_PROMPT_CHUNKS = 12
+MAX_PROMPT_TOKENS = _env_int("MAX_PROMPT_TOKENS", 3600, minimum=1)
 MIN_PROMPT_CHUNKS = 0
 FORCE_MIN_CHUNKS = False
 RERANK_PROMPT_THRESHOLD = 0.45
@@ -74,28 +110,59 @@ FINAL_CITATION_LIMIT = MAX_PROMPT_CHUNKS
 MIN_RERANK_SCORE = 0.30
 MIN_EVIDENCE_COVERAGE = 0.25
 DIRECT_EVIDENCE_COVERAGE = 0.45
+TABLE_STRICT_EVIDENCE_VALIDATION = _env_bool("TABLE_STRICT_EVIDENCE_VALIDATION", True)
 
 QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", True)
 QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", "deepseek")
 QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
 QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", "https://api.deepseek.com")
 QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", "deepseek-v4-flash")
-QUERY_PLANNER_TIMEOUT_SECONDS = float(os.getenv("QUERY_PLANNER_TIMEOUT_SECONDS", "20"))
-QUERY_PLANNER_MAX_ASPECTS = int(os.getenv("QUERY_PLANNER_MAX_ASPECTS", "12"))
-QUERY_PLANNER_MAX_SEARCH_QUERIES = int(os.getenv("QUERY_PLANNER_MAX_SEARCH_QUERIES", "3"))
+QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 20.0, minimum=0.1)
+QUERY_PLANNER_MAX_ASPECTS = _env_int("QUERY_PLANNER_MAX_ASPECTS", 12, minimum=1)
+QUERY_PLANNER_MAX_SEARCH_QUERIES = _env_int("QUERY_PLANNER_MAX_SEARCH_QUERIES", 3, minimum=1)
+
+ANSWER_GENERATION_ENABLED = _env_bool("ANSWER_GENERATION_ENABLED", True)
+ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", QUERY_PLANNER_BASE_URL)
+ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", "deepseek-v4-flash")
+ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
+ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 900, minimum=1)
+MAX_UPLOAD_BYTES = _env_int("MAX_UPLOAD_BYTES", 50 * 1024 * 1024, minimum=1)
+MAX_BATCH_UPLOAD_FILES = _env_int("MAX_BATCH_UPLOAD_FILES", 20, minimum=1)
+INDEX_QUEUE_CAPACITY = _env_int("INDEX_QUEUE_CAPACITY", 8, minimum=1)
+INDEX_TASK_MAX_RETRIES = _env_int("INDEX_TASK_MAX_RETRIES", 3)
+QA_QUEUE_CAPACITY = _env_int("QA_QUEUE_CAPACITY", 16, minimum=1)
+QA_TASK_MAX_RETRIES = _env_int("QA_TASK_MAX_RETRIES", 1)
+MAX_OOXML_ENTRIES = _env_int("MAX_OOXML_ENTRIES", 20_000, minimum=1)
+MAX_OOXML_UNCOMPRESSED_BYTES = _env_int(
+    "MAX_OOXML_UNCOMPRESSED_BYTES", 500 * 1024 * 1024, minimum=1
+)
+MAX_SPREADSHEET_LOGICAL_CELLS = _env_int(
+    "MAX_SPREADSHEET_LOGICAL_CELLS", 5_000_000, minimum=1
+)
+OFFICE_CONVERSION_TIMEOUT_SECONDS = _env_int("OFFICE_CONVERSION_TIMEOUT_SECONDS", 120, minimum=1)
+OFFICE_CONVERSION_MAX_BYTES = _env_int(
+    "OFFICE_CONVERSION_MAX_BYTES", 200 * 1024 * 1024, minimum=1
+)
 
 SUPPORTED_DOCUMENT_MIME_TYPES = {
     ".txt": {"text/plain"},
     ".md": {"text/markdown", "text/plain"},
+    ".doc": {"application/msword", "application/octet-stream"},
     ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+    ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
+    ".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
     ".pdf": {"application/pdf"},
 }
 
 DOCUMENT_LOADER_ORDER = {
     ".txt": ["text", "unstructured"],
     ".md": ["markdown", "unstructured"],
+    ".doc": ["libreoffice-doc", "antiword-doc"],
     ".docx": ["python-docx", "docling", "unstructured"],
     ".pdf": ["pymupdf4llm", "docling", "unstructured", "pypdf"],
+    ".xls": ["spreadsheet-xls"],
+    ".xlsx": ["spreadsheet-xlsx"],
 }
 
 

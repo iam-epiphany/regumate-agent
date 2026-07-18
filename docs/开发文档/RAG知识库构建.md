@@ -1,16 +1,25 @@
 # RAG 知识库构建
 
-ReguMate V0 使用 SQLite 保存文档元数据，使用 Qdrant 保存 chunk 向量索引，并通过 BGE-M3 embedding + BGE reranker 组装可信 RAG 上下文包。当前仍不接 LLM 生成，问答接口只返回可供后续 LLM 使用的检索片段、引用和 prompt。
+ReguMate 使用 SQLite 保存文档元数据与表格单元格索引，使用服务化 Qdrant 保存 chunk 向量，并通过 BGE-M3 dense/sparse hybrid retrieval、BGE reranker、DeepSeek 结构化生成和生成后 grounding 校验返回可信答案。DeepSeek 不可用时，Excel 仍由程序确定性回答，文本题只返回引用式摘录或拒答。
 
 ## 入库流程
 
-1. 用户上传 `.txt`、`.md`、`.docx` 或可提取文本的 `.pdf`。
-2. `document_storage` 校验后缀、MIME 类型和文件内容签名，再保存原始文件到 `data/documents/originals/`。
-3. `document_parser` 通过 loader adapter 输出结构化 `ParsedDocument`，包含 heading、paragraph、table、page 等 block。
+新上传文档的 `document_id` 使用“日期 + UUID 随机后缀”，不再通过读取当前最大序号再加一。旧版顺序编号仍可读取；新方案避免多个上传请求并发时生成相同编号或覆盖原始文件。
+
+上传内容按 1MB 分块写入临时文件，达到配置的大小上限即停止；文件签名、OOXML 容器和文本编码校验通过后再原子发布为原始文件。解析失败时删除尚未进入数据库的原始文件。
+
+上传保存原文件时同步计算 `file_sha256`，并将浏览器展示文件名规范化为 `filename_norm`。知识库内 `filename_norm` 唯一；`size + file_sha256` 完全一致的文件视为已存在，不再创建新的 Document 或索引任务。同名但内容不同的文件只能覆盖旧知识源或以新文件名入库，避免同名文档在引用和审计中混淆。
+
+批量上传入口 `/api/documents/batch-upload` 只扩展上传编排，不改变 RAG 入库主线。每个成功接收的文件都会复用同一套原文件校验、SQLite `Document` 元数据、持久化索引任务、审计日志和后台 worker；单个文件失败不会回滚同批次其他文件，前端继续按每个 `document_id` 查询真实处理快照。
+
+1. 用户上传 `.txt`、`.md`、`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls` 或 `.xlsx`。
+2. `document_storage` 校验后缀、MIME 类型和文件内容签名，再保存原始文件到 `data/documents/originals/`，同时返回文件大小和 SHA-256。
+3. `document_parser` 通过 loader adapter 输出结构化 `ParsedDocument`，包含 heading、paragraph、table、page 等 block。`.doc/.xls` 通过 LibreOffice headless 转换进入统一解析；`.xlsx` 会先构建工作簿/工作表/行/单元格语义模型。
 4. `chunk_service` 基于 block 生成 token-aware chunk，继承章节标题、页码、章节路径、章节号、父章节号和前后 chunk 指针；表格优先独立成 chunk。
 5. 长文本先按结构递归分组，再用 BGE-M3 语义相似度辅助选择断点；超过最大 token 时强制切分并保留 overlap。
-6. `documents` API 将 document 和 chunk 写入 SQLite，状态为 `uploaded`。
-7. 上传响应返回后，FastAPI 后台任务自动调用索引流程，文档状态更新为 `indexing`。
+   语义切分属于可选增强：embedding 暂不可用时自动退回结构与 token 长度断点，上传解析仍可完成，向量索引任务随后按持久化队列重试。
+6. `documents` API 将 document 写入 SQLite，状态为 `uploaded`，并保存 `filename_norm/file_sha256`；后续处理任务再写入 chunk 和表格单元格索引。
+7. 上传响应返回后，轻量后台任务把索引任务持久化到 SQLite，并交给容量受限的单工作线程；文档依次显示 `index_queued`、`indexing`、`indexed`，应用重启后会恢复未完成任务。
 8. `embedding_service` 基于增强后的 `embedding_text` 为每个 chunk 生成 BGE-M3 dense 和 sparse embedding。
 9. `vector_store_service` 将 chunk 向量和 payload 写入 Qdrant。
 10. Qdrant 写入使用 `wait=True` 等待服务端确认，并校验该文档向量数量不小于 chunk 数量；成功后 SQLite 状态才更新为 `indexed`。
@@ -23,8 +32,11 @@ ReguMate V0 使用 SQLite 保存文档元数据，使用 Qdrant 保存 chunk 向
 
 - `.txt`：默认本地 UTF-8 文本 loader；候选 `Unstructured`。
 - `.md`：默认本地 Markdown loader，识别标题和表格行；候选 `Unstructured`。
-- `.docx`：默认 `python-docx` loader，识别标题、段落和表格；候选 `Docling`、`Unstructured`。
+- `.doc`：默认 `LibreOffice headless` 转 `.docx`，再使用统一 `python-docx` loader。
+- `.docx`：默认 `python-docx` loader，按 Word XML 原始顺序识别标题、段落和表格；候选 `Docling`、`Unstructured`。
 - `.pdf`：默认 `PyMuPDF4LLM` page chunks 输出结构化 Markdown；候选 `Docling`、`Unstructured`；最终回退 `pypdf`。
+- `.xls`：优先 `LibreOffice headless` 转 `.xlsx` 以保留版式和合并单元格；转换失败时用 `xlrd` 抽值兜底。
+- `.xlsx`：默认 `openpyxl` 解析，保留工作表、可见状态、有效区域、表标题、单位、期间、表头层级、行标签、列标签、单元格坐标、原始值、规范化值、公式文本、公式缓存值和合并单元格来源。
 
 Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默认上传链路；通过 `loader_evaluation` 评测时会记录缺依赖错误。PDF loader 显式关闭 OCR，当前阶段仍只支持可提取文本的 PDF。后续如接入 OCR adapter，必须继续输出同一套 `ParsedDocument` / `ParsedBlock`，避免影响 chunk、检索和引用层。
 
@@ -35,18 +47,22 @@ Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默
 1. `rag_service` 清理用户问题。
 2. `query_planner_service` 先用轻量规则估计问题复杂度，动态计算本次 `max_aspects`；`QUERY_PLANNER_MAX_ASPECTS` 只作为安全阀，不作为固定拆题数量。用户枚举多个处理对象时，原则上一项一个 aspect；没有 API key、LLM 超时或返回格式异常时，自动回退到本地规则拆分。
 3. 每个 aspect 包含子问题、`evidence_need`、结构化 `search_queries` 和关键词。一个 aspect 内通常包含 2-3 个 search query：`semantic_question` 贴近用户意图，`document_style_statement` 模拟制度原文/填报说明证据句，`keyword_anchor` 用少量关键术语兜底。
-4. `embedding_service` 对同一 aspect 内的 search query 做批量 BGE-M3 dense / sparse embedding，避免逐 query 重复模型调用。
-5. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一 aspect 内候选按 `chunk_id` 去重后保留较高召回分。
-6. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，保留每个 chunk 命中的 query、query type、rank 和融合分。
-7. `rag_service` 在融合后按向量/RRF 分数截断进入 rerank 的候选，默认最多 `RERANK_CANDIDATE_LIMIT=24` 个 chunk；`rerank_service` 对每个 aspect 只调用一次 BGE reranker，默认输出 top 20。该限制只控制重排成本，不直接决定最终入 Prompt 片段。
-8. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
-9. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；即使初始命中已达到最终 topK，也会先尝试结构补充再统一截断。
-10. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
-11. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
-12. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，且返回摘录必须能回溯到 SQLite 原始 chunk；不可回溯的片段会被过滤并写入 `citation_validation`。
-13. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；最终最多 `MAX_PROMPT_CHUNKS=5` 条，不为了凑固定数量加入无关片段。
-14. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、原始召回数、去重候选数、rerank 调用数、进入 rerank 数、rerank 输出数、过滤数、Prompt 过滤数、阶段耗时、分数范围和模型设备，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
-15. `/api/qa/ask/stream` 会复用同一条 RAG 链路，并通过 `progress_reporter` 在 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build` 和 `llm_generation` 阶段推送 SSE 事件。当前阶段不生成最终答案，`llm_generation` 只推送 `skipped`，表示等待后续接入最终 LLM。
+4. QueryPlanner 会识别 `modality=text|table|mixed`。Excel/统计报表问题会额外生成 `table_task`、`table_filters`、`operation` 和 `table_locator` 查询，例如文件名、sheet、期间、指标、行标签、列标签和单位。
+5. `modality=table` 时，`spreadsheet_retrieval_service` 先在 SQLite 标准化单元格索引中做结构化检索，定位候选行和单元格；支持取数、最大/最小比较、差值/合计/占比等基础计算。答案由程序根据操作数和公式确定性生成，LLM 不重新计算。
+6. `modality=mixed` 时，系统保留制度文本检索，同时把表格证据前置补入候选。
+7. 表格结构化检索失败时，回退到原有 hybrid search + rerank。
+8. `embedding_service` 对同一 aspect 内的 search query 做批量 BGE-M3 dense / sparse embedding，避免逐 query 重复模型调用。
+9. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一 aspect 内候选按 `chunk_id` 去重后保留较高召回分。
+10. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，保留每个 chunk 命中的 query、query type、rank 和融合分。
+11. `rag_service` 在融合后按向量/RRF 分数截断进入 rerank 的候选，默认最多 `RERANK_CANDIDATE_LIMIT=24` 个 chunk；`rerank_service` 对每个 aspect 只调用一次 BGE reranker，默认输出 top 20。该限制只控制重排成本，不直接决定最终入 Prompt 片段。
+12. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
+13. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；动态单元格和计算证据不做邻居扩展，避免精确表格证据被噪音冲淡。
+14. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
+15. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
+16. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，普通返回摘录必须能回溯到 SQLite 原始 chunk；动态表格证据追溯到对应行级 chunk 并携带 `dynamic_table_evidence=true`。
+17. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；同时受 `MAX_PROMPT_CHUNKS=12` 和 `MAX_PROMPT_TOKENS=3600` 约束，不为了凑固定数量加入无关片段。
+18. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、原始召回数、去重候选数、rerank 调用数、进入 rerank 数、rerank 输出数、过滤数、Prompt 过滤数、阶段耗时、分数范围和模型设备，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
+19. `/api/qa/ask/stream` 会复用同一条 RAG 链路，并通过 `progress_reporter` 依次推送 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build`、`llm_generation` 和 `grounding_validation` 事件，最终返回完整 `QAResponse`。
 
 QueryPlanner 默认配置：
 
@@ -76,16 +92,20 @@ QueryPlanner 默认配置：
 
 - 回答必须基于检索到的 chunk。
 - 引用必须包含文档编号、chunk 编号、文件名、章节、页码和摘录。
-- 当前 RAG-only 阶段不生成最终自然语言答案，只输出 `LLMContextPackage`。后续 LLM 必须基于 `context_chunks` 和 `llm_prompt` 作答。
+- Excel 题由程序确定性生成最终答案；文本题由 DeepSeek 仅基于 `context_chunks` 生成结构化 claim，并绑定 citation ID。
 - 没有命中或只有弱相关命中时返回固定拒答文本。
 - 检索系统不可用时返回 503，不伪装成无依据拒答。
-- 当前模板回答不是最终智能生成；后续接入 LLM 时仍必须先检索、后引用、无依据拒答。
+- 生成后校验正文引用、claim 引用、数字、比例、日期、机构和文号；一次修复仍失败则拒答。DeepSeek 不可用时只返回引用式摘录或拒答。
 
 ## Chunk 质量规则
 
 - 普通正文 chunk 优先保留标题、段落和完整句子，只有单个超长句无法容纳时才做 token 级兜底切分。
+- 普通正文不会仅因页码变化而强制切断；PDF 等文档中跨页延续的同一语义段落会在 token 预算允许时保留为同一 chunk，`page_number` 记录该连续片段的起始页。
 - 表格 block 会解析出表头、行列、原始 Markdown 表格、表格标题、页码和章节路径；小表生成 1 条表格摘要 chunk，并为每一行生成自然语言 table chunk。
 - 行级 table chunk 不跨行合并、不截断完整行；每条行证据会重复表格标题、表头、行号和 `列名=单元格` 结构，便于 embedding 与引用回溯。
+- Excel 表格 chunk 采用一等语义模型：工作簿 metadata 保存推断标题、年份、月份、季度、报表类型和业务域；sheet metadata 保存 sheet 名、可见状态、表标题、单位、期间；row metadata 保存行标签、列头路径、单元格坐标、原始值、规范化值、公式、合并来源和单位。
+- Excel 默认生成 sheet/table summary chunk 和 row evidence chunk；具体 cell-level 证据在检索阶段动态生成，并带 `sheet_name/cell/unit/value/row_label/column_label/table_task/operation`。
+- 表格计算只在参与单元格全部可定位时执行；若候选不唯一或数值不足，返回候选证据并标记上下文不足，不根据常识补数字、单位或期间。
 - 同章节内紧邻表格前的短说明段会作为 `table_context` 注入摘要和每条表格行级证据，但不参与表头识别，避免“以下情形……”误作列名。
 - 借鉴 Contextual Retrieval 思路，`embedding_text` 会在原始 chunk 前确定性拼接来源文件、文档格式、章节路径、章节号、父章节号、页码、内容类型、表格标题、表头和行数据等上下文；`text` 保持可引用证据文本，用于引用展示和回溯校验。
 - 文档详情接口返回完整 `text` 和短 `text_preview`；前端查看 chunk 时使用完整 `text`，并保留段落和表格换行。
@@ -112,10 +132,17 @@ collection 名称由 `QDRANT_COLLECTION` 配置，默认 `regumate_chunks`。pay
 - `token_count`
 - `chunk_type`
 - `chunk_metadata`
+- `file_type`
+- `source_title`
 - `table_id`
 - `table_title`
+- `sheet_name`
+- `period`
+- `unit`
+- `row_label`
 - `table_headers`
 - `row_index`
+- `row_cells`
 - `raw_table_preview`
 - `index_version`
 - `section_path`
@@ -226,7 +253,7 @@ python scripts/check_offline_models.py
 本项目默认支持模型离线加载，不依赖 HuggingFace 网络访问。首次 Docker 构建仍需安装基础依赖和拉取基础镜像；如评审环境完全无外网，需要提前准备 Docker 镜像包或在有网络环境下完成构建。
 ## RAG 上下文包组装补充
 
-当前阶段的问答链路只负责检索和上下文组装，不生成最终自然语言答案。`rag_service` 会在 rerank 后回查 SQLite，只允许 `documents.status == "indexed"` 的文档进入上下文包；随后将命中结果转换为 `RetrievalResult`，再由 `RAGPromptBuilder` 构造 `llm_prompt`。
+问答链路在检索和上下文组装后继续执行最终答案生成与事实校验。`rag_service` 会在 rerank 后回查 SQLite，只允许可问答文档进入上下文包；随后将命中结果转换为 `RetrievalResult`，由 `RAGPromptBuilder` 构造 `llm_prompt`，最后交给确定性表格回答器或 DeepSeek 文本回答器。
 
 上下文包字段为 `LLMContextPackage`：
 
@@ -236,11 +263,56 @@ python scripts/check_offline_models.py
 - `instruction`：约束后续 LLM 不得编造知识库外依据，依据不足时明确说明无法判断。
 - `retrieval_summary`：记录 `top_k`、实际最终入 Prompt chunk 数、上下文是否足够、已覆盖依据说明、缺失方面、query/candidate/rerank/filter 数量、Prompt 过滤数量、阶段耗时、分数范围、Prompt 选择参数和引用回溯校验结果。
 - `context_chunks`：包含最终入 Prompt 的 chunk 编号、排名、分数、来源文档、章节、原文片段、引用编号和元数据。
-- `llm_prompt`：后续接入 LLM 时可直接发送给模型。
+- `llm_prompt`：作为 DeepSeek 生成服务的受控证据输入；普通响应不返回，只有 `include_debug=true` 时随上下文包提供。
 
 生成上下文前会执行基础清洗：重复 `chunk_id` 或重复文本只保留一次；如果片段正文开头重复显示章节标题，则去掉正文中的重复标题；片段保留原文，不提前改写成结论式答案；长片段按句子边界尽量截断到约 1200 字。输出不再包含“根据知识库引用，可归纳为”“1. 结论”等旧模板内容。
 
-流式观测接口不会改变上下文包结构。它只在同一执行过程中额外推送阶段状态：问题理解、依据检索、候选重排、上下文精选、Prompt 构造和 LLM 生成占位。前端据此显示运行中的转动图标、完成对勾、失败提示和跳过状态，避免长耗时查询期间页面静止。
+流式观测接口不会改变答案语义。它在同一执行过程中推送问题理解、依据检索、候选重排、上下文精选、Prompt 构造、LLM 生成和事实校验状态。检索和重排会同时推送阶段级事件和 aspect 级事件：阶段级事件驱动普通前端进度条，aspect 级事件用于技术详情。空检索、无重排候选、选择题缺少选项和依据不足拒答属于已处理业务分支，应使用 `completed` 或 `skipped`；检索依赖不可用、reranker 报错或上下文构造异常才使用 `failed`。
+
+### 可信答案的 claim 级流式发布
+
+DeepSeek 上游开启 `stream: true`，输出顺序固定为 `refused/refusal_reason/claims`。服务端兼容 SSE 注释心跳、空行和 `[DONE]`，按完整 JSON claim 而不是 token 建立发布边界：
+
+1. 首条必须是结论 claim，并且引用编号、数字、日期、机构和文号都绑定到对应 chunk；选择题还必须包含完整选项正文且选项证据校验通过。
+2. 结论通过后才允许发布解释和建议；无效解释可被单独丢弃，不会污染已核验结论。
+3. 每次发布把已通过 claim 组合成完整 `QAAnswerPreview`，同时只附带当前正文实际引用的证据。
+4. 最终回答由同一批已核验 claim 组成；上游不支持流式、流格式损坏或没有可解析 claim 时回退原完整响应与抽取式降级流程。
+5. 每个上游块之间检查取消状态；取消会关闭上游连接并清空预览，迟到响应不能覆盖 `cancelled`。
+
+技术摘要记录 `first_verified_claim_ms`、`generation_total_ms` 和 `verified_claim_count`，只在技术详情与验收中使用，不作为装饰性运行指标。
+
+## 单元格索引与可信计算
+
+Excel 解析除行级 chunk 外，还将有效单元格写入 `spreadsheet_cells`：记录文档、sheet、期间、坐标、行列标签、原始值、数值、单位和公式状态，并为来源/sheet/期间/标签/坐标建立组合索引。查询计划使用 `selectors[] + operation + expected_unit` 描述操作数，严格先按文件、sheet、年份和期间过滤，再定位单元格。候选不唯一、值缺失、单位冲突或除零时拒绝计算。
+
+支持 lookup、选项内 max/min、`B-A`、sum、ratio。返回证据包含文件、sheet、坐标、行列标签、值、单位、参与计算的单元格与公式，禁止跨文件全库聚合。已有库可运行：
+
+```powershell
+$env:PYTHONIOENCODING='utf-8'
+.\.venv\Scripts\python.exe scripts\rebuild_spreadsheet_cell_index.py
+```
+
+当前索引版本为 `bge-m3-qdrant-v3-grounded-cells`，升级后应幂等重建向量索引和单元格索引。
+
+## 正式Qdrant与旧DOC交付
+
+正式入库不再使用 qdrant-client local mode。500份附件先写入 `regumate_contest_v3_build`，核对文档chunk数与point数后再将公开alias `regumate_contest_v3`原子切换到新collection。写入按128 points分批，payload为来源、类型、sheet、年份、月份、季度和索引版本建立索引。
+
+正式 app 设置 `QDRANT_AUTO_CREATE_COLLECTION=false`，检索或网页上传不得在 alias 尚未发布时自动创建同名物理 collection；此时明确报告未就绪。readiness 只有在目标状态为 green/yellow 且 point 数大于0时才通过。alias 发布若发现同名空物理 collection，可安全删除空占位；若其非空则拒绝发布并保留数据，要求人工确认迁移。
+
+`.doc` 主路径在容器内用独立LibreOffice临时profile转换为 `.docx`，防止并发profile锁；失败后才使用antiword纯文本降级。降级结果记录 `parser_backend=antiword`、`degraded=true`和原因，不保留虚假的表格结构。评委宿主机不需要安装Office工具。
+
+LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两个阈值可通过 `OFFICE_CONVERSION_TIMEOUT_SECONDS` 和 `OFFICE_CONVERSION_MAX_BYTES` 配置。转换输出和独立 profile 在成功、失败或超限后都会清理。
+
+正式数据进入容器前通过 `source_manifest.json` 将ASCII暂存名映射回官方原始文件名。文档ID、展示文件名、source metadata和QA来源判断均使用原始名；暂存名只解决Docker Desktop文件共享兼容性。
+
+在线上传不再在 HTTP 请求中解析文档，也不再依赖 FastAPI BackgroundTask。原文件安全落盘后，在同一 SQLite 事务中创建 Document 与 `document_index_tasks`；容量默认为 8 的单 worker 依次持久化 `parsing → chunking → metadata_indexing → embedding → vector_upsert → verifying` 阶段、已完成数/总数、重试次数和统一错误。队列已满时任务仍保留在 SQLite，worker 会继续从数据库补充；应用启动时把中断的 `running` 任务恢复为 `queued`。BGE-M3 embedding 与 reranker 共用推理锁，防止索引和问答同时占满 GPU 显存。队列状态可在 `/api/health/rag` 的 `index_tasks` 查看，单文档快照由 `/api/documents/{id}/processing` 返回。
+
+上传解析硬限制可配置，默认 ZIP 条目 20,000、总解压大小 500 MB、Excel 实际逻辑单元格 500 万。OOXML 在解压前核对条目与声明大小；工作簿在双份加载公式版/数值版前后执行维度检查，只遍历实际 materialized cells，并在所有分支关闭 workbook。超限、伪格式和解析失败均记录稳定错误并清理文件。
+
+交付包中的 `scripts/upload_contest_knowledge_base.ps1` 是面向测试人员的批量入库入口。它不会绕过 RAG 入库链路，而是在容器内通过 `/api/documents/upload` 逐个上传 `data/contest_dataset/dataset/nfra_page_attachments_500` 的 500 个官方附件，并轮询 `/api/documents` 等待 `indexed=500/500`。该脚本只负责知识库构建，不自动运行 QA。QA 自动评测由 `scripts/run_contest_qa_test.ps1` 独立执行；它要求当前知识库已准备好，若 collection、文档数或 Qdrant point 数明显不对，会提示先执行知识库上传。重复上传时按同名文件跳过已索引文档，失败或未完成文档会重新排队索引。
+
+检索只接受 SQLite 中活跃文档，并在 rerank 前完成过滤；Qdrant dense/sparse 查询附带当前 `index_version` payload 条件并适度 overfetch，避免失效 point 占据 top-K。文档恢复为 `indexed` 前，必须核对当前版本 point ID 集合与 SQLite 全部 chunk ID 精确一致，而不只比较一个近似数量。
 
 上下文组装会尽量利用章节结构补足相邻依据。例如命中 `3. 资产合计与校验关系` 时，如果同一文档存在 `3.1 资产合计差异处理`，且问题涉及差异、处理、外币折算、保留依据等词，系统会优先补充该子章节。随后最终 Prompt 选择会按 QueryPlanner 拆出的 aspect 覆盖进行二次筛选：每个 aspect 至少尝试保留 1 条可回溯依据；像 `4. 逾期贷款与风险分类` 这类不覆盖当前 aspect 的片段即使 rerank 分数不低也不会进入 Prompt。若某个 aspect 没有可回溯候选，`retrieval_summary.missing_aspects` 会标记缺失点，提醒后续 LLM 不要硬编。`aspect_retrievals[].diagnostics` 会展示每条结构化 query 的 `query_type`、召回候选、rerank 数量和可用命中数，`retrieved_chunks[].query_hits` 会展示该 chunk 由哪些 query 召回。
 
@@ -262,3 +334,32 @@ python scripts/check_offline_models.py
 6. 最终上下文排序降低“附录 B 样例问答测试集”的优先级，除非用户显式询问附录或测试集，优先返回正文条款和规则表。
 
 该优化不改变 API schema、SQLite 表结构或 Qdrant payload 结构，主要影响检索计划、证据过滤和最终上下文排序。
+
+## 官方选择题逐事实证据校验
+
+官方 Word/PDF 选择题不再把完整题干和四个长选项拼成一次语义检索。QueryPlanner 会先锁定书名号中的目标材料和文件类型，再把去重后的每条选项事实分别作为 `document_style_statement` 检索；dense 与 sparse 候选保持独立，经 RRF 融合后一次性进入 BGE rerank。目标文件存在时，候选限定在该材料内，防止同名、不同年份或 PDF/Word 副本互相污染。
+
+对于百分比、`属于` 类主体和高字符覆盖的选项事实，`rag_service` 会回查目标文档 SQLite chunks，补入每条事实的最佳直接证据。该补充只接受字符二元组覆盖不低于 45% 的片段，最多 10 条，并继续受最终 12 个 Prompt chunk 预算约束。精确片段即使已经以低分 direct candidate 或 expanded context 出现在候选中，也会重新提升为 `mcq_exact_support`，避免通用 Prompt 阈值把它过滤掉。Prompt 选择阶段将 `mcq_exact_support` 视为已匹配当前选择题 aspect 的直接证据，不再要求该正文 chunk 同时包含完整材料标题，防止封面或目录高分片段挤掉选项事实依据。
+
+生成前会向 DeepSeek提供每个选项的逐事实覆盖矩阵。生成后同时执行：
+
+- citation ID 必须属于本次上下文；
+- 数字、日期、机构和文号必须由对应 claim 引用的证据支持；
+- 选择项不能明显落后于证据最佳项；
+- 多事实选项取最低事实覆盖，避免“第一句正确、第二句无关”仍被选中。
+- 每条选项事实的 citation 先通过实体到单片段的 grounding 校验，再比较字符覆盖；`35%/25%/50%/3月31日` 不会再绑定到措辞相似但缺少该数值的相邻段落。全角百分号、分隔空格和常见负号会归一化，但不会放宽数值一致性。
+
+如果 LLM 的解释文字因引用摆放或实体绑定失败，但某一选项每条事实覆盖均不低于 30%，且相对次优选项的最低覆盖领先至少 0.12 或平均覆盖领先至少 0.18，系统只返回程序生成的最小选择结论和对应引用；证据接近时仍拒答。该机制不读取官方答案，也不按题号硬编码。
+
+## v4 Excel 可信证据判定
+
+v4 的 Excel 优化不改变解析层和单元格索引结构，重点修复无答案问题被近似单元格吸收的问题：
+
+1. `QueryPlanner` 继续抽取文件、年份/月/季度、指标、行标签、列标签、操作类型和 `selectors[]`。
+2. `spreadsheet_retrieval_service` 先按文件、sheet 和期间做硬过滤；显式指标、行列标签和 selector 再参与结构化匹配。
+3. lookup 题要求显式指标/行列标签命中规范化 label、column_path 或来源标题；虚构指标不能仅靠数字基础分或问题词重叠成为有效证据。
+4. calculate 题中“从 A 到 B”会生成两个 selector。全局硬约束只保留文件、期间和指标；起始/目标列由各 selector 单独定位，避免把“目标列”提前过滤掉“起始列”。
+5. 检索结果返回 `match_status` 和 `refusal_reason`。只有 `valid_cell`、`valid_calculation`、`valid_comparison` 能进入最终答案；其他状态只用于可解释拒答。
+6. 纯表格题遇到明确终局拒答状态时会早停，不再进入 embedding、Qdrant 和 rerank fallback；`no_candidates` 不早停，因为它可能只是结构化匹配未覆盖而非知识库无答案。
+
+该设计的原则是“硬过滤优先、软排序靠后”：不能为了拒答率简单抬高全局阈值，而是把文件、期间、指标和操作数是否成立作为证据资格判断。v4 实测官方 Excel 100 题 100/100、派生 Excel OOD 10/10 拒答。

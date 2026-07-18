@@ -1,15 +1,21 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import hashlib
 import json
+import unicodedata
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import DOCUMENT_DIR, INDEX_VERSION, SUPPORTED_DOCUMENT_EXTENSIONS
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.services.chunk_service import build_chunks_from_parsed
 from backend.app.services.document_parser import DocumentParseError, parse_document
-from backend.app.services.vector_store_service import VectorStoreError, delete_document_vectors
-from backend.app.services.vector_store_service import count_document_vectors
+from backend.app.services.vector_store_service import (
+    VectorStoreError,
+    delete_document_vectors,
+    document_vector_chunk_ids,
+)
+from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
 
 
 class DocumentDeletionError(RuntimeError):
@@ -24,8 +30,16 @@ def resolve_original_path(document: Document) -> Path:
     storage_path = Path(document.storage_path)
     if storage_path.exists():
         return storage_path
-    fallback = DOCUMENT_DIR / storage_path.name
+    fallback = DOCUMENT_DIR / _storage_basename(document.storage_path)
     return fallback
+
+
+def _storage_basename(storage_path: str) -> str:
+    """Return the file name even when a Windows path is read inside Linux."""
+
+    if "\\" in storage_path or ":" in storage_path:
+        return PureWindowsPath(storage_path).name
+    return Path(storage_path).name
 
 
 def delete_document_record(db: Session, document: Document) -> None:
@@ -38,6 +52,7 @@ def delete_document_record(db: Session, document: Document) -> None:
 
     chunks = db.scalars(select(DocumentChunk).where(DocumentChunk.document_id == document.document_id)).all()
     document.status = "deleting"
+    document.lifecycle_stage = "deleting_vectors"
     document.index_error = None
     for chunk in chunks:
         chunk.index_status = "deleting"
@@ -46,15 +61,43 @@ def delete_document_record(db: Session, document: Document) -> None:
     try:
         delete_document_vectors(document.document_id, chunk_ids=[chunk.chunk_id for chunk in chunks])
     except VectorStoreError as exc:
-        _mark_delete_failed(db, document, chunks, str(exc))
+        _mark_delete_failed(db, document, chunks, "deleting_vectors", str(exc))
         raise DocumentDeletionError(str(exc)) from exc
 
-    storage_path = Path(document.storage_path)
-    if storage_path.exists():
-        storage_path.unlink()
-
-    db.delete(document)
+    document.lifecycle_stage = "deleting_file"
     db.commit()
+    try:
+        storage_path = resolve_original_path(document)
+        if storage_path.exists():
+            storage_path.unlink()
+    except OSError as exc:
+        _mark_delete_failed(db, document, chunks, "deleting_file", str(exc))
+        raise DocumentDeletionError(f"原文件删除失败：{exc}") from exc
+
+    document.lifecycle_stage = "deleting_metadata"
+    db.commit()
+    try:
+        db.delete(document)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        current = db.scalar(
+            select(Document).where(Document.document_id == document.document_id)
+        )
+        if current is not None:
+            current_chunks = db.scalars(
+                select(DocumentChunk).where(
+                    DocumentChunk.document_id == current.document_id
+                )
+            ).all()
+            _mark_delete_failed(
+                db,
+                current,
+                current_chunks,
+                "deleting_metadata",
+                str(exc),
+            )
+        raise DocumentDeletionError(f"元数据删除失败：{exc}") from exc
 
 
 def remove_documents_with_missing_originals(db: Session) -> list[tuple[str, str]]:
@@ -72,6 +115,46 @@ def remove_documents_with_missing_originals(db: Session) -> list[tuple[str, str]
     if removed:
         db.commit()
     return removed
+
+
+def restore_documents_with_available_originals(db: Session) -> list[tuple[str, str]]:
+    restored: list[tuple[str, str]] = []
+    documents = db.scalars(select(Document).where(Document.status == "source_missing")).all()
+    for document in documents:
+        if not original_file_exists(document):
+            continue
+        chunks = db.scalars(
+            select(DocumentChunk).where(DocumentChunk.document_id == document.document_id)
+        ).all()
+        try:
+            vector_chunk_ids = document_vector_chunk_ids(document.document_id)
+        except VectorStoreError as exc:
+            document.index_error = f"原文件已恢复，但向量完整性核对失败：{exc}"[:1000]
+            continue
+        expected_chunk_ids = {chunk.chunk_id for chunk in chunks}
+        if vector_chunk_ids != expected_chunk_ids or document.index_version != INDEX_VERSION:
+            document.status = "index_failed"
+            document.index_error = (
+                "原文件已恢复，但当前版本向量不完整，请重建索引："
+                f"expected={len(expected_chunk_ids)}, actual={len(vector_chunk_ids)}"
+            )
+            for chunk in chunks:
+                chunk.index_status = "index_failed"
+            restored.append((document.document_id, "requires_reindex"))
+            continue
+        document.status = "indexed"
+        document.lifecycle_stage = None
+        document.index_error = None
+        db.execute(
+            update(DocumentChunk)
+            .where(DocumentChunk.document_id == document.document_id)
+            .where(DocumentChunk.index_status == "source_missing")
+            .values(index_status="indexed")
+        )
+        restored.append((document.document_id, "restored_indexed"))
+    if restored:
+        db.commit()
+    return restored
 
 
 def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
@@ -106,9 +189,11 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
         document = Document(
             document_id=document_id,
             filename=path.name,
+            filename_norm=_normalize_filename(path.name),
             content_type=None,
             file_type=path.suffix.lower().lstrip("."),
             size=path.stat().st_size,
+            file_sha256=_sha256_file(path),
             storage_path=str(path),
             status="indexed" if indexed else "uploaded",
             index_version=INDEX_VERSION,
@@ -118,9 +203,9 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
             chunk_count=len(chunks),
         )
         db.add(document)
+        chunk_models: list[DocumentChunk] = []
         for chunk in chunks:
-            db.add(
-                DocumentChunk(
+            chunk_model = DocumentChunk(
                     chunk_id=chunk.chunk_id,
                     document_id=document_id,
                     text=chunk.text,
@@ -134,7 +219,10 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
                     page_number=chunk.page_number,
                     source_file=path.name,
                 )
-            )
+            chunk_models.append(chunk_model)
+            db.add(chunk_model)
+        db.flush()
+        rebuild_spreadsheet_cell_index(db, document, chunk_models)
         existing_ids.add(document_id)
         recovered.append((document_id, "indexed" if indexed else "uploaded"))
     if recovered:
@@ -142,9 +230,59 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
     return recovered
 
 
-def _mark_delete_failed(db: Session, document: Document, chunks: list[DocumentChunk], error: str) -> None:
+def recover_interrupted_deletions() -> None:
+    """Retry lifecycle operations left in progress by a process interruption."""
+
+    from backend.app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        document_ids = db.scalars(
+            select(Document.document_id).where(Document.status == "deleting")
+        ).all()
+    for document_id in document_ids:
+        with SessionLocal() as db:
+            document = db.scalar(
+                select(Document).where(Document.document_id == document_id)
+            )
+            if document is None:
+                continue
+            try:
+                delete_document_record(db, document)
+            except DocumentDeletionError:
+                continue
+
+
+def _mark_delete_failed(
+    db: Session,
+    document: Document,
+    chunks: list[DocumentChunk],
+    stage: str,
+    error: str,
+) -> None:
     document.status = "delete_failed"
-    document.index_error = f"Qdrant 向量删除失败：{error}"[:1000]
+    document.lifecycle_stage = stage
+    stage_labels = {
+        "deleting_vectors": "Qdrant 向量删除失败",
+        "deleting_file": "原文件删除失败",
+        "deleting_metadata": "SQLite 元数据删除失败",
+    }
+    document.index_error = f"{stage_labels.get(stage, '文档删除失败')}：{error}"[:1000]
     for chunk in chunks:
         chunk.index_status = "delete_failed"
     db.commit()
+
+
+def _normalize_filename(filename: str) -> str:
+    if "\\" in filename or ":" in filename:
+        basename = PureWindowsPath(filename).name
+    else:
+        basename = Path(filename).name
+    return unicodedata.normalize("NFC", basename).strip().casefold()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

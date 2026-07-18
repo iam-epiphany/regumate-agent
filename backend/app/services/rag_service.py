@@ -2,7 +2,8 @@ from dataclasses import dataclass
 import json
 import re
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from backend.app.core.config import (
     FINAL_CITATION_LIMIT,
     FORCE_MIN_CHUNKS,
     MAX_PROMPT_CHUNKS,
+    MAX_PROMPT_TOKENS,
     MIN_EVIDENCE_COVERAGE,
     MIN_PROMPT_CHUNKS,
     RELATIVE_SCORE_RATIO,
@@ -19,9 +21,18 @@ from backend.app.core.config import (
     RETRIEVAL_TOP_K,
 )
 from backend.app.models.document import Document, DocumentChunk, QALog
-from backend.app.schemas.qa import Citation, LLMContextPackage, QAResponse, RetrievalResult
-from backend.app.services.audit_service import log_action
+from backend.app.schemas.qa import (
+    AnswerClaim,
+    Citation,
+    LLMContextPackage,
+    QAAnswerPreview,
+    QAResponse,
+    RetrievalResult,
+)
+from backend.app.services.audit_service import record_event
+from backend.app.services.answer_generation_service import generate_answer, is_option_selection_question
 from backend.app.services.prompt_builder import RAGPromptBuilder
+from backend.app.services.question_preprocessing_service import preprocess_qa_request
 from backend.app.services.query_planner_service import QueryAspect, QueryPlan, plan_query
 from backend.app.services.retrieval_service import (
     RetrievalDiagnostics,
@@ -30,6 +41,7 @@ from backend.app.services.retrieval_service import (
     ProgressReporter,
     collect_candidates_with_query_hits,
     evidence_coverage,
+    filter_active_candidates,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
     matches_from_reranked,
@@ -40,6 +52,10 @@ from backend.app.services.retrieval_service import (
 from backend.app.services.embedding_service import EmbeddingServiceError
 from backend.app.services.model_device_service import get_model_device_info
 from backend.app.services.rerank_service import RerankServiceError, rerank_candidates
+from backend.app.services.spreadsheet_retrieval_service import (
+    get_last_spreadsheet_diagnostic,
+    retrieve_spreadsheet_matches,
+)
 from backend.app.services.vector_store_service import VectorStoreError
 
 
@@ -54,6 +70,7 @@ RRF_K = 60
 QUERY_TYPE_WEIGHTS = {
     "semantic_question": 1.0,
     "document_style_statement": 1.15,
+    "table_locator": 1.2,
     "keyword_anchor": 0.75,
     "legacy": 0.9,
     "fallback": 0.85,
@@ -86,35 +103,219 @@ class AspectRetrieval:
 def answer_question(
     db: Session,
     question: str,
+    options: list[str] | None = None,
+    include_debug: bool = False,
     progress_reporter: ProgressReporter | None = None,
+    answer_preview_reporter: Callable[[QAAnswerPreview], None] | None = None,
+    cancellation_checker: Callable[[], None] | None = None,
 ) -> QAResponse:
     cleaned_question = question.strip()
     if not cleaned_question:
         return QAResponse(answer=None, citations=[], confidence=0.0, refused=True, context_package=None)
+    original_question = cleaned_question
+    preprocessed = preprocess_qa_request(cleaned_question, options)
+    cleaned_question = preprocessed.question
+    normalized_options = preprocessed.options
+    option_labels = preprocessed.option_labels or [None] * len(normalized_options)
+    if is_option_selection_question(cleaned_question) and not normalized_options:
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "planning",
+                "status": "completed",
+                "title": "问题理解完成",
+                "detail": "识别为选择题，但题干中未提供可判断的选项。",
+                "summary": {"reason": "missing_options_for_choice_question"},
+            },
+        )
+        for skipped_stage, skipped_title in (
+            ("retrieval", "检索相关依据已跳过"),
+            ("rerank", "重排候选片段已跳过"),
+            ("context_selection", "上下文精选已跳过"),
+            ("prompt_build", "Prompt 构造已跳过"),
+            ("llm_generation", "答案生成已跳过"),
+            ("grounding_validation", "事实与引用校验已跳过"),
+        ):
+            _report_progress(
+                progress_reporter,
+                {
+                    "stage": skipped_stage,
+                    "status": "skipped",
+                    "title": skipped_title,
+                    "detail": "需要补充选项后才能进入知识库检索与生成。",
+                    "summary": {"reason": "missing_options_for_choice_question"},
+                },
+            )
+        response = QAResponse(
+            answer=(
+                "这个问题写法属于选择题，但没有提供 A-D 选项，因此无法判断“哪一组选项”正确。"
+                "请补充选项，或改成普通问法，例如“请概述该材料的主要内容”。"
+            ),
+            citations=[],
+            confidence=0.0,
+            refused=True,
+            context_package=None,
+            answer_type="clarification",
+            generation_status="skipped",
+            claims=[],
+            grounding_validation={"passed": True, "reason": "missing_options_for_choice_question"},
+            refusal_reason="missing_options_for_choice_question",
+            degraded=False,
+        )
+        _save_qa_log(db, original_question, response)
+        _log_qa_audit(db, "qa_context_built", original_question, response)
+        return response
 
-    package = build_context_package(db, cleaned_question, progress_reporter=progress_reporter)
+    package = build_context_package(
+        db,
+        cleaned_question,
+        options=normalized_options,
+        progress_reporter=progress_reporter,
+    )
+    generation_started = perf_counter()
+    first_preview_ms: float | None = None
+    preview_revision = 0
+    preview_claims: list[AnswerClaim] = []
+    preview_keys: set[tuple[str, tuple[str, ...]]] = set()
+
+    def report_verified_claim(claim: AnswerClaim) -> None:
+        nonlocal first_preview_ms, preview_revision
+        key = (claim.text, tuple(claim.citation_ids))
+        if key in preview_keys:
+            return
+        preview_keys.add(key)
+        preview_claims.append(claim)
+        if first_preview_ms is None:
+            first_preview_ms = round((perf_counter() - generation_started) * 1000, 2)
+        if answer_preview_reporter is None:
+            return
+        preview_revision += 1
+        cited_labels = {
+            citation_id
+            for item in preview_claims
+            for citation_id in item.citation_ids
+        }
+        answer_preview_reporter(QAAnswerPreview(
+            answer="\n\n".join(item.text for item in preview_claims),
+            citations=[
+                _citation_from_result(result)
+                for result in package.context_chunks
+                if result.citation_label in cited_labels
+            ],
+            verified_claim_count=len(preview_claims),
+            revision=preview_revision,
+        ))
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "detail": "正在基于已选证据生成结构化答案……",
+        },
+    )
+    generated = generate_answer(
+        cleaned_question,
+        package.context_chunks,
+        options=normalized_options,
+        option_labels=option_labels,
+        has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
+        verified_claim_reporter=report_verified_claim,
+        cancellation_checker=cancellation_checker,
+    )
+    if not generated.refused and not bool(generated.grounding_validation.get("passed")):
+        generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
+        generated.answer_type = "refusal"
+        generated.refused = True
+        generated.refusal_reason = "grounding_validation_failed"
+        generated.claims = []
+        generated.degraded = True
+    table_refusal_reasons = [
+        str(reason)
+        for reason in package.retrieval_summary.get("table_refusal_reasons", [])
+        if reason
+    ]
+    if generated.refused and table_refusal_reasons:
+        generated.answer = "当前知识库中未找到足够表格依据，无法给出确定答案。" + "；".join(
+            dict.fromkeys(table_refusal_reasons)
+        )
+        generated.refusal_reason = "table_evidence_not_found"
+        generated.grounding_validation = {
+            **generated.grounding_validation,
+            "passed": True,
+            "reason": "table_evidence_not_found",
+            "table_refusal_reasons": table_refusal_reasons,
+        }
+    if not generated.refused and bool(generated.grounding_validation.get("passed")):
+        for claim in generated.claims:
+            report_verified_claim(claim)
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "llm_generation",
+            "status": "completed" if generated.generation_status == "completed" else "skipped",
+            "title": "答案生成完成" if generated.generation_status == "completed" else "答案生成已跳过",
+            "detail": _generation_progress_detail(generated.generation_status, generated.answer_type),
+            "summary": {
+                "generation_status": generated.generation_status,
+                "answer_type": generated.answer_type,
+                "refused": generated.refused,
+                "refusal_reason": generated.refusal_reason,
+                "first_verified_claim_ms": first_preview_ms,
+                "generation_total_ms": round((perf_counter() - generation_started) * 1000, 2),
+                "verified_claim_count": len(preview_claims),
+            },
+        },
+    )
+    grounding_passed = bool(generated.grounding_validation.get("passed"))
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "grounding_validation",
+            "status": "completed" if grounding_passed else "failed",
+            "title": "事实与引用校验完成" if grounding_passed else "事实与引用校验未通过",
+            "detail": (
+                "答案中的引用和关键实体已完成证据核验。"
+                if grounding_passed
+                else "关键事实未能由当前证据或可信计算结果支持。"
+            ),
+            "summary": generated.grounding_validation,
+        },
+    )
     response = QAResponse(
-        answer=None,
+        answer=generated.answer,
         citations=[_citation_from_result(result) for result in package.context_chunks],
         confidence=_confidence_from_results(package.context_chunks),
-        refused=not package.retrieval_summary["has_sufficient_context"],
-        context_package=package,
+        refused=generated.refused,
+        context_package=package if include_debug else None,
+        answer_type=generated.answer_type,
+        generation_status=generated.generation_status,
+        claims=generated.claims,
+        grounding_validation=generated.grounding_validation,
+        refusal_reason=generated.refusal_reason,
+        degraded=generated.degraded,
     )
-    _save_qa_log(db, cleaned_question, response)
-    _log_qa_audit(db, "qa_context_built", cleaned_question, response)
+    _save_qa_log(db, original_question, response)
+    _log_qa_audit(db, "qa_context_built", original_question, response)
     return response
 
 
-def retrieve_context_package(db: Session, question: str) -> LLMContextPackage:
+def retrieve_context_package(
+    db: Session,
+    question: str,
+    options: list[str] | None = None,
+) -> LLMContextPackage:
     cleaned_question = question.strip()
     if not cleaned_question:
         return _empty_context_package("")
-    return build_context_package(db, cleaned_question)
+    preprocessed = preprocess_qa_request(cleaned_question, options)
+    return build_context_package(db, preprocessed.question, options=preprocessed.options)
 
 
 def build_context_package(
     db: Session,
     question: str,
+    options: list[str] | None = None,
     progress_reporter: ProgressReporter | None = None,
 ) -> LLMContextPackage:
     planning_started_at = perf_counter()
@@ -127,7 +328,7 @@ def build_context_package(
             "detail": "正在拆分问题并生成检索计划……",
         },
     )
-    query_plan = plan_query(question)
+    query_plan = plan_query(question, options=options)
     planning_elapsed_ms = _elapsed_ms(planning_started_at)
     _report_progress(
         progress_reporter,
@@ -135,7 +336,7 @@ def build_context_package(
             "stage": "planning",
             "status": "completed",
             "title": "问题理解完成",
-            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {planning_elapsed_ms:.0f}ms",
+            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {_format_elapsed_seconds(planning_elapsed_ms)}",
             "elapsed_ms": planning_elapsed_ms,
             "summary": {
                 "aspect_count": len(query_plan.aspects),
@@ -212,18 +413,9 @@ def build_context_package(
             "stage": "prompt_build",
             "status": "completed",
             "title": "Prompt 构造完成",
-            "detail": f"已完成 Prompt 构造，用时 {prompt_elapsed_ms:.0f}ms",
+            "detail": f"已完成 Prompt 构造，用时 {_format_elapsed_seconds(prompt_elapsed_ms)}",
             "elapsed_ms": prompt_elapsed_ms,
             "summary": {"prompt_chunk_count": len(context_chunks)},
-        },
-    )
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "llm_generation",
-            "status": "skipped",
-            "title": "LLM 生成暂未接入",
-            "detail": "当前阶段未接入最终 LLM 生成，接口仅返回可用于生成的上下文包。",
         },
     )
     return LLMContextPackage(
@@ -270,6 +462,17 @@ def _retrieve_aspects(
     query_plan: QueryPlan,
     progress_reporter: ProgressReporter | None = None,
 ) -> list[AspectRetrieval]:
+    retrieval_started_at = perf_counter()
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索相关依据",
+            "detail": f"正在按 {len(query_plan.aspects)} 个问题方面召回知识库片段……",
+            "summary": {"total_aspects": len(query_plan.aspects)},
+        },
+    )
     aspect_retrievals: list[AspectRetrieval] = []
     for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
         _report_progress(
@@ -335,6 +538,28 @@ def _retrieve_aspects(
                 },
             },
         )
+    retrieval_elapsed_ms = _elapsed_ms(retrieval_started_at)
+    retrieved_aspect_count = sum(1 for item in aspect_retrievals if item.retrieval_covered)
+    candidate_count = sum(len(item.candidates) for item in aspect_retrievals)
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "检索相关依据完成",
+            "detail": (
+                f"已完成 {len(query_plan.aspects)} 个方面检索，"
+                f"召回 {candidate_count} 个可回溯候选片段。"
+            ),
+            "elapsed_ms": retrieval_elapsed_ms,
+            "summary": {
+                "total_aspects": len(query_plan.aspects),
+                "retrieved_aspects": retrieved_aspect_count,
+                "candidate_count": candidate_count,
+            },
+        },
+    )
+    _report_rerank_stage_summary(progress_reporter, aspect_retrievals)
     return aspect_retrievals
 
 
@@ -345,6 +570,51 @@ def _retrieve_aspect_matches(
 ) -> tuple[list[RetrievalMatch], list[dict[str, Any]]]:
     if retrieve_citations is not _DEFAULT_RETRIEVE_CITATIONS:
         return _retrieve_aspect_matches_legacy_hook(db, aspect, progress_reporter)
+
+    table_matches: list[RetrievalMatch] = []
+    table_diagnostics: list[dict[str, Any]] = []
+    if aspect.modality in {"table", "mixed"}:
+        table_started_at = perf_counter()
+        table_matches = retrieve_spreadsheet_matches(db, aspect, limit=FINAL_CITATION_LIMIT)
+        spreadsheet_diagnostic = get_last_spreadsheet_diagnostic()
+        table_elapsed_ms = _elapsed_ms(table_started_at)
+        table_diagnostics.append(
+            {
+                "search_query": aspect.question,
+                "query_type": "table_locator",
+                "rationale": "根据 planner 的表格检索计划先做结构化 Excel 行/单元格定位",
+                "match_count": len(table_matches),
+                "table_task": aspect.table_task,
+                "operation": aspect.operation,
+                "table_filters": aspect.table_filters,
+                "spreadsheet_match_status": spreadsheet_diagnostic.get("match_status"),
+                "spreadsheet_refusal_reason": spreadsheet_diagnostic.get("refusal_reason"),
+                "query_count": 1,
+                "raw_candidate_count": len(table_matches),
+                "candidate_count": len(table_matches),
+                "rerank_input_count": 0,
+                "rerank_call_count": 0,
+                "reranked_count": 0,
+                "filtered_count": 0,
+                "query_variants": [aspect.question],
+                "timings_ms": {"spreadsheet_retrieval": table_elapsed_ms},
+                "score_range": _score_range_for_matches(table_matches),
+            }
+        )
+        for match in table_matches:
+            match.metadata["aspect_id"] = aspect.aspect_id
+            match.metadata["aspect_question"] = aspect.question
+            match.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
+            match.metadata["fusion_method"] = "structured_spreadsheet_retrieval"
+            match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
+            match.metadata["evidence_need"] = aspect.evidence_need
+
+        if table_matches and aspect.modality == "table":
+            return table_matches, table_diagnostics
+        if not table_matches and _should_stop_after_spreadsheet_refusal(aspect, spreadsheet_diagnostic):
+            table_diagnostics[-1]["early_stopped"] = True
+            table_diagnostics[-1]["early_stop_reason"] = "structured_spreadsheet_refusal"
+            return [], table_diagnostics
 
     fusion_scores: dict[str, float] = {}
     diagnostics = RetrievalDiagnostics()
@@ -374,14 +644,43 @@ def _retrieve_aspect_matches(
             fusion_scores[candidate.chunk_id] = fusion_scores.get(candidate.chunk_id, 0.0) + contribution
             hit["rrf_contribution"] = round(contribution, 6)
 
+    if aspect.aspect_id == "multiple_choice_evidence":
+        title_anchor = _normalize_document_anchor(aspect.question)
+        title_matched = [
+            candidate
+            for candidate in candidates
+            if title_anchor and title_anchor in _normalize_document_anchor(candidate.filename)
+        ]
+        if title_matched:
+            candidates = title_matched
+            diagnostics.candidate_count = len(candidates)
+
+    candidates = filter_active_candidates(candidates)
+    diagnostics.candidate_count = len(candidates)
+    preferred_file_type = str(aspect.table_filters.get("file_type") or "").lower()
+    document_style_scores = {
+        candidate.chunk_id: _document_style_evidence_score(candidate, aspect)
+        for candidate in candidates
+    }
+    for candidate in candidates:
+        if candidate.metadata is None:
+            candidate.metadata = {}
+        candidate.metadata["document_style_evidence_score"] = round(
+            document_style_scores.get(candidate.chunk_id, 0.0), 6
+        )
     candidates.sort(
         key=lambda candidate: (
+            bool(preferred_file_type and candidate.filename.lower().endswith(f".{preferred_file_type}")),
+            document_style_scores.get(candidate.chunk_id, 0.0),
             fusion_scores.get(candidate.chunk_id, 0.0),
             candidate.score,
         ),
         reverse=True,
     )
-    rerank_input = limit_rerank_candidates(candidates)
+    # ``candidates`` is already ordered by weighted RRF above.  Re-sorting it
+    # by one raw vector score here would undo multi-query fusion and starve
+    # exact option/statement hits in long documents before cross-encoding.
+    rerank_input = limit_rerank_candidates(candidates, preserve_order=True)
     diagnostics.rerank_input_count = len(rerank_input)
     _report_progress(
         progress_reporter,
@@ -400,11 +699,22 @@ def _retrieve_aspect_matches(
     )
     rerank_started_at = perf_counter()
     try:
-        reranked = rerank_candidates(question=aspect.question, candidates=rerank_input, limit=RERANK_TOP_K)
+        rerank_limit = len(rerank_input) if aspect.aspect_id == "multiple_choice_evidence" else RERANK_TOP_K
+        reranked = rerank_candidates(
+            question=_rerank_query_for_aspect(aspect),
+            candidates=rerank_input,
+            limit=rerank_limit,
+        )
     except RerankServiceError as exc:
         raise RetrievalServiceUnavailable(str(exc)) from exc
     diagnostics.rerank_call_count = 1 if rerank_input else 0
     diagnostics.timings_ms["rerank"] = _elapsed_ms(rerank_started_at)
+    if aspect.aspect_id == "multiple_choice_evidence":
+        for item in reranked:
+            direct_score = document_style_scores.get(item.candidate.chunk_id, 0.0)
+            item.rerank_score = 0.35 * float(item.rerank_score) + 0.65 * direct_score
+        reranked.sort(key=lambda item: item.rerank_score, reverse=True)
+        reranked = reranked[:RERANK_TOP_K]
     diagnostics.reranked_count = len(reranked)
     diagnostics.score_range = _score_range_for_candidates(candidates, reranked)
     matches = matches_from_reranked(question=aspect.question, reranked=reranked, diagnostics=diagnostics)
@@ -420,6 +730,20 @@ def _retrieve_aspect_matches(
         match.metadata["fusion_method"] = ASPECT_QUERY_FUSION_METHOD
         match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
         match.metadata["evidence_need"] = aspect.evidence_need
+
+    if aspect.aspect_id == "multiple_choice_evidence":
+        supplements = _mcq_exact_support_matches(db, aspect, matches)
+        if supplements:
+            best_fusion = max(fusion_scores.values(), default=0.0)
+            for offset, supplement in enumerate(supplements, start=1):
+                chunk_id = supplement.citation.chunk_id
+                fusion_scores[chunk_id] = best_fusion + 0.01 - offset * 0.0001
+                supplement.metadata["aspect_id"] = aspect.aspect_id
+                supplement.metadata["aspect_question"] = aspect.question
+                supplement.metadata["fusion_method"] = "mcq_exact_support"
+                supplement.metadata["expected_evidence_type"] = aspect.expected_evidence_type
+                supplement.metadata["evidence_need"] = aspect.evidence_need
+            matches = supplements + matches
 
     for item in diagnostics_by_query:
         chunk_ids_for_query = {
@@ -465,7 +789,58 @@ def _retrieve_aspect_matches(
         ),
         reverse=True,
     )
-    return matches, diagnostics_by_query
+    if table_matches:
+        matches = table_matches + matches
+    return matches, table_diagnostics + diagnostics_by_query
+
+
+_SPREADSHEET_TERMINAL_REFUSAL_STATUSES = {
+    "period_not_found",
+    "source_not_found",
+    "sheet_not_found",
+    "indicator_not_found",
+    "column_not_found",
+    "ambiguous_candidates",
+    "unit_mismatch",
+    "empty_value",
+}
+
+
+def _should_stop_after_spreadsheet_refusal(aspect: QueryAspect, diagnostic: dict[str, Any]) -> bool:
+    """Skip vector fallback when structured Excel evidence has conclusively failed.
+
+    The fallback path is useful for weakly planned table questions, but it is
+    harmful when the structured retriever has already proven that an explicit
+    file/period/indicator/selector is absent: the vector path can only add
+    latency and may surface a nearby but wrong table row.
+    """
+
+    if aspect.modality != "table":
+        return False
+    if aspect.table_task not in {"lookup", "compare", "calculate"}:
+        return False
+    status = str(diagnostic.get("match_status") or "")
+    if status not in _SPREADSHEET_TERMINAL_REFUSAL_STATUSES:
+        return False
+    filters = aspect.table_filters or {}
+    selectors = [item for item in aspect.selectors if isinstance(item, dict)]
+    has_explicit_constraint = bool(selectors) or any(
+        filters.get(key) is not None
+        for key in (
+            "source_title",
+            "filename",
+            "sheet",
+            "year",
+            "month",
+            "quarter",
+            "indicator",
+            "row_label",
+            "column_label",
+            "metric",
+            "scope",
+        )
+    )
+    return has_explicit_constraint
 
 
 def _retrieve_aspect_matches_legacy_hook(
@@ -566,6 +941,68 @@ def _retrieve_citations_with_optional_progress(
         return retrieve_citations(search_query)
 
 
+def _report_rerank_stage_summary(
+    progress_reporter: ProgressReporter | None,
+    aspect_retrievals: list[AspectRetrieval],
+) -> None:
+    diagnostics = [
+        diagnostic
+        for aspect_retrieval in aspect_retrievals
+        for diagnostic in aspect_retrieval.diagnostics
+    ]
+    rerank_input_count = sum(int(item.get("rerank_input_count") or 0) for item in diagnostics)
+    rerank_call_count = sum(int(item.get("rerank_call_count") or 0) for item in diagnostics)
+    reranked_count = sum(int(item.get("reranked_count") or 0) for item in diagnostics)
+    candidate_count = sum(len(item.candidates) for item in aspect_retrievals)
+    if rerank_input_count or rerank_call_count or reranked_count:
+        _report_progress(
+            progress_reporter,
+            {
+                "stage": "rerank",
+                "status": "completed",
+                "title": "重排候选片段完成",
+                "detail": f"已完成 {rerank_call_count} 次重排，输出 {reranked_count} 个候选片段。",
+                "summary": {
+                    "candidate_count": candidate_count,
+                    "rerank_input_count": rerank_input_count,
+                    "rerank_call_count": rerank_call_count,
+                    "reranked_count": reranked_count,
+                },
+            },
+        )
+        return
+
+    _report_progress(
+        progress_reporter,
+        {
+            "stage": "rerank",
+            "status": "skipped",
+            "title": "重排候选片段已跳过",
+            "detail": (
+                "检索未产生需要重排的候选片段。"
+                if candidate_count == 0
+                else "当前候选片段已由结构化检索或兼容检索直接排序，无需额外重排。"
+            ),
+            "summary": {
+                "candidate_count": candidate_count,
+                "rerank_input_count": rerank_input_count,
+                "rerank_call_count": rerank_call_count,
+                "reranked_count": reranked_count,
+            },
+        },
+    )
+
+
+def _generation_progress_detail(generation_status: str, answer_type: str) -> str:
+    if generation_status == "completed":
+        return "已基于选定证据生成结构化回答。"
+    if answer_type == "refusal":
+        return "依据不足，系统直接形成拒答结论，未继续调用生成模型。"
+    if answer_type == "clarification":
+        return "问题信息不完整，已直接给出补充信息提示。"
+    return "该业务分支不需要继续生成回答。"
+
+
 def _report_progress(progress_reporter: ProgressReporter | None, event: dict[str, Any]) -> None:
     if progress_reporter is not None:
         progress_reporter(event)
@@ -583,17 +1020,177 @@ def _search_query_debug_list(aspect: QueryAspect) -> list[dict[str, Any]]:
     return [search_query.to_debug_dict() for search_query in aspect.search_queries]
 
 
+def _rerank_query_for_aspect(aspect: QueryAspect) -> str:
+    evidence_queries = [
+        search_query.query
+        for search_query in aspect.search_queries
+        if search_query.query_type == "document_style_statement" and search_query.query.strip()
+    ]
+    if not evidence_queries:
+        return aspect.question
+    return "\n".join([aspect.question, *evidence_queries])
+
+
+def _document_style_evidence_score(candidate: Any, aspect: QueryAspect) -> float:
+    statements = [
+        statement.strip()
+        for search_query in aspect.search_queries
+        if search_query.query_type == "document_style_statement"
+        for statement in search_query.query.splitlines()
+        if statement.strip()
+    ]
+    if not statements:
+        return 0.0
+    evidence_text = "\n".join(
+        part
+        for part in (
+            candidate.filename,
+            candidate.section_title or "",
+            candidate.embedding_text or "",
+            candidate.text,
+        )
+        if part
+    )
+    return max(
+        evidence_coverage(question_terms(statement), evidence_text)
+        for statement in statements
+    )
+
+
+def _normalize_document_anchor(value: str) -> str:
+    normalized = re.sub(r"^\d+_", "", str(value or "").lower())
+    normalized = normalized.replace("附件", "").replace("版", "")
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", normalized)
+
+
+def _mcq_exact_support_matches(
+    db: Session,
+    aspect: QueryAspect,
+    matches: list[RetrievalMatch],
+) -> list[RetrievalMatch]:
+    if not matches:
+        return []
+    statements = [
+        search_query.query.strip()
+        for search_query in aspect.search_queries
+        if search_query.query_type == "document_style_statement" and search_query.query.strip()
+    ]
+    critical_terms: list[str] = []
+    for statement in statements:
+        critical_terms.extend(re.findall(r"\d+(?:\.\d+)?%", statement))
+        if "属于" in statement:
+            subject = statement.split("属于", 1)[0].strip(" ，,。；;")
+            if len(subject) >= 6:
+                critical_terms.append(subject)
+    critical_terms = list(dict.fromkeys(critical_terms))
+
+    anchors_by_document: dict[str, RetrievalMatch] = {}
+    for match in matches:
+        anchors_by_document.setdefault(match.citation.document_id, match)
+    existing_by_id = {match.citation.chunk_id: match for match in matches}
+    supplements_by_chunk_id: dict[str, tuple[float, int, RetrievalMatch]] = {}
+    for document_id, anchor in anchors_by_document.items():
+        document_chunks = (
+            db.query(DocumentChunk)
+            .filter(DocumentChunk.document_id == document_id, DocumentChunk.index_status == "indexed")
+            .order_by(DocumentChunk.id.asc())
+            .all()
+        )
+        best_statement_matches: dict[str, tuple[float, DocumentChunk]] = {}
+        for chunk in document_chunks:
+            searchable_raw = "\n".join(
+                part for part in [chunk.embedding_text or "", chunk.text] if part
+            )
+            searchable = _normalize_exact_support_text(searchable_raw)
+            existing_match = existing_by_id.get(chunk.chunk_id)
+            should_promote = existing_match is None or str(
+                existing_match.metadata.get("evidence_role") or ""
+            ) == "expanded_context"
+            matched_terms = [
+                term for term in critical_terms if _normalize_exact_support_text(term) in searchable
+            ]
+            if matched_terms and should_promote:
+                supplement = _match_from_chunk(
+                    chunk,
+                    anchor,
+                    "mcq_exact_support",
+                    document_chunks,
+                    aspect.question,
+                )
+                supplement.metadata["exact_support_terms"] = matched_terms
+                supplement.metadata["evidence_role"] = "mcq_exact_support"
+                priority = (1.0, max(map(len, matched_terms)), supplement)
+                previous = supplements_by_chunk_id.get(chunk.chunk_id)
+                if previous is None or priority[:2] > previous[:2]:
+                    supplements_by_chunk_id[chunk.chunk_id] = priority
+
+            for statement in statements:
+                statement_score = _exact_support_recall(statement, searchable_raw)
+                previous_statement = best_statement_matches.get(statement)
+                if previous_statement is None or statement_score > previous_statement[0]:
+                    best_statement_matches[statement] = (statement_score, chunk)
+
+        # Dense/sparse retrieval can miss a literal statement when a document
+        # contains many near-duplicate headings.  Add the best direct support
+        # for every option fact, but only when the wording overlap is strong.
+        for statement, (statement_score, chunk) in best_statement_matches.items():
+            # The exact chunk may already be a low-ranked direct candidate.
+            # Re-emit it as an exact-support match so prompt selection does
+            # not discard it solely because its original rerank score was
+            # below the generic prose threshold.
+            if statement_score < 0.45:
+                continue
+            supplement = _match_from_chunk(
+                chunk,
+                anchor,
+                "mcq_exact_support",
+                document_chunks,
+                aspect.question,
+            )
+            supplement.metadata["exact_support_statement"] = statement
+            supplement.metadata["exact_support_score"] = round(statement_score, 4)
+            supplement.metadata["evidence_role"] = "mcq_exact_support"
+            priority = (statement_score, len(statement), supplement)
+            previous = supplements_by_chunk_id.get(chunk.chunk_id)
+            if previous is None or priority[:2] > previous[:2]:
+                supplements_by_chunk_id[chunk.chunk_id] = priority
+
+    supplements = sorted(
+        supplements_by_chunk_id.values(), key=lambda item: (item[0], item[1]), reverse=True
+    )
+    return [item[2] for item in supplements[:10]]
+
+
+def _normalize_exact_support_text(value: str) -> str:
+    without_breaks = re.sub(r"<br\s*/?>", "", str(value or ""), flags=re.IGNORECASE)
+    return re.sub(r"[\s\"'“”‘’=：:；;，,。()（）]+", "", without_breaks).lower()
+
+
+def _exact_support_recall(expected: str, actual: str) -> float:
+    expected_text = _normalize_exact_support_text(expected)
+    actual_text = _normalize_exact_support_text(actual)
+    if not expected_text:
+        return 0.0
+    if expected_text in actual_text:
+        return 1.0
+    if len(expected_text) == 1:
+        return 1.0 if expected_text in actual_text else 0.0
+    bigrams = [expected_text[index : index + 2] for index in range(len(expected_text) - 1)]
+    return sum(bigram in actual_text for bigram in bigrams) / len(bigrams)
+
+
 def _to_retrieval_results(matches: list[RetrievalMatch]) -> list[RetrievalResult]:
     results: list[RetrievalResult] = []
-    seen_chunks: set[str] = set()
+    seen_evidence: set[str] = set()
     seen_text: set[str] = set()
     for match in matches:
         citation = match.citation
         text = _clean_chunk_text(citation.excerpt, citation.section_title)
         normalized_text = _normalize_for_dedupe(text)
-        if citation.chunk_id in seen_chunks or normalized_text in seen_text:
+        evidence_id = str(match.metadata.get("evidence_id") or citation.chunk_id)
+        if evidence_id in seen_evidence or normalized_text in seen_text:
             continue
-        seen_chunks.add(citation.chunk_id)
+        seen_evidence.add(evidence_id)
         seen_text.add(normalized_text)
         rank = len(results) + 1
         results.append(
@@ -619,6 +1216,7 @@ def _to_retrieval_results(matches: list[RetrievalMatch]) -> list[RetrievalResult
                     or _parent_section_number(_section_number(citation.section_title)),
                     "previous_chunk_id": citation.previous_chunk_id,
                     "next_chunk_id": citation.next_chunk_id,
+                    **citation.metadata,
                     **match.metadata,
                 },
             )
@@ -658,8 +1256,12 @@ def _validate_context_chunks(
             continue
 
         source_chunk, document_status = source
-        if document_status != "indexed":
+        if document_status not in {"indexed", "table_indexed"}:
             invalid_chunk_ids.append(result.chunk_id)
+            continue
+
+        if result.metadata.get("dynamic_table_evidence"):
+            valid_chunks.append(result)
             continue
 
         if not _text_is_traceable(result.text, source_chunk.text):
@@ -737,6 +1339,7 @@ def _select_prompt_chunks(
                 aspect_retrieval.selected_chunk_ids.append(chunk.chunk_id)
 
     selected = _sort_prompt_chunks(selected, query_plan)
+    selected = _apply_prompt_token_budget(selected)
     _renumber_context_chunks(selected)
     covered_aspects = {item.aspect.aspect_id for item in aspect_retrievals if item.covered}
     return selected, _prompt_selection_summary(
@@ -810,6 +1413,20 @@ def _prompt_selection_summary(
     return summary
 
 
+def _apply_prompt_token_budget(chunks: list[RetrievalResult]) -> list[RetrievalResult]:
+    """Keep complete evidence blocks within a global token budget."""
+
+    selected: list[RetrievalResult] = []
+    used = 0
+    for chunk in chunks:
+        token_count = _int_or_none(chunk.metadata.get("token_count")) or max(len(chunk.text) // 2, 1)
+        if selected and used + token_count > MAX_PROMPT_TOKENS:
+            continue
+        selected.append(chunk)
+        used += token_count
+    return selected
+
+
 def _first_non_duplicate_candidate(
     candidates: list[RetrievalResult],
     selected: list[RetrievalResult],
@@ -835,6 +1452,8 @@ def _mark_chunk_for_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> None:
 
 
 def _chunk_matches_query_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> bool:
+    if chunk.metadata.get("evidence_role") == "mcq_exact_support":
+        return True
     if not aspect.keywords:
         return True
     text = _chunk_match_text(chunk)
@@ -1058,6 +1677,7 @@ def _citation_from_result(result: RetrievalResult) -> Citation:
         rerank_score=_float_or_none(metadata.get("rerank_score")),
         chunk_type=str(metadata.get("chunk_type") or "paragraph"),
         evidence_role=str(metadata.get("evidence_role") or "related_context"),
+        metadata=metadata,
     )
 
 
@@ -1071,6 +1691,10 @@ def _expand_neighbor_matches(db: Session, question: str, matches: list[Retrieval
     selected_chunk_ids: set[str] = set()
 
     for match in matches:
+        if match.metadata.get("dynamic_table_evidence") or match.citation.chunk_type in {"table_cell", "table_calculation"}:
+            selected.append(match)
+            selected_chunk_ids.add(match.citation.chunk_id)
+            continue
         if match.citation.chunk_id in selected_chunk_ids:
             continue
         selected.append(match)
@@ -1281,6 +1905,10 @@ def _build_retrieval_summary(
         for item in aspect_retrievals
         if not item.retrieval_covered
     ]
+    table_refusal_reasons = _table_refusal_reasons(aspect_retrievals)
+    for reason in table_refusal_reasons:
+        if reason not in missing_aspects:
+            missing_aspects.append(reason)
     covered_by_retrieval_but_not_prompted = [
         item.aspect.aspect_id
         for item in aspect_retrievals
@@ -1299,7 +1927,8 @@ def _build_retrieval_summary(
         "prompt_capacity_limited": prompt_capacity_limited,
         "covered_by_retrieval_but_not_prompted": covered_by_retrieval_but_not_prompted,
         "coverage_notes": coverage_notes,
-        "missing_aspects": missing_aspects,
+          "missing_aspects": missing_aspects,
+          "table_refusal_reasons": table_refusal_reasons,
         "citation_validation": citation_validation,
         "prompt_filtered_count": max(prompt_selection["candidate_prompt_chunks"] - len(context_chunks), 0),
         "prompt_selection": prompt_selection,
@@ -1311,6 +1940,18 @@ def _build_retrieval_summary(
     }
     summary.update(diagnostics.to_summary_fields())
     return summary
+
+
+def _table_refusal_reasons(aspect_retrievals: list[AspectRetrieval]) -> list[str]:
+    reasons: list[str] = []
+    for item in aspect_retrievals:
+        if item.aspect.modality not in {"table", "mixed"}:
+            continue
+        for diagnostic in item.diagnostics:
+            reason = diagnostic.get("spreadsheet_refusal_reason")
+            if isinstance(reason, str) and reason.strip():
+                reasons.append(reason.strip())
+    return list(dict.fromkeys(reasons))
 
 
 def _aggregate_aspect_diagnostics(aspect_retrievals: list[AspectRetrieval]) -> RetrievalDiagnostics:
@@ -1357,6 +1998,17 @@ def _score_range_for_candidates(candidates: list[Any], reranked: list[Any]) -> d
     return {
         "vector_min": round(min(vector_scores), 4) if vector_scores else None,
         "vector_max": round(max(vector_scores), 4) if vector_scores else None,
+        "rerank_min": round(min(rerank_scores), 4) if rerank_scores else None,
+        "rerank_max": round(max(rerank_scores), 4) if rerank_scores else None,
+    }
+
+
+def _score_range_for_matches(matches: list[RetrievalMatch]) -> dict[str, float | None]:
+    scores = [float(match.score) for match in matches]
+    rerank_scores = [float(match.rerank_score) for match in matches]
+    return {
+        "vector_min": round(min(scores), 4) if scores else None,
+        "vector_max": round(max(scores), 4) if scores else None,
         "rerank_min": round(min(rerank_scores), 4) if rerank_scores else None,
         "rerank_max": round(max(rerank_scores), 4) if rerank_scores else None,
     }
@@ -1457,6 +2109,12 @@ def _elapsed_ms(started_at: float) -> float:
     return round((perf_counter() - started_at) * 1000, 2)
 
 
+def _format_elapsed_seconds(elapsed_ms: float | None) -> str:
+    if elapsed_ms is None:
+        return "0.000s"
+    return f"{elapsed_ms / 1000:.3f}s"
+
+
 def _int_or_none(value: Any) -> int | None:
     return int(value) if value is not None else None
 
@@ -1485,7 +2143,7 @@ def _filter_indexed_matches(db: Session, matches: list[RetrievalMatch]) -> list[
         db.scalars(
             select(Document.document_id).where(
                 Document.document_id.in_(document_ids),
-                Document.status == "indexed",
+                Document.status.in_(["indexed", "table_indexed"]),
             )
         ).all()
     )
@@ -1506,16 +2164,61 @@ def _save_qa_log(db: Session, question: str, response: QAResponse) -> None:
 
 def _log_qa_audit(db: Session, action: str, question: str, response: QAResponse) -> None:
     package = response.context_package
-    detail = json.dumps(
-        {
-            "question": question,
-            "answer": response.answer,
-            "is_final_answer": package.is_final_answer if package else False,
-            "mode": package.mode if package else "rag_context",
-            "used_chunks": package.retrieval_summary["used_chunks"] if package else 0,
-            "refused": response.refused,
-            "confidence": response.confidence,
-        },
-        ensure_ascii=False,
+    used_chunks = package.retrieval_summary["used_chunks"] if package else len(response.citations)
+    detail_payload = {
+        "question": question,
+        "answer": response.answer,
+        "is_final_answer": bool(response.answer),
+        "mode": response.answer_type,
+        "generation_status": response.generation_status,
+        "used_chunks": used_chunks,
+        "refused": response.refused,
+        "refusal_reason": response.refusal_reason,
+        "confidence": response.confidence,
+        "citation_count": len(response.citations),
+    }
+    details_payload = {
+        **detail_payload,
+        "citations": [_audit_citation_payload(citation) for citation in response.citations],
+    }
+    detail = json.dumps(detail_payload, ensure_ascii=False)
+    status_text = "已拒答" if response.refused else "已回答"
+    summary = "问答拒答" if response.refused else "问答完成"
+    user_message = f"{status_text}：{_compact_audit_text(question, 80)}"
+    record_event(
+        db,
+        action,
+        "question",
+        None,
+        detail=detail,
+        severity="info",
+        event_key=f"{action}:question:{uuid4().hex}",
+        summary=summary,
+        user_message=user_message,
+        details=details_payload,
     )
-    log_action(db, action, "question", None, detail[:4000])
+
+
+def _audit_citation_payload(citation: Citation) -> dict[str, Any]:
+    return {
+        "document_id": citation.document_id,
+        "chunk_id": citation.chunk_id,
+        "filename": citation.filename,
+        "section_title": citation.section_title,
+        "page_number": citation.page_number,
+        "excerpt": citation.excerpt,
+        "score": citation.score,
+        "rerank_score": citation.rerank_score,
+        "chunk_type": citation.chunk_type,
+        "evidence_role": citation.evidence_role,
+        "metadata": citation.metadata,
+    }
+
+
+def _compact_audit_text(value: str | None, max_chars: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= max_chars:
+        return text
+    head = max_chars * 2 // 3
+    tail = max(max_chars - head - 1, 0)
+    return f"{text[:head]}…{text[-tail:]}"

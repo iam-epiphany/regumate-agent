@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 
-FROM python:3.13-slim AS app
+FROM python:3.13-bookworm AS app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -26,13 +26,37 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    for attempt in 1 2 3; do \
+        apt-get -o Acquire::Retries=5 update; \
+        if DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            antiword \
+            build-essential \
+            curl \
+            fonts-noto-cjk \
+            libreoffice-calc \
+            libreoffice-writer; then \
+            break; \
+        fi; \
+        if [ "$attempt" = "3" ]; then exit 1; fi; \
+        apt-get -f install -y || true; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+        sleep 10; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY requirements.txt requirements-cuda.txt ./
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt
+    && python -m pip install -r requirements-cuda.txt \
+    && grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt \
+    && python -m pip install -r /tmp/requirements-no-torch.txt
+
+ARG REGUMATE_BUILD_ID=dev
+ENV REGUMATE_BUILD_ID=${REGUMATE_BUILD_ID}
+LABEL org.opencontainers.image.title="ReguMate Agent" \
+      org.opencontainers.image.version=${REGUMATE_BUILD_ID} \
+      org.regumate.image.role="app"
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/

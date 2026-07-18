@@ -19,6 +19,18 @@ data/qdrant/
 data/models/
 data/model_cache/
 data/test_documents/parser_samples/
+data/contest dataset/
+data/contest_staging/
+data/evaluation/
+dist-delivery/
+delivery/
+release/
+ReguMate-Agent-Delivery*/
+*.zip
+*.7z
+.env
+.env.*
+!.env.example
 
 outputs/
 reports/generated/

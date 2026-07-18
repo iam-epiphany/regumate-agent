@@ -1,40 +1,75 @@
 services:
   app:
+    image: regumate/app:contest-v3
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        REGUMATE_BUILD_ID: ${REGUMATE_BUILD_ID:-dev}
     container_name: regumate-app
     depends_on:
       qdrant:
-        condition: service_started
+        condition: service_healthy
     environment:
-      REGUMATE_DATA_DIR: /app/data
+      REGUMATE_DATA_DIR: /app/data/evaluation/final_runtime
       REGUMATE_MODEL_CACHE_DIR: /app/data/model_cache
-      REGUMATE_OFFLINE_MODE: "true"
+      REGUMATE_OFFLINE_MODE: ${REGUMATE_OFFLINE_MODE:-false}
+      REGUMATE_BUILD_ID: ${REGUMATE_BUILD_ID:-dev}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION: regumate_chunks
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-regumate_chunks}
+      QDRANT_AUTO_CREATE_COLLECTION: ${QDRANT_AUTO_CREATE_COLLECTION:-true}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QUERY_PLANNER_MODEL: ${QUERY_PLANNER_MODEL:-deepseek-v4-flash}
+      ANSWER_GENERATION_MODEL: ${ANSWER_GENERATION_MODEL:-deepseek-v4-flash}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-8}
+      EMBEDDING_MAX_BATCH_SIZE: ${EMBEDDING_MAX_BATCH_SIZE:-16}
+      MODEL_DEVICE: ${MODEL_DEVICE:-auto}
+      MODEL_GPU_MIN_FREE_MEMORY_GB: ${MODEL_GPU_MIN_FREE_MEMORY_GB:-1.0}
+      MAX_PROMPT_TOKENS: ${MAX_PROMPT_TOKENS:-3600}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      INDEX_QUEUE_CAPACITY: ${INDEX_QUEUE_CAPACITY:-8}
+      INDEX_TASK_MAX_RETRIES: ${INDEX_TASK_MAX_RETRIES:-3}
+      QA_QUEUE_CAPACITY: ${QA_QUEUE_CAPACITY:-16}
+      QA_TASK_MAX_RETRIES: ${QA_TASK_MAX_RETRIES:-1}
+      MAX_OOXML_ENTRIES: ${MAX_OOXML_ENTRIES:-20000}
+      MAX_OOXML_UNCOMPRESSED_BYTES: ${MAX_OOXML_UNCOMPRESSED_BYTES:-524288000}
+      MAX_SPREADSHEET_LOGICAL_CELLS: ${MAX_SPREADSHEET_LOGICAL_CELLS:-5000000}
+      OFFICE_CONVERSION_TIMEOUT_SECONDS: ${OFFICE_CONVERSION_TIMEOUT_SECONDS:-120}
+      OFFICE_CONVERSION_MAX_BYTES: ${OFFICE_CONVERSION_MAX_BYTES:-209715200}
       HF_HOME: /app/data/model_cache/huggingface
       HF_HUB_CACHE: /app/data/model_cache/huggingface/hub
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
-      HF_DATASETS_OFFLINE: "1"
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      HF_DATASETS_OFFLINE: ${HF_DATASETS_OFFLINE:-0}
       SENTENCE_TRANSFORMERS_HOME: /app/data/model_cache/sentence_transformers
       TORCH_HOME: /app/data/model_cache/torch
-      EMBEDDING_MODEL_PATH: /app/data/models/bge-m3
-      RERANKER_MODEL_PATH: /app/data/models/bge-reranker-v2-m3
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/data/models/bge-m3}
+      RERANKER_MODEL_PATH: ${RERANKER_MODEL_PATH:-/app/data/models/bge-reranker-v2-m3}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${REGUMATE_APP_PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
+      - ./data/models:/app/data/models:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   qdrant:
     image: qdrant/qdrant:v1.18.0
     container_name: regumate-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:${REGUMATE_QDRANT_HTTP_PORT:-6333}:6333"
+      - "127.0.0.1:${REGUMATE_QDRANT_GRPC_PORT:-6334}:6334"
     volumes:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q 'healthz check passed' <&3"]
+      interval: 10s
+      timeout: 3s
+      retries: 10

@@ -1,11 +1,17 @@
 import { apiFetch } from "./client";
-import type { LLMContextPackage, QAResponse, RagProgressEvent } from "../types/api";
+import type {
+  LLMContextPackage,
+  QAResponse,
+  QATaskCreateResponse,
+  QATaskStatusResponse,
+  RagProgressEvent,
+} from "../types/api";
 
 export function askQuestion(question: string): Promise<QAResponse> {
   return apiFetch<QAResponse>("/api/qa/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: true }),
   });
 }
 
@@ -13,19 +19,72 @@ export function retrieveQuestionContext(question: string): Promise<LLMContextPac
   return apiFetch<LLMContextPackage>("/api/qa/retrieve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: true }),
   });
+}
+
+export function createQuestionTask(
+  question: string,
+  clientRequestId: string,
+  includeDebug = false,
+): Promise<QATaskCreateResponse> {
+  return apiFetch<QATaskCreateResponse>("/api/qa/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      client_request_id: clientRequestId,
+      include_debug: includeDebug,
+    }),
+  });
+}
+
+export function getQuestionTask(taskId: string): Promise<QATaskStatusResponse> {
+  return apiFetch<QATaskStatusResponse>(`/api/qa/tasks/${taskId}`);
+}
+
+export function streamQuestionTask(
+  taskId: string,
+  onTask: (task: QATaskStatusResponse) => void,
+  onConnectionChange: (connected: boolean) => void,
+): () => void {
+  if (typeof EventSource === "undefined") {
+    onConnectionChange(false);
+    return () => undefined;
+  }
+  const source = new EventSource(`/api/qa/tasks/${taskId}/stream`);
+  source.onopen = () => onConnectionChange(true);
+  source.addEventListener("task", (event) => {
+    try {
+      onTask(JSON.parse((event as MessageEvent<string>).data) as QATaskStatusResponse);
+    } catch {
+      onConnectionChange(false);
+    }
+  });
+  source.onerror = () => onConnectionChange(false);
+  return () => source.close();
+}
+
+export function cancelQuestionTask(taskId: string): Promise<QATaskStatusResponse> {
+  return apiFetch<QATaskStatusResponse>(`/api/qa/tasks/${taskId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function listQuestionTasks(limit = 5): Promise<QATaskStatusResponse[]> {
+  return apiFetch<QATaskStatusResponse[]>(`/api/qa/tasks?limit=${limit}`);
 }
 
 export async function askQuestionStream(
   question: string,
   onProgress: (event: RagProgressEvent) => void,
   signal?: AbortSignal,
+  includeDebug = false,
 ): Promise<QAResponse> {
   const response = await fetch("/api/qa/ask/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, include_debug: includeDebug }),
     signal,
   });
 

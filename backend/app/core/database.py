@@ -1,6 +1,8 @@
 from collections.abc import Generator
+from pathlib import Path, PureWindowsPath
+import unicodedata
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.app.core.config import DATABASE_PATH, ensure_runtime_dirs
@@ -8,6 +10,15 @@ from backend.app.core.config import DATABASE_PATH, ensure_runtime_dirs
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -23,6 +34,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _upgrade_sqlite_schema()
+    _recover_interrupted_states()
 
 
 def _upgrade_sqlite_schema() -> None:
@@ -32,9 +44,17 @@ def _upgrade_sqlite_schema() -> None:
         return
 
     document_columns = {column["name"] for column in inspector.get_columns("documents")} if "documents" in table_names else set()
+    index_task_columns = {column["name"] for column in inspector.get_columns("document_index_tasks")} if "document_index_tasks" in table_names else set()
+    audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")} if "audit_logs" in table_names else set()
+    qa_task_columns = {column["name"] for column in inspector.get_columns("qa_tasks")} if "qa_tasks" in table_names else set()
     document_migrations = {
+        "client_request_id": "ALTER TABLE documents ADD COLUMN client_request_id VARCHAR(128)",
+        "document_metadata": "ALTER TABLE documents ADD COLUMN document_metadata TEXT",
         "index_version": "ALTER TABLE documents ADD COLUMN index_version VARCHAR(80)",
         "index_error": "ALTER TABLE documents ADD COLUMN index_error TEXT",
+        "lifecycle_stage": "ALTER TABLE documents ADD COLUMN lifecycle_stage VARCHAR(40)",
+        "filename_norm": "ALTER TABLE documents ADD COLUMN filename_norm VARCHAR(255)",
+        "file_sha256": "ALTER TABLE documents ADD COLUMN file_sha256 VARCHAR(64)",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
@@ -48,9 +68,79 @@ def _upgrade_sqlite_schema() -> None:
         for column_name, statement in document_migrations.items():
             if column_name not in document_columns:
                 connection.execute(text(statement))
+        if "documents" in table_names:
+            _backfill_document_filename_norms(connection)
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_client_request_id "
+                    "ON documents(client_request_id)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_filename_norm "
+                    "ON documents(filename_norm)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_documents_file_sha256 "
+                    "ON documents(file_sha256)"
+                )
+            )
+        if "document_index_tasks" in table_names:
+            index_task_migrations = {
+                "task_id": "ALTER TABLE document_index_tasks ADD COLUMN task_id VARCHAR(32)",
+                "stage": "ALTER TABLE document_index_tasks ADD COLUMN stage VARCHAR(40) DEFAULT 'queued'",
+                "completed_units": "ALTER TABLE document_index_tasks ADD COLUMN completed_units INTEGER",
+                "total_units": "ALTER TABLE document_index_tasks ADD COLUMN total_units INTEGER",
+                "error_code": "ALTER TABLE document_index_tasks ADD COLUMN error_code VARCHAR(100)",
+            }
+            for column_name, statement in index_task_migrations.items():
+                if column_name not in index_task_columns:
+                    connection.execute(text(statement))
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_document_index_tasks_task_id "
+                    "ON document_index_tasks(task_id)"
+                )
+            )
         for column_name, statement in chunk_migrations.items():
             if column_name not in chunk_columns:
                 connection.execute(text(statement))
+        audit_migrations = {
+            "severity": "ALTER TABLE audit_logs ADD COLUMN severity VARCHAR(20) DEFAULT 'info'",
+            "event_key": "ALTER TABLE audit_logs ADD COLUMN event_key VARCHAR(255)",
+            "summary": "ALTER TABLE audit_logs ADD COLUMN summary VARCHAR(500)",
+            "user_message": "ALTER TABLE audit_logs ADD COLUMN user_message TEXT",
+            "details_json": "ALTER TABLE audit_logs ADD COLUMN details_json TEXT",
+            "first_seen_at": "ALTER TABLE audit_logs ADD COLUMN first_seen_at DATETIME",
+            "last_seen_at": "ALTER TABLE audit_logs ADD COLUMN last_seen_at DATETIME",
+            "occurrence_count": "ALTER TABLE audit_logs ADD COLUMN occurrence_count INTEGER DEFAULT 1",
+            "resolved": "ALTER TABLE audit_logs ADD COLUMN resolved BOOLEAN DEFAULT 0",
+        }
+        if "audit_logs" in table_names:
+            for column_name, statement in audit_migrations.items():
+                if column_name not in audit_columns:
+                    connection.execute(text(statement))
+        if "qa_tasks" in table_names:
+            qa_task_migrations = {
+                "client_request_id": "ALTER TABLE qa_tasks ADD COLUMN client_request_id VARCHAR(128)",
+                "error_code": "ALTER TABLE qa_tasks ADD COLUMN error_code VARCHAR(100)",
+                "error_stage": "ALTER TABLE qa_tasks ADD COLUMN error_stage VARCHAR(50)",
+                "error_retryable": "ALTER TABLE qa_tasks ADD COLUMN error_retryable BOOLEAN DEFAULT 0",
+                "attempt_count": "ALTER TABLE qa_tasks ADD COLUMN attempt_count INTEGER DEFAULT 0",
+                "answer_preview_json": "ALTER TABLE qa_tasks ADD COLUMN answer_preview_json TEXT",
+            }
+            for column_name, statement in qa_task_migrations.items():
+                if column_name not in qa_task_columns:
+                    connection.execute(text(statement))
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_qa_tasks_client_request_id "
+                    "ON qa_tasks(client_request_id)"
+                )
+            )
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -59,3 +149,80 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _backfill_document_filename_norms(connection) -> None:
+    rows = connection.execute(
+        text("SELECT id, filename FROM documents ORDER BY uploaded_at ASC, id ASC")
+    ).mappings().all()
+    used: set[str] = set()
+    for row in rows:
+        original_filename = str(row["filename"] or f"未命名文档-{row['id']}")
+        candidate_filename = _sanitize_existing_filename(original_filename)
+        candidate_norm = _normalize_existing_filename(candidate_filename)
+        if candidate_norm in used:
+            duplicate_index = 2
+            while True:
+                renamed = _duplicate_filename(candidate_filename, duplicate_index)
+                renamed_norm = _normalize_existing_filename(renamed)
+                if renamed_norm not in used:
+                    candidate_filename = renamed
+                    candidate_norm = renamed_norm
+                    break
+                duplicate_index += 1
+        used.add(candidate_norm)
+        connection.execute(
+            text("UPDATE documents SET filename=:filename, filename_norm=:filename_norm WHERE id=:id"),
+            {"id": row["id"], "filename": candidate_filename, "filename_norm": candidate_norm},
+        )
+
+
+def _sanitize_existing_filename(filename: str) -> str:
+    if "\\" in filename or ":" in filename:
+        basename = PureWindowsPath(filename).name
+    else:
+        basename = Path(filename).name
+    normalized = unicodedata.normalize("NFC", basename).strip()
+    return normalized[:255] or "未命名文档"
+
+
+def _normalize_existing_filename(filename: str) -> str:
+    return _sanitize_existing_filename(filename).casefold()
+
+
+def _duplicate_filename(filename: str, duplicate_index: int) -> str:
+    path = Path(filename)
+    suffix = path.suffix
+    stem = filename[: -len(suffix)] if suffix else filename
+    marker = f" (历史重复-{duplicate_index})"
+    max_stem_len = 255 - len(marker) - len(suffix)
+    return f"{stem[:max_stem_len]}{marker}{suffix}"
+
+
+def _recover_interrupted_states() -> None:
+    """Make process-interrupted index jobs visible and safely retryable."""
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE documents SET status='index_failed', "
+                "index_error='应用重启时检测到未完成的索引任务，请重试构建索引。' "
+                "WHERE status='indexing'"
+            )
+        )
+        connection.execute(
+            text("UPDATE document_chunks SET index_status='index_failed' WHERE index_status='indexing'")
+        )
+        inspector = inspect(engine)
+        if "qa_tasks" in inspector.get_table_names():
+            connection.execute(
+                text(
+                    "UPDATE qa_tasks SET status='queued', "
+                    "error='应用重启后正在恢复未完成的问答任务。', "
+                    "error_code=NULL, error_stage=NULL, error_retryable=0, "
+                    "answer_preview_json=NULL, "
+                    "completed_at=NULL, "
+                    "updated_at=CURRENT_TIMESTAMP "
+                    "WHERE status IN ('queued', 'running')"
+                )
+            )
