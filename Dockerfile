@@ -54,7 +54,9 @@ RUN python -m pip install --upgrade pip \
 
 ARG REGUMATE_BUILD_ID=dev
 ENV REGUMATE_BUILD_ID=${REGUMATE_BUILD_ID}
-LABEL org.opencontainers.image.version=${REGUMATE_BUILD_ID}
+LABEL org.opencontainers.image.title="ReguMate Agent" \
+      org.opencontainers.image.version=${REGUMATE_BUILD_ID} \
+      org.regumate.image.role="app"
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/

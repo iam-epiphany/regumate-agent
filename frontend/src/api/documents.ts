@@ -1,9 +1,12 @@
 import { apiFetch } from "./client";
 import type {
+  DocumentBatchUploadResponse,
   DocumentDeleteResponse,
   DocumentDetailResponse,
   DocumentListResponse,
   DocumentProcessingResponse,
+  DocumentUploadPreflightRequestItem,
+  DocumentUploadPreflightResponse,
   DocumentUploadResponse,
 } from "../types/api";
 
@@ -27,10 +30,21 @@ export function rebuildDocumentIndex(documentId: string): Promise<DocumentDetail
 
 export function uploadDocument(
   file: File,
-  options: { idempotencyKey: string; onProgress?: (loaded: number, total: number) => void },
+  options: {
+    idempotencyKey: string;
+    filenameOverride?: string;
+    overwriteDocumentId?: string;
+    onProgress?: (loaded: number, total: number) => void;
+  },
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (options.filenameOverride) {
+    formData.append("filename_override", options.filenameOverride);
+  }
+  if (options.overwriteDocumentId) {
+    formData.append("overwrite_document_id", options.overwriteDocumentId);
+  }
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", "/api/documents/upload");
@@ -55,6 +69,50 @@ export function uploadDocument(
       reject(new Error(errorBody?.error?.message ?? errorBody?.detail ?? `HTTP ${request.status}`));
     });
     request.addEventListener("error", () => reject(new Error("上传连接中断，请使用同一文件重试。")));
+    request.send(formData);
+  });
+}
+
+export function preflightDocumentUploads(
+  items: DocumentUploadPreflightRequestItem[],
+): Promise<DocumentUploadPreflightResponse> {
+  return apiFetch<DocumentUploadPreflightResponse>("/api/documents/upload-preflight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+}
+
+export function uploadDocumentsBatch(
+  files: File[],
+  options: { idempotencyKey: string; onProgress?: (loaded: number, total: number) => void },
+): Promise<DocumentBatchUploadResponse> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", "/api/documents/batch-upload");
+    request.setRequestHeader("Idempotency-Key", options.idempotencyKey);
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        options.onProgress?.(event.loaded, event.total);
+      }
+    });
+    request.addEventListener("load", () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(request.responseText);
+      } catch {
+        // The shared API client uses the same user-facing fallback below.
+      }
+      if (request.status >= 200 && request.status < 300) {
+        resolve(body as DocumentBatchUploadResponse);
+        return;
+      }
+      const errorBody = body as { detail?: string; error?: { message?: string } } | null;
+      reject(new Error(errorBody?.error?.message ?? errorBody?.detail ?? `HTTP ${request.status}`));
+    });
+    request.addEventListener("error", () => reject(new Error("批量上传连接中断，请使用同一批文件重试。")));
     request.send(formData);
   });
 }

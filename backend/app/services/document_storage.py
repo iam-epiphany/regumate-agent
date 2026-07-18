@@ -1,4 +1,6 @@
 from datetime import datetime
+from dataclasses import dataclass
+import hashlib
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -34,6 +36,13 @@ class AsyncUploadStream(Protocol):
     async def read(self, size: int = -1) -> bytes: ...
 
 
+@dataclass(frozen=True)
+class StoredOriginalDocument:
+    path: Path
+    size: int
+    file_sha256: str
+
+
 def next_document_id(db: Session) -> str:
     """Generate a collision-resistant ID without a read-then-increment race.
 
@@ -51,7 +60,12 @@ def next_document_id(db: Session) -> str:
     raise RuntimeError("无法生成唯一文档编号，请重试上传")
 
 
-def save_original_document(document_id: str, filename: str, content: bytes, content_type: str | None = None) -> Path:
+def save_original_document(
+    document_id: str,
+    filename: str,
+    content: bytes,
+    content_type: str | None = None,
+) -> StoredOriginalDocument:
     if not content:
         raise EmptyDocumentError("上传文档不能为空")
 
@@ -66,7 +80,11 @@ def save_original_document(document_id: str, filename: str, content: bytes, cont
     if storage_path.exists():
         raise UnsupportedDocumentTypeError("文档存储路径已存在，请刷新后重试上传")
     storage_path.write_bytes(content)
-    return storage_path
+    return StoredOriginalDocument(
+        path=storage_path,
+        size=len(content),
+        file_sha256=hashlib.sha256(content).hexdigest(),
+    )
 
 
 async def save_original_document_stream(
@@ -76,7 +94,7 @@ async def save_original_document_stream(
     stream: AsyncUploadStream,
     content_type: str | None,
     max_bytes: int,
-) -> tuple[Path, int]:
+) -> StoredOriginalDocument:
     """Write an upload incrementally, validate it, then publish atomically."""
 
     suffix = Path(filename).suffix.lower()
@@ -90,6 +108,7 @@ async def save_original_document_stream(
         raise UnsupportedDocumentTypeError("文档存储路径已存在，请刷新后重试上传")
 
     total = 0
+    sha256 = hashlib.sha256()
     try:
         with temporary_path.open("xb") as target:
             while data := await stream.read(1024 * 1024):
@@ -98,12 +117,13 @@ async def save_original_document_stream(
                     raise DocumentTooLargeError(
                         f"文件超过上传大小限制（{max_bytes // 1024 // 1024} MB）"
                     )
+                sha256.update(data)
                 target.write(data)
         if total == 0:
             raise EmptyDocumentError("上传文档不能为空")
         _validate_file_path(suffix, temporary_path)
         temporary_path.replace(storage_path)
-        return storage_path, total
+        return StoredOriginalDocument(path=storage_path, size=total, file_sha256=sha256.hexdigest())
     except Exception:
         temporary_path.unlink(missing_ok=True)
         raise

@@ -130,7 +130,7 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "stage": "retrieval",
                 "status": "completed",
                 "title": "依据检索完成",
-                "detail": f"已召回 {diagnostics.candidate_count} 个候选片段，用时 {diagnostics.timings_ms.get('qdrant', 0):.0f}ms",
+                "detail": f"已召回 {diagnostics.candidate_count} 个候选片段，用时 {_format_elapsed_seconds(diagnostics.timings_ms.get('qdrant'))}",
                 "elapsed_ms": diagnostics.timings_ms.get("qdrant"),
                 "summary": {
                     "candidate_count": diagnostics.candidate_count,
@@ -169,7 +169,7 @@ def retrieve_citations(question: str, progress_reporter: ProgressReporter | None
                 "stage": "rerank",
                 "status": "completed",
                 "title": "候选重排完成",
-                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {diagnostics.timings_ms['rerank']:.0f}ms",
+                "detail": f"已完成 {diagnostics.reranked_count} 个片段重排，用时 {_format_elapsed_seconds(diagnostics.timings_ms.get('rerank'))}",
                 "elapsed_ms": diagnostics.timings_ms["rerank"],
                 "summary": {
                     "rerank_input_count": diagnostics.rerank_input_count,
@@ -654,6 +654,12 @@ def _safe_excerpt(text: str, limit: int = 1200) -> str:
 
 def _elapsed_ms(started_at: float) -> float:
     return round((perf_counter() - started_at) * 1000, 2)
+
+
+def _format_elapsed_seconds(elapsed_ms: float | None) -> str:
+    if elapsed_ms is None:
+        return "0.000s"
+    return f"{elapsed_ms / 1000:.3f}s"
 
 
 def _score_range(candidates: list[VectorSearchResult], reranked: list[RerankedChunk]) -> dict[str, float | None]:

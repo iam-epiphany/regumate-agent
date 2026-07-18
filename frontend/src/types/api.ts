@@ -83,6 +83,52 @@ export interface DocumentUploadResponse {
   metadata: Record<string, unknown>;
 }
 
+export interface DocumentBatchUploadItem {
+  filename: string;
+  status: "accepted" | "failed" | "duplicate" | "conflict";
+  document_id: string | null;
+  task_id: string | null;
+  stage: DocumentStage | null;
+  size: number | null;
+  error_message: string | null;
+}
+
+export interface DocumentBatchUploadResponse {
+  batch_id: string;
+  accepted_count: number;
+  failed_count: number;
+  items: DocumentBatchUploadItem[];
+}
+
+export interface DocumentConflictExistingDocument {
+  document_id: string;
+  filename: string;
+  size: number;
+  file_sha256: string | null;
+  status: DocumentStatus;
+  uploaded_at: string;
+  chunk_count: number;
+}
+
+export interface DocumentUploadPreflightRequestItem {
+  client_file_id: string;
+  filename: string;
+  size: number;
+  file_sha256: string;
+}
+
+export interface DocumentUploadPreflightItem {
+  client_file_id: string;
+  filename: string;
+  status: "ready" | "exact_duplicate" | "name_conflict" | "selection_name_conflict";
+  existing_document: DocumentConflictExistingDocument | null;
+  error_message: string | null;
+}
+
+export interface DocumentUploadPreflightResponse {
+  items: DocumentUploadPreflightItem[];
+}
+
 export interface DocumentProcessingResponse {
   document_id: string;
   task_id: string;

@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from pathlib import Path, PureWindowsPath
+import unicodedata
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -51,6 +53,8 @@ def _upgrade_sqlite_schema() -> None:
         "index_version": "ALTER TABLE documents ADD COLUMN index_version VARCHAR(80)",
         "index_error": "ALTER TABLE documents ADD COLUMN index_error TEXT",
         "lifecycle_stage": "ALTER TABLE documents ADD COLUMN lifecycle_stage VARCHAR(40)",
+        "filename_norm": "ALTER TABLE documents ADD COLUMN filename_norm VARCHAR(255)",
+        "file_sha256": "ALTER TABLE documents ADD COLUMN file_sha256 VARCHAR(64)",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
@@ -65,10 +69,23 @@ def _upgrade_sqlite_schema() -> None:
             if column_name not in document_columns:
                 connection.execute(text(statement))
         if "documents" in table_names:
+            _backfill_document_filename_norms(connection)
             connection.execute(
                 text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_client_request_id "
                     "ON documents(client_request_id)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_filename_norm "
+                    "ON documents(filename_norm)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_documents_file_sha256 "
+                    "ON documents(file_sha256)"
                 )
             )
         if "document_index_tasks" in table_names:
@@ -132,6 +149,54 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _backfill_document_filename_norms(connection) -> None:
+    rows = connection.execute(
+        text("SELECT id, filename FROM documents ORDER BY uploaded_at ASC, id ASC")
+    ).mappings().all()
+    used: set[str] = set()
+    for row in rows:
+        original_filename = str(row["filename"] or f"未命名文档-{row['id']}")
+        candidate_filename = _sanitize_existing_filename(original_filename)
+        candidate_norm = _normalize_existing_filename(candidate_filename)
+        if candidate_norm in used:
+            duplicate_index = 2
+            while True:
+                renamed = _duplicate_filename(candidate_filename, duplicate_index)
+                renamed_norm = _normalize_existing_filename(renamed)
+                if renamed_norm not in used:
+                    candidate_filename = renamed
+                    candidate_norm = renamed_norm
+                    break
+                duplicate_index += 1
+        used.add(candidate_norm)
+        connection.execute(
+            text("UPDATE documents SET filename=:filename, filename_norm=:filename_norm WHERE id=:id"),
+            {"id": row["id"], "filename": candidate_filename, "filename_norm": candidate_norm},
+        )
+
+
+def _sanitize_existing_filename(filename: str) -> str:
+    if "\\" in filename or ":" in filename:
+        basename = PureWindowsPath(filename).name
+    else:
+        basename = Path(filename).name
+    normalized = unicodedata.normalize("NFC", basename).strip()
+    return normalized[:255] or "未命名文档"
+
+
+def _normalize_existing_filename(filename: str) -> str:
+    return _sanitize_existing_filename(filename).casefold()
+
+
+def _duplicate_filename(filename: str, duplicate_index: int) -> str:
+    path = Path(filename)
+    suffix = path.suffix
+    stem = filename[: -len(suffix)] if suffix else filename
+    marker = f" (历史重复-{duplicate_index})"
+    max_stem_len = 255 - len(marker) - len(suffix)
+    return f"{stem[:max_stem_len]}{marker}{suffix}"
 
 
 def _recover_interrupted_states() -> None:

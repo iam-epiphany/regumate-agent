@@ -1,5 +1,7 @@
 from pathlib import Path, PureWindowsPath
+import hashlib
 import json
+import unicodedata
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -187,9 +189,11 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
         document = Document(
             document_id=document_id,
             filename=path.name,
+            filename_norm=_normalize_filename(path.name),
             content_type=None,
             file_type=path.suffix.lower().lstrip("."),
             size=path.stat().st_size,
+            file_sha256=_sha256_file(path),
             storage_path=str(path),
             status="indexed" if indexed else "uploaded",
             index_version=INDEX_VERSION,
@@ -266,3 +270,19 @@ def _mark_delete_failed(
     for chunk in chunks:
         chunk.index_status = "delete_failed"
     db.commit()
+
+
+def _normalize_filename(filename: str) -> str:
+    if "\\" in filename or ":" in filename:
+        basename = PureWindowsPath(filename).name
+    else:
+        basename = Path(filename).name
+    return unicodedata.normalize("NFC", basename).strip().casefold()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()

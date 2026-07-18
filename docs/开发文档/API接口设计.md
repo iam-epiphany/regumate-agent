@@ -21,7 +21,9 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | GET | `/api/health/rag` | RAG 依赖、模型运行态与 Build ID 诊断 |
 | GET | `/api/health/ready` | 正式依赖就绪检查 |
 | POST | `/api/health/warmup` | 预热 embedding 与 reranker，不写业务数据 |
+| POST | `/api/documents/upload-preflight` | 上传前重复文件和同名冲突预检 |
 | POST | `/api/documents/upload` | 上传知识库文档 |
+| POST | `/api/documents/batch-upload` | 批量上传知识库文档 |
 | GET | `/api/documents/{document_id}/processing` | 查询解析、切片和索引的持久化处理快照 |
 | GET | `/api/documents` | 获取文档列表 |
 | GET | `/api/documents/{document_id}` | 获取文档详情与 chunk |
@@ -39,11 +41,23 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | GET | `/api/audit/archives/{archive_date}` | 查看某天审计日志归档内容 |
 | DELETE | `/api/audit/archives/{archive_date}` | 删除某天审计日志归档文件 |
 
+## 文档上传预检
+
+`POST /api/documents/upload-preflight`
+
+- 请求：`application/json`，字段为 `items`。单项包含 `client_file_id`、`filename`、`size` 和浏览器计算的 `file_sha256`。
+- 后端按 basename、Unicode NFC、去首尾空白和大小写不敏感 `casefold()` 生成 `filename_norm`；知识库内 `filename_norm` 唯一。
+- 响应逐项返回 `ready`、`exact_duplicate`、`name_conflict` 或 `selection_name_conflict`。
+- `exact_duplicate` 表示已有文档的 `size + file_sha256` 完全一致，前端提示已存在并跳过上传。
+- `name_conflict` 表示同名但内容不同，响应带 `existing_document={document_id,filename,size,file_sha256,status,uploaded_at,chunk_count}`，前端让用户选择覆盖旧文件或重命名新文件。
+- `selection_name_conflict` 表示本次选择的文件之间规范化文件名重复，前端要求用户重命名或跳过其中一个。
+- 预检只改善交互体验；上传接口仍会重新计算 SHA-256 并执行唯一校验，避免并发或绕过前端导致重复入库。
+
 ## 文档上传
 
 `POST /api/documents/upload`
 
-- 请求：`multipart/form-data`，字段名为 `file`。
+- 请求：`multipart/form-data`，字段名为 `file`；可选字段 `filename_override` 用于重命名新文件，`overwrite_document_id` 用于覆盖已有文档。
 - 支持：`.txt`、`.md`、`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls`、`.xlsx`。
 - 上传时校验扩展名、MIME 类型和文件内容签名，避免仅靠后缀判断文件类型。
 - 文件按 1MB 分块写入同目录临时文件，超过限额立即停止；内容校验通过后原子改名。超限、伪格式或解析失败都会清理临时文件，避免大文件常驻内存和残留半文件。
@@ -52,10 +66,23 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - PDF 默认使用 PyMuPDF4LLM 解析，候选 Docling / Unstructured，最终回退 pypdf；当前不启用 OCR。
 - 浏览器可通过上传字节进度展示网络传输。原文件安全落盘后，后端在同一 SQLite 事务中创建 Document 和持久化处理任务；请求返回后由单个有界 worker 执行解析、切片、单元格元数据写入、embedding、向量写入和核验，不再在 HTTP 请求内同步解析。
 - 请求支持 `Idempotency-Key`。同一键重复提交返回原 `document_id/task_id`，不会重复解析或索引。
+- 原文件落盘时同步计算 `file_sha256`，并写入 `Document.file_sha256` 与 `Document.filename_norm`。若发现 `size + file_sha256` 已存在，返回 409，错误码 `exact_duplicate`，不创建新文档；若发现同名不同内容，返回 409，错误码 `name_conflict`。
+- 覆盖旧文件时，后端先保存并验证新文件，再删除旧文档、chunk、原文件和向量索引，最后创建新 `Document` 和索引任务；旧文档处于 `uploaded/index_queued/indexing/deleting` 时返回 409，不执行覆盖。
 - 成功返回 HTTP `202`，字段包括 `document_id`、`task_id`、任务 `status/stage`、文件名、大小、上传时间和兼容字段。初始 `chunk_count` 可以为 0，不能把收到 202 解释为已经可问答。
 - `GET /api/documents/{document_id}/processing` 返回真实持久化阶段：`queued/parsing/chunking/metadata_indexing/embedding/vector_upsert/verifying/completed/failed`，并返回 `completed_units/total_units`、重试次数、统一错误对象和更新时间。前端不得自行模拟阶段完成。
 - OOXML 处理限制默认为 ZIP 条目不超过 20,000、总解压大小不超过 500 MB、单工作簿逻辑单元格不超过 500 万；超限返回稳定错误并清理已保存文件。Excel 在维度检查后只遍历实际存在的单元格，同时保留公式版与数值版工作簿用于可信证据。
 - 失败返回：不支持格式、MIME 不匹配、内容校验失败、空文件、无法解析文本等 400 错误。
+
+## 文档批量上传
+
+`POST /api/documents/batch-upload`
+
+- 请求：`multipart/form-data`，字段名为 `files`，可一次提交多个文件；支持格式与单文件上传一致。
+- 单次批量文件数由 `MAX_BATCH_UPLOAD_FILES` 控制，默认 20；单文件大小仍由 `MAX_UPLOAD_BYTES` 控制。
+- 批量上传只做入口编排，不新增批处理任务模型；每个成功接收的文件仍创建独立 `Document` 和独立持久化索引任务，继续走解析、chunk、embedding、Qdrant 写入和校验主线。
+- 请求支持 `Idempotency-Key`。后端将批次键派生为每个文件的稳定请求键；同一批次重复提交时返回原 `document_id/task_id`，不重复入库和索引。
+- 接口采用部分成功语义。HTTP 结构性成功返回 `202`；单个文件失败不会回滚同批次其他文件，失败项在 `items[].status=failed` 和 `items[].error_message` 中返回原因。若服务端兜底发现重复或同名冲突，item 状态分别为 `duplicate` 或 `conflict`。
+- 响应字段包括 `batch_id`、`accepted_count`、`failed_count` 和 `items`；单个 item 包含 `filename/status/document_id/task_id/stage/size/error_message`。前端收到 `accepted` 项后应继续通过 `/api/documents/{document_id}/processing` 查询真实处理阶段。
 
 ## 手动重建知识库
 
@@ -223,7 +250,7 @@ HTTP 错误保留兼容字段 `detail`，同时固定返回：
 - `severity`：`info`、`warning`、`error`，用于区分普通操作、可恢复异常和需要管理员处理的问题。
 - `event_key`：稳定事件键，用于后端聚合重复事件，不直接作为前端主文案。
 - `summary`、`user_message`：面向用户的中文摘要和说明。
-- `details_json`：后端保留的结构化技术详情，前端默认折叠。
+- `details_json`：后端保留的结构化详情。问答事件会包含问题、回答、引用数量和精简 `citations` 证据数组；前端主表只展示问题和回答，证据放入折叠的“证据详情”。
 - `first_seen_at`、`last_seen_at`、`occurrence_count`、`resolved`：用于重复异常聚合和后续处理状态。
 
 后端统一通过 `audit_service.record_event()` 记录事件。同一 `event_key + target_type + target_id + severity` 在 10 分钟窗口内重复出现时只更新累计次数和最近发生时间，不连续插入刷屏日志。`log_action()` 仍保留为兼容入口，但内部会转为 `record_event()`。
@@ -276,4 +303,4 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 }
 ```
 
-正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
+正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。README 面向测试人员使用 `scripts/warmup_models.ps1` 调用该接口，脚本在同步请求等待期间用 PowerShell 进度条显示耗时反馈，并在完成后输出接口 JSON；接口本身仍保持无业务数据写入。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
