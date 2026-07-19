@@ -18,6 +18,8 @@ from backend.app.services.index_task_service import start_index_task_worker
 from backend.app.services.qa_task_service import start_qa_task_worker
 from backend.app.services.document_lifecycle_service import recover_interrupted_deletions
 from backend.app.services.audit_service import archive_expired_audit_logs
+from backend.app.services.model_warmup_service import start_background_model_warmup
+from backend.app.services.performance_metrics import start_resource_sampling, stop_resource_sampling
 from backend.app.core.database import SessionLocal
 
 
@@ -26,12 +28,17 @@ init_db()
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    start_resource_sampling()
     start_index_task_worker()
     start_qa_task_worker()
     recover_interrupted_deletions()
     with SessionLocal() as db:
         archive_expired_audit_logs(db)
-    yield
+    start_background_model_warmup()
+    try:
+        yield
+    finally:
+        stop_resource_sampling()
 
 
 # FastAPI 应用对象，应用启动入口。

@@ -17,9 +17,14 @@ from backend.app.core.config import (
 from backend.app.core.database import SessionLocal
 from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
-from backend.app.services.embedding_service import EmbeddingServiceError, embed_texts
+from backend.app.services.embedding_service import EmbeddingServiceError, embed_queries, embed_texts
 from backend.app.services.rerank_service import RerankServiceError, RerankedChunk, rerank_candidates
-from backend.app.services.vector_store_service import VectorSearchResult, VectorStoreError, hybrid_search
+from backend.app.services.vector_store_service import (
+    VectorSearchResult,
+    VectorStoreError,
+    hybrid_search,
+    hybrid_search_batch,
+)
 
 
 class RetrievalServiceUnavailable(RuntimeError):
@@ -27,6 +32,8 @@ class RetrievalServiceUnavailable(RuntimeError):
 
 
 ProgressReporter = Callable[[dict[str, Any]], None]
+_DEFAULT_EMBED_TEXTS = embed_texts
+_DEFAULT_HYBRID_SEARCH = hybrid_search
 
 
 @dataclass
@@ -102,7 +109,12 @@ def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[Vecto
             .all()
         )
     active_ids = {row[0] for row in rows}
-    return [candidate for candidate in candidates if candidate.document_id in active_ids]
+    active_candidates = [candidate for candidate in candidates if candidate.document_id in active_ids]
+    for candidate in active_candidates:
+        if candidate.metadata is None:
+            candidate.metadata = {}
+        candidate.metadata["active_index_verified"] = True
+    return active_candidates
 
 
 def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
@@ -218,17 +230,20 @@ def collect_candidates_for_queries(
 
     candidates_by_chunk_id: dict[str, VectorSearchResult] = {}
     embedding_started_at = perf_counter()
-    query_embeddings = embed_texts(queries)
+    query_embeddings = _embed_search_queries(queries)
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    for query_embedding in query_embeddings:
-        for candidate in hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K):
+    raw_results_by_query = _hybrid_search_many(query_embeddings, limit=RETRIEVAL_TOP_K)
+    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    merge_started_at = perf_counter()
+    for raw_results in raw_results_by_query:
+        for candidate in raw_results:
             diagnostics.raw_candidate_count += 1
             existing = candidates_by_chunk_id.get(candidate.chunk_id)
             if existing is None or candidate.score > existing.score:
                 candidates_by_chunk_id[candidate.chunk_id] = candidate
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    diagnostics.timings_ms["candidate_merge"] = _elapsed_ms(merge_started_at)
     diagnostics.candidate_count = len(candidates_by_chunk_id)
     return list(candidates_by_chunk_id.values())
 
@@ -251,12 +266,14 @@ def collect_candidates_with_query_hits(
     per_query_diagnostics: list[dict[str, Any]] = []
 
     embedding_started_at = perf_counter()
-    query_embeddings = embed_texts(queries)
+    query_embeddings = _embed_search_queries(queries)
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    for query, query_embedding, metadata in zip(queries, query_embeddings, metadata_items, strict=True):
-        raw_results = hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K)
+    raw_results_by_query = _hybrid_search_many(query_embeddings, limit=RETRIEVAL_TOP_K)
+    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    merge_started_at = perf_counter()
+    for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
         for candidate in raw_results:
             candidate.score += _query_anchor_boost(query, candidate)
         raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
@@ -287,15 +304,29 @@ def collect_candidates_with_query_hits(
                 "filtered_count": 0,
                 "match_count": 0,
                 "query_variants": [query],
-                "timings_ms": {},
+                "timings_ms": {"qdrant_batch_total": diagnostics.timings_ms["qdrant"]},
                 "score_range": _score_range(raw_results, []),
                 **metadata,
             }
         )
 
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    diagnostics.timings_ms["candidate_merge"] = _elapsed_ms(merge_started_at)
     diagnostics.candidate_count = len(candidates_by_chunk_id)
     return list(candidates_by_chunk_id.values()), query_hits_by_chunk_id, per_query_diagnostics
+
+
+def _embed_search_queries(queries: list[str]) -> list[Any]:
+    # Keep the long-standing test/extension hook while using the query cache in production.
+    if embed_texts is not _DEFAULT_EMBED_TEXTS:
+        return embed_texts(queries)
+    return embed_queries(queries)
+
+
+def _hybrid_search_many(query_embeddings: list[Any], *, limit: int) -> list[list[VectorSearchResult]]:
+    # A patched single-search hook is intentionally honored for deterministic tests.
+    if hybrid_search is not _DEFAULT_HYBRID_SEARCH:
+        return [hybrid_search(embedding, limit=limit) for embedding in query_embeddings]
+    return hybrid_search_batch(query_embeddings, limit=limit)
 
 
 def _query_anchor_boost(query: str, candidate: VectorSearchResult) -> float:

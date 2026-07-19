@@ -32,3 +32,4 @@ class RagHealthResponse(BaseModel):
     reranker_model_error: str | None = None
     qdrant_error: str | None = None
     model_device: dict[str, object] = Field(default_factory=dict)
+    performance: dict[str, object] = Field(default_factory=dict)

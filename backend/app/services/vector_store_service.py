@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import RLock
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -15,10 +16,15 @@ from backend.app.core.config import (
 )
 from backend.app.services.chunk_service import ChunkDraft
 from backend.app.services.embedding_service import SparseEmbedding, TextEmbedding
+from backend.app.services.performance_metrics import measure
 
 
 class VectorStoreError(RuntimeError):
     pass
+
+
+_COLLECTION_READY_LOCK = RLock()
+_COLLECTION_READY_KEY: tuple[str, str] | None = None
 
 
 @dataclass
@@ -41,33 +47,48 @@ class VectorSearchResult:
     metadata: dict[str, Any] | None = None
 
 
-def ensure_vector_collection() -> None:
-    client, models = _qdrant()
-    try:
-        if not client.collection_exists(QDRANT_COLLECTION):
-            if not QDRANT_AUTO_CREATE_COLLECTION:
-                raise VectorStoreError(
-                    f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
-                )
-            client.create_collection(
-                collection_name=QDRANT_COLLECTION,
-                vectors_config={
-                    QDRANT_DENSE_VECTOR_NAME: models.VectorParams(
-                        size=EMBEDDING_DIMENSION,
-                        distance=models.Distance.COSINE,
+def ensure_vector_collection(*, force: bool = False) -> None:
+    global _COLLECTION_READY_KEY
+    readiness_key = (QDRANT_URL, QDRANT_COLLECTION)
+    if not force and _COLLECTION_READY_KEY == readiness_key:
+        return
+    with _COLLECTION_READY_LOCK:
+        if not force and _COLLECTION_READY_KEY == readiness_key:
+            return
+        client, models = _qdrant()
+        try:
+            with measure("qdrant.readiness"):
+                if not client.collection_exists(QDRANT_COLLECTION):
+                    if not QDRANT_AUTO_CREATE_COLLECTION:
+                        raise VectorStoreError(
+                            f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
+                        )
+                    client.create_collection(
+                        collection_name=QDRANT_COLLECTION,
+                        vectors_config={
+                            QDRANT_DENSE_VECTOR_NAME: models.VectorParams(
+                                size=EMBEDDING_DIMENSION,
+                                distance=models.Distance.COSINE,
+                            )
+                        },
+                        sparse_vectors_config={
+                            QDRANT_SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                                index=models.SparseIndexParams(on_disk=False)
+                            )
+                        },
                     )
-                },
-                sparse_vectors_config={
-                    QDRANT_SPARSE_VECTOR_NAME: models.SparseVectorParams(
-                        index=models.SparseIndexParams(on_disk=False)
-                    )
-                },
-            )
-        _ensure_payload_indexes(client, models)
-    except VectorStoreError:
-        raise
-    except Exception as exc:
-        raise VectorStoreError("Qdrant collection 初始化失败") from exc
+                _ensure_payload_indexes(client, models)
+            _COLLECTION_READY_KEY = readiness_key
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreError("Qdrant collection 初始化失败") from exc
+
+
+def reset_vector_collection_readiness() -> None:
+    global _COLLECTION_READY_KEY
+    with _COLLECTION_READY_LOCK:
+        _COLLECTION_READY_KEY = None
 
 
 def upsert_chunk_embeddings(
@@ -129,12 +150,13 @@ def upsert_chunk_embeddings(
         )
 
     try:
-        for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
-            client.upsert(
-                collection_name=QDRANT_COLLECTION,
-                points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
-                wait=True,
-            )
+        with measure("qdrant.upsert"):
+            for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
+                client.upsert(
+                    collection_name=QDRANT_COLLECTION,
+                    points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
+                    wait=True,
+                )
     except Exception as exc:
         raise VectorStoreError("Qdrant chunk 向量写入失败") from exc
 
@@ -215,31 +237,67 @@ def hybrid_search(query_embedding: TextEmbedding, *, limit: int) -> list[VectorS
     ensure_vector_collection()
     client, models = _qdrant()
     try:
-        response = client.query_points(
-            collection_name=QDRANT_COLLECTION,
-            prefetch=[
-                models.Prefetch(
-                    query=query_embedding.dense,
-                    using=QDRANT_DENSE_VECTOR_NAME,
-                    limit=limit,
-                    filter=_index_version_filter(models),
-                ),
-                models.Prefetch(
-                    query=_sparse_vector(query_embedding.sparse, models),
-                    using=QDRANT_SPARSE_VECTOR_NAME,
-                    limit=limit,
-                    filter=_index_version_filter(models),
-                ),
-            ],
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            limit=limit,
-            with_payload=True,
-        )
+        with measure("qdrant.hybrid_search"):
+            response = client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                **_hybrid_query_kwargs(query_embedding, limit, models),
+            )
     except Exception as exc:
         raise VectorStoreError("Qdrant hybrid 检索失败") from exc
 
     points = getattr(response, "points", response)
     return [_to_search_result(point) for point in points]
+
+
+def hybrid_search_batch(
+    query_embeddings: list[TextEmbedding],
+    *,
+    limit: int,
+) -> list[list[VectorSearchResult]]:
+    if not query_embeddings:
+        return []
+    ensure_vector_collection()
+    client, models = _qdrant()
+    if not hasattr(client, "query_batch_points"):
+        return [hybrid_search(embedding, limit=limit) for embedding in query_embeddings]
+    requests = [
+        models.QueryRequest(**_hybrid_query_kwargs(embedding, limit, models))
+        for embedding in query_embeddings
+    ]
+    try:
+        with measure("qdrant.hybrid_search_batch"):
+            responses = client.query_batch_points(
+                collection_name=QDRANT_COLLECTION,
+                requests=requests,
+            )
+    except Exception as exc:
+        raise VectorStoreError("Qdrant batch hybrid 检索失败") from exc
+    return [
+        [_to_search_result(point) for point in getattr(response, "points", response)]
+        for response in responses
+    ]
+
+
+def _hybrid_query_kwargs(query_embedding: TextEmbedding, limit: int, models: Any) -> dict[str, Any]:
+    return {
+        "prefetch": [
+            models.Prefetch(
+                query=query_embedding.dense,
+                using=QDRANT_DENSE_VECTOR_NAME,
+                limit=limit,
+                filter=_index_version_filter(models),
+            ),
+            models.Prefetch(
+                query=_sparse_vector(query_embedding.sparse, models),
+                using=QDRANT_SPARSE_VECTOR_NAME,
+                limit=limit,
+                filter=_index_version_filter(models),
+            ),
+        ],
+        "query": models.FusionQuery(fusion=models.Fusion.RRF),
+        "limit": limit,
+        "with_payload": True,
+    }
 
 
 def _qdrant() -> tuple[Any, Any]:

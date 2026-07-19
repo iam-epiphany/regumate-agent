@@ -2229,6 +2229,7 @@ textarea {
   display: grid;
   gap: 2px;
   min-width: 0;
+  color: var(--text);
 }
 
 .system-status-model-lines span {
@@ -3772,7 +3773,8 @@ textarea {
     display: none;
   }
 
-  .product-header .secondary-button {
+  .product-header .secondary-button,
+  .product-header .icon-button {
     width: 100%;
   }
 
@@ -3846,6 +3848,7 @@ textarea {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  margin-top: 16px;
   margin-bottom: 16px;
   padding: 11px 14px;
   border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--border));

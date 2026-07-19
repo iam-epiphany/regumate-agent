@@ -4,6 +4,7 @@ import re
 import urllib.error
 import urllib.request
 from typing import Any
+from backend.app.services.performance_metrics import measure, timed
 
 from backend.app.core.config import (
     QUERY_PLANNER_API_KEY,
@@ -111,6 +112,7 @@ class QueryBudget:
         }
 
 
+@timed("query_planner.total")
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     cleaned_question = question.strip()
     if not cleaned_question:
@@ -285,11 +287,12 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
         method="POST",
     )
     try:
-        with urllib.request.urlopen(
-            request,
-            timeout=QUERY_PLANNER_TIMEOUT_SECONDS,
-        ) as response:
-            response_body = response.read().decode("utf-8")
+        with measure("query_planner.external_api"):
+            with urllib.request.urlopen(
+                request,
+                timeout=QUERY_PLANNER_TIMEOUT_SECONDS,
+            ) as response:
+                response_body = response.read().decode("utf-8")
     except (urllib.error.URLError, TimeoutError) as exc:
         raise QueryPlannerError("LLM query planner 调用失败") from exc
 

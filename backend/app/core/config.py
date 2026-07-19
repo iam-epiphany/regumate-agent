@@ -31,6 +31,14 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     return value
 
 
+def _env_choice(name: str, default: str, choices: set[str]) -> str:
+    value = (os.getenv(name) or default).strip().lower()
+    if value not in choices:
+        allowed = ", ".join(sorted(choices))
+        raise RuntimeError(f"{name} must be one of {allowed}; received {value!r}")
+    return value
+
+
 APP_NAME = "ReguMate"
 API_TITLE = "ReguMate API"
 BUILD_ID = os.getenv("REGUMATE_BUILD_ID", "dev").strip() or "dev"
@@ -67,6 +75,42 @@ EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH")
 RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH")
 MODEL_DEVICE = os.getenv("MODEL_DEVICE", "auto").strip().lower()
 MODEL_GPU_MIN_FREE_MEMORY_GB = _env_float("MODEL_GPU_MIN_FREE_MEMORY_GB", 1.0)
+REGUMATE_PERFORMANCE_MODE = _env_choice(
+    "REGUMATE_PERFORMANCE_MODE",
+    "auto",
+    {"auto", "gpu", "cpu_balanced", "cpu_low_resource"},
+)
+MODEL_BACKEND = _env_choice(
+    "MODEL_BACKEND",
+    "pytorch",
+    {"pytorch", "onnx", "openvino"},
+)
+MODEL_WARMUP_POLICY = _env_choice(
+    "MODEL_WARMUP_POLICY",
+    "background",
+    {"background", "lazy"},
+)
+RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
+RERANK_MAX_LENGTH = _env_int("RERANK_MAX_LENGTH", 1024, minimum=1)
+RERANK_INPUT_MODE = _env_choice(
+    "RERANK_INPUT_MODE",
+    "embedding",
+    {"embedding", "compact"},
+)
+TORCH_NUM_THREADS = _env_int("TORCH_NUM_THREADS", 0)
+TORCH_NUM_INTEROP_THREADS = _env_int("TORCH_NUM_INTEROP_THREADS", 0)
+QUERY_EMBEDDING_CACHE_BYTES = _env_int(
+    "QUERY_EMBEDDING_CACHE_BYTES", 64 * 1024 * 1024, minimum=0
+)
+RERANK_SCORE_CACHE_BYTES = _env_int(
+    "RERANK_SCORE_CACHE_BYTES", 32 * 1024 * 1024, minimum=0
+)
+QUERY_EMBEDDING_CACHE_ITEMS = _env_int("QUERY_EMBEDDING_CACHE_ITEMS", 2048, minimum=0)
+RERANK_SCORE_CACHE_ITEMS = _env_int("RERANK_SCORE_CACHE_ITEMS", 50_000, minimum=0)
+
+if TORCH_NUM_THREADS > 0:
+    os.environ.setdefault("OMP_NUM_THREADS", str(TORCH_NUM_THREADS))
+    os.environ.setdefault("MKL_NUM_THREADS", str(TORCH_NUM_THREADS))
 
 os.environ.setdefault("HF_HOME", str(HF_HOME))
 os.environ.setdefault("HF_HUB_CACHE", str(HF_HUB_CACHE))

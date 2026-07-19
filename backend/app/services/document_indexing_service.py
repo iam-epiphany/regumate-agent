@@ -13,6 +13,8 @@ from backend.app.services.vector_store_service import (
     delete_document_vectors,
     upsert_chunk_embeddings,
 )
+from backend.app.services.performance_metrics import measure
+from backend.app.services.rerank_service import invalidate_rerank_score_cache
 
 
 class DocumentIndexingError(RuntimeError):
@@ -34,7 +36,8 @@ def index_document(
     if not chunks:
         raise DocumentIndexingError("文档没有可索引的 chunk")
 
-    drafts = _to_chunk_drafts(chunks, document)
+    with measure("index.embedding_text_build"):
+        drafts = _to_chunk_drafts(chunks, document)
     document.status = "indexing"
     document.index_version = INDEX_VERSION
     document.index_error = None
@@ -44,19 +47,23 @@ def index_document(
         chunk.chunk_metadata = json.dumps(draft.metadata or {}, ensure_ascii=False)
         chunk.index_status = "indexing"
         chunk.index_version = INDEX_VERSION
-    db.commit()
+    with measure("index.sqlite_state_persist"):
+        db.commit()
     try:
         if stage_reporter is not None:
             stage_reporter("embedding", 0, len(drafts))
-        embeddings = embed_texts([chunk.embedding_text for chunk in drafts])
+        with measure("index.document_embedding"):
+            embeddings = embed_texts([chunk.embedding_text for chunk in drafts])
         if stage_reporter is not None:
             stage_reporter("embedding", len(drafts), len(drafts))
             stage_reporter("vector_upsert", 0, len(drafts))
-        upsert_chunk_embeddings(chunks=drafts, embeddings=embeddings, filename=document.filename)
+        with measure("index.vector_upsert"):
+            upsert_chunk_embeddings(chunks=drafts, embeddings=embeddings, filename=document.filename)
         if stage_reporter is not None:
             stage_reporter("vector_upsert", len(drafts), len(drafts))
             stage_reporter("verifying", 0, len(drafts))
-        vector_count = count_document_vectors(document.document_id)
+        with measure("index.vector_verify"):
+            vector_count = count_document_vectors(document.document_id)
         if vector_count < len(drafts):
             raise VectorStoreError(f"Qdrant 向量数量不完整：expected={len(drafts)}, actual={vector_count}")
         if stage_reporter is not None:
@@ -73,7 +80,9 @@ def index_document(
         for chunk in chunks:
             chunk.index_status = "indexed"
             chunk.index_version = INDEX_VERSION
-        db.commit()
+        with measure("index.sqlite_finalize"):
+            db.commit()
+        invalidate_rerank_score_cache()
     except Exception as exc:
         db.rollback()
         _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])

@@ -53,8 +53,8 @@ export interface RagHealthResponse {
   index_tasks: Record<string, number>;
   qa_tasks: Record<string, number>;
   model_runtime: {
-    embedding?: { loaded?: boolean; warmed?: boolean };
-    reranker?: { loaded?: boolean; warmed?: boolean };
+    embedding?: { loaded?: boolean; warmed?: boolean; query_cache?: Record<string, number | boolean> };
+    reranker?: { loaded?: boolean; warmed?: boolean; score_cache?: Record<string, number | boolean> };
   };
   ready: boolean;
   model_device: {
@@ -67,6 +67,29 @@ export interface RagHealthResponse {
     cuda_total_memory_gb?: number | null;
     cuda_free_memory_gb?: number | null;
     fallback_reason: string | null;
+  };
+  performance?: {
+    requested_mode: "auto" | "gpu" | "cpu_balanced" | "cpu_low_resource" | string;
+    selected_mode: "gpu" | "cpu_balanced" | "cpu_low_resource" | string;
+    requested_backend?: string;
+    backend: string;
+    backend_fallback_reason?: string | null;
+    effective_cpu_cores: number;
+    memory_limit_bytes: number | null;
+    embedding_batch_size: number;
+    rerank_batch_size: number;
+    rerank_max_length: number;
+    rerank_input_mode?: string;
+    torch_num_threads: number;
+    torch_num_interop_threads: number;
+    omp_num_threads?: number;
+    mkl_num_threads?: number;
+    warmup_policy: string;
+    experimental: boolean;
+    warmup?: { state?: string; warmed?: boolean; warming?: boolean; elapsed_ms?: number | null; error?: string | null };
+    timings?: Record<string, { count?: number; last_ms?: number; avg_ms?: number; max_ms?: number }>;
+    resources?: Record<string, unknown>;
+    recent_traces?: Array<Record<string, unknown>>;
   };
 }
 

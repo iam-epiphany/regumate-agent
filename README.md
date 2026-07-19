@@ -370,3 +370,26 @@ docker compose down
 ### `/api/health/ready` 不是 `true`
 
 小包没有预置知识库。首次启动后先上传并索引文档，再检查 ready 状态和执行问答。
+
+## CPU/GPU 性能模式
+
+`REGUMATE_PERFORMANCE_MODE` 集中控制推理资源配置，默认 `auto`：CUDA 可用时选择 `gpu`，否则选择正式支持的 `cpu_balanced`。`cpu_low_resource` 面向 4 核/8 GB 环境，当前标记为实验模式；不同模式只调整 batch、线程、缓存、预热和后端，不降低检索、Rerank、Grounding、引用或拒答强度。
+
+常用覆盖项：
+
+```text
+REGUMATE_PERFORMANCE_MODE=auto|gpu|cpu_balanced|cpu_low_resource
+MODEL_BACKEND=pytorch|onnx|openvino
+MODEL_WARMUP_POLICY=background|lazy
+RERANK_BATCH_SIZE=0
+RERANK_MAX_LENGTH=1024
+RERANK_INPUT_MODE=embedding|compact
+TORCH_NUM_THREADS=0
+TORCH_NUM_INTEROP_THREADS=0
+QUERY_EMBEDDING_CACHE_BYTES=67108864
+RERANK_SCORE_CACHE_BYTES=33554432
+```
+
+`0` 表示由 profile 根据容器 affinity/cgroup 自动选择；自动值会在导入 PyTorch 前同步到 OMP/MKL，并由健康接口和启动日志报告实际 Torch/OMP/MKL 线程。当前正式默认后端和输入模式为 `pytorch + embedding`；ONNX/OpenVINO 与 `compact` 只作为质量门禁实验，不会静默替换默认逻辑。后台预热完成前 `/api/health/ready` 返回 503，避免首个用户问题承担模型加载。Query Embedding 与 Rerank 分数仅使用进程内中间结果缓存，文档重建或删除会清空 Rerank 分数缓存，最终答案不缓存。
+
+`GET /api/health/rag` 是前后端唯一设备状态来源。显式选择 CPU 会显示“CPU 平衡模式”，不显示降级；只有请求 CUDA 后运行时回退 CPU 才显示 fallback 原因。性能基线与实验报告见 `docs/evaluation/performance_baseline_20260718.md` 和 `docs/evaluation/performance_experiments/phase1-engineering.md`。

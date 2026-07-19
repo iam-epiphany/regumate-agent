@@ -6,7 +6,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from backend.app.core.config import (
     FINAL_CITATION_LIMIT,
@@ -51,6 +51,7 @@ from backend.app.services.retrieval_service import (
 )
 from backend.app.services.embedding_service import EmbeddingServiceError
 from backend.app.services.model_device_service import get_model_device_info
+from backend.app.services.performance_metrics import measure, trace_operation
 from backend.app.services.rerank_service import RerankServiceError, rerank_candidates
 from backend.app.services.spreadsheet_retrieval_service import (
     get_last_spreadsheet_diagnostic,
@@ -100,6 +101,7 @@ class AspectRetrieval:
     covered: bool = False
 
 
+@trace_operation("qa")
 def answer_question(
     db: Session,
     question: str,
@@ -219,6 +221,7 @@ def answer_question(
         package.context_chunks,
         options=normalized_options,
         option_labels=option_labels,
+        llm_prompt=package.llm_prompt,
         has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
         verified_claim_reporter=report_verified_claim,
         cancellation_checker=cancellation_checker,
@@ -474,6 +477,7 @@ def _retrieve_aspects(
         },
     )
     aspect_retrievals: list[AspectRetrieval] = []
+    document_chunk_cache: dict[str, list[DocumentChunk]] = {}
     for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
         _report_progress(
             progress_reporter,
@@ -494,8 +498,14 @@ def _retrieve_aspects(
             db,
             aspect,
             progress_reporter=progress_reporter,
+            document_chunk_cache=document_chunk_cache,
         )
-        matches = _expand_neighbor_matches(db, aspect.question, matches)
+        matches = _expand_neighbor_matches(
+            db,
+            aspect.question,
+            matches,
+            document_chunk_cache=document_chunk_cache,
+        )
         candidates = _to_retrieval_results(matches)
         for candidate in candidates:
             candidate.metadata["aspect_id"] = aspect.aspect_id
@@ -567,6 +577,7 @@ def _retrieve_aspect_matches(
     db: Session,
     aspect: QueryAspect,
     progress_reporter: ProgressReporter | None = None,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
 ) -> tuple[list[RetrievalMatch], list[dict[str, Any]]]:
     if retrieve_citations is not _DEFAULT_RETRIEVE_CITATIONS:
         return _retrieve_aspect_matches_legacy_hook(db, aspect, progress_reporter)
@@ -732,7 +743,12 @@ def _retrieve_aspect_matches(
         match.metadata["evidence_need"] = aspect.evidence_need
 
     if aspect.aspect_id == "multiple_choice_evidence":
-        supplements = _mcq_exact_support_matches(db, aspect, matches)
+        supplements = _mcq_exact_support_matches(
+            db,
+            aspect,
+            matches,
+            document_chunk_cache=document_chunk_cache,
+        )
         if supplements:
             best_fusion = max(fusion_scores.values(), default=0.0)
             for offset, supplement in enumerate(supplements, start=1):
@@ -761,6 +777,23 @@ def _retrieve_aspect_matches(
             "query_type": "aspect_fused",
             "rationale": "同一 aspect 的多条 search query 先召回融合，再单次 BGE rerank",
             "match_count": len(matches),
+            "rerank_input_ranking": [
+                {
+                    "rank": rank,
+                    "chunk_id": candidate.chunk_id,
+                    "fusion_score": round(fusion_scores.get(candidate.chunk_id, 0.0), 6),
+                    "vector_score": round(float(candidate.score), 6),
+                }
+                for rank, candidate in enumerate(rerank_input, start=1)
+            ],
+            "reranked_ranking": [
+                {
+                    "rank": rank,
+                    "chunk_id": item.candidate.chunk_id,
+                    "rerank_score": round(float(item.rerank_score), 8),
+                }
+                for rank, item in enumerate(reranked, start=1)
+            ],
             **diagnostics.to_summary_fields(),
         }
     )
@@ -1067,6 +1100,7 @@ def _mcq_exact_support_matches(
     db: Session,
     aspect: QueryAspect,
     matches: list[RetrievalMatch],
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
 ) -> list[RetrievalMatch]:
     if not matches:
         return []
@@ -1089,13 +1123,17 @@ def _mcq_exact_support_matches(
         anchors_by_document.setdefault(match.citation.document_id, match)
     existing_by_id = {match.citation.chunk_id: match for match in matches}
     supplements_by_chunk_id: dict[str, tuple[float, int, RetrievalMatch]] = {}
+    chunks_by_document = _chunks_by_document(
+        db,
+        set(anchors_by_document),
+        document_chunk_cache=document_chunk_cache,
+    )
     for document_id, anchor in anchors_by_document.items():
-        document_chunks = (
-            db.query(DocumentChunk)
-            .filter(DocumentChunk.document_id == document_id, DocumentChunk.index_status == "indexed")
-            .order_by(DocumentChunk.id.asc())
-            .all()
-        )
+        document_chunks = [
+            chunk
+            for chunk in chunks_by_document.get(document_id, [])
+            if chunk.index_status == "indexed"
+        ]
         best_statement_matches: dict[str, tuple[float, DocumentChunk]] = {}
         for chunk in document_chunks:
             searchable_raw = "\n".join(
@@ -1681,12 +1719,21 @@ def _citation_from_result(result: RetrievalResult) -> Citation:
     )
 
 
-def _expand_neighbor_matches(db: Session, question: str, matches: list[RetrievalMatch]) -> list[RetrievalMatch]:
+def _expand_neighbor_matches(
+    db: Session,
+    question: str,
+    matches: list[RetrievalMatch],
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[RetrievalMatch]:
     if not matches:
         return []
 
     document_ids = {match.citation.document_id for match in matches}
-    chunks_by_document = _chunks_by_document(db, document_ids)
+    chunks_by_document = _chunks_by_document(
+        db,
+        document_ids,
+        document_chunk_cache=document_chunk_cache,
+    )
     selected: list[RetrievalMatch] = []
     selected_chunk_ids: set[str] = set()
 
@@ -1714,18 +1761,41 @@ def _expand_neighbor_matches(db: Session, question: str, matches: list[Retrieval
     return selected[: max(MAX_PROMPT_CHUNKS * 3, MAX_PROMPT_CHUNKS)]
 
 
-def _chunks_by_document(db: Session, document_ids: set[str]) -> dict[str, list[DocumentChunk]]:
+def _chunks_by_document(
+    db: Session,
+    document_ids: set[str],
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> dict[str, list[DocumentChunk]]:
     if not document_ids:
         return {}
-    chunks = db.scalars(
-        select(DocumentChunk)
-        .where(DocumentChunk.document_id.in_(document_ids))
-        .order_by(DocumentChunk.document_id.asc(), DocumentChunk.id.asc())
-    ).all()
-    grouped: dict[str, list[DocumentChunk]] = {}
-    for chunk in chunks:
-        grouped.setdefault(chunk.document_id, []).append(chunk)
-    return grouped
+    cache = document_chunk_cache if document_chunk_cache is not None else {}
+    missing_ids = document_ids.difference(cache)
+    if missing_ids:
+        with measure("rag.document_snapshot_fetch"):
+            chunks = db.scalars(
+                select(DocumentChunk)
+                .options(
+                    load_only(
+                        DocumentChunk.id,
+                        DocumentChunk.chunk_id,
+                        DocumentChunk.document_id,
+                        DocumentChunk.text,
+                        DocumentChunk.embedding_text,
+                        DocumentChunk.chunk_metadata,
+                        DocumentChunk.index_status,
+                        DocumentChunk.source_file,
+                        DocumentChunk.page_number,
+                        DocumentChunk.section_title,
+                    )
+                )
+                .where(DocumentChunk.document_id.in_(missing_ids))
+                .order_by(DocumentChunk.document_id.asc(), DocumentChunk.id.asc())
+            ).all()
+        for document_id in missing_ids:
+            cache[document_id] = []
+        for chunk in chunks:
+            cache.setdefault(chunk.document_id, []).append(chunk)
+    return {document_id: cache.get(document_id, []) for document_id in document_ids}
 
 
 def _neighbor_candidates(
@@ -2139,14 +2209,22 @@ def _filter_indexed_matches(db: Session, matches: list[RetrievalMatch]) -> list[
     if not matches:
         return []
     document_ids = {match.citation.document_id for match in matches}
-    indexed_ids = set(
-        db.scalars(
-            select(Document.document_id).where(
-                Document.document_id.in_(document_ids),
-                Document.status.in_(["indexed", "table_indexed"]),
-            )
-        ).all()
-    )
+    verified_ids = {
+        match.citation.document_id
+        for match in matches
+        if bool(match.metadata.get("active_index_verified"))
+    }
+    unchecked_ids = document_ids.difference(verified_ids)
+    indexed_ids = set(verified_ids)
+    if unchecked_ids:
+        indexed_ids.update(
+            db.scalars(
+                select(Document.document_id).where(
+                    Document.document_id.in_(unchecked_ids),
+                    Document.status.in_(["indexed", "table_indexed"]),
+                )
+            ).all()
+        )
     return [match for match in matches if match.citation.document_id in indexed_ids]
 
 

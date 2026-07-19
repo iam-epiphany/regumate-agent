@@ -253,7 +253,7 @@ python scripts/check_offline_models.py
 本项目默认支持模型离线加载，不依赖 HuggingFace 网络访问。首次 Docker 构建仍需安装基础依赖和拉取基础镜像；如评审环境完全无外网，需要提前准备 Docker 镜像包或在有网络环境下完成构建。
 ## RAG 上下文包组装补充
 
-问答链路在检索和上下文组装后继续执行最终答案生成与事实校验。`rag_service` 会在 rerank 后回查 SQLite，只允许可问答文档进入上下文包；随后将命中结果转换为 `RetrievalResult`，由 `RAGPromptBuilder` 构造 `llm_prompt`，最后交给确定性表格回答器或 DeepSeek 文本回答器。
+问答链路在检索和上下文组装后继续执行最终答案生成与事实校验。`rag_service` 会在 rerank 后回查 SQLite，只允许可问答文档进入上下文包；随后将命中结果转换为 `RetrievalResult`，由 `RAGPromptBuilder` 构造 `llm_prompt`，最后交给确定性表格回答器或 DeepSeek 文本回答器。文本生成路径会继续把同一个 `llm_prompt` 传入答案生成服务，结构化 JSON 输出要求、选择题补充信息和修复提示也由 `RAGPromptBuilder` 统一拼接，避免调试展示 Prompt 与真实模型 Prompt 分叉。
 
 上下文包字段为 `LLMContextPackage`：
 
@@ -263,7 +263,7 @@ python scripts/check_offline_models.py
 - `instruction`：约束后续 LLM 不得编造知识库外依据，依据不足时明确说明无法判断。
 - `retrieval_summary`：记录 `top_k`、实际最终入 Prompt chunk 数、上下文是否足够、已覆盖依据说明、缺失方面、query/candidate/rerank/filter 数量、Prompt 过滤数量、阶段耗时、分数范围、Prompt 选择参数和引用回溯校验结果。
 - `context_chunks`：包含最终入 Prompt 的 chunk 编号、排名、分数、来源文档、章节、原文片段、引用编号和元数据。
-- `llm_prompt`：作为 DeepSeek 生成服务的受控证据输入；普通响应不返回，只有 `include_debug=true` 时随上下文包提供。
+- `llm_prompt`：作为 DeepSeek 生成服务的受控证据输入，并作为调试视图中的 Prompt Preview；普通响应不返回，只有 `include_debug=true` 时随上下文包提供。
 
 生成上下文前会执行基础清洗：重复 `chunk_id` 或重复文本只保留一次；如果片段正文开头重复显示章节标题，则去掉正文中的重复标题；片段保留原文，不提前改写成结论式答案；长片段按句子边界尽量截断到约 1200 字。输出不再包含“根据知识库引用，可归纳为”“1. 结论”等旧模板内容。
 
@@ -363,3 +363,14 @@ v4 的 Excel 优化不改变解析层和单元格索引结构，重点修复无�
 6. 纯表格题遇到明确终局拒答状态时会早停，不再进入 embedding、Qdrant 和 rerank fallback；`no_candidates` 不早停，因为它可能只是结构化匹配未覆盖而非知识库无答案。
 
 该设计的原则是“硬过滤优先、软排序靠后”：不能为了拒答率简单抬高全局阈值，而是把文件、期间、指标和操作数是否成立作为证据资格判断。v4 实测官方 Excel 100 题 100/100、派生 Excel OOD 10/10 拒答。
+
+## GPU/CPU 性能工程
+
+- BGE-M3/BGE Reranker 继续按进程单例加载；后台 once-only 预热完成后 readiness 才通过。
+- 同一 aspect 的多 Query 使用一次批量 Embedding 和 Qdrant batch query，保持原 RRF 融合顺序，再执行一次 Rerank。
+- Qdrant collection/payload-index readiness 每进程只执行一次，管理操作或 alias 切换后显式失效。
+- 同一请求按文档只加载一次必要 chunk 列，邻居扩展与 MCQ 精确证据扫描复用快照，避免长文档重复 ORM 物化。
+- Query Embedding cache key 包含模型/tokenizer/backend/precision/规范化版本与 Query hash，同一批相同 Query 只执行一次推理；Rerank score key 还包含 max length、输入版本、index version、chunk id 和文本 hash。缓存为进程内 byte-aware LRU，不缓存最终答案；文档重建或删除后清空 Rerank 分数缓存。
+- 默认 `RERANK_INPUT_MODE=embedding`。`compact` 保留文件、章节/条款、页码、期间、单位、工作表/表头各一次并完整保留正文，但因 shadow A/B 中 8/20 上下文排名变化，仅作为实验。
+- request/index trace 使用 `perf_counter_ns`，把模型加载、锁等待、实际 inference、Qdrant、文档快照、外部 API 和 Grounding 分开记录。
+- CPU profile 在导入 PyTorch 前根据 affinity/cgroup 写入默认 OMP/MKL 线程，并继续调用 PyTorch intra/inter-op 配置；实际值通过健康接口与启动日志报告。

@@ -74,6 +74,8 @@ interface BatchConflictIssue {
 
 const DOCUMENT_PAGE_SIZE = 20;
 const CHUNK_PAGE_SIZE = 50;
+const productWordmarkUrl = new URL("../assets/brand/regumate-wordmark.png", import.meta.url).href;
+
 export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDetail, setSelectedDetail] = useState<DocumentDetailResponse | null>(null);
@@ -742,10 +744,11 @@ export function DocumentsPage() {
   return (
     <main className="page">
       {toastNotice ? <Toast notice={toastNotice} /> : null}
-      <section className="page-head page-head--product">
+      <header className="product-header">
         <div>
           <p className="eyebrow">知识库台账</p>
-          <div className="title-row">
+          <div className="product-title-lockup">
+            <img className="product-wordmark" src={productWordmarkUrl} alt="ReguMate" />
             <h1>监管与报表口径文档</h1>
             <StatusBadge tone={ragHealth?.ready && indexedCount > 0 ? "ok" : "warning"}>
               {ragHealth?.ready && indexedCount > 0 ? "可支撑问答" : "待完善"}
@@ -757,7 +760,7 @@ export function DocumentsPage() {
           <RefreshCw size={17} className={isRefreshing ? "spinning" : undefined} />
           刷新
         </button>
-      </section>
+      </header>
 
       {runtimeWarning ? (
         <div className="knowledge-warning" role="status">

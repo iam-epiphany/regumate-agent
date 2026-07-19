@@ -1,12 +1,16 @@
 import math
+import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from backend.app.core import config
 from backend.app.core.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MAX_BATCH_SIZE
+from backend.app.core.performance_profile import resolve_performance_profile
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
 from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
+from backend.app.services.performance_metrics import ByteLRUCache, measure
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -14,6 +18,7 @@ class EmbeddingServiceError(RuntimeError):
 
 
 _EMBEDDING_WARMED = False
+_QUERY_NORMALIZATION_VERSION = "query-v1-exact-strip"
 
 
 @dataclass
@@ -37,14 +42,15 @@ def _get_bge_m3_model() -> Any:
 
     try:
         embedding_model_path = resolve_embedding_model_path()
-        try:
-            return BGEM3FlagModel(
-                embedding_model_path,
-                use_fp16=selected_model_device() == "cuda",
-                devices=selected_model_device(),
-            )
-        except TypeError:
-            return BGEM3FlagModel(embedding_model_path, use_fp16=selected_model_device() == "cuda")
+        with measure("embedding.model_load"):
+            try:
+                return BGEM3FlagModel(
+                    embedding_model_path,
+                    use_fp16=selected_model_device() == "cuda",
+                    devices=selected_model_device(),
+                )
+            except TypeError:
+                return BGEM3FlagModel(embedding_model_path, use_fp16=selected_model_device() == "cuda")
     except ModelPathResolutionError as exc:
         raise EmbeddingServiceError(str(exc)) from exc
     except Exception as exc:
@@ -61,26 +67,28 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
     try:
         with MODEL_INFERENCE_LOCK:
             model = _get_bge_m3_model()
-            encoded = model.encode(
-                cleaned,
-                batch_size=safe_batch_size,
-                return_dense=True,
-                return_sparse=True,
-                return_colbert_vecs=False,
-            )
+            with measure("embedding.inference"):
+                encoded = model.encode(
+                    cleaned,
+                    batch_size=safe_batch_size,
+                    return_dense=True,
+                    return_sparse=True,
+                    return_colbert_vecs=False,
+                )
     except Exception as exc:
         if selected_model_device() == "cuda" and is_cuda_failure(exc):
             _fallback_embedding_to_cpu(exc)
             try:
                 with MODEL_INFERENCE_LOCK:
                     model = _get_bge_m3_model()
-                    encoded = model.encode(
-                        cleaned,
-                        batch_size=max(1, min(safe_batch_size, 2)),
-                        return_dense=True,
-                        return_sparse=True,
-                        return_colbert_vecs=False,
-                    )
+                    with measure("embedding.inference"):
+                        encoded = model.encode(
+                            cleaned,
+                            batch_size=max(1, min(safe_batch_size, 2)),
+                            return_dense=True,
+                            return_sparse=True,
+                            return_colbert_vecs=False,
+                        )
             except Exception as retry_exc:
                 raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from retry_exc
         else:
@@ -104,7 +112,42 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
 
 
 def embed_query(text: str) -> TextEmbedding:
-    return embed_texts([text])[0]
+    return embed_queries([text])[0]
+
+
+def embed_queries(texts: list[str]) -> list[TextEmbedding]:
+    """Embed reusable search queries while keeping document indexing uncached."""
+
+    if not texts:
+        return []
+    cache = _query_embedding_cache()
+    results: list[TextEmbedding | None] = [None] * len(texts)
+    missing_by_key: dict[str, tuple[str, list[int]]] = {}
+    for index, text in enumerate(texts):
+        cleaned = text.strip()
+        if not cleaned:
+            raise EmbeddingServiceError("embedding 输入文本不能为空")
+        key = _query_cache_key(cleaned)
+        pending = missing_by_key.get(key)
+        if pending is not None:
+            pending[1].append(index)
+            continue
+        cached = cache.get(key)
+        if cached is None:
+            missing_by_key[key] = (cleaned, [index])
+        else:
+            results[index] = cached
+
+    if missing_by_key:
+        profile = resolve_performance_profile(selected_model_device())
+        missing_keys = list(missing_by_key)
+        missing_texts = [missing_by_key[key][0] for key in missing_keys]
+        embedded = embed_texts(missing_texts, batch_size=profile.embedding_batch_size)
+        for key, value in zip(missing_keys, embedded, strict=True):
+            cache.put(key, value)
+            for position in missing_by_key[key][1]:
+                results[position] = value
+    return [value for value in results if value is not None]
 
 
 def embed_for_semantic_split(texts: list[str]) -> list[list[float]]:
@@ -113,10 +156,11 @@ def embed_for_semantic_split(texts: list[str]) -> list[list[float]]:
     return [embedding.dense for embedding in embed_texts(texts)]
 
 
-def embedding_runtime_status() -> dict[str, bool]:
+def embedding_runtime_status() -> dict[str, Any]:
     return {
         "loaded": _get_bge_m3_model.cache_info().currsize > 0,
         "warmed": _EMBEDDING_WARMED,
+        "query_cache": _query_embedding_cache().snapshot(),
     }
 
 
@@ -156,6 +200,7 @@ def _to_sparse_embedding(lexical_weights: Any) -> SparseEmbedding:
 def _fallback_embedding_to_cpu(exc: BaseException) -> None:
     force_cpu_fallback(f"BGE-M3 embedding CUDA failure: {exc}")
     _get_bge_m3_model.cache_clear()
+    _query_embedding_cache().clear()
     try:
         import torch
 
@@ -163,3 +208,26 @@ def _fallback_embedding_to_cpu(exc: BaseException) -> None:
             torch.cuda.empty_cache()
     except Exception:
         pass
+
+
+@lru_cache(maxsize=1)
+def _query_embedding_cache() -> ByteLRUCache[TextEmbedding]:
+    profile = resolve_performance_profile(selected_model_device())
+    return ByteLRUCache(
+        max_bytes=profile.query_embedding_cache_bytes,
+        max_items=profile.query_embedding_cache_items,
+        size_of=lambda value: 64 + len(value.dense) * 32 + len(value.sparse.indices) * 64,
+    )
+
+
+def _query_cache_key(text: str) -> str:
+    namespace = "|".join(
+        [
+            _QUERY_NORMALIZATION_VERSION,
+            config.EMBEDDING_MODEL_PATH or config.EMBEDDING_MODEL_NAME,
+            config.MODEL_BACKEND,
+            selected_model_device(),
+            "fp16" if selected_model_device() == "cuda" else "fp32",
+        ]
+    )
+    return hashlib.sha256(f"{namespace}\0{text}".encode("utf-8")).hexdigest()

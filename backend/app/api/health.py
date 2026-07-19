@@ -13,16 +13,18 @@ from backend.app.services.index_task_service import index_task_status_counts
 from backend.app.services.model_device_service import get_model_device_info
 from backend.app.services.qa_task_service import qa_task_status_counts
 from backend.app.services.embedding_service import (
-    EmbeddingServiceError,
-    embed_query,
     embedding_runtime_status,
 )
 from backend.app.services.rerank_service import (
-    RerankServiceError,
-    rerank_candidates,
     reranker_runtime_status,
 )
-from backend.app.services.vector_store_service import VectorSearchResult
+from backend.app.core.performance_profile import resolve_performance_profile
+from backend.app.services.model_warmup_service import warmup_models_once, warmup_status
+from backend.app.services.performance_metrics import (
+    resource_metrics_snapshot,
+    timing_metrics_snapshot,
+    trace_history_snapshot,
+)
 
 
 router = APIRouter()
@@ -57,28 +59,12 @@ def warmup_models() -> dict[str, object]:
     """Load and exercise local inference models without writing business data."""
 
     try:
-        embed_query("监管制度口径预热")
-        rerank_candidates(
-            question="监管制度口径预热",
-            candidates=[
-                VectorSearchResult(
-                    chunk_id="warmup",
-                    document_id="warmup",
-                    filename="warmup",
-                    section_title=None,
-                    page_number=None,
-                    text="监管制度口径预热",
-                    embedding_text="监管制度口径预热",
-                    token_count=8,
-                    score=1.0,
-                )
-            ],
-            limit=1,
-        )
-    except (EmbeddingServiceError, RerankServiceError) as exc:
+        status_payload = warmup_models_once()
+    except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "warmed": True,
+        "warmup": status_payload,
         "model_runtime": _model_runtime_status(),
     }
 
@@ -97,6 +83,9 @@ def _rag_health() -> RagHealthResponse:
     qdrant_ready, collection_ready, qdrant_error = _check_qdrant()
     sqlite_ready = _check_sqlite()
     office = office_tool_status()
+    warmup = warmup_status()
+    device_info = get_model_device_info()
+    profile = resolve_performance_profile(device_info.selected_device)
     return RagHealthResponse(
         build_id=config.BUILD_ID,
         offline_mode=config.REGUMATE_OFFLINE_MODE,
@@ -115,11 +104,26 @@ def _rag_health() -> RagHealthResponse:
         index_tasks=index_task_status_counts(),
         qa_tasks=qa_task_status_counts(),
         model_runtime=_model_runtime_status(),
-        ready=embedding_ready and reranker_ready and qdrant_ready and collection_ready and sqlite_ready and bool(office["libreoffice_ready"]),
+        ready=(
+            embedding_ready
+            and reranker_ready
+            and qdrant_ready
+            and collection_ready
+            and sqlite_ready
+            and bool(office["libreoffice_ready"])
+            and (profile.warmup_policy != "background" or bool(warmup["warmed"]))
+        ),
         embedding_model_error=embedding_error,
         reranker_model_error=reranker_error,
         qdrant_error=qdrant_error,
-        model_device=get_model_device_info().to_debug_dict(),
+        model_device=device_info.to_debug_dict(),
+        performance={
+            **profile.to_dict(),
+            "warmup": warmup,
+            "timings": timing_metrics_snapshot(),
+            "resources": resource_metrics_snapshot(),
+            "recent_traces": trace_history_snapshot(),
+        },
     )
 
 
