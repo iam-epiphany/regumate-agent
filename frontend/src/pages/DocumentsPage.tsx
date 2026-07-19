@@ -781,7 +781,7 @@ export function DocumentsPage() {
               {isUploading ? "正在上传" : "选择文档"}
               <input
                 type="file"
-                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
+                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.jsonl,.html,.htm"
                 onChange={(event) => void handleFileChange(event)}
                 disabled={isUploading}
               />
@@ -790,7 +790,7 @@ export function DocumentsPage() {
               {isBatchUploading ? "批量上传中" : "批量上传"}
               <input
                 type="file"
-                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx"
+                accept=".txt,.md,.doc,.docx,.pdf,.xls,.xlsx,.csv,.jsonl,.html,.htm"
                 multiple
                 onChange={(event) => void handleBatchFileChange(event)}
                 disabled={isBatchUploading}

@@ -92,22 +92,25 @@ def reset_retrieval_diagnostics() -> None:
     _LAST_RETRIEVAL_DIAGNOSTICS.set(RetrievalDiagnostics())
 
 
-def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+def filter_active_candidates(
+    candidates: list[VectorSearchResult],
+    *,
+    include_inactive: bool = False,
+) -> list[VectorSearchResult]:
     """Keep only candidates backed by the current active SQLite index."""
 
     document_ids = {candidate.document_id for candidate in candidates if candidate.document_id}
     if not document_ids:
         return []
     with SessionLocal() as db:
-        rows = (
-            db.query(Document.document_id)
-            .filter(
-                Document.document_id.in_(document_ids),
-                Document.status == "indexed",
-                Document.index_version == INDEX_VERSION,
-            )
-            .all()
+        query = db.query(Document.document_id).filter(
+            Document.document_id.in_(document_ids),
+            Document.status == "indexed",
+            Document.index_version == INDEX_VERSION,
         )
+        if not include_inactive:
+            query = query.filter(Document.version_status.notin_(("repealed", "superseded")))
+        rows = query.all()
     active_ids = {row[0] for row in rows}
     active_candidates = [candidate for candidate in candidates if candidate.document_id in active_ids]
     for candidate in active_candidates:
@@ -115,6 +118,61 @@ def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[Vecto
             candidate.metadata = {}
         candidate.metadata["active_index_verified"] = True
     return active_candidates
+
+
+def filter_candidates_by_metadata(
+    candidates: list[VectorSearchResult],
+    filters: dict[str, Any] | None,
+) -> list[VectorSearchResult]:
+    """Apply auditable document filters after hybrid recall.
+
+    Table-specific fields remain handled by SpreadsheetCell. This function is
+    deliberately strict only for explicit document metadata constraints.
+    """
+
+    filters = filters or {}
+    mappings = {
+        "source_title": ("title", "source_title", "filename"),
+        "filename": ("source_filename", "filename"),
+        "external_doc_id": ("external_doc_id",),
+        "issuing_authority": ("issuing_authority",),
+        "publication_date": ("publication_date",),
+        "document_number": ("document_number",),
+        "regulatory_topic": ("regulatory_topic",),
+        "business_domain": ("business_domain",),
+        "article_number": ("article_number", "section_number"),
+        "version_status": ("version_status",),
+        "file_type": ("source_format", "file_type"),
+    }
+    active_filters = {
+        key: value
+        for key, value in filters.items()
+        if key in mappings and value not in (None, "", [])
+    }
+    if not active_filters:
+        return candidates
+
+    def matches(candidate: VectorSearchResult) -> bool:
+        metadata = candidate.metadata or {}
+        for key, expected in active_filters.items():
+            actual_values: list[Any] = []
+            for field_name in mappings[key]:
+                if field_name == "filename":
+                    actual_values.append(candidate.filename)
+                elif field_name == "section_number":
+                    actual_values.append(candidate.section_number)
+                else:
+                    actual_values.append(metadata.get(field_name))
+            expected_norm = _normalize_for_match(str(expected))
+            if key in {"publication_date", "version_status", "external_doc_id", "file_type"}:
+                accepted = any(_normalize_for_match(str(actual)) == expected_norm for actual in actual_values if actual)
+            else:
+                accepted = any(expected_norm in _normalize_for_match(str(actual)) for actual in actual_values if actual)
+            if not accepted:
+                return False
+        return True
+
+    return [candidate for candidate in candidates if matches(candidate)]
 
 
 def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
@@ -491,10 +549,18 @@ def _should_enforce_diversity(question: str) -> bool:
 
 def _to_citation(item: _AnnotatedChunk) -> Citation:
     candidate = item.candidate
+    metadata = candidate.metadata or {}
     return Citation(
         document_id=candidate.document_id,
         chunk_id=candidate.chunk_id,
         filename=candidate.filename,
+        source_url=_optional_text(metadata.get("source_url")),
+        attachment_url=_optional_text(metadata.get("attachment_url")),
+        source_title=_optional_text(metadata.get("title") or metadata.get("source_title")),
+        issuing_authority=_optional_text(metadata.get("issuing_authority")),
+        publication_date=_optional_text(metadata.get("publication_date")),
+        document_number=_optional_text(metadata.get("document_number")),
+        version_status=_optional_text(metadata.get("version_status")),
         section_title=candidate.section_title,
         section_path=candidate.section_path or ([candidate.section_title] if candidate.section_title else []),
         section_number=candidate.section_number,
@@ -507,8 +573,13 @@ def _to_citation(item: _AnnotatedChunk) -> Citation:
         rerank_score=item.rerank_score,
         chunk_type=candidate.chunk_type,
         evidence_role=item.evidence_role,
-        metadata=candidate.metadata or {},
+        metadata=metadata,
     )
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def question_terms(question: str) -> list[str]:

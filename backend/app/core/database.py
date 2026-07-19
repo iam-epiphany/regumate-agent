@@ -30,7 +30,7 @@ def init_db() -> None:
     """Create SQLite tables on startup; Alembic can replace this later."""
 
     ensure_runtime_dirs()
-    from backend.app.models import audit, document  # noqa: F401
+    from backend.app.models import audit, document, review  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _upgrade_sqlite_schema()
@@ -47,6 +47,7 @@ def _upgrade_sqlite_schema() -> None:
     index_task_columns = {column["name"] for column in inspector.get_columns("document_index_tasks")} if "document_index_tasks" in table_names else set()
     audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")} if "audit_logs" in table_names else set()
     qa_task_columns = {column["name"] for column in inspector.get_columns("qa_tasks")} if "qa_tasks" in table_names else set()
+    review_task_columns = {column["name"] for column in inspector.get_columns("report_review_tasks")} if "report_review_tasks" in table_names else set()
     document_migrations = {
         "client_request_id": "ALTER TABLE documents ADD COLUMN client_request_id VARCHAR(128)",
         "document_metadata": "ALTER TABLE documents ADD COLUMN document_metadata TEXT",
@@ -55,6 +56,24 @@ def _upgrade_sqlite_schema() -> None:
         "lifecycle_stage": "ALTER TABLE documents ADD COLUMN lifecycle_stage VARCHAR(40)",
         "filename_norm": "ALTER TABLE documents ADD COLUMN filename_norm VARCHAR(255)",
         "file_sha256": "ALTER TABLE documents ADD COLUMN file_sha256 VARCHAR(64)",
+        "external_doc_id": "ALTER TABLE documents ADD COLUMN external_doc_id VARCHAR(128)",
+        "title": "ALTER TABLE documents ADD COLUMN title VARCHAR(500)",
+        "issuing_authority": "ALTER TABLE documents ADD COLUMN issuing_authority VARCHAR(255)",
+        "publication_date": "ALTER TABLE documents ADD COLUMN publication_date VARCHAR(10)",
+        "effective_date": "ALTER TABLE documents ADD COLUMN effective_date VARCHAR(10)",
+        "expiration_date": "ALTER TABLE documents ADD COLUMN expiration_date VARCHAR(10)",
+        "document_number": "ALTER TABLE documents ADD COLUMN document_number VARCHAR(255)",
+        "regulatory_topic": "ALTER TABLE documents ADD COLUMN regulatory_topic VARCHAR(255)",
+        "business_domain": "ALTER TABLE documents ADD COLUMN business_domain VARCHAR(255)",
+        "source_column": "ALTER TABLE documents ADD COLUMN source_column VARCHAR(255)",
+        "source_url": "ALTER TABLE documents ADD COLUMN source_url VARCHAR(2000)",
+        "attachment_url": "ALTER TABLE documents ADD COLUMN attachment_url VARCHAR(2000)",
+        "source_type": "ALTER TABLE documents ADD COLUMN source_type VARCHAR(40)",
+        "version_label": "ALTER TABLE documents ADD COLUMN version_label VARCHAR(120)",
+        "version_status": "ALTER TABLE documents ADD COLUMN version_status VARCHAR(30) DEFAULT 'unknown'",
+        "supersedes_document_id": "ALTER TABLE documents ADD COLUMN supersedes_document_id VARCHAR(128)",
+        "metadata_status": "ALTER TABLE documents ADD COLUMN metadata_status VARCHAR(30) DEFAULT 'inferred'",
+        "metadata_provenance": "ALTER TABLE documents ADD COLUMN metadata_provenance TEXT",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
@@ -76,6 +95,24 @@ def _upgrade_sqlite_schema() -> None:
                     "ON documents(client_request_id)"
                 )
             )
+            for field_name in (
+                "external_doc_id",
+                "title",
+                "issuing_authority",
+                "publication_date",
+                "effective_date",
+                "expiration_date",
+                "document_number",
+                "regulatory_topic",
+                "business_domain",
+                "source_type",
+                "version_status",
+                "supersedes_document_id",
+                "metadata_status",
+            ):
+                connection.execute(
+                    text(f"CREATE INDEX IF NOT EXISTS ix_documents_{field_name} ON documents({field_name})")
+                )
             connection.execute(
                 text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_filename_norm "
@@ -139,6 +176,13 @@ def _upgrade_sqlite_schema() -> None:
                 text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS ix_qa_tasks_client_request_id "
                     "ON qa_tasks(client_request_id)"
+                )
+            )
+        if "report_review_tasks" in table_names and "rule_snapshot_json" not in review_task_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE report_review_tasks ADD COLUMN "
+                    "rule_snapshot_json TEXT DEFAULT '[]'"
                 )
             )
 
@@ -224,5 +268,15 @@ def _recover_interrupted_states() -> None:
                     "completed_at=NULL, "
                     "updated_at=CURRENT_TIMESTAMP "
                     "WHERE status IN ('queued', 'running')"
+                )
+            )
+
+        if "report_review_tasks" in inspector.get_table_names():
+            connection.execute(
+                text(
+                    "UPDATE report_review_tasks SET status='queued', stage='queued', "
+                    "error='应用重启后正在恢复未完成的报表审查任务。', error_code=NULL, "
+                    "completed_at=NULL, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE status='running'"
                 )
             )

@@ -15,6 +15,7 @@ from backend.app.services.vector_store_service import (
 )
 from backend.app.services.performance_metrics import measure
 from backend.app.services.rerank_service import invalidate_rerank_score_cache
+from backend.app.services.document_metadata_service import retrieval_metadata_snapshot
 
 
 class DocumentIndexingError(RuntimeError):
@@ -91,6 +92,7 @@ def index_document(
 
 def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[ChunkDraft]:
     drafts: list[ChunkDraft] = []
+    document_metadata = retrieval_metadata_snapshot(document)
     title_by_section_number: dict[str, str] = {}
     for chunk in chunks:
         section_number = _section_number(chunk.section_title)
@@ -106,7 +108,7 @@ def _to_chunk_drafts(chunks: list[DocumentChunk], document: Document) -> list[Ch
         if chunk.section_title:
             section_path.append(chunk.section_title)
         chunk_type = _chunk_type(chunk.text)
-        chunk_metadata = _chunk_metadata(chunk)
+        chunk_metadata = {**document_metadata, **_chunk_metadata(chunk)}
         token_count = chunk.token_count or count_tokens(chunk.text)
         embedding_text = build_contextual_embedding_text(
             text=chunk.text,

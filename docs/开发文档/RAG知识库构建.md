@@ -374,3 +374,19 @@ v4 的 Excel 优化不改变解析层和单元格索引结构，重点修复无�
 - 默认 `RERANK_INPUT_MODE=embedding`。`compact` 保留文件、章节/条款、页码、期间、单位、工作表/表头各一次并完整保留正文，但因 shadow A/B 中 8/20 上下文排名变化，仅作为实验。
 - request/index trace 使用 `perf_counter_ns`，把模型加载、锁等待、实际 inference、Qdrant、文档快照、外部 API 和 Grounding 分开记录。
 - CPU profile 在导入 PyTorch 前根据 affinity/cgroup 写入默认 OMP/MKL 线程，并继续调用 PyTorch intra/inter-op 配置；实际值通过健康接口与启动日志报告。
+
+## 来源与版本可信链路
+
+metadata 合并优先级固定为：人工输入 > manifest > 官方 URL > 正文结构抽取 > parser > 文件名。每个字段在 `metadata_provenance` 中保存 source、confidence、priority 和更新时间；低优先级推断只能补空值，不能覆盖显式来源。
+
+核心字段先写 SQLite `Document`，随后下沉到所有 chunk、`SpreadsheetCell` 关联文档和 Qdrant payload。Qdrant 对官方 doc_id、发文机关、发布日期、文号、监管主题、业务领域、版本状态和条款号建立 payload 索引。QueryPlanner 的 `table_filters` 兼作文档 metadata 过滤，文本召回和表格召回均执行版本状态与显式 metadata 约束。
+
+中文条款解析只在行首识别“第×条/第×条之×”，整条原文仍保留在证据中，并写入 `article_number`。Word 普通段落和 PDF 页面文本不再必须依赖 Heading 样式才能形成条款定位。
+
+CSV 复用表格行证据和单元格索引；JSONL 是 schema-aware 文本载体，禁止 QA 答案入库；HTML 抽取标题、段落、列表和表格。旧库无损回填使用 `python scripts/backfill_document_provenance.py --parse-body`；若要让旧 chunk 获得新条款结构，显式运行 `--parse-body --reparse --reindex`。后者会重建 chunk 和向量，不能与线上问答并发执行。
+
+## 监管证据如何进入报表审查
+
+业务审查不另建一套脱离 RAG 的制度库。创建规则时必须选择现有 `DocumentChunk`，服务校验文档已索引且 `version_status` 不是 `repealed/superseded`，并冻结标题、发文机关、发布日期、文号、来源 URL、条款号、章节和依据摘录。报表侧只读取解析阶段构建的 `SpreadsheetCell`，发现项保存 `sheet_name/coordinate/row_label/column_label/value/unit/period/chunk_id`。
+
+这形成两条可独立核对的证据链：监管 chunk 解释“为什么检查”，报表 cell 解释“检查了什么”。规则执行不进行向量召回和 LLM 推断；找不到或无法唯一定位目标时返回 `not_evaluable`，而不是把缺数据当成通过。

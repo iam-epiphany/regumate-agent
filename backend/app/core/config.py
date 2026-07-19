@@ -121,7 +121,10 @@ if REGUMATE_OFFLINE_MODE:
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {
+    ".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx",
+    ".csv", ".jsonl", ".html", ".htm",
+}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
@@ -197,6 +200,10 @@ SUPPORTED_DOCUMENT_MIME_TYPES = {
     ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
     ".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
     ".pdf": {"application/pdf"},
+    ".csv": {"text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"},
+    ".jsonl": {"application/x-ndjson", "application/jsonl", "application/json", "text/plain"},
+    ".html": {"text/html", "application/xhtml+xml"},
+    ".htm": {"text/html", "application/xhtml+xml"},
 }
 
 DOCUMENT_LOADER_ORDER = {
@@ -207,6 +214,10 @@ DOCUMENT_LOADER_ORDER = {
     ".pdf": ["pymupdf4llm", "docling", "unstructured", "pypdf"],
     ".xls": ["spreadsheet-xls"],
     ".xlsx": ["spreadsheet-xlsx"],
+    ".csv": ["spreadsheet-csv"],
+    ".jsonl": ["jsonl"],
+    ".html": ["html"],
+    ".htm": ["html"],
 }
 
 

@@ -42,6 +42,7 @@ from backend.app.services.retrieval_service import (
     collect_candidates_with_query_hits,
     evidence_coverage,
     filter_active_candidates,
+    filter_candidates_by_metadata,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
     matches_from_reranked,
@@ -666,7 +667,13 @@ def _retrieve_aspect_matches(
             candidates = title_matched
             diagnostics.candidate_count = len(candidates)
 
-    candidates = filter_active_candidates(candidates)
+    candidates = filter_candidates_by_metadata(
+        filter_active_candidates(
+            candidates,
+            include_inactive=str(aspect.table_filters.get("version_status") or "") in {"repealed", "superseded"},
+        ),
+        aspect.table_filters,
+    )
     diagnostics.candidate_count = len(candidates)
     preferred_file_type = str(aspect.table_filters.get("file_type") or "").lower()
     document_style_scores = {

@@ -19,7 +19,8 @@ from sqlalchemy import text
 from backend.app.core.config import AUDIT_ARCHIVE_DIR, INDEX_VERSION
 from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
-from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
+from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask, SpreadsheetCell
+from backend.app.models.review import ReportReviewTask
 from backend.app.schemas.qa import Citation, LLMContextPackage, QAAnswerPreview, QAResponse, RetrievalResult
 from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
@@ -206,9 +207,143 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/audit/logs" in paths
     assert "/api/audit/archives" in paths
     assert "/api/audit/archives/{archive_date}" in paths
+    assert "/api/review-rules" in paths
+    assert "/api/report-reviews" in paths
+    assert "/api/report-reviews/{review_id}" in paths
+    assert "/api/review-findings/{finding_id}" in paths
+    assert "/api/report-reviews/{review_id}/report" in paths
     assert "/api/reports/upload" not in paths
-    assert "/api/findings/{finding_id}" not in paths
     assert app.openapi()["info"]["title"] == "ReguMate API"
+
+
+def test_report_review_api_closes_rule_finding_and_report_loop(monkeypatch) -> None:
+    reset_database()
+    with SessionLocal() as db:
+        regulation = Document(
+            document_id="DOC-REG-API-0001",
+            filename="制度.md",
+            filename_norm="制度.md",
+            content_type="text/markdown",
+            file_type="md",
+            size=100,
+            storage_path="rule.md",
+            status="indexed",
+            title="监管填报制度",
+            source_url="https://example.gov.cn/rule/api",
+            version_status="current",
+        )
+        regulation_chunk = DocumentChunk(
+            chunk_id="DOC-REG-API-0001-CHUNK-0001",
+            document_id=regulation.document_id,
+            text="第一条 余额不得为负数。",
+            chunk_metadata='{"article_number":"第一条"}',
+            token_count=10,
+            index_status="indexed",
+            source_file=regulation.filename,
+            section_title="余额要求",
+        )
+        report = Document(
+            document_id="DOC-REPORT-API-0001",
+            filename="监管报表.xlsx",
+            filename_norm="监管报表.xlsx",
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_type="xlsx",
+            size=1024,
+            storage_path="report.xlsx",
+            status="indexed",
+        )
+        report_chunk = DocumentChunk(
+            chunk_id="DOC-REPORT-API-0001-CHUNK-0001",
+            document_id=report.document_id,
+            text="资产负债表：余额 -5 万元",
+            chunk_metadata="{}",
+            token_count=8,
+            index_status="indexed",
+            source_file=report.filename,
+            section_title="资产负债表",
+        )
+        db.add_all([regulation, regulation_chunk, report, report_chunk])
+        db.flush()
+        db.add(
+            SpreadsheetCell(
+                document_id=report.document_id,
+                chunk_id=report_chunk.chunk_id,
+                source_title=report.filename,
+                source_title_norm="监管报表.xlsx",
+                sheet_name="资产负债表",
+                sheet_name_norm="资产负债表",
+                row_index=2,
+                column_index=2,
+                coordinate="B2",
+                row_label="余额",
+                row_label_norm="余额",
+                column_label="期末",
+                column_label_norm="期末",
+                value="-5",
+                numeric_value=-5,
+                unit="万元",
+            )
+        )
+        db.commit()
+
+    rule_response = client.post(
+        "/api/review-rules",
+        json={
+            "name": "余额非负检查",
+            "rule_type": "non_negative",
+            "severity": "error",
+            "parameters": {"selector": {"sheet_name": "资产负债表", "coordinate": "B2"}},
+            "evidence_chunk_id": "DOC-REG-API-0001-CHUNK-0001",
+            "remediation_template": "核对余额来源并按制度修正。",
+        },
+    )
+    assert rule_response.status_code == 201
+    rule_id = rule_response.json()["rule_id"]
+
+    def synchronous_review_enqueue(review_id: str) -> bool:
+        from backend.app.services.report_review_service import execute_report_review
+
+        with SessionLocal() as db:
+            task = db.scalar(
+                select(ReportReviewTask).where(ReportReviewTask.review_id == review_id)
+            )
+            assert task is not None
+            execute_report_review(db, task)
+        return True
+
+    monkeypatch.setattr("backend.app.api.review.enqueue_report_review", synchronous_review_enqueue)
+    start_response = client.post(
+        "/api/report-reviews",
+        json={
+            "report_document_id": "DOC-REPORT-API-0001",
+            "rule_ids": [rule_id],
+            "client_request_id": "api-review-request-0001",
+        },
+    )
+    assert start_response.status_code == 202
+    review_id = start_response.json()["review_id"]
+
+    detail_response = client.get(f"/api/report-reviews/{review_id}")
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["status"] == "completed"
+    assert detail["finding_count"] == 1
+    assert detail["findings"][0]["regulatory_evidence"]["source_url"].startswith("https://")
+    finding_id = detail["findings"][0]["finding_id"]
+
+    review_response = client.patch(
+        f"/api/review-findings/{finding_id}",
+        json={"status": "confirmed", "reviewer": "复核员A", "comment": "已核实。"},
+    )
+    assert review_response.status_code == 200
+    assert review_response.json()["status"] == "confirmed"
+
+    report_response = client.get(
+        f"/api/report-reviews/{review_id}/report?format=markdown"
+    )
+    assert report_response.status_code == 200
+    assert "https://example.gov.cn/rule/api" in report_response.text
+    assert "复核员A" in report_response.text
 
 
 def test_upload_txt_document_creates_durable_processing_task(fake_indexing_services) -> None:
@@ -243,6 +378,108 @@ def test_upload_txt_document_creates_durable_processing_task(fake_indexing_servi
     assert processing.status_code == 200
     assert processing.json()["status"] == "completed"
     assert_utc_iso_datetime(processing.json()["updated_at"])
+
+
+def test_upload_metadata_propagates_to_document_and_chunks(fake_indexing_services) -> None:
+    reset_database()
+    metadata = {
+        "external_doc_id": "NFRA-2026-001",
+        "title": "监管统计规则",
+        "issuing_authority": "国家金融监督管理总局",
+        "publication_date": "2026-01-02",
+        "source_url": "https://www.nfra.gov.cn/rule/1",
+        "attachment_url": "https://www.nfra.gov.cn/rule/1.docx",
+        "regulatory_topic": "统计报送",
+        "business_domain": "监管统计",
+        "version_status": "current",
+    }
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", "第一条 应当按期报送。", "text/plain")},
+        data={"metadata_json": json.dumps(metadata, ensure_ascii=False)},
+    )
+
+    assert response.status_code == 202
+    detail = client.get(f"/api/documents/{response.json()['document_id']}").json()
+    assert detail["metadata"]["external_doc_id"] == "NFRA-2026-001"
+    assert detail["metadata"]["source_url"] == metadata["source_url"]
+    assert detail["chunks"][0]["metadata"]["issuing_authority"] == metadata["issuing_authority"]
+    assert detail["chunks"][0]["metadata"]["article_number"] == "第一条"
+
+
+def test_manifest_enriches_existing_document_and_rejects_qa_manifest(fake_indexing_services) -> None:
+    reset_database()
+    content = "监管规则正文。"
+    upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules.txt", content, "text/plain")},
+    )
+    sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    manifest = {
+        "files": [
+            {
+                "filename": "rules.txt",
+                "sha256": sha256,
+                "doc_id": "NFRA-M-001",
+                "title": "正式规则",
+                "source_url": "https://www.nfra.gov.cn/rules/official",
+            }
+        ]
+    }
+    response = client.post(
+        "/api/documents/manifest",
+        files={"manifest": ("manifest.json", json.dumps(manifest, ensure_ascii=False), "application/json")},
+    )
+    assert response.status_code == 200
+    assert response.json()["updated_count"] == 1
+    detail = client.get(f"/api/documents/{upload.json()['document_id']}").json()
+    assert detail["metadata"]["external_doc_id"] == "NFRA-M-001"
+
+    rejected = client.post(
+        "/api/documents/manifest",
+        files={"manifest": ("qa.jsonl", '{"question":"q","answer":"a"}\n', "application/x-ndjson")},
+    )
+    assert rejected.status_code == 400
+    assert "评测数据禁止" in rejected.json()["detail"]
+
+
+def test_csv_upload_builds_spreadsheet_cell_index(fake_indexing_services) -> None:
+    reset_database()
+    response = client.post(
+        "/api/documents/upload",
+        files={"file": ("capital.csv", "指标,数值\n资本充足率,12.5\n", "text/csv")},
+    )
+    assert response.status_code == 202
+    with SessionLocal() as db:
+        from backend.app.models.document import SpreadsheetCell
+
+        cells = db.scalars(select(SpreadsheetCell).order_by(SpreadsheetCell.id)).all()
+        assert any(cell.coordinate == "B2" and cell.numeric_value == 12.5 for cell in cells)
+
+
+def test_url_import_persists_final_source_url(monkeypatch, fake_indexing_services) -> None:
+    from backend.app.services.document_url_import_service import FetchedUrlDocument
+
+    reset_database()
+    monkeypatch.setattr(
+        "backend.app.api.documents.fetch_url_document",
+        lambda *args, **kwargs: FetchedUrlDocument(
+            content=b"official rule text",
+            filename="official.txt",
+            content_type="text/plain",
+            final_url="https://www.nfra.gov.cn/official.txt",
+        ),
+    )
+    response = client.post(
+        "/api/documents/url-import",
+        json={
+            "url": "https://www.nfra.gov.cn/official.txt",
+            "metadata": {"title": "官方规则", "version_status": "current"},
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["metadata"]["source_url"] == "https://www.nfra.gov.cn/official.txt"
+    assert response.json()["metadata"]["attachment_url"] == "https://www.nfra.gov.cn/official.txt"
 
 
 def test_upload_is_idempotent_by_header(fake_indexing_services) -> None:
@@ -2196,7 +2433,11 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
     monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
     monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
     monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
-    monkeypatch.setattr(rag_service, "filter_active_candidates", lambda candidates: candidates)
+    monkeypatch.setattr(
+        rag_service,
+        "filter_active_candidates",
+        lambda candidates, **_kwargs: candidates,
+    )
     monkeypatch.setattr(rag_service, "_filter_indexed_matches", lambda db, matches: matches)
 
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)

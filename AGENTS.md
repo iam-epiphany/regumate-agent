@@ -26,7 +26,7 @@
 
 - 后端：Python + FastAPI + Pydantic + SQLAlchemy + SQLite + Qdrant + Uvicorn。
 - 前端：React + TypeScript + Vite。
-- 文档解析：txt / md / doc / docx / 可提取文本 pdf / xls / xlsx。
+- 文档解析：txt / md / doc / docx / 可提取文本 pdf / xls / xlsx / csv / schema-aware jsonl / html。
 - RAG v0：SQLite 元数据 + Qdrant 向量索引 + BGE-M3 embedding + BGE reranker。
 - 标准启动：Docker Compose 一键启动 app + Qdrant。
 - 测试：pytest；前端用 TypeScript build 验证。
@@ -73,7 +73,7 @@ docs/
 - 保持当前 RAG 主线，不恢复已移除的旧业务主线。
 - 不把业务逻辑堆进 `backend/main.py`。
 - router 只处理 HTTP 入参、出参和异常。
-- service 处理业务逻辑。
+- service 处理业务逻辑，包括有监管依据的确定性报表规则、人工复核和审查报告；不得让 LLM 自动生成可执行监管规则。
 - model 处理数据库表结构。
 - schema 处理 API 数据契约。
 - core 放配置、数据库连接等基础设施。

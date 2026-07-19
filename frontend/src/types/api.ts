@@ -52,6 +52,7 @@ export interface RagHealthResponse {
   antiword_version: string | null;
   index_tasks: Record<string, number>;
   qa_tasks: Record<string, number>;
+  review_tasks?: Record<string, number>;
   model_runtime: {
     embedding?: { loaded?: boolean; warmed?: boolean; query_cache?: Record<string, number | boolean> };
     reranker?: { loaded?: boolean; warmed?: boolean; score_cache?: Record<string, number | boolean> };
@@ -225,6 +226,13 @@ export interface Citation {
   document_id: string;
   chunk_id: string;
   filename: string;
+  source_url?: string | null;
+  attachment_url?: string | null;
+  source_title?: string | null;
+  issuing_authority?: string | null;
+  publication_date?: string | null;
+  document_number?: string | null;
+  version_status?: string | null;
   section_title: string | null;
   page_number: number | null;
   excerpt: string;
@@ -233,6 +241,79 @@ export interface Citation {
   chunk_type: string;
   evidence_role: string;
   metadata: Record<string, unknown>;
+}
+
+export type ReviewRuleType = "required" | "non_negative" | "range" | "equality" | "sum" | "allowed_values";
+export type ReviewSeverity = "info" | "warning" | "error";
+export type ReportReviewStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type ReviewFindingStatus = "open" | "confirmed" | "dismissed" | "resolved";
+
+export interface ReviewRule {
+  rule_id: string;
+  name: string;
+  description: string;
+  rule_type: ReviewRuleType;
+  severity: ReviewSeverity;
+  parameters: Record<string, unknown>;
+  regulation_document_id: string;
+  evidence_chunk_id: string;
+  evidence_excerpt: string;
+  source: Record<string, unknown>;
+  remediation_template: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReviewRuleListResponse {
+  rules: ReviewRule[];
+}
+
+export interface ReviewFinding {
+  finding_id: string;
+  review_id: string;
+  rule_id: string;
+  finding_kind: "violation" | "not_evaluable";
+  severity: ReviewSeverity;
+  status: ReviewFindingStatus;
+  title: string;
+  description: string;
+  location: Record<string, unknown>;
+  observed: Record<string, unknown>;
+  expected: Record<string, unknown>;
+  remediation: string;
+  regulatory_evidence: Record<string, unknown>;
+  report_evidence: Array<Record<string, unknown>>;
+  reviewer_comment: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportReviewSummary {
+  review_id: string;
+  report_document_id: string;
+  report_filename: string;
+  status: ReportReviewStatus;
+  stage: string;
+  completed_rules: number;
+  total_rules: number;
+  finding_count: number;
+  summary: Record<string, unknown>;
+  error: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface ReportReviewDetail extends ReportReviewSummary {
+  findings: ReviewFinding[];
+}
+
+export interface ReportReviewListResponse {
+  reviews: ReportReviewSummary[];
 }
 
 export interface RetrievalResult {

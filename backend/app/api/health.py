@@ -12,6 +12,7 @@ from backend.app.services.office_conversion import office_tool_status
 from backend.app.services.index_task_service import index_task_status_counts
 from backend.app.services.model_device_service import get_model_device_info
 from backend.app.services.qa_task_service import qa_task_status_counts
+from backend.app.services.report_review_task_service import report_review_status_counts
 from backend.app.services.embedding_service import (
     embedding_runtime_status,
 )
@@ -103,6 +104,7 @@ def _rag_health() -> RagHealthResponse:
         antiword_version=office["antiword_version"],
         index_tasks=index_task_status_counts(),
         qa_tasks=qa_task_status_counts(),
+        review_tasks=report_review_status_counts(),
         model_runtime=_model_runtime_status(),
         ready=(
             embedding_ready

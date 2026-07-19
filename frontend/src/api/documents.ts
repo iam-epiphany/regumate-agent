@@ -34,6 +34,7 @@ export function uploadDocument(
     idempotencyKey: string;
     filenameOverride?: string;
     overwriteDocumentId?: string;
+    metadata?: Record<string, unknown>;
     onProgress?: (loaded: number, total: number) => void;
   },
 ): Promise<DocumentUploadResponse> {
@@ -44,6 +45,9 @@ export function uploadDocument(
   }
   if (options.overwriteDocumentId) {
     formData.append("overwrite_document_id", options.overwriteDocumentId);
+  }
+  if (options.metadata && Object.keys(options.metadata).length > 0) {
+    formData.append("metadata_json", JSON.stringify(options.metadata));
   }
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();

@@ -2,7 +2,7 @@ import pytest
 
 from backend.app.services.chunk_service import build_chunks_from_parsed, count_tokens
 from backend.app.services.document_types import ParsedBlock, ParsedDocument
-from backend.app.services.document_parser import available_loader_names, parse_document
+from backend.app.services.document_parser import DocumentParseError, available_loader_names, parse_document
 from backend.app.services.loader_evaluation import evaluate_document_loaders
 
 
@@ -12,10 +12,60 @@ def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
 
     parsed = parse_document(path)
 
-    assert parsed.metadata["parser_version"] == "structured-v2"
+    assert parsed.metadata["parser_version"] == "structured-v3-provenance"
     assert parsed.metadata["loader_name"] == "markdown"
     assert [block.block_type for block in parsed.blocks] == ["heading", "heading", "paragraph"]
     assert parsed.blocks[2].section_title == "资产合计"
+
+
+def test_parse_csv_builds_cell_level_rows(tmp_path) -> None:
+    path = tmp_path / "监管统计.csv"
+    path.write_text("指标,2025年\n资本充足率,12.5\n", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    row = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
+    assert row.metadata["spreadsheet_table"] is True
+    assert row.metadata["cells"][1]["coordinate"] == "B2"
+    assert row.metadata["cells"][1]["normalized_value"] == 12.5
+
+
+def test_parse_jsonl_requires_content_and_rejects_qa_answers(tmp_path) -> None:
+    valid = tmp_path / "rules.jsonl"
+    valid.write_text('{"title":"规则一","text":"资本充足率应符合监管要求。"}\n', encoding="utf-8")
+    parsed = parse_document(valid)
+    assert parsed.blocks[0].section_title == "规则一"
+
+    qa = tmp_path / "qa.jsonl"
+    qa.write_text('{"question":"答案是什么","answer":"A","evidence":"标准答案"}\n', encoding="utf-8")
+    with pytest.raises(DocumentParseError, match="QA/答案数据"):
+        parse_document(qa)
+
+
+def test_parse_normal_paragraph_articles_adds_article_locator(tmp_path) -> None:
+    path = tmp_path / "rules.txt"
+    path.write_text("第一章 总则\n\n第一条 银行业金融机构应当依法报送。\n第二条 不得迟报。", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    articles = [block for block in parsed.blocks if block.metadata.get("structure_type") == "article"]
+    assert [block.metadata["article_number"] for block in articles] == ["第一条", "第二条"]
+    assert articles[0].text.startswith("第一条")
+
+
+def test_parse_html_preserves_headings_paragraphs_and_tables(tmp_path) -> None:
+    path = tmp_path / "rule.html"
+    path.write_text(
+        "<html><head><title>监管规则</title></head><body><h1>第一章</h1><p>正文依据。</p>"
+        "<table><tr><th>指标</th><th>值</th></tr><tr><td>资本</td><td>12</td></tr></table></body></html>",
+        encoding="utf-8",
+    )
+
+    parsed = parse_document(path)
+
+    assert parsed.metadata["html_title"] == "监管规则"
+    assert any(block.block_type == "heading" and block.text == "第一章" for block in parsed.blocks)
+    assert any(block.block_type == "table" and "资本" in block.text for block in parsed.blocks)
 
 
 def test_loader_order_is_configured_by_file_type(tmp_path) -> None:

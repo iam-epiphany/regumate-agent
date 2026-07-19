@@ -1,6 +1,17 @@
 # ReguMate 可信 RAG 问答系统
 
-ReguMate 面向银行业监管制度、填报说明和统计报表问答。用户上传 txt、md、Word、可提取文本 PDF、Excel 等材料后，系统会构建本地知识库，并基于检索到的 chunk 和表格证据回答问题；没有依据时会拒答或只返回可追溯证据。
+ReguMate 面向银行业监管制度、填报说明和统计报表问答。用户上传 txt、md、Word、可提取文本 PDF、Excel 等材料后，系统会构建本地知识库，并基于检索到的 chunk 和表格证据回答问题；没有依据时会拒答或只返回可追溯证据。系统还提供独立的业务报表审查：业务人员把确定性规则绑定到现行监管条款，系统检查结构化报表单元格，输出可人工复核且可导出的双侧证据发现项。
+
+## 业务报表审查
+
+网页左侧“业务审查”不是操作日志页面。使用前先在知识库上传并索引监管制度和 XLS/XLSX/CSV 报表，然后：
+
+1. 在“监管规则簿”选择制度文档及具体 chunk，配置必填、非负、范围、等式、合计或允许值规则。
+2. 选择待审查报表和启用规则，启动异步审查；任务创建时冻结规则快照。
+3. 在发现项中核对报表工作表/坐标/原值和监管来源 URL/条款摘录。
+4. 由复核人标记确认、排除或已整改，并导出 Markdown 审查报告。
+
+找不到目标、候选不唯一或数值不可计算时，系统返回“不可判定”，不会把证据缺失解释为通过。审查报告只覆盖已配置规则，不替代正式监管解释、人工审批或合规签字。
 
 当前压缩包名为 `ReguMate-Agent.zip`，解压后的文件夹名为 `ReguMate-Agent`。这是小体积交付包，不包含离线 Docker 镜像、BGE 模型文件或冻结 Qdrant 向量库；已包含官方 `contest_dataset`。第一次启动需要联网构建镜像、拉取 Qdrant 镜像，并在首次预热或问答时下载 BGE 模型。
 
@@ -393,3 +404,21 @@ RERANK_SCORE_CACHE_BYTES=33554432
 `0` 表示由 profile 根据容器 affinity/cgroup 自动选择；自动值会在导入 PyTorch 前同步到 OMP/MKL，并由健康接口和启动日志报告实际 Torch/OMP/MKL 线程。当前正式默认后端和输入模式为 `pytorch + embedding`；ONNX/OpenVINO 与 `compact` 只作为质量门禁实验，不会静默替换默认逻辑。后台预热完成前 `/api/health/ready` 返回 503，避免首个用户问题承担模型加载。Query Embedding 与 Rerank 分数仅使用进程内中间结果缓存，文档重建或删除会清空 Rerank 分数缓存，最终答案不缓存。
 
 `GET /api/health/rag` 是前后端唯一设备状态来源。显式选择 CPU 会显示“CPU 平衡模式”，不显示降级；只有请求 CUDA 后运行时回退 CPU 才显示 fallback 原因。性能基线与实验报告见 `docs/evaluation/performance_baseline_20260718.md` 和 `docs/evaluation/performance_experiments/phase1-engineering.md`。
+
+## 可信来源、版本与新增格式
+
+知识库支持 txt、md、doc、docx、可提取文本 PDF、xls、xlsx、CSV、schema-aware JSONL 和 HTML。CSV 进入单元格级索引；JSONL 必须提供 `text/content/body`，QA 标准答案禁止入库。文档可通过上传 metadata、官方 manifest 或受控公网 URL 获得来源页、附件 URL、发文机关、发布日期、主题、业务领域和版本状态。引用卡片可直接打开官方页面或附件。
+
+旧 SQLite 可在启动时增量增加字段。回填已有文档 metadata：
+
+```powershell
+python scripts/backfill_document_provenance.py --parse-body
+```
+
+重新解析旧文档以获得中文条款结构并刷新 Qdrant：
+
+```powershell
+python scripts/backfill_document_provenance.py --parse-body --reparse --reindex
+```
+
+重解析会替换 chunk 和向量，须在停止问答流量后执行。manifest/URL/API 契约见 `docs/开发文档/API接口设计.md`。

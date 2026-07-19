@@ -278,9 +278,23 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 - 删除指定日期的归档文件。
 - 删除后该天历史日志不再显示，接口返回 `deleted=true`。
 
-## 不提供的接口
+## 业务报表审查接口
 
-当前不提供真实报表校验、复核、报告生成或复杂任务编排接口。
+业务审查与 `/api/audit/*` 操作日志严格分离。报表继续通过普通文档接口上传和结构化入库；规则执行只读取 `SpreadsheetCell`，监管依据只允许引用已索引且未失效的 `DocumentChunk`。
+
+- `POST /api/review-rules`：创建确定性规则。必须提供 `evidence_chunk_id`，支持 `required/non_negative/range/equality/sum/allowed_values`。系统保存制度来源、条款、摘录和 URL 快照；失效制度或不存在的 chunk 会拒绝。
+- `GET /api/review-rules`：列出规则；`PATCH /api/review-rules/{rule_id}` 修改配置或启停。
+- `POST /api/report-reviews`：选择已索引的 XLS/XLSX/CSV 和规则列表，创建持久化异步任务。任务创建时冻结完整规则快照，之后修改规则不会改变历史结果；`client_request_id` 提供幂等语义。
+- `GET /api/report-reviews`、`GET /api/report-reviews/{review_id}`：返回任务进度、规则级结果和发现项。
+- `POST /api/report-reviews/{review_id}/cancel|retry`：停止排队/执行任务或重试终态任务。应用重启会恢复未完成任务。
+- `PATCH /api/review-findings/{finding_id}`：人工标记 `open/confirmed/dismissed/resolved`，保存复核人、意见和时间。
+- `GET /api/report-reviews/{review_id}/report?format=json|markdown`：导出审查报告。报告同时包含监管依据和报表单元格证据，并明确“仅覆盖已配置规则”。
+
+规则无法唯一定位单元格、目标为空或数值不可计算时，结果为 `not_evaluable`，不得伪装成“检查通过”。整改建议来自规则配置或所引条款的保守复核模板，不调用 LLM 扩写新的监管义务。
+
+## 仍不提供的接口
+
+当前不提供自动生成监管规则、替代人工签批的最终合规结论、跨系统整改工单下发或外部消息通知。规则必须由业务人员配置并绑定证据。
 ## RAG 健康检查
 
 `GET /api/health/rag`
@@ -306,3 +320,14 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。README 面向测试人员使用 `scripts/warmup_models.ps1` 调用该接口，脚本在同步请求等待期间用 PowerShell 进度条显示耗时反馈，并在完成后输出接口 JSON；接口本身仍保持无业务数据写入。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
 
 性能优化后新增 `performance`：包含 requested/selected performance mode、requested/active backend、backend fallback reason、有效 CPU 核数与内存限制、Embedding/Rerank batch、Rerank 最大长度和输入模式、PyTorch/OMP/MKL 线程、预热状态、缓存容量与 hit/miss/eviction、聚合 timings、1 秒资源采样及近期 QA/index trace。近期 trace 只包含阶段名和耗时，不包含问题正文。公开 QA 响应契约不因性能配置改变；仅 `include_debug=true` 时上下文诊断保存 pre-rerank 与 reranked 完整排名。
+
+## 来源、版本与结构化导入接口
+
+核心来源字段不再只放在通用 metadata 中。`Document` 一等字段包括 `external_doc_id/title/issuing_authority/publication_date/effective_date/expiration_date/document_number/regulatory_topic/business_domain/source_column/source_url/attachment_url/source_type/version_label/version_status/supersedes_document_id/metadata_status`。响应仍通过 `metadata` 统一返回，以保持旧客户端兼容，同时包含字段级 `metadata_provenance`。
+
+- `POST /api/documents/upload`：multipart 新增可选 `metadata_json`。显式 metadata 优先于正文和文件名推断。
+- `PATCH /api/documents/{document_id}/metadata`：人工确认或修订结构化字段，保存后排队刷新向量 payload。
+- `POST /api/documents/manifest`：上传 UTF-8 的 `.json/.jsonl/.csv` manifest，按 SHA-256、官方 doc_id、文件名依次匹配并回填。含 `question + answer/evidence/options` 的 QA 数据会拒绝导入生产知识库。
+- `POST /api/documents/url-import`：JSON 请求包含 `url/filename/metadata/client_request_id`。仅允许公网 HTTP(S)，限制重定向与下载大小，拒绝内网、本机和带凭据 URL。
+
+`Citation` 增加 `source_url/attachment_url/source_title/issuing_authority/publication_date/document_number/version_status`。表格和文本引用使用同一来源契约。

@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,11 @@ from backend.app.schemas.documents import (
     DocumentUploadPreflightRequest,
     DocumentUploadPreflightResponse,
     DocumentUploadResponse,
+    DocumentMetadataInput,
+    DocumentMetadataUpdateResponse,
+    DocumentManifestImportItem,
+    DocumentManifestImportResponse,
+    DocumentUrlImportRequest,
 )
 from backend.app.schemas.qa import ApiError
 from backend.app.services.audit_service import log_action
@@ -51,6 +58,21 @@ from backend.app.services.document_upload_service import (
     build_upload_preflight,
     create_document_upload,
 )
+from backend.app.services.document_manifest_service import (
+    ManifestImportError,
+    import_manifest_records,
+    parse_manifest,
+)
+from backend.app.services.document_metadata_service import (
+    DocumentMetadataError,
+    apply_document_metadata,
+    document_metadata_snapshot,
+    resolve_version_relation,
+)
+from backend.app.services.document_url_import_service import (
+    DocumentUrlImportError,
+    fetch_url_document,
+)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -65,29 +87,135 @@ async def upload_document(
     file: UploadFile = File(...),
     filename_override: str | None = Form(None),
     overwrite_document_id: str | None = Form(None),
+    metadata_json: str | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
     request_id = (idempotency_key or uuid4().hex).strip()[:128]
     try:
+        metadata = _parse_metadata_json(metadata_json)
         document, task = await create_document_upload(
             db,
             file=file,
             request_id=request_id,
             filename_override=filename_override,
             overwrite_document_id=overwrite_document_id,
+            metadata=metadata,
             max_bytes=MAX_UPLOAD_BYTES,
             enqueue_index=enqueue_document_index,
         )
         return _to_upload_response(document, task)
     except DocumentTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except (UnsupportedDocumentTypeError, EmptyDocumentError) as exc:
+    except (UnsupportedDocumentTypeError, EmptyDocumentError, DocumentMetadataError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except UploadTaskMissingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DocumentUploadConflictError as exc:
         return _upload_conflict_response(exc)
+
+
+@router.post("/manifest", response_model=DocumentManifestImportResponse)
+async def import_document_manifest(
+    manifest: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> DocumentManifestImportResponse:
+    try:
+        content = await manifest.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise ManifestImportError("manifest 超过上传大小限制")
+        records = parse_manifest(content, manifest.filename or "manifest.json")
+        results = import_manifest_records(db, records)
+    except (ManifestImportError, DocumentMetadataError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated = [item for item in results if item.status == "updated" and item.document_id]
+    for item in updated:
+        enqueue_document_index(str(item.document_id))
+    return DocumentManifestImportResponse(
+        total_count=len(results),
+        updated_count=len(updated),
+        failed_count=len(results) - len(updated),
+        items=[
+            DocumentManifestImportItem(
+                record_index=item.record_index,
+                status=item.status,
+                document_id=item.document_id,
+                filename=item.filename,
+                message=item.message,
+            )
+            for item in results
+        ],
+    )
+
+
+@router.post(
+    "/url-import",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def import_document_from_url(
+    payload: DocumentUrlImportRequest,
+    db: Session = Depends(get_db),
+) -> DocumentUploadResponse:
+    try:
+        fetched = fetch_url_document(
+            payload.url,
+            max_bytes=MAX_UPLOAD_BYTES,
+            filename_override=payload.filename,
+        )
+        upload = UploadFile(
+            file=BytesIO(fetched.content),
+            filename=fetched.filename,
+            size=len(fetched.content),
+            headers=Headers({"content-type": fetched.content_type}),
+        )
+        metadata = _metadata_input_dict(payload.metadata)
+        metadata.setdefault("source_url", fetched.final_url)
+        if fetched.content_type != "text/html":
+            metadata.setdefault("attachment_url", fetched.final_url)
+        metadata.setdefault("source_type", "official_url")
+        document, task = await create_document_upload(
+            db,
+            file=upload,
+            request_id=payload.client_request_id or uuid4().hex,
+            filename_override=fetched.filename,
+            metadata=metadata,
+            metadata_source="user",
+            max_bytes=MAX_UPLOAD_BYTES,
+            enqueue_index=enqueue_document_index,
+        )
+        return _to_upload_response(document, task)
+    except (DocumentUrlImportError, DocumentMetadataError, UnsupportedDocumentTypeError, EmptyDocumentError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DocumentTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except DocumentUploadConflictError as exc:
+        return _upload_conflict_response(exc)
+
+
+@router.patch("/{document_id}/metadata", response_model=DocumentMetadataUpdateResponse)
+def update_document_metadata(
+    document_id: str,
+    payload: DocumentMetadataInput,
+    db: Session = Depends(get_db),
+) -> DocumentMetadataUpdateResponse:
+    document = db.scalar(select(Document).where(Document.document_id == document_id))
+    if document is None:
+        raise HTTPException(status_code=404, detail="未找到指定文档")
+    try:
+        metadata = _metadata_input_dict(payload)
+        apply_document_metadata(document, metadata, source="user", confidence=1.0)
+        resolve_version_relation(db, document)
+        db.commit()
+    except (DocumentMetadataError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    reindex_queued = enqueue_document_index(document.document_id)
+    return DocumentMetadataUpdateResponse(
+        document_id=document.document_id,
+        metadata=document_metadata_snapshot(document),
+        reindex_queued=reindex_queued,
+    )
 
 
 @router.post(
@@ -414,13 +542,26 @@ def _to_summary(document: Document) -> DocumentSummary:
 
 
 def _document_metadata(document: Document) -> dict:
-    if not document.document_metadata:
+    return document_metadata_snapshot(document)
+
+
+def _parse_metadata_json(raw: str | None) -> dict:
+    if not raw:
         return {}
     try:
-        value = json.loads(document.document_metadata)
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("metadata_json 必须是 JSON 对象") from exc
+    if not isinstance(value, dict):
+        raise ValueError("metadata_json 必须是 JSON 对象")
+    payload = DocumentMetadataInput.model_validate(value)
+    return _metadata_input_dict(payload)
+
+
+def _metadata_input_dict(payload: DocumentMetadataInput) -> dict:
+    value = payload.model_dump(exclude_none=True)
+    extra = value.pop("extra", {})
+    return {**value, **(extra if isinstance(extra, dict) else {})}
 
 
 def _to_upload_response(

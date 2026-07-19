@@ -1,6 +1,10 @@
 from pathlib import Path
+import csv
+from html.parser import HTMLParser
+from io import StringIO
+import json
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 from backend.app.core.config import DOCUMENT_LOADER_ORDER
 from backend.app.services.document_types import LoaderResult, PARSER_VERSION, ParsedBlock, ParsedDocument
@@ -122,6 +126,94 @@ class MarkdownDocumentLoader:
     def load(self, file_path: Path) -> LoaderResult:
         text = _read_utf8_text(file_path)
         return LoaderResult(blocks=_markdown_to_blocks(text), loader_name=self.name)
+
+
+class CsvDocumentLoader:
+    name = "spreadsheet-csv"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".csv"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        text = _read_utf8_text(file_path)
+        try:
+            rows = list(csv.reader(StringIO(text)))
+        except csv.Error as exc:
+            raise DocumentParseError("CSV 表格解析失败") from exc
+        blocks, metadata = _csv_blocks(file_path, rows)
+        return LoaderResult(blocks=blocks, loader_name=self.name, metadata=metadata)
+
+
+class JsonlDocumentLoader:
+    name = "jsonl"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() == ".jsonl"
+
+    def load(self, file_path: Path) -> LoaderResult:
+        text = _read_utf8_text(file_path)
+        blocks: list[ParsedBlock] = []
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise DocumentParseError(f"JSONL 第 {line_number} 行不是有效 JSON") from exc
+            if not isinstance(record, dict):
+                raise DocumentParseError(f"JSONL 第 {line_number} 行必须是对象")
+            keys = {str(key).lower() for key in record}
+            if "question" in keys and keys & {"answer", "answer_text", "evidence", "option_a"}:
+                raise DocumentParseError("检测到 QA/答案数据；评测数据禁止作为知识库文档入库")
+            body_key = next((key for key in ("text", "content", "body") if record.get(key)), None)
+            if body_key is None:
+                raise DocumentParseError(
+                    f"JSONL 第 {line_number} 行缺少 text、content 或 body 字段"
+                )
+            body = _normalize_text(str(record[body_key]))
+            if not body:
+                continue
+            title = _normalize_text(str(record.get("title") or "")) or None
+            metadata = {
+                str(key): value
+                for key, value in record.items()
+                if key not in {"text", "content", "body"} and _json_metadata_value(value)
+            }
+            metadata["jsonl_record_index"] = line_number
+            blocks.append(
+                ParsedBlock(
+                    text=body,
+                    block_type="paragraph",
+                    order_index=len(blocks) + 1,
+                    section_title=title,
+                    metadata=metadata,
+                )
+            )
+        return LoaderResult(
+            blocks=blocks,
+            loader_name=self.name,
+            metadata={"record_count": len(blocks), "source_format": "jsonl"},
+        )
+
+
+class HtmlDocumentLoader:
+    name = "html"
+
+    def supports(self, file_path: Path) -> bool:
+        return file_path.suffix.lower() in {".html", ".htm"}
+
+    def load(self, file_path: Path) -> LoaderResult:
+        parser = _StructuredHtmlParser()
+        try:
+            parser.feed(_read_utf8_text(file_path))
+            parser.close()
+        except Exception as exc:
+            raise DocumentParseError("HTML 正文解析失败") from exc
+        return LoaderResult(
+            blocks=parser.blocks,
+            loader_name=self.name,
+            metadata={"html_title": parser.title, "source_format": "html"},
+        )
 
 
 class DocxDocumentLoader:
@@ -443,6 +535,9 @@ def _candidate_loaders(file_path: Path, loader_name: str | None = None) -> list[
     registry: dict[str, DocumentLoader] = {
         "text": TextDocumentLoader(),
         "markdown": MarkdownDocumentLoader(),
+        "spreadsheet-csv": CsvDocumentLoader(),
+        "jsonl": JsonlDocumentLoader(),
+        "html": HtmlDocumentLoader(),
         "libreoffice-doc": LegacyDocDocumentLoader(),
         "antiword-doc": AntiwordDocDocumentLoader(),
         "python-docx": DocxDocumentLoader(),
@@ -462,6 +557,218 @@ def _candidate_loaders(file_path: Path, loader_name: str | None = None) -> list[
     if loader_name is None:
         return loaders
     return [loader for loader in loaders if loader.name == loader_name]
+
+
+def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[ParsedBlock], dict[str, Any]]:
+    rows = [[_normalize_text(cell) for cell in row] for row in raw_rows]
+    rows = [row for row in rows if any(cell for cell in row)]
+    if not rows:
+        raise DocumentParseError("CSV 没有可解析数据")
+    width = max(len(row) for row in rows)
+    headers = [cell or f"列{index}" for index, cell in enumerate(rows[0] + [""] * (width - len(rows[0])), start=1)]
+    source_title = file_path.stem
+    common = {
+        "source_title": source_title,
+        "source_format": "csv",
+        "spreadsheet_table": True,
+        "sheet_name": "CSV",
+        "sheet_index": 1,
+        "sheet_state": "visible",
+        "table_id": f"{source_title}-CSV-01",
+        "table_title": source_title,
+        "table_headers": headers,
+        "row_header_columns": [1],
+        "unit": None,
+        "period": {},
+    }
+    blocks = [
+        ParsedBlock(
+            text=f"表格摘要：{source_title}；工作表：CSV；数据行数：{max(len(rows) - 1, 0)}；列：{'、'.join(headers)}",
+            block_type="table",
+            order_index=1,
+            section_title=source_title,
+            metadata={**common, "table_chunk_role": "summary", "raw_table_preview": "\n".join(",".join(row) for row in rows[:5])[:500]},
+        )
+    ]
+    for row_index, raw_row in enumerate(rows[1:], start=2):
+        row = raw_row + [""] * (width - len(raw_row))
+        row_label = next((cell for cell in row if cell), f"第{row_index}行")
+        cells: list[dict[str, Any]] = []
+        row_cells: dict[str, str] = {}
+        for column_index, (header, value) in enumerate(zip(headers, row, strict=True), start=1):
+            if not value:
+                continue
+            coordinate = f"{_column_letters(column_index)}{row_index}"
+            normalized_value = _csv_numeric(value)
+            cells.append(
+                {
+                    "row": row_index,
+                    "column": column_index,
+                    "coordinate": coordinate,
+                    "value": value,
+                    "normalized_value": normalized_value,
+                    "data_type": "number" if normalized_value is not None else "text",
+                    "is_formula": False,
+                    "formula": None,
+                    "row_label": row_label,
+                    "column_label": header,
+                    "column_path": [header],
+                    "unit": None,
+                }
+            )
+            row_cells[header if header not in row_cells else f"{header} [{coordinate}]"] = value
+        if not cells:
+            continue
+        text = f"表格行证据：{source_title}；工作表：CSV；行标签：{row_label}；" + "；".join(
+            f"{key}={value}" for key, value in row_cells.items()
+        )
+        blocks.append(
+            ParsedBlock(
+                text=text,
+                block_type="table",
+                order_index=len(blocks) + 1,
+                section_title=source_title,
+                metadata={
+                    **common,
+                    "table_chunk_role": "row",
+                    "row_index": row_index,
+                    "row_label": row_label,
+                    "row_cells": row_cells,
+                    "cells": cells,
+                    "raw_table_preview": text[:500],
+                },
+            )
+        )
+    return blocks, {"source_title": source_title, "source_format": "csv", "row_count": len(rows) - 1}
+
+
+class _StructuredHtmlParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[ParsedBlock] = []
+        self.title: str | None = None
+        self.current_section: str | None = None
+        self._capture_tag: str | None = None
+        self._capture: list[str] = []
+        self._title_capture: list[str] | None = None
+        self._skip_depth = 0
+        self._table_rows: list[list[str]] | None = None
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in {"script", "style", "noscript"}:
+            self._skip_depth += 1
+            return
+        if self._skip_depth:
+            return
+        if tag == "title":
+            self._title_capture = []
+        elif tag == "table":
+            self._table_rows = []
+        elif tag == "tr" and self._table_rows is not None:
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell = []
+        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li"} and self._cell is None:
+            self._capture_tag = tag
+            self._capture = []
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"script", "style", "noscript"}:
+            self._skip_depth = max(0, self._skip_depth - 1)
+            return
+        if self._skip_depth:
+            return
+        if tag == "title":
+            self.title = _normalize_text(" ".join(self._title_capture or [])) or None
+            self._title_capture = None
+        elif tag in {"td", "th"} and self._cell is not None and self._row is not None:
+            self._row.append(_normalize_text(" ".join(self._cell)))
+            self._cell = None
+        elif tag == "tr" and self._row is not None and self._table_rows is not None:
+            if any(self._row):
+                self._table_rows.append(self._row)
+            self._row = None
+        elif tag == "table" and self._table_rows is not None:
+            self._flush_table(self._table_rows)
+            self._table_rows = None
+        elif tag == self._capture_tag:
+            text = _normalize_text(" ".join(self._capture))
+            if text:
+                is_heading = tag.startswith("h")
+                if is_heading:
+                    self.current_section = text
+                self.blocks.append(
+                    ParsedBlock(
+                        text=text,
+                        block_type="heading" if is_heading else "paragraph",
+                        order_index=len(self.blocks) + 1,
+                        section_title=self.current_section,
+                        level=int(tag[1]) if is_heading else None,
+                    )
+                )
+            self._capture_tag = None
+            self._capture = []
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._cell is not None:
+            self._cell.append(data)
+        elif self._capture_tag:
+            self._capture.append(data)
+        elif self._title_capture is not None:
+            self._title_capture.append(data)
+
+    def _flush_table(self, rows: list[list[str]]) -> None:
+        if not rows:
+            return
+        width = max(len(row) for row in rows)
+        padded = [row + [""] * (width - len(row)) for row in rows]
+        markdown = "\n".join(
+            [_markdown_table_row(padded[0]), _markdown_table_row(["---"] * width)]
+            + [_markdown_table_row(row) for row in padded[1:]]
+        )
+        self.blocks.append(
+            ParsedBlock(
+                text=markdown,
+                block_type="table",
+                order_index=len(self.blocks) + 1,
+                section_title=self.current_section,
+                metadata=_table_metadata(markdown, len([block for block in self.blocks if block.block_type == "table"]) + 1),
+            )
+        )
+
+
+def _column_letters(column: int) -> str:
+    value = ""
+    while column:
+        column, remainder = divmod(column - 1, 26)
+        value = chr(65 + remainder) + value
+    return value
+
+
+def _csv_numeric(value: str) -> int | float | None:
+    normalized = value.replace(",", "").strip()
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?", normalized):
+        return None
+    number = float(normalized)
+    return int(number) if number.is_integer() else number
+
+
+def _json_metadata_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (str, int, float, bool)):
+        return True
+    if isinstance(value, list):
+        return len(value) <= 100
+    if isinstance(value, dict):
+        return len(value) <= 50
+    return False
 
 
 def _read_utf8_text(file_path: Path) -> str:
@@ -684,12 +991,66 @@ def _normalize_text(text: str) -> str:
 
 
 def _ensure_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
-    cleaned = [block for block in blocks if block.text.strip()]
+    cleaned = [expanded for block in blocks if block.text.strip() for expanded in _expand_regulatory_articles(block)]
     if not cleaned:
         raise DocumentParseError("文档没有可解析文本")
     for index, block in enumerate(cleaned, start=1):
         block.order_index = index
     return cleaned
+
+
+_ARTICLE_PATTERN = re.compile(
+    r"(?m)^\s*(第[零〇一二三四五六七八九十百千万两\d]+条(?:之[零〇一二三四五六七八九十百千万两\d]+)?)\s*"
+)
+
+
+def _expand_regulatory_articles(block: ParsedBlock) -> list[ParsedBlock]:
+    """Attach stable article locators even when DOCX/PDF uses normal paragraphs.
+
+    Regulatory files frequently render ``第一条`` as body text instead of a
+    heading style. Splitting only at line starts preserves the article text as
+    evidence while making the article number independently filterable.
+    """
+
+    matches = list(_ARTICLE_PATTERN.finditer(block.text))
+    if not matches:
+        return [block]
+    prefix = block.text[: matches[0].start()].strip()
+    expanded: list[ParsedBlock] = []
+    if prefix:
+        expanded.append(
+            ParsedBlock(
+                text=prefix,
+                block_type=block.block_type,
+                order_index=block.order_index,
+                page_number=block.page_number,
+                section_title=block.section_title,
+                level=block.level,
+                metadata=dict(block.metadata or {}),
+            )
+        )
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(block.text)
+        text = block.text[match.start() : end].strip()
+        article_number = match.group(1)
+        if not text:
+            continue
+        expanded.append(
+            ParsedBlock(
+                text=text,
+                block_type="paragraph" if block.block_type != "table" else block.block_type,
+                order_index=block.order_index,
+                page_number=block.page_number,
+                section_title=article_number,
+                level=3,
+                metadata={
+                    **(block.metadata or {}),
+                    "article_number": article_number,
+                    "structure_type": "article",
+                },
+            )
+        )
+    return expanded or [block]
 
 
 def _join_blocks(blocks: list[ParsedBlock]) -> str:

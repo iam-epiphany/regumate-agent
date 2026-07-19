@@ -54,6 +54,13 @@ class Citation(BaseModel):
     document_id: str
     chunk_id: str
     filename: str
+    source_url: str | None = None
+    attachment_url: str | None = None
+    source_title: str | None = None
+    issuing_authority: str | None = None
+    publication_date: str | None = None
+    document_number: str | None = None
+    version_status: str | None = None
     section_title: str | None = None
     section_path: list[str] = Field(default_factory=list)
     section_number: str | None = None

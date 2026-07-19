@@ -241,7 +241,9 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
                     "query_type 只能是 semantic_question、document_style_statement、keyword_anchor、table_locator。"
                     "modality 只能是 text、table、mixed；table_task 只能是 lookup、compare、calculate、locate、none；"
                     "operation 只能是 max、min、difference、sum、ratio、none。"
-                    "table_filters 可包含 filename、source_title、year、month、quarter、sheet、indicator、row_label、column_label、unit、metric、scope。"
+                    "table_filters 同时承担文档元数据过滤，可包含 filename、source_title、external_doc_id、"
+                    "issuing_authority、publication_date、document_number、regulatory_topic、business_domain、"
+                    "article_number、version_status、year、month、quarter、sheet、indicator、row_label、column_label、unit、metric、scope。"
                     "每个 aspect 生成 2 到 "
                     f"{QUERY_PLANNER_MAX_SEARCH_QUERIES} 条 search_queries："
                     "semantic_question 贴近用户意图；document_style_statement 像制度原文、填报说明标题或证据句；"
@@ -757,6 +759,14 @@ def _clean_table_filters(value: Any) -> dict[str, Any]:
         "unit",
         "metric",
         "scope",
+        "external_doc_id",
+        "issuing_authority",
+        "publication_date",
+        "document_number",
+        "regulatory_topic",
+        "business_domain",
+        "article_number",
+        "version_status",
     }
     return {key: value[key] for key in allowed if key in value and value[key] not in (None, "", [])}
 
@@ -855,6 +865,32 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     title_match = re.search(r"《([^》]+)》", question)
     if title_match:
         filters["source_title"] = title_match.group(1).strip()
+    document_number_match = re.search(r"[\u4e00-\u9fffA-Za-z]+〔\d{4}〕\d+号", question)
+    if document_number_match:
+        filters["document_number"] = document_number_match.group(0)
+    article_match = re.search(
+        r"第[零〇一二三四五六七八九十百千万两\d]+条(?:之[零〇一二三四五六七八九十百千万两\d]+)?",
+        question,
+    )
+    if article_match:
+        filters["article_number"] = article_match.group(0)
+    for label, key in (
+        ("发文机关", "issuing_authority"),
+        ("监管主题", "regulatory_topic"),
+        ("业务领域", "business_domain"),
+    ):
+        match = re.search(rf"{label}[：:]\s*([^，。；;）)]+)", question)
+        if match:
+            filters[key] = match.group(1).strip()
+    publication_match = re.search(r"发布日期[：:]?\s*(20\d{2})年(\d{1,2})月(\d{1,2})日", question)
+    if publication_match:
+        filters["publication_date"] = (
+            f"{publication_match.group(1)}-{int(publication_match.group(2)):02d}-{int(publication_match.group(3)):02d}"
+        )
+    if any(marker in question for marker in ("现行", "有效版本", "当前有效")):
+        filters["version_status"] = "current"
+    elif any(marker in question for marker in ("已废止", "废止版本", "失效版本")):
+        filters["version_status"] = "repealed"
     sheet_match = re.search(r"工作表[：:]\s*([^），)。；;]+)", question)
     if sheet_match:
         filters["sheet"] = sheet_match.group(1).strip()
