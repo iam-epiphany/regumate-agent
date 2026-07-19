@@ -286,10 +286,15 @@ def answer_question(
             "summary": generated.grounding_validation,
         },
     )
+    cited_results = _cited_context_results(
+        package.context_chunks,
+        answer=generated.answer,
+        claims=generated.claims,
+    )
     response = QAResponse(
         answer=generated.answer,
-        citations=[_citation_from_result(result) for result in package.context_chunks],
-        confidence=_confidence_from_results(package.context_chunks),
+        citations=[_citation_from_result(result) for result in cited_results],
+        confidence=_confidence_from_results(cited_results),
         refused=generated.refused,
         context_package=package if include_debug else None,
         answer_type=generated.answer_type,
@@ -1385,6 +1390,12 @@ def _select_prompt_chunks(
 
     selected = _sort_prompt_chunks(selected, query_plan)
     selected = _apply_prompt_token_budget(selected)
+    final_chunk_ids = {item.chunk_id for item in selected}
+    for item in aspect_retrievals:
+        item.selected_chunk_ids = [
+            chunk_id for chunk_id in item.selected_chunk_ids if chunk_id in final_chunk_ids
+        ]
+        item.covered = bool(item.selected_chunk_ids)
     _renumber_context_chunks(selected)
     covered_aspects = {item.aspect.aspect_id for item in aspect_retrievals if item.covered}
     return selected, _prompt_selection_summary(
@@ -1702,6 +1713,29 @@ def _section_path(citation: Citation) -> list[str]:
 
 def _normalize_for_dedupe(text: str) -> str:
     return re.sub(r"\s+", "", text)
+
+
+def _cited_context_results(
+    context_chunks: list[RetrievalResult],
+    *,
+    answer: str,
+    claims: list[AnswerClaim],
+) -> list[RetrievalResult]:
+    """Return only context chunks explicitly cited by the final answer."""
+    citation_labels = {
+        citation_id
+        for claim in claims
+        for citation_id in claim.citation_ids
+        if citation_id
+    }
+    citation_labels.update(re.findall(r"\[\d+\]", answer or ""))
+    if not citation_labels:
+        return []
+    return [
+        result
+        for result in context_chunks
+        if result.citation_label in citation_labels
+    ]
 
 
 def _citation_from_result(result: RetrievalResult) -> Citation:

@@ -60,7 +60,7 @@ Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默
 14. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
 15. `retrieval_service` 过滤低分候选；默认不强制多文档多样性，仅在综合、总结、比较、区别等问题中限制单文档重复，避免把同一制度中的强相关连续依据挤掉。
 16. `rag_service` 对上下文引用做一致性校验：引用必须来自 `indexed` 文档，普通返回摘录必须能回溯到 SQLite 原始 chunk；动态表格证据追溯到对应行级 chunk 并携带 `dynamic_table_evidence=true`。
-17. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；同时受 `MAX_PROMPT_CHUNKS=12` 和 `MAX_PROMPT_TOKENS=3600` 约束，不为了凑固定数量加入无关片段。
+17. `rag_service` 对可回溯候选执行最终 Prompt 片段选择：第一轮优先保证每个 aspect 至少 1 条核心依据；第二轮再补充高分、非重复、能支持该 aspect 或相邻章节关系的片段；同时受 `MAX_PROMPT_CHUNKS=12` 和 `MAX_PROMPT_TOKENS=3600` 约束，不为了凑固定数量加入无关片段。Token 预算裁剪完成后会按最终保留的 chunk 重新计算每个 aspect 的 `selected_chunk_ids/covered`，避免把已被预算移除的证据误报为已覆盖。
 18. `retrieval_summary` 记录 `query_plan`、`aspect_retrievals`、`coverage_notes`、`missing_aspects`、`fusion_method`、query 数、原始召回数、去重候选数、rerank 调用数、进入 rerank 数、rerank 输出数、过滤数、Prompt 过滤数、阶段耗时、分数范围和模型设备，用于说明上下文是否覆盖问题中的关键方面。无足够依据时拒答；embedding、reranker 或 Qdrant 不可用时返回 503。
 19. `/api/qa/ask/stream` 会复用同一条 RAG 链路，并通过 `progress_reporter` 依次推送 `planning`、`retrieval`、`rerank`、`context_selection`、`prompt_build`、`llm_generation` 和 `grounding_validation` 事件，最终返回完整 `QAResponse`。
 
@@ -91,7 +91,7 @@ QueryPlanner 默认配置：
 ## 回答原则
 
 - 回答必须基于检索到的 chunk。
-- 引用必须包含文档编号、chunk 编号、文件名、章节、页码和摘录。
+- 最终引用只返回答案正文或结构化 claim 实际绑定的证据，不把所有进入 Prompt 但未被答案使用的 chunk 一并暴露；每条引用必须包含文档编号、chunk 编号、文件名、章节、页码和摘录。
 - Excel 题由程序确定性生成最终答案；文本题由 DeepSeek 仅基于 `context_chunks` 生成结构化 claim，并绑定 citation ID。
 - 没有命中或只有弱相关命中时返回固定拒答文本。
 - 检索系统不可用时返回 503，不伪装成无依据拒答。
@@ -151,7 +151,7 @@ collection 名称由 `QDRANT_COLLECTION` 配置，默认 `regumate_chunks`。pay
 - `previous_chunk_id`
 - `next_chunk_id`
 
-collection 初始化时会为 `document_id` 和 `index_version` 创建 payload index，加速文档级计数、删除、版本过滤和后续运维排查。QdrantClient 在后端进程内复用，减少每次检索或索引操作重复创建客户端的开销。
+collection 初始化时会为文档、版本、来源文件、chunk 类型、工作表、期间和监管元数据字段创建 payload index，加速计数、删除、版本过滤和后续运维排查。旧 collection 启动时先读取已有 payload schema，只补建缺失索引；单个索引迁移使用 60 秒服务端等待上限，迁移失败时 readiness 保持未就绪，避免健康检查显示可用而首次问答才失败。QdrantClient 在后端进程内复用，减少每次检索或索引操作重复创建客户端的开销。
 
 升级旧数据时运行：
 

@@ -349,13 +349,24 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
         "version_status": models.PayloadSchemaType.KEYWORD,
         "article_number": models.PayloadSchemaType.KEYWORD,
     }
+    try:
+        collection_info = client.get_collection(QDRANT_COLLECTION)
+        existing_indexes = set(
+            (getattr(collection_info, "payload_schema", {}) or {}).keys()
+        )
+    except Exception:
+        existing_indexes = set()
+
     for field_name, field_schema in indexes.items():
+        if field_name in existing_indexes:
+            continue
         try:
             client.create_payload_index(
                 collection_name=QDRANT_COLLECTION,
                 field_name=field_name,
                 field_schema=field_schema,
                 wait=True,
+                timeout=60,
             )
         except Exception as exc:
             if "exist" in str(exc).lower():

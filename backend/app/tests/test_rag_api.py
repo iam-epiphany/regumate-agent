@@ -21,7 +21,7 @@ from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
 from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask, SpreadsheetCell
 from backend.app.models.review import ReportReviewTask
-from backend.app.schemas.qa import Citation, LLMContextPackage, QAAnswerPreview, QAResponse, RetrievalResult
+from backend.app.schemas.qa import AnswerClaim, Citation, LLMContextPackage, QAAnswerPreview, QAResponse, RetrievalResult
 from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
@@ -2559,6 +2559,90 @@ def test_mcq_exact_support_is_selected_even_without_title_keyword() -> None:
     selected_ids = [chunk.chunk_id for chunk in selected]
     assert set(selected_ids) == {"DOC-TEST-CHUNK-0001", "DOC-TEST-CHUNK-0013"}
     assert "DOC-TEST-CHUNK-0013" in summary["aspect_selected_chunk_ids"]["multiple_choice_evidence"]
+
+
+def test_prompt_budget_recomputes_real_aspect_coverage(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    monkeypatch.setattr(rag_service, "MAX_PROMPT_TOKENS", 3600)
+    aspects = tuple(
+        QueryAspect(
+            aspect_id=f"aspect_{index}",
+            question=f"核对事项 {index}",
+            search_queries=(QuerySearchQuery(f"事项 {index}", "semantic_question", ""),),
+            evidence_need=f"事项 {index} 的直接证据",
+            keywords=(f"事项 {index}",),
+        )
+        for index in (1, 2)
+    )
+    chunks = [
+        RetrievalResult(
+            chunk_id=f"DOC-BUDGET-CHUNK-{index:04d}",
+            rank=index,
+            score=0.9,
+            source_doc="预算测试.pdf",
+            section_title=f"事项 {index}",
+            section_path=[f"事项 {index}"],
+            text=f"事项 {index} 的独立证据内容。",
+            citation_label=f"[{index}]",
+            metadata={"rerank_score": 0.9, "token_count": 3000},
+        )
+        for index in (1, 2)
+    ]
+    retrievals = [
+        rag_service.AspectRetrieval(
+            aspect=aspect,
+            candidates=[chunk],
+            diagnostics=[],
+            citation_validation={"valid_chunks": 1},
+            selected_chunk_ids=[],
+            retrieval_covered=True,
+        )
+        for aspect, chunk in zip(aspects, chunks, strict=True)
+    ]
+
+    selected, summary = rag_service._select_prompt_chunks(
+        "同时核对事项 1 和事项 2。",
+        rag_service.QueryPlan(
+            original_question="同时核对事项 1 和事项 2。",
+            aspects=aspects,
+            planner="test",
+        ),
+        retrievals,
+    )
+
+    assert [chunk.chunk_id for chunk in selected] == ["DOC-BUDGET-CHUNK-0001"]
+    assert summary["covered_aspects"] == ["aspect_1"]
+    assert summary["covered_by_retrieval_but_not_prompted"] == ["aspect_2"]
+    assert summary["prompt_capacity_limited"] is True
+    assert summary["aspect_selected_chunk_ids"]["aspect_2"] == []
+
+
+def test_final_citations_only_include_explicitly_referenced_context() -> None:
+    from backend.app.services import rag_service
+
+    chunks = [
+        RetrievalResult(
+            chunk_id=f"DOC-CITATION-CHUNK-{index:04d}",
+            rank=index,
+            score=0.9,
+            source_doc="引用测试.pdf",
+            section_title=None,
+            section_path=[],
+            text=f"证据 {index}",
+            citation_label=f"[{index}]",
+            metadata={},
+        )
+        for index in (1, 2, 3)
+    ]
+
+    cited = rag_service._cited_context_results(
+        chunks,
+        answer="结论由证据 [2] 支持，补充说明见 [3]。",
+        claims=[AnswerClaim(text="结论", citation_ids=["[2]"])],
+    )
+
+    assert [chunk.citation_label for chunk in cited] == ["[2]", "[3]"]
 
 
 def test_mixed_table_refusal_still_allows_text_fallback() -> None:

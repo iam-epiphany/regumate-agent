@@ -26,6 +26,8 @@ ReguMate 面向银行业监管制度、填报说明和统计报表问答。用�
 - `run.bat`：测试者/交付包标准启动入口，优先使用已有镜像。
 - `stop.bat`：停止 Docker 版 ReguMate 服务。
 
+`check.bat`/`ship-check.bat` 面向源码维护者，需要本机已经安装项目 Python 开发依赖和 Node.js；提交包包含该脚本及后端/前端回归测试。评委或普通测试人员仍使用 `run.bat`，其 Docker 启动路径不要求本机安装 Python、Node.js、LibreOffice、CUDA Toolkit 或数据库软件。
+
 日常开发推荐双击或运行：
 
 ```powershell

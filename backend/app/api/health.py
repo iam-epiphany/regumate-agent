@@ -26,6 +26,7 @@ from backend.app.services.performance_metrics import (
     timing_metrics_snapshot,
     trace_history_snapshot,
 )
+from backend.app.services.vector_store_service import ensure_vector_collection
 
 
 router = APIRouter()
@@ -152,6 +153,11 @@ def _check_qdrant() -> tuple[bool, bool, str | None]:
             )
             points_count = int(getattr(info, "points_count", 0) or 0)
             collection_ready = collection_status in {"green", "yellow"} and points_count > 0
+            if collection_ready:
+                try:
+                    ensure_vector_collection()
+                except Exception as exc:
+                    return True, False, str(exc)
     except Exception as exc:
         return False, False, str(exc)
     return True, collection_ready, None
