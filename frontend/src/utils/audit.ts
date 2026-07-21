@@ -51,22 +51,11 @@ const ACTION_LABELS: Record<string, string> = {
   qa_refused: "提问未回答",
   qa_context_built: "提问",
   qa_cancelled: "停止生成",
-  review_rule_created: "审查规则已创建",
-  review_rule_updated: "审查规则已更新",
-  report_review_queued: "报表审查已排队",
-  report_review_completed: "报表审查已完成",
-  report_review_failed: "报表审查失败",
-  report_review_cancelled: "报表审查已停止",
-  report_review_retried: "报表审查已重试",
-  review_finding_reviewed: "审查发现已复核",
 };
 
 const TARGET_LABELS: Record<string, string> = {
   document: "文档",
   question: "问答",
-  review_rule: "审查规则",
-  report_review: "报表审查",
-  review_finding: "审查发现",
 };
 
 export function formatAuditLog(log: AuditLogItem): AuditDisplay {

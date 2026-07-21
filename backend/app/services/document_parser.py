@@ -567,6 +567,7 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
     width = max(len(row) for row in rows)
     headers = [cell or f"列{index}" for index, cell in enumerate(rows[0] + [""] * (width - len(rows[0])), start=1)]
     source_title = file_path.stem
+    table_period = _period_from_labels([source_title, *headers])
     common = {
         "source_title": source_title,
         "source_format": "csv",
@@ -579,7 +580,7 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
         "table_headers": headers,
         "row_header_columns": [1],
         "unit": None,
-        "period": {},
+        "period": dict(table_period),
     }
     blocks = [
         ParsedBlock(
@@ -593,6 +594,7 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
     for row_index, raw_row in enumerate(rows[1:], start=2):
         row = raw_row + [""] * (width - len(raw_row))
         row_label = next((cell for cell in row if cell), f"第{row_index}行")
+        row_unit = _row_unit(headers, row)
         cells: list[dict[str, Any]] = []
         row_cells: dict[str, str] = {}
         for column_index, (header, value) in enumerate(zip(headers, row, strict=True), start=1):
@@ -613,7 +615,7 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
                     "row_label": row_label,
                     "column_label": header,
                     "column_path": [header],
-                    "unit": None,
+                    "unit": row_unit,
                 }
             )
             row_cells[header if header not in row_cells else f"{header} [{coordinate}]"] = value
@@ -640,6 +642,31 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
             )
         )
     return blocks, {"source_title": source_title, "source_format": "csv", "row_count": len(rows) - 1}
+
+
+def _period_from_labels(labels: list[str]) -> dict[str, int]:
+    text = " ".join(str(label or "") for label in labels)
+    period: dict[str, int] = {}
+    year_match = re.search(r"(20\d{2})年", text)
+    month_match = re.search(r"(?:20\d{2}年)?\s*(\d{1,2})月", text)
+    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", text)
+    if year_match:
+        period["year"] = int(year_match.group(1))
+    if month_match:
+        period["month"] = int(month_match.group(1))
+    if quarter_match:
+        raw = quarter_match.group(1) or quarter_match.group(2)
+        value = {"一": 1, "二": 2, "三": 3, "四": 4}.get(raw, int(raw) if raw.isdigit() else None)
+        if value is not None:
+            period["quarter"] = value
+    return period
+
+
+def _row_unit(headers: list[str], row: list[str]) -> str | None:
+    for header, value in zip(headers, row, strict=True):
+        if "单位" in str(header) and str(value).strip():
+            return str(value).strip()
+    return None
 
 
 class _StructuredHtmlParser(HTMLParser):

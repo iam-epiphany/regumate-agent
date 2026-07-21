@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import re
 import urllib.error
@@ -7,13 +7,21 @@ from typing import Any
 from backend.app.services.performance_metrics import measure, timed
 
 from backend.app.core.config import (
+    QUERY_PLANNER_INCLUDE_THINKING,
     QUERY_PLANNER_API_KEY,
     QUERY_PLANNER_BASE_URL,
     QUERY_PLANNER_ENABLED,
     QUERY_PLANNER_MAX_ASPECTS,
     QUERY_PLANNER_MAX_SEARCH_QUERIES,
     QUERY_PLANNER_MODEL,
+    QUERY_PLANNER_PROVIDER,
+    QUERY_PLANNER_RESPONSE_FORMAT,
     QUERY_PLANNER_TIMEOUT_SECONDS,
+)
+from backend.app.services.llm_client import (
+    ChatCompletionConfig,
+    ChatCompletionError,
+    chat_completion_content,
 )
 
 
@@ -22,6 +30,32 @@ class QueryPlannerError(RuntimeError):
 
 
 VALID_QUERY_TYPES = {"semantic_question", "document_style_statement", "keyword_anchor", "table_locator", "legacy", "fallback"}
+TABLE_MARKERS = ["Excel", "excel", "工作表", "单元格", "表格", "情况表", "统计表", "附件", "月报", "报表", "CSV", "csv"]
+TABLE_ONLY_FILTER_KEYS = {
+    "sheet",
+    "indicator",
+    "row_label",
+    "column_label",
+    "unit",
+    "metric",
+    "scope",
+    "year",
+    "month",
+    "quarter",
+}
+
+COMMON_TABLE_INDICATORS = [
+    "现金及存放同业",
+    "贷款余额",
+    "证券投资",
+    "其他资产",
+    "资产合计",
+    "不良贷款余额",
+    "普惠小微贷款余额",
+    "绿色信贷余额",
+    "原保险保费收入",
+    "资本充足率",
+]
 
 
 @dataclass(frozen=True)
@@ -51,6 +85,7 @@ class QueryAspect:
     operation: str = "none"
     selectors: tuple[dict[str, Any], ...] = ()
     expected_unit: str | None = None
+    explicit_filter_keys: tuple[str, ...] = ()
 
     @property
     def expected_evidence_type(self) -> str:
@@ -68,6 +103,7 @@ class QueryAspect:
             "operation": self.operation,
             "selectors": list(self.selectors),
             "expected_unit": self.expected_unit,
+            "explicit_filter_keys": list(self.explicit_filter_keys),
             "search_queries": [query.to_debug_dict() for query in self.search_queries],
             "keywords": list(self.keywords),
         }
@@ -125,9 +161,17 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     # changing operand order or losing a filename/sheet constraint.
     table_aspect = _fallback_table_aspect(cleaned_question, options=options)
     if table_aspect is not None:
+        table_aspects = (
+            (
+                replace(table_aspect, modality="table"),
+                _mixed_regulation_aspect(table_aspect),
+            )
+            if table_aspect.modality == "mixed"
+            else (table_aspect,)
+        )
         return QueryPlan(
             original_question=cleaned_question,
-            aspects=(table_aspect,),
+            aspects=table_aspects,
             planner="deterministic-table",
             fallback_used=True,
             budget=budget.to_debug_dict(),
@@ -151,13 +195,13 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
 
     if QUERY_PLANNER_ENABLED and QUERY_PLANNER_API_KEY:
         try:
-            aspects, omitted_or_merged_items = _plan_with_deepseek(cleaned_question, budget)
-            if aspects:
-                budget = _budget_with_omissions(budget, omitted_or_merged_items)
-                return QueryPlan(
-                    original_question=cleaned_question,
-                    aspects=tuple(aspects),
-                    planner=f"deepseek:{QUERY_PLANNER_MODEL}",
+                aspects, omitted_or_merged_items = _plan_with_llm(cleaned_question, budget)
+                if aspects:
+                    budget = _budget_with_omissions(budget, omitted_or_merged_items)
+                    return QueryPlan(
+                        original_question=cleaned_question,
+                        aspects=tuple(aspects),
+                        planner=f"{QUERY_PLANNER_PROVIDER}:{QUERY_PLANNER_MODEL}",
                     fallback_used=False,
                     budget=budget.to_debug_dict(),
                 )
@@ -206,14 +250,8 @@ def _budget_with_omissions(budget: QueryBudget, omitted_or_merged_items: list[st
     )
 
 
-def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryAspect], list[str]]:
-    endpoint = f"{QUERY_PLANNER_BASE_URL.rstrip('/')}/chat/completions"
-    payload = {
-        "model": QUERY_PLANNER_MODEL,
-        "thinking": {"type": "disabled"},
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-        "messages": [
+def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect], list[str]]:
+    messages = [
             {
                 "role": "system",
                 "content": (
@@ -276,31 +314,28 @@ def _plan_with_deepseek(question: str, budget: QueryBudget) -> tuple[list[QueryA
                     f"用户问题：{question}"
                 ),
             },
-        ],
-    }
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(
-        endpoint,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {QUERY_PLANNER_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+        ]
     try:
         with measure("query_planner.external_api"):
-            with urllib.request.urlopen(
-                request,
-                timeout=QUERY_PLANNER_TIMEOUT_SECONDS,
-            ) as response:
-                response_body = response.read().decode("utf-8")
-    except (urllib.error.URLError, TimeoutError) as exc:
+            content = chat_completion_content(
+                ChatCompletionConfig(
+                    provider=QUERY_PLANNER_PROVIDER,
+                    api_key=QUERY_PLANNER_API_KEY,
+                    base_url=QUERY_PLANNER_BASE_URL,
+                    model=QUERY_PLANNER_MODEL,
+                    timeout_seconds=QUERY_PLANNER_TIMEOUT_SECONDS,
+                    include_thinking=QUERY_PLANNER_INCLUDE_THINKING,
+                    response_format=QUERY_PLANNER_RESPONSE_FORMAT,
+                ),
+                messages,
+                temperature=0,
+                response_format=QUERY_PLANNER_RESPONSE_FORMAT,
+                opener=urllib.request.urlopen,
+            )
+    except ChatCompletionError as exc:
         raise QueryPlannerError("LLM query planner 调用失败") from exc
 
     try:
-        body = json.loads(response_body)
-        content = body["choices"][0]["message"]["content"]
         parsed = json.loads(_extract_json_object(content))
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         raise QueryPlannerError("LLM query planner 返回格式不可解析") from exc
@@ -321,6 +356,7 @@ def _aspects_from_payload(
 
     aspects: list[QueryAspect] = []
     limit = max_aspects if max_aspects is not None else QUERY_PLANNER_MAX_ASPECTS
+    question_explicit_filters = extract_explicit_metadata_filters(question)
     for index, raw_aspect in enumerate(raw_aspects[:limit], start=1):
         if not isinstance(raw_aspect, dict):
             continue
@@ -331,6 +367,29 @@ def _aspects_from_payload(
             search_queries = [QuerySearchQuery(query=sub_question, query_type="fallback", rationale="LLM 未返回检索查询")]
         if not keywords:
             keywords = _keywords_from_text(" ".join([sub_question, *[query.query for query in search_queries]]))
+        planner_filters = _clean_table_filters(raw_aspect.get("table_filters"))
+        explicit_filters = extract_explicit_metadata_filters(sub_question)
+        for key, value in question_explicit_filters.items():
+            if key in planner_filters and str(planner_filters[key]) == str(value):
+                explicit_filters[key] = value
+        merged_filters = {**planner_filters, **explicit_filters}
+        modality = _clean_modality(raw_aspect.get("modality"))
+        table_task = _clean_table_task(raw_aspect.get("table_task"))
+        operation = _clean_operation(raw_aspect.get("operation"))
+        if _should_force_text_aspect(question, sub_question, modality):
+            modality = "text"
+            table_task = "none"
+            operation = "none"
+            merged_filters = {
+                key: value
+                for key, value in merged_filters.items()
+                if key not in TABLE_ONLY_FILTER_KEYS
+            }
+            explicit_filters = {
+                key: value
+                for key, value in explicit_filters.items()
+                if key not in TABLE_ONLY_FILTER_KEYS
+            }
         aspects.append(
             QueryAspect(
                 aspect_id=_clean_aspect_id(raw_aspect.get("aspect_id"), index),
@@ -342,10 +401,11 @@ def _aspects_from_payload(
                     or "相关制度依据"
                 ),
                 keywords=tuple(_dedupe(keywords)[:8]),
-                modality=_clean_modality(raw_aspect.get("modality")),
-                table_task=_clean_table_task(raw_aspect.get("table_task")),
-                table_filters=_clean_table_filters(raw_aspect.get("table_filters")),
-                operation=_clean_operation(raw_aspect.get("operation")),
+                modality=modality,
+                table_task=table_task,
+                table_filters=merged_filters,
+                operation=operation,
+                explicit_filter_keys=tuple(explicit_filters),
             )
         )
 
@@ -433,6 +493,7 @@ def _fallback_mcq_aspect(question: str, options: list[str] | None = None) -> Que
         keywords=tuple(_dedupe([anchor_question, *title_candidates])[:8]),
         modality="text",
         table_filters={"file_type": requested_format} if requested_format else {},
+        explicit_filter_keys=("file_type",) if requested_format else (),
     )
 
 
@@ -773,10 +834,11 @@ def _clean_table_filters(value: Any) -> dict[str, Any]:
 
 def _fallback_table_aspect(question: str, options: list[str] | None = None) -> QueryAspect | None:
     normalized = re.sub(r"\s+", "", question)
-    table_markers = ["Excel", "excel", "工作表", "单元格", "表格", "情况表", "统计表", "附件"]
     table_actions = ["数值", "金额", "余额", "是多少", "多少", "最高", "最低", "最大", "最小", "差值", "相差", "占比", "比例", "取数"]
-    explicit_table = any(marker in question for marker in table_markers)
+    explicit_table = _has_explicit_table_marker(question)
     numerical_intent = any(action in normalized for action in table_actions)
+    if not explicit_table and _looks_like_policy_question(normalized):
+        return None
     if not explicit_table and not numerical_intent:
         return None
 
@@ -788,13 +850,13 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
     elif any(term in normalized for term in ["最低", "最小", "最少"]):
         table_task = "compare"
         operation = "min"
-    elif any(term in normalized for term in ["差值", "相差", "变化", "增加", "减少"]):
+    elif any(term in normalized for term in ["差值", "相差", "变化", "增加", "减少"]) or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", normalized):
         table_task = "calculate"
         operation = "difference"
     elif "占比" in normalized or "比例" in normalized:
         table_task = "calculate"
         operation = "ratio"
-    elif any(term in normalized for term in ["求和", "总和", "加总"]):
+    elif any(term in normalized for term in ["求和", "总和", "加总", "之和", "分项之和", "分项合计"]):
         table_task = "calculate"
         operation = "sum"
 
@@ -803,7 +865,7 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
     # “在某口径下取数” is still a pure table lookup. Only explicit requests to
     # combine a regulation/explanation with table data should trigger the
     # slower mixed vector path.
-    mixed_markers = ["根据监管制度", "结合监管制度", "填报说明依据", "制度依据", "监管规则"]
+    mixed_markers = ["根据监管制度", "结合监管制度", "根据制度", "结合制度", "根据自制制度", "结合自制制度", "填报说明依据", "制度依据", "监管规则"]
     modality = "mixed" if explicit_table and any(term in normalized for term in mixed_markers) else "table"
     locator_terms = " ".join(str(value) for value in filters.values() if value)
     search_queries = [
@@ -829,6 +891,57 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         operation=operation,
         selectors=tuple(selectors),
         expected_unit=str(filters.get("unit") or "") or None,
+        explicit_filter_keys=tuple(filters),
+    )
+
+
+def _mixed_regulation_aspect(table_aspect: QueryAspect) -> QueryAspect:
+    indicator = str(
+        table_aspect.table_filters.get("indicator")
+        or table_aspect.table_filters.get("row_label")
+        or table_aspect.table_filters.get("metric")
+        or "该统计指标"
+    )
+    regulation_question = f"监管制度对“{indicator}”的定义、填报口径、适用范围和报送要求是什么？"
+    regulatory_filter_keys = {
+        "external_doc_id",
+        "issuing_authority",
+        "publication_date",
+        "document_number",
+        "regulatory_topic",
+        "business_domain",
+        "article_number",
+        "version_status",
+    }
+    filters = {
+        key: value
+        for key, value in table_aspect.table_filters.items()
+        if key in regulatory_filter_keys
+    }
+    explicit_keys = tuple(
+        key for key in table_aspect.explicit_filter_keys if key in regulatory_filter_keys
+    )
+    return QueryAspect(
+        aspect_id="regulatory_basis",
+        question=regulation_question,
+        search_queries=(
+            QuerySearchQuery(regulation_question, "semantic_question", "监管解释意图"),
+            QuerySearchQuery(
+                f"{indicator} 填报说明 统计口径 适用范围 报送要求",
+                "document_style_statement",
+                "接近制度正文和填报说明",
+            ),
+            QuerySearchQuery(
+                f"{indicator} 定义 口径 要求",
+                "keyword_anchor",
+                "监管术语兜底",
+            ),
+        ),
+        evidence_need="监管制度中的指标定义、填报口径、适用范围和报送要求",
+        keywords=tuple(_dedupe([indicator, "填报口径", "适用范围", "报送要求"])),
+        modality="text",
+        table_filters=filters,
+        explicit_filter_keys=explicit_keys,
     )
 
 
@@ -845,6 +958,18 @@ def _extract_table_selectors(
             {"row_label": quoted[0], "column_label": quoted[1]},
             {"row_label": quoted[0], "column_label": quoted[2]},
         ]
+    elif table_task == "calculate":
+        normalized = re.sub(r"\s+", "", question)
+        indicators = _mentioned_table_indicators(question)
+        diff_match = re.search(r"(.+?)比(.+?)(?:多|少)", normalized)
+        if diff_match and len(indicators) >= 2:
+            # ordered_transition calculations use second - first.
+            selectors = [{"row_or_indicator": indicators[1]}, {"row_or_indicator": indicators[0]}]
+        elif any(term in normalized for term in ["分项之和", "分项合计", "四个分项"]):
+            component_order = ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
+            selectors = [{"row_or_indicator": item} for item in component_order]
+        elif len(indicators) >= 2:
+            selectors = [{"row_or_indicator": item} for item in indicators[:2]]
     elif table_task == "compare" and options:
         scope = quoted[0] if quoted else ""
         selectors = [
@@ -860,8 +985,19 @@ def _extract_table_selectors(
     return selectors
 
 
+def extract_explicit_metadata_filters(question: str) -> dict[str, Any]:
+    """Extract only constraints stated literally by the user.
+
+    The LLM planner may still add inferred filters for ranking, but callers can
+    safely use the keys returned here as hard pre-retrieval constraints.
+    """
+
+    return _extract_table_filters(question)
+
+
 def _extract_table_filters(question: str) -> dict[str, Any]:
     filters: dict[str, Any] = {}
+    compact_question = re.sub(r"\s+", "", question)
     title_match = re.search(r"《([^》]+)》", question)
     if title_match:
         filters["source_title"] = title_match.group(1).strip()
@@ -894,13 +1030,13 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     sheet_match = re.search(r"工作表[：:]\s*([^），)。；;]+)", question)
     if sheet_match:
         filters["sheet"] = sheet_match.group(1).strip()
-    year_match = re.search(r"(20\d{2})年", question)
+    year_match = re.search(r"(20\d{2})年", compact_question)
     if year_match:
         filters["year"] = int(year_match.group(1))
-    month_match = re.search(r"(?:20\d{2}年)?(\d{1,2})月", question)
+    month_match = re.search(r"(?:20\d{2}年)?(\d{1,2})月", compact_question)
     if month_match:
         filters["month"] = int(month_match.group(1))
-    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", question)
+    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", compact_question)
     if quarter_match:
         value = quarter_match.group(1) or quarter_match.group(2)
         filters["quarter"] = {"一": 1, "二": 2, "三": 3, "四": 4}.get(value, int(value) if value.isdigit() else None)
@@ -909,11 +1045,55 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         filters["indicator"] = quoted_terms[0]
         if len(quoted_terms) > 1:
             filters["column_label"] = quoted_terms[-1]
+    indicators = _mentioned_table_indicators(question)
+    if indicators and "indicator" not in filters:
+        filters["indicator"] = indicators[0]
+        filters["row_label"] = indicators[0]
     for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
         if label.replace(" ", "") in re.sub(r"\s+", "", question):
             filters["row_label"] = label
             break
     return filters
+
+
+def _looks_like_policy_question(normalized_question: str) -> bool:
+    policy_markers = [
+        "需要复核",
+        "复核期限",
+        "是否包括",
+        "是否纳入",
+        "不包括",
+        "包括哪些",
+        "哪些项目构成",
+        "由哪些项目构成",
+        "留存哪些依据",
+        "需要留存",
+        "口径",
+        "制度",
+        "监管制度",
+        "条款",
+    ]
+    return any(marker in normalized_question for marker in policy_markers)
+
+
+def _has_explicit_table_marker(question: str) -> bool:
+    return any(marker in question for marker in TABLE_MARKERS)
+
+
+def _should_force_text_aspect(question: str, sub_question: str, modality: str) -> bool:
+    if modality not in {"table", "mixed"}:
+        return False
+    if _has_explicit_table_marker(question) or _has_explicit_table_marker(sub_question):
+        return False
+    combined = re.sub(r"\s+", "", f"{question}{sub_question}")
+    return _looks_like_policy_question(combined)
+
+
+def _mentioned_table_indicators(question: str) -> list[str]:
+    normalized = re.sub(r"\s+", "", question)
+    matches = [indicator for indicator in COMMON_TABLE_INDICATORS if indicator in normalized]
+    matches.sort(key=lambda item: normalized.find(item))
+    return _dedupe(matches)
 
 
 def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:

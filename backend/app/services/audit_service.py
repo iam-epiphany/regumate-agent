@@ -1,11 +1,20 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 import json
 import re
 from threading import Lock
 from zoneinfo import ZoneInfo
 
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Preformatted, SimpleDocTemplate
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +24,21 @@ from backend.app.models.audit import AuditLog
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 AGGREGATION_WINDOW = timedelta(minutes=10)
 _ARCHIVE_LOCK = Lock()
+_ARCHIVE_ATTACHMENT_NAME = "audit-content.txt"
+_DELETED_ARCHIVE_MARKER_NAME = ".deleted-audit-archives.json"
+_PDF_FONT_NAME = "ReguMateAuditArchiveFont"
+_PDF_FALLBACK_CID_FONT_NAME = "STSong-Light"
+_PDF_FONT_REGISTERED = False
+_PDF_FONT_CANDIDATES = (
+    Path(r"C:\Windows\Fonts\simhei.ttf"),
+    Path(r"C:\Windows\Fonts\simfang.ttf"),
+    Path(r"C:\Windows\Fonts\simkai.ttf"),
+    Path(r"C:\Windows\Fonts\simsunb.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"),
+    Path("/usr/share/fonts/opentype/source-han-sans/SourceHanSansSC-Regular.otf"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+)
 
 
 @dataclass
@@ -125,8 +149,14 @@ def archive_expired_audit_logs(db: Session) -> None:
 
         AUDIT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
         for archive_date, day_logs in grouped.items():
+            if _is_archive_deleted(archive_date):
+                _purge_archive_files(archive_date)
+                for log in day_logs:
+                    db.delete(log)
+                continue
+            _migrate_legacy_markdown_archive(archive_date)
             path = _archive_path(archive_date)
-            existing = path.read_text(encoding="utf-8") if path.exists() else ""
+            existing = read_audit_archive_content(archive_date) if path.exists() else ""
             archived_ids = {
                 int(value)
                 for value in re.findall(r"<!-- audit-id:(\d+) -->", existing)
@@ -136,9 +166,7 @@ def archive_expired_audit_logs(db: Session) -> None:
                 continue
             rendered = _render_archive_markdown(archive_date, new_logs)
             content = f"{existing.rstrip()}\n\n---\n\n{rendered}" if existing else rendered
-            temporary = path.with_suffix(".md.tmp")
-            temporary.write_text(content, encoding="utf-8")
-            temporary.replace(path)
+            _write_archive_pdf(path, archive_date, content)
 
         for log in expired_logs:
             db.delete(log)
@@ -147,9 +175,14 @@ def archive_expired_audit_logs(db: Session) -> None:
 
 def list_audit_archives() -> list[AuditArchive]:
     AUDIT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    _purge_deleted_archive_files()
+    _migrate_legacy_markdown_archives()
     archives: list[AuditArchive] = []
-    for path in AUDIT_ARCHIVE_DIR.glob("audit-*.md"):
+    for path in AUDIT_ARCHIVE_DIR.glob("audit-*.pdf"):
         archive_date = path.stem.removeprefix("audit-")
+        if _is_archive_deleted(archive_date):
+            _unlink_if_exists(path)
+            continue
         stat = path.stat()
         archives.append(
             AuditArchive(
@@ -164,6 +197,10 @@ def list_audit_archives() -> list[AuditArchive]:
 
 
 def read_audit_archive(archive_date: str) -> AuditArchive:
+    if _is_archive_deleted(archive_date):
+        _purge_archive_files(archive_date)
+        raise FileNotFoundError(archive_date)
+    _migrate_legacy_markdown_archive(archive_date)
     path = _archive_path(archive_date)
     if not path.exists():
         raise FileNotFoundError(archive_date)
@@ -178,12 +215,31 @@ def read_audit_archive(archive_date: str) -> AuditArchive:
 
 def read_audit_archive_content(archive_date: str) -> str:
     archive = read_audit_archive(archive_date)
-    return archive.path.read_text(encoding="utf-8")
+    return _read_archive_pdf_content(archive.path)
 
 
-def delete_audit_archive(archive_date: str) -> None:
-    archive = read_audit_archive(archive_date)
-    archive.path.unlink()
+def _read_archive_pdf_content(path: Path) -> str:
+    reader = PdfReader(str(path))
+    attachments = getattr(reader, "attachments", {})
+    embedded = attachments.get(_ARCHIVE_ATTACHMENT_NAME)
+    if embedded:
+        return embedded[0].decode("utf-8")
+    return "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+
+
+def delete_audit_archive(archive_date: str, db: Session | None = None) -> None:
+    path = _archive_path(archive_date)
+    legacy_path = _legacy_archive_path(archive_date)
+    if not path.exists() and not legacy_path.exists() and not _is_archive_deleted(archive_date):
+        raise FileNotFoundError(archive_date)
+
+    _mark_archive_deleted(archive_date)
+    _purge_archive_files(archive_date)
+    if db is not None:
+        for log in db.scalars(select(AuditLog).order_by(AuditLog.created_at.asc())).all():
+            if _local_date(log.created_at).isoformat() == archive_date:
+                db.delete(log)
+        db.commit()
 
 
 def _archive_path(archive_date: str) -> Path:
@@ -193,7 +249,114 @@ def _archive_path(archive_date: str) -> Path:
         raise FileNotFoundError(archive_date) from exc
     if parsed.isoformat() != archive_date:
         raise FileNotFoundError(archive_date)
+    return AUDIT_ARCHIVE_DIR / f"audit-{archive_date}.pdf"
+
+
+def _legacy_archive_path(archive_date: str) -> Path:
+    try:
+        parsed = date.fromisoformat(archive_date)
+    except ValueError as exc:
+        raise FileNotFoundError(archive_date) from exc
+    if parsed.isoformat() != archive_date:
+        raise FileNotFoundError(archive_date)
     return AUDIT_ARCHIVE_DIR / f"audit-{archive_date}.md"
+
+
+def _migrate_legacy_markdown_archives() -> None:
+    for markdown_path in AUDIT_ARCHIVE_DIR.glob("audit-*.md"):
+        archive_date = markdown_path.stem.removeprefix("audit-")
+        try:
+            _migrate_legacy_markdown_archive(archive_date)
+        except FileNotFoundError:
+            continue
+
+
+def _migrate_legacy_markdown_archive(archive_date: str) -> None:
+    markdown_path = _legacy_archive_path(archive_date)
+    if not markdown_path.exists():
+        return
+    if _is_archive_deleted(archive_date):
+        markdown_path.unlink()
+        _unlink_if_exists(_archive_path(archive_date))
+        return
+    pdf_path = _archive_path(archive_date)
+    content = markdown_path.read_text(encoding="utf-8")
+    if pdf_path.exists():
+        existing = _read_archive_pdf_content(pdf_path)
+        existing_ids = set(re.findall(r"<!-- audit-id:(\d+) -->", existing))
+        markdown_ids = set(re.findall(r"<!-- audit-id:(\d+) -->", content))
+        if not markdown_ids.issubset(existing_ids):
+            merged = f"{existing.rstrip()}\n\n---\n\n{content}" if existing else content
+            _write_archive_pdf(pdf_path, archive_date, merged)
+    else:
+        _write_archive_pdf(pdf_path, archive_date, content)
+    markdown_path.unlink()
+
+
+def _write_archive_pdf(path: Path, archive_date: str, content: str) -> None:
+    if _is_archive_deleted(archive_date):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    render_buffer = BytesIO()
+    document = SimpleDocTemplate(
+        render_buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title=f"ReguMate 审计日志归档 {archive_date}",
+    )
+    document.build([Preformatted(content, _archive_pdf_text_style())])
+    render_buffer.seek(0)
+
+    reader = PdfReader(render_buffer)
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.add_metadata(
+        {
+            "/Title": f"ReguMate 审计日志归档 {archive_date}",
+            "/Subject": "ReguMate audit archive",
+            "/Creator": "ReguMate",
+        }
+    )
+    writer.add_attachment(_ARCHIVE_ATTACHMENT_NAME, content.encode("utf-8"))
+
+    temporary = path.with_name(f"{path.name}.tmp")
+    with temporary.open("wb") as file:
+        writer.write(file)
+    temporary.replace(path)
+
+
+def _archive_pdf_text_style() -> ParagraphStyle:
+    global _PDF_FONT_REGISTERED
+    if not _PDF_FONT_REGISTERED:
+        _register_archive_pdf_font()
+        _PDF_FONT_REGISTERED = True
+    return ParagraphStyle(
+        "AuditArchiveText",
+        fontName=_registered_archive_pdf_font_name(),
+        fontSize=8.5,
+        leading=11.5,
+        splitLongWords=True,
+    )
+
+
+def _register_archive_pdf_font() -> None:
+    for font_path in _PDF_FONT_CANDIDATES:
+        if not font_path.exists():
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont(_PDF_FONT_NAME, str(font_path)))
+            return
+        except Exception:
+            continue
+    pdfmetrics.registerFont(UnicodeCIDFont(_PDF_FALLBACK_CID_FONT_NAME))
+
+
+def _registered_archive_pdf_font_name() -> str:
+    return _PDF_FONT_NAME if _PDF_FONT_NAME in pdfmetrics.getRegisteredFontNames() else _PDF_FALLBACK_CID_FONT_NAME
 
 
 def _local_date(value: datetime) -> object:
@@ -204,6 +367,68 @@ def _local_date(value: datetime) -> object:
 def _local_datetime(value: datetime) -> datetime:
     aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return aware.astimezone(LOCAL_TZ)
+
+
+def _deleted_archives_path() -> Path:
+    return AUDIT_ARCHIVE_DIR / _DELETED_ARCHIVE_MARKER_NAME
+
+
+def _read_deleted_archive_dates() -> set[str]:
+    path = _deleted_archives_path()
+    if not path.exists():
+        return set()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(raw, list):
+        return set()
+    return {value for value in raw if isinstance(value, str) and _is_valid_archive_date(value)}
+
+
+def _write_deleted_archive_dates(dates: set[str]) -> None:
+    AUDIT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    _deleted_archives_path().write_text(
+        json.dumps(sorted(dates), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _mark_archive_deleted(archive_date: str) -> None:
+    if not _is_valid_archive_date(archive_date):
+        raise FileNotFoundError(archive_date)
+    dates = _read_deleted_archive_dates()
+    dates.add(archive_date)
+    _write_deleted_archive_dates(dates)
+
+
+def _is_archive_deleted(archive_date: str) -> bool:
+    return archive_date in _read_deleted_archive_dates()
+
+
+def _purge_deleted_archive_files() -> None:
+    for archive_date in _read_deleted_archive_dates():
+        _purge_archive_files(archive_date)
+
+
+def _purge_archive_files(archive_date: str) -> None:
+    _unlink_if_exists(_archive_path(archive_date))
+    _unlink_if_exists(_legacy_archive_path(archive_date))
+
+
+def _unlink_if_exists(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _is_valid_archive_date(archive_date: str) -> bool:
+    try:
+        parsed = date.fromisoformat(archive_date)
+    except ValueError:
+        return False
+    return parsed.isoformat() == archive_date
 
 
 def _render_archive_markdown(archive_date: str, logs: list[AuditLog]) -> str:
@@ -265,14 +490,6 @@ def _display_fields(action: str, detail: str) -> dict[str, str]:
         "document_source_restored": ("原文件已恢复", "系统重新找到原文件，文档状态已恢复。"),
         "qa_context_built": ("问答完成", "系统已完成一次可信问答。"),
         "qa_cancelled": ("问答生成已停止", "用户主动停止了本次回答生成。"),
-        "review_rule_created": ("审查规则已创建", "业务人员创建了一条绑定监管依据的报表规则。"),
-        "review_rule_updated": ("审查规则已更新", "报表规则配置或启用状态已更新。"),
-        "report_review_queued": ("报表审查已排队", "报表审查任务已冻结规则快照并进入队列。"),
-        "report_review_completed": ("报表审查已完成", "系统已完成确定性规则检查，发现项等待人工复核。"),
-        "report_review_failed": ("报表审查失败", "报表审查任务执行失败，需要检查规则或报表单元格索引。"),
-        "report_review_cancelled": ("报表审查已停止", "用户停止了报表审查任务。"),
-        "report_review_retried": ("报表审查已重试", "报表审查任务已重新进入队列。"),
-        "review_finding_reviewed": ("审查发现已复核", "业务人员已确认、排除或完成一项整改。"),
     }
     summary, message = labels.get(action, (action, detail or "系统记录了一次操作。"))
     return {"summary": summary, "user_message": message}

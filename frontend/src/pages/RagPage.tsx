@@ -11,7 +11,7 @@ import { isActiveTaskStatus, useQATask } from "../state/qaTaskContext";
 import { isKnowledgeBaseReady, useSystemStatus } from "../state/systemStatusContext";
 import type { QAResponse, RagProgressEvent, RetrievalResult } from "../types/api";
 
-const productWordmarkUrl = new URL("../assets/brand/regumate-wordmark.png", import.meta.url).href;
+const pageHeaderWordmarkUrl = new URL("../assets/brand/regumate-page-header-wordmark.png", import.meta.url).href;
 
 export function RagPage() {
   const qa = useQATask();
@@ -55,7 +55,7 @@ export function RagPage() {
         <div>
           <p className="eyebrow">监管可信问答</p>
           <div className="product-title-lockup">
-            <img className="product-wordmark" src={productWordmarkUrl} alt="ReguMate" />
+            <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
             <h1>监管制度与统计报表问答</h1>
           </div>
           <p className="page-lead">从已入库制度、填报说明和统计报表中查找依据；无法建立充分证据时明确说明原因。</p>

@@ -17,7 +17,8 @@ STRUCTURED_OUTPUT_RULES = (
     "不得把未在目标材料中出现的选项事实视为正确。",
     "若证据不足，设置refused=true。",
     "只输出JSON。字段顺序必须为refused、refusal_reason、claims。",
-    "claims必须是数组，第一项role必须为conclusion，后续role只能为explanation或recommendation。",
+    "claims必须是数组，第一项role必须为conclusion；role只能为conclusion、regulatory_basis、table_fact、calculation、explanation、recommendation。",
+    "每个claim必须填写aspect_ids，标明该结论支持的问题方面。",
     "每个claim的text必须包含对应的行内引用，citation_ids必须列出同一组引用。",
 )
 
@@ -51,6 +52,9 @@ class RAGPromptBuilder:
         option_evidence_matrix: str | None = None,
         correction: str | None = None,
         llm_prompt: str | None = None,
+        answer_mode: str = "text",
+        table_findings: str | None = None,
+        required_aspect_ids: list[str] | None = None,
     ) -> list[dict[str, str]]:
         prompt = llm_prompt or self.build(query, chunks)
         normalized_options = options or []
@@ -79,10 +83,16 @@ class RAGPromptBuilder:
                     f"用户是否提供选项编号：{'是' if has_user_labels else '否'}\n\n"
                     f"选项事实证据覆盖矩阵：\n{option_evidence_matrix or '无'}\n\n"
                     f"上次校验问题：{correction or '无'}\n"
+                    f"回答模式：{answer_mode}\n"
+                    f"必须覆盖的方面：{', '.join(required_aspect_ids or []) or '无'}\n"
+                    f"不可修改的结构化表格结果：\n{table_findings or '无'}\n"
+                    "若存在不可修改的结构化表格结果，必须逐字保留其值、单位、公式和引用，不得重算或改写。\n"
+                    "场景判断只允许输出合规、不合规或依据不足；建议不得描述为系统自动生成的可执行监管规则。\n"
                     "输出结构：{\"refused\":false,\"refusal_reason\":null,"
                     "\"claims\":[{\"role\":\"conclusion\",\"text\":\"... [1]\","
-                    "\"citation_ids\":[\"[1]\"]},{\"role\":\"explanation\","
-                    "\"text\":\"... [2]\",\"citation_ids\":[\"[2]\"]}]}"
+                    "\"citation_ids\":[\"[1]\"],\"aspect_ids\":[\"aspect_1\"]},"
+                    "{\"role\":\"explanation\",\"text\":\"... [2]\","
+                    "\"citation_ids\":[\"[2]\"],\"aspect_ids\":[\"aspect_1\"]}]}"
                 ),
             },
         ]

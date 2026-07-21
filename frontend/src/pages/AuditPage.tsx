@@ -6,7 +6,7 @@ import { ExpandableText } from "../components/ExpandableText";
 import type { AuditArchiveDetailResponse, AuditArchiveSummary, AuditLogItem, Citation } from "../types/api";
 import { formatAuditLog, parseAuditArchiveContent } from "../utils/audit";
 
-const productWordmarkUrl = new URL("../assets/brand/regumate-wordmark.png", import.meta.url).href;
+const pageHeaderWordmarkUrl = new URL("../assets/brand/regumate-page-header-wordmark.png", import.meta.url).href;
 
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
@@ -73,7 +73,7 @@ export function AuditPage() {
         <div>
           <p className="eyebrow">系统操作日志</p>
           <div className="product-title-lockup">
-            <img className="product-wordmark" src={productWordmarkUrl} alt="ReguMate" />
+            <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
             <h1>问答与知识库运行记录</h1>
             <span className={errorCount ? "severity-badge error" : warningCount ? "severity-badge warning" : "severity-badge"}>
               {errorCount ? `${errorCount} 条严重` : warningCount ? `${warningCount} 条警告` : "状态正常"}

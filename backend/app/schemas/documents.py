@@ -178,6 +178,24 @@ class DocumentDeleteResponse(BaseModel):
     vector_warning: str | None = None
 
 
+class DocumentBulkDeleteRequest(BaseModel):
+    document_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class DocumentBulkDeleteItem(BaseModel):
+    document_id: str
+    filename: str | None = None
+    status: Literal["deleted", "not_found", "blocked", "failed"]
+    message: str | None = None
+
+
+class DocumentBulkDeleteResponse(BaseModel):
+    requested_count: int
+    deleted_count: int
+    failed_count: int
+    items: list[DocumentBulkDeleteItem]
+
+
 class ChunkSummary(BaseModel):
     chunk_id: str
     text: str

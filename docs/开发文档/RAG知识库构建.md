@@ -12,7 +12,7 @@ ReguMate 使用 SQLite 保存文档元数据与表格单元格索引，使用服
 
 批量上传入口 `/api/documents/batch-upload` 只扩展上传编排，不改变 RAG 入库主线。每个成功接收的文件都会复用同一套原文件校验、SQLite `Document` 元数据、持久化索引任务、审计日志和后台 worker；单个文件失败不会回滚同批次其他文件，前端继续按每个 `document_id` 查询真实处理快照。
 
-1. 用户上传 `.txt`、`.md`、`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls` 或 `.xlsx`。
+1. 用户上传 `.doc`、`.docx`、可提取文本的 `.pdf`、`.xls`、`.xlsx`、`.jsonl`、`.csv`、`.md` 或 `.txt`。
 2. `document_storage` 校验后缀、MIME 类型和文件内容签名，再保存原始文件到 `data/documents/originals/`，同时返回文件大小和 SHA-256。
 3. `document_parser` 通过 loader adapter 输出结构化 `ParsedDocument`，包含 heading、paragraph、table、page 等 block。`.doc/.xls` 通过 LibreOffice headless 转换进入统一解析；`.xlsx` 会先构建工作簿/工作表/行/单元格语义模型。
 4. `chunk_service` 基于 block 生成 token-aware chunk，继承章节标题、页码、章节路径、章节号、父章节号和前后 chunk 指针；表格优先独立成 chunk。
@@ -369,15 +369,15 @@ v4 的 Excel 优化不改变解析层和单元格索引结构，重点修复无�
 - BGE-M3/BGE Reranker 继续按进程单例加载；后台 once-only 预热完成后 readiness 才通过。
 - 同一 aspect 的多 Query 使用一次批量 Embedding 和 Qdrant batch query，保持原 RRF 融合顺序，再执行一次 Rerank。
 - Qdrant collection/payload-index readiness 每进程只执行一次，管理操作或 alias 切换后显式失效。
-- 同一请求按文档只加载一次必要 chunk 列，邻居扩展与 MCQ 精确证据扫描复用快照，避免长文档重复 ORM 物化。
-- Query Embedding cache key 包含模型/tokenizer/backend/precision/规范化版本与 Query hash，同一批相同 Query 只执行一次推理；Rerank score key 还包含 max length、输入版本、index version、chunk id 和文本 hash。缓存为进程内 byte-aware LRU，不缓存最终答案；文档重建或删除后清空 Rerank 分数缓存。
+- 同一请求按文档只加载一次必要 chunk 列，邻居扩展与 MCQ 精确证据扫描复用快照。跨请求缓存的是脱离 SQLAlchemy Session 的只读 `_DocumentChunkSnapshot`，默认 TTL 600 秒、最多 12 份文档；索引完成、删除或 metadata 刷新会按 document ID 失效。不得缓存会在审计提交后 expire 的 ORM 实例。
+- Query Embedding cache key 包含模型/tokenizer/backend/precision/规范化版本与 Query hash，同一批相同 Query 只执行一次推理；Rerank score key 还包含 max length、输入版本、index version、chunk id 和文本 hash。缓存为进程内 byte-aware LRU，不缓存最终答案；文档重建或删除后清空 Rerank 分数缓存。文档快照缓存由 `DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS` 和 `DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS` 控制。
 - 默认 `RERANK_INPUT_MODE=embedding`。`compact` 保留文件、章节/条款、页码、期间、单位、工作表/表头各一次并完整保留正文，但因 shadow A/B 中 8/20 上下文排名变化，仅作为实验。
 - request/index trace 使用 `perf_counter_ns`，把模型加载、锁等待、实际 inference、Qdrant、文档快照、外部 API 和 Grounding 分开记录。
 - CPU profile 在导入 PyTorch 前根据 affinity/cgroup 写入默认 OMP/MKL 线程，并继续调用 PyTorch intra/inter-op 配置；实际值通过健康接口与启动日志报告。
 
 ## 来源与版本可信链路
 
-metadata 合并优先级固定为：人工输入 > manifest > 官方 URL > 正文结构抽取 > parser > 文件名。每个字段在 `metadata_provenance` 中保存 source、confidence、priority 和更新时间；低优先级推断只能补空值，不能覆盖显式来源。
+metadata 合并优先级固定为：人工输入 > manifest > URL 导入 > 正文结构抽取 > parser > 文件名。每个字段在 `metadata_provenance` 中保存 source、confidence、priority 和更新时间；低优先级推断只能补空值，不能覆盖显式来源。
 
 核心字段先写 SQLite `Document`，随后下沉到所有 chunk、`SpreadsheetCell` 关联文档和 Qdrant payload。Qdrant 对官方 doc_id、发文机关、发布日期、文号、监管主题、业务领域、版本状态和条款号建立 payload 索引。QueryPlanner 的 `table_filters` 兼作文档 metadata 过滤，文本召回和表格召回均执行版本状态与显式 metadata 约束。
 
@@ -385,8 +385,14 @@ metadata 合并优先级固定为：人工输入 > manifest > 官方 URL > 正�
 
 CSV 复用表格行证据和单元格索引；JSONL 是 schema-aware 文本载体，禁止 QA 答案入库；HTML 抽取标题、段落、列表和表格。旧库无损回填使用 `python scripts/backfill_document_provenance.py --parse-body`；若要让旧 chunk 获得新条款结构，显式运行 `--parse-body --reparse --reindex`。后者会重建 chunk 和向量，不能与线上问答并发执行。
 
-## 监管证据如何进入报表审查
+## 来源文件、召回前过滤与语义 Grounding
 
-业务审查不另建一套脱离 RAG 的制度库。创建规则时必须选择现有 `DocumentChunk`，服务校验文档已索引且 `version_status` 不是 `repealed/superseded`，并冻结标题、发文机关、发布日期、文号、来源 URL、条款号、章节和依据摘录。报表侧只读取解析阶段构建的 `SpreadsheetCell`，发现项保存 `sheet_name/coordinate/row_label/column_label/value/unit/period/chunk_id`。
+来源文件工作流以比赛数据包和入库结果为准。`scripts/build_package_manifest.py` 从比赛 zip 生成 package manifest，记录交付包内文件的 `doc_id/title/original_name/local_path/file_size/sha256/file_type/contest_package_sha256`，用于证明文件清单、去重和本地 custody；官网 URL 不是交付必需字段。
 
-这形成两条可独立核对的证据链：监管 chunk 解释“为什么检查”，报表 cell 解释“检查了什么”。规则执行不进行向量召回和 LLM 推断；找不到或无法唯一定位目标时返回 `not_evaluable`，而不是把缺数据当成通过。
+`/api/documents/manifest` 可补充标题、文号、日期、主题和业务领域等描述性 metadata；`source_url/attachment_url` 仅为可选兼容字段，缺失时不影响入库、检索、引用或发布。metadata 刷新只更新 SQLite Document、Chunk metadata 和 Qdrant payload，不触发 Embedding 重算。
+
+向量检索使用类型化元数据过滤。原问题的确定性抽取结果为 `explicit`，会先在 SQLite 解析 document ID 范围，再把 document ID、条款、版本及适用期间条件同时传入 dense/sparse Prefetch。Planner 补充条件为 `inferred`，仅用于候选排序。既有后置过滤继续作为防御性校验。
+
+纯表格问题仍走 SpreadsheetCell 确定性快路径。mixed/scenario 先生成不可修改的 `TableFinding`，验证操作数和公式，再与制度证据共同进入生成；缺任一证据类型即拒答。
+
+监管语义框架覆盖主体、行为、对象、肯否、规范强度、条件、例外、适用范围、时间和量化约束。确定性冲突优先级最高；`risk_based` 模式只把不能可靠规则判断的风险 claim 合并为一次 DeepSeek verifier 调用，且 verifier 不得使用外部知识。

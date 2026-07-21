@@ -32,6 +32,12 @@ def main() -> None:
         help="Optional running backend base URL, for example http://127.0.0.1:8000/api.",
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON only.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Optional directory for retrieval_metrics.json and retrieval_details.json.",
+    )
+    parser.add_argument("--output", type=Path, help="Optional explicit JSON output path.")
     args = parser.parse_args()
 
     cases = _load_cases(args.cases)
@@ -47,6 +53,17 @@ def main() -> None:
 
     summary = _summarize(results)
     report = {"summary": summary, "cases": results}
+    if args.output_dir:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        (args.output_dir / "retrieval_metrics.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (args.output_dir / "retrieval_details.json").write_text(
+            json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return

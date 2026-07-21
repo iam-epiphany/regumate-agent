@@ -46,11 +46,20 @@ RUN set -eux; \
     done; \
     rm -rf /var/lib/apt/lists/*
 
+ARG REGUMATE_TORCH_FLAVOR=cuda
 COPY requirements.txt requirements-cuda.txt ./
-RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements-cuda.txt \
-    && grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt \
-    && python -m pip install -r /tmp/requirements-no-torch.txt
+RUN set -eux; \
+    python -m pip install --upgrade pip; \
+    if [ "$REGUMATE_TORCH_FLAVOR" = "cuda" ]; then \
+        python -m pip install -r requirements-cuda.txt; \
+        grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt; \
+        python -m pip install -r /tmp/requirements-no-torch.txt; \
+    elif [ "$REGUMATE_TORCH_FLAVOR" = "cpu" ]; then \
+        python -m pip install -r requirements.txt; \
+    else \
+        echo "REGUMATE_TORCH_FLAVOR must be 'cuda' or 'cpu'." >&2; \
+        exit 1; \
+    fi
 
 ARG REGUMATE_BUILD_ID=dev
 ENV REGUMATE_BUILD_ID=${REGUMATE_BUILD_ID}

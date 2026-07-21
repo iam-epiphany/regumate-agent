@@ -57,16 +57,7 @@ export function CitationList({ citations, activeCitation, onSelectCitation, comp
                 <button className="text-button" type="button" onClick={() => onSelectCitation?.(label)}>
                   对照正文 [{label}]
                 </button>
-                {citation.source_url ? (
-                  <a className="text-button" href={citation.source_url} target="_blank" rel="noreferrer">
-                    官方来源页
-                  </a>
-                ) : null}
-                {citation.attachment_url && citation.attachment_url !== citation.source_url ? (
-                  <a className="text-button" href={citation.attachment_url} target="_blank" rel="noreferrer">
-                    官方附件
-                  </a>
-                ) : null}
+                <span className="source-note">来源文件：{citation.filename}</span>
                 {canCollapse ? (
                   <button className="text-button" type="button" onClick={() => toggleExpanded(key)} aria-expanded={isExpanded}>
                     {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}

@@ -1,6 +1,7 @@
 import { apiFetch } from "./client";
 import type {
   DocumentBatchUploadResponse,
+  DocumentBulkDeleteResponse,
   DocumentDeleteResponse,
   DocumentDetailResponse,
   DocumentListResponse,
@@ -129,5 +130,13 @@ export function deleteDocument(documentId: string, signal?: AbortSignal): Promis
   return apiFetch<DocumentDeleteResponse>(`/api/documents/${documentId}`, {
     method: "DELETE",
     signal,
+  });
+}
+
+export function deleteDocumentsBulk(documentIds: string[]): Promise<DocumentBulkDeleteResponse> {
+  return apiFetch<DocumentBulkDeleteResponse>("/api/documents/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ document_ids: documentIds }),
   });
 }
