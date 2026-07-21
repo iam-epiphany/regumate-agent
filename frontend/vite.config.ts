@@ -8,8 +8,12 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
   },
   server: {
+    hmr: {
+      host: "127.0.0.1",
+      clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? process.env.REGUMATE_FRONTEND_PORT ?? 5173),
+    },
     proxy: {
-      "/api": "http://127.0.0.1:8000",
+      "/api": process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000",
     },
   },
 });

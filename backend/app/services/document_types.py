@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 
 BlockType = Literal["heading", "paragraph", "table", "page"]
-PARSER_VERSION = "structured-v2"
+PARSER_VERSION = "structured-v3-provenance"
 
 
 @dataclass

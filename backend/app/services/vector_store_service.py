@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import RLock
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -15,10 +16,15 @@ from backend.app.core.config import (
 )
 from backend.app.services.chunk_service import ChunkDraft
 from backend.app.services.embedding_service import SparseEmbedding, TextEmbedding
+from backend.app.services.performance_metrics import measure
 
 
 class VectorStoreError(RuntimeError):
     pass
+
+
+_COLLECTION_READY_LOCK = RLock()
+_COLLECTION_READY_KEY: tuple[str, str] | None = None
 
 
 @dataclass
@@ -41,33 +47,48 @@ class VectorSearchResult:
     metadata: dict[str, Any] | None = None
 
 
-def ensure_vector_collection() -> None:
-    client, models = _qdrant()
-    try:
-        if not client.collection_exists(QDRANT_COLLECTION):
-            if not QDRANT_AUTO_CREATE_COLLECTION:
-                raise VectorStoreError(
-                    f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
-                )
-            client.create_collection(
-                collection_name=QDRANT_COLLECTION,
-                vectors_config={
-                    QDRANT_DENSE_VECTOR_NAME: models.VectorParams(
-                        size=EMBEDDING_DIMENSION,
-                        distance=models.Distance.COSINE,
+def ensure_vector_collection(*, force: bool = False) -> None:
+    global _COLLECTION_READY_KEY
+    readiness_key = (QDRANT_URL, QDRANT_COLLECTION)
+    if not force and _COLLECTION_READY_KEY == readiness_key:
+        return
+    with _COLLECTION_READY_LOCK:
+        if not force and _COLLECTION_READY_KEY == readiness_key:
+            return
+        client, models = _qdrant()
+        try:
+            with measure("qdrant.readiness"):
+                if not client.collection_exists(QDRANT_COLLECTION):
+                    if not QDRANT_AUTO_CREATE_COLLECTION:
+                        raise VectorStoreError(
+                            f"Qdrant collection/alias 尚未发布：{QDRANT_COLLECTION}"
+                        )
+                    client.create_collection(
+                        collection_name=QDRANT_COLLECTION,
+                        vectors_config={
+                            QDRANT_DENSE_VECTOR_NAME: models.VectorParams(
+                                size=EMBEDDING_DIMENSION,
+                                distance=models.Distance.COSINE,
+                            )
+                        },
+                        sparse_vectors_config={
+                            QDRANT_SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                                index=models.SparseIndexParams(on_disk=False)
+                            )
+                        },
                     )
-                },
-                sparse_vectors_config={
-                    QDRANT_SPARSE_VECTOR_NAME: models.SparseVectorParams(
-                        index=models.SparseIndexParams(on_disk=False)
-                    )
-                },
-            )
-        _ensure_payload_indexes(client, models)
-    except VectorStoreError:
-        raise
-    except Exception as exc:
-        raise VectorStoreError("Qdrant collection 初始化失败") from exc
+                _ensure_payload_indexes(client, models)
+            _COLLECTION_READY_KEY = readiness_key
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreError("Qdrant collection 初始化失败") from exc
+
+
+def reset_vector_collection_readiness() -> None:
+    global _COLLECTION_READY_KEY
+    with _COLLECTION_READY_LOCK:
+        _COLLECTION_READY_KEY = None
 
 
 def upsert_chunk_embeddings(
@@ -110,6 +131,18 @@ def upsert_chunk_embeddings(
                     "chunk_metadata": chunk_metadata,
                     "file_type": chunk_metadata.get("source_format"),
                     "source_title": chunk_metadata.get("source_title"),
+                    "external_doc_id": chunk_metadata.get("external_doc_id"),
+                    "issuing_authority": chunk_metadata.get("issuing_authority"),
+                    "publication_date": chunk_metadata.get("publication_date"),
+                    "effective_date": chunk_metadata.get("effective_date"),
+                    "expiration_date": chunk_metadata.get("expiration_date"),
+                    "document_number": chunk_metadata.get("document_number"),
+                    "regulatory_topic": chunk_metadata.get("regulatory_topic"),
+                    "business_domain": chunk_metadata.get("business_domain"),
+                    "source_url": chunk_metadata.get("source_url"),
+                    "attachment_url": chunk_metadata.get("attachment_url"),
+                    "version_status": chunk_metadata.get("version_status") or "unknown",
+                    "article_number": chunk_metadata.get("article_number") or chunk.section_number,
                     "table_id": chunk_metadata.get("table_id"),
                     "table_title": chunk_metadata.get("table_title"),
                     "sheet_name": chunk_metadata.get("sheet_name"),
@@ -129,12 +162,13 @@ def upsert_chunk_embeddings(
         )
 
     try:
-        for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
-            client.upsert(
-                collection_name=QDRANT_COLLECTION,
-                points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
-                wait=True,
-            )
+        with measure("qdrant.upsert"):
+            for start in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
+                client.upsert(
+                    collection_name=QDRANT_COLLECTION,
+                    points=points[start : start + QDRANT_UPSERT_BATCH_SIZE],
+                    wait=True,
+                )
     except Exception as exc:
         raise VectorStoreError("Qdrant chunk 向量写入失败") from exc
 
@@ -211,35 +245,118 @@ def delete_document_vectors(document_id: str, chunk_ids: list[str] | None = None
         raise VectorStoreError(f"Qdrant 文档向量删除失败：{exc}") from exc
 
 
-def hybrid_search(query_embedding: TextEmbedding, *, limit: int) -> list[VectorSearchResult]:
+def hybrid_search(
+    query_embedding: TextEmbedding,
+    *,
+    limit: int,
+    metadata_filter: dict[str, Any] | None = None,
+) -> list[VectorSearchResult]:
     ensure_vector_collection()
     client, models = _qdrant()
     try:
-        response = client.query_points(
-            collection_name=QDRANT_COLLECTION,
-            prefetch=[
-                models.Prefetch(
-                    query=query_embedding.dense,
-                    using=QDRANT_DENSE_VECTOR_NAME,
-                    limit=limit,
-                    filter=_index_version_filter(models),
-                ),
-                models.Prefetch(
-                    query=_sparse_vector(query_embedding.sparse, models),
-                    using=QDRANT_SPARSE_VECTOR_NAME,
-                    limit=limit,
-                    filter=_index_version_filter(models),
-                ),
-            ],
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            limit=limit,
-            with_payload=True,
-        )
+        with measure("qdrant.hybrid_search"):
+            response = client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                **_hybrid_query_kwargs(query_embedding, limit, models, metadata_filter),
+            )
     except Exception as exc:
         raise VectorStoreError("Qdrant hybrid 检索失败") from exc
 
     points = getattr(response, "points", response)
     return [_to_search_result(point) for point in points]
+
+
+def hybrid_search_batch(
+    query_embeddings: list[TextEmbedding],
+    *,
+    limit: int,
+    metadata_filter: dict[str, Any] | None = None,
+) -> list[list[VectorSearchResult]]:
+    if not query_embeddings:
+        return []
+    ensure_vector_collection()
+    client, models = _qdrant()
+    if not hasattr(client, "query_batch_points"):
+        return [
+            hybrid_search(embedding, limit=limit, metadata_filter=metadata_filter)
+            for embedding in query_embeddings
+        ]
+    requests = [
+        models.QueryRequest(**_hybrid_query_kwargs(embedding, limit, models, metadata_filter))
+        for embedding in query_embeddings
+    ]
+    try:
+        with measure("qdrant.hybrid_search_batch"):
+            responses = client.query_batch_points(
+                collection_name=QDRANT_COLLECTION,
+                requests=requests,
+            )
+    except Exception as exc:
+        raise VectorStoreError("Qdrant batch hybrid 检索失败") from exc
+    return [
+        [_to_search_result(point) for point in getattr(response, "points", response)]
+        for response in responses
+    ]
+
+
+def _hybrid_query_kwargs(
+    query_embedding: TextEmbedding,
+    limit: int,
+    models: Any,
+    metadata_filter: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    compiled_filter = _retrieval_filter(models, metadata_filter)
+    return {
+        "prefetch": [
+            models.Prefetch(
+                query=query_embedding.dense,
+                using=QDRANT_DENSE_VECTOR_NAME,
+                limit=limit,
+                filter=compiled_filter,
+            ),
+            models.Prefetch(
+                query=_sparse_vector(query_embedding.sparse, models),
+                using=QDRANT_SPARSE_VECTOR_NAME,
+                limit=limit,
+                filter=compiled_filter,
+            ),
+        ],
+        "query": models.FusionQuery(fusion=models.Fusion.RRF),
+        "limit": limit,
+        "with_payload": True,
+    }
+
+
+def refresh_document_metadata_payload(document_id: str, metadata: dict[str, Any]) -> None:
+    """Refresh common document metadata without recomputing embeddings."""
+
+    ensure_vector_collection()
+    client, models = _qdrant()
+    allowed = {
+        "source_title",
+        "external_doc_id",
+        "issuing_authority",
+        "publication_date",
+        "effective_date",
+        "expiration_date",
+        "document_number",
+        "regulatory_topic",
+        "business_domain",
+        "source_url",
+        "attachment_url",
+        "version_status",
+    }
+    payload = {key: metadata.get(key) for key in allowed}
+    payload["version_status"] = payload.get("version_status") or "unknown"
+    try:
+        client.set_payload(
+            collection_name=QDRANT_COLLECTION,
+            payload=payload,
+            points=models.FilterSelector(filter=_document_filter(document_id, models)),
+            wait=True,
+        )
+    except Exception as exc:
+        raise VectorStoreError(f"Qdrant 文档元数据刷新失败：{exc}") from exc
 
 
 def _qdrant() -> tuple[Any, Any]:
@@ -269,14 +386,34 @@ def _ensure_payload_indexes(client: Any, models: Any) -> None:
         "year": models.PayloadSchemaType.INTEGER,
         "month": models.PayloadSchemaType.INTEGER,
         "quarter": models.PayloadSchemaType.INTEGER,
+        "external_doc_id": models.PayloadSchemaType.KEYWORD,
+        "issuing_authority": models.PayloadSchemaType.KEYWORD,
+        "publication_date": models.PayloadSchemaType.KEYWORD,
+        "effective_date": models.PayloadSchemaType.KEYWORD,
+        "document_number": models.PayloadSchemaType.KEYWORD,
+        "regulatory_topic": models.PayloadSchemaType.KEYWORD,
+        "business_domain": models.PayloadSchemaType.KEYWORD,
+        "version_status": models.PayloadSchemaType.KEYWORD,
+        "article_number": models.PayloadSchemaType.KEYWORD,
     }
+    try:
+        collection_info = client.get_collection(QDRANT_COLLECTION)
+        existing_indexes = set(
+            (getattr(collection_info, "payload_schema", {}) or {}).keys()
+        )
+    except Exception:
+        existing_indexes = set()
+
     for field_name, field_schema in indexes.items():
+        if field_name in existing_indexes:
+            continue
         try:
             client.create_payload_index(
                 collection_name=QDRANT_COLLECTION,
                 field_name=field_name,
                 field_schema=field_schema,
                 wait=True,
+                timeout=60,
             )
         except Exception as exc:
             if "exist" in str(exc).lower():
@@ -297,6 +434,27 @@ def _index_version_filter(models: Any) -> Any:
             )
         ]
     )
+
+
+def _retrieval_filter(models: Any, metadata_filter: dict[str, Any] | None) -> Any:
+    conditions = list(_index_version_filter(models).must or [])
+    filters = metadata_filter or {}
+    document_ids = [str(value) for value in filters.get("document_ids") or [] if value]
+    if "document_ids" in filters:
+        conditions.append(
+            models.FieldCondition(
+                key="document_id",
+                match=models.MatchAny(any=document_ids),
+            )
+        )
+    for key in ("article_number", "version_status", "year", "month", "quarter"):
+        value = filters.get(key)
+        if value in (None, "", []):
+            continue
+        conditions.append(
+            models.FieldCondition(key=key, match=models.MatchValue(value=value))
+        )
+    return models.Filter(must=conditions)
 
 
 def _document_filter(document_id: str, models: Any) -> Any:
@@ -320,6 +478,28 @@ def _sparse_vector(sparse: SparseEmbedding, models: Any) -> Any:
 
 def _to_search_result(point: Any) -> VectorSearchResult:
     payload = point.payload or {}
+    metadata = _payload_dict(payload.get("chunk_metadata"))
+    for key in (
+        "source_title",
+        "external_doc_id",
+        "issuing_authority",
+        "publication_date",
+        "effective_date",
+        "expiration_date",
+        "document_number",
+        "regulatory_topic",
+        "business_domain",
+        "source_url",
+        "attachment_url",
+        "version_status",
+        "article_number",
+        "file_type",
+        "year",
+        "month",
+        "quarter",
+    ):
+        if payload.get(key) not in (None, "", []):
+            metadata[key] = payload[key]
     return VectorSearchResult(
         chunk_id=str(payload.get("chunk_id", "")),
         document_id=str(payload.get("document_id", "")),
@@ -336,7 +516,7 @@ def _to_search_result(point: Any) -> VectorSearchResult:
         parent_section_number=payload.get("parent_section_number"),
         previous_chunk_id=payload.get("previous_chunk_id"),
         next_chunk_id=payload.get("next_chunk_id"),
-        metadata=_payload_dict(payload.get("chunk_metadata")),
+        metadata=metadata,
     )
 
 

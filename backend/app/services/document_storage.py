@@ -71,7 +71,7 @@ def save_original_document(
 
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_EXTENSIONS:
-        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx 文档")
+        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx、.csv、.jsonl、.html 文档")
     _validate_mime_type(suffix, content_type)
     _validate_file_content(suffix, content)
 
@@ -99,7 +99,7 @@ async def save_original_document_stream(
 
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_EXTENSIONS:
-        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx 文档")
+        raise UnsupportedDocumentTypeError("仅支持 .txt、.md、.doc、.docx、.pdf、.xls、.xlsx、.csv、.jsonl、.html 文档")
     _validate_mime_type(suffix, content_type)
     DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
     storage_path = DOCUMENT_DIR / f"{document_id}{suffix}"
@@ -165,7 +165,7 @@ def _validate_file_content(suffix: str, content: bytes) -> None:
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         return
 
-    if suffix in {".txt", ".md"}:
+    if suffix in {".txt", ".md", ".csv", ".jsonl", ".html", ".htm"}:
         try:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
@@ -199,7 +199,7 @@ def _validate_file_path(suffix: str, path: Path) -> None:
         if not signature.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
             raise UnsupportedDocumentTypeError(f"{suffix.upper().lstrip('.')} 文件内容校验失败")
         return
-    if suffix in {".txt", ".md"}:
+    if suffix in {".txt", ".md", ".csv", ".jsonl", ".html", ".htm"}:
         try:
             with path.open("r", encoding="utf-8-sig") as stream:
                 while text := stream.read(1024 * 1024):

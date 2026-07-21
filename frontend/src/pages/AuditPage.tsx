@@ -6,6 +6,8 @@ import { ExpandableText } from "../components/ExpandableText";
 import type { AuditArchiveDetailResponse, AuditArchiveSummary, AuditLogItem, Citation } from "../types/api";
 import { formatAuditLog, parseAuditArchiveContent } from "../utils/audit";
 
+const pageHeaderWordmarkUrl = new URL("../assets/brand/regumate-page-header-wordmark.png", import.meta.url).href;
+
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [archives, setArchives] = useState<AuditArchiveSummary[]>([]);
@@ -67,11 +69,12 @@ export function AuditPage() {
 
   return (
     <main className="page">
-      <section className="page-head page-head--product">
+      <header className="product-header">
         <div>
-          <p className="eyebrow">审计追踪</p>
-          <div className="title-row">
-            <h1>问答与知识库操作记录</h1>
+          <p className="eyebrow">系统操作日志</p>
+          <div className="product-title-lockup">
+            <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
+            <h1>问答与知识库运行记录</h1>
             <span className={errorCount ? "severity-badge error" : warningCount ? "severity-badge warning" : "severity-badge"}>
               {errorCount ? `${errorCount} 条严重` : warningCount ? `${warningCount} 条警告` : "状态正常"}
             </span>
@@ -82,7 +85,7 @@ export function AuditPage() {
           {isLoading ? <Loader2 size={17} className="spinning" /> : <RefreshCw size={17} />}
           {isLoading ? "读取中" : "刷新"}
         </button>
-      </section>
+      </header>
 
       <section className="panel">
         <div className="document-list-toolbar">

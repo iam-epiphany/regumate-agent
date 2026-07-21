@@ -1,5 +1,6 @@
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import json
 import re
 from time import perf_counter
 from typing import Any, Callable
@@ -17,9 +18,14 @@ from backend.app.core.config import (
 from backend.app.core.database import SessionLocal
 from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
-from backend.app.services.embedding_service import EmbeddingServiceError, embed_texts
+from backend.app.services.embedding_service import EmbeddingServiceError, embed_queries, embed_texts
 from backend.app.services.rerank_service import RerankServiceError, RerankedChunk, rerank_candidates
-from backend.app.services.vector_store_service import VectorSearchResult, VectorStoreError, hybrid_search
+from backend.app.services.vector_store_service import (
+    VectorSearchResult,
+    VectorStoreError,
+    hybrid_search,
+    hybrid_search_batch,
+)
 
 
 class RetrievalServiceUnavailable(RuntimeError):
@@ -27,6 +33,8 @@ class RetrievalServiceUnavailable(RuntimeError):
 
 
 ProgressReporter = Callable[[dict[str, Any]], None]
+_DEFAULT_EMBED_TEXTS = embed_texts
+_DEFAULT_HYBRID_SEARCH = hybrid_search
 
 
 @dataclass
@@ -54,6 +62,7 @@ class RetrievalDiagnostics:
     query_variants: list[str] = field(default_factory=list)
     timings_ms: dict[str, float] = field(default_factory=dict)
     score_range: dict[str, float | None] = field(default_factory=dict)
+    metadata_filter: dict[str, Any] = field(default_factory=dict)
 
     def to_summary_fields(self) -> dict[str, Any]:
         return {
@@ -68,6 +77,7 @@ class RetrievalDiagnostics:
             "timings_ms": self.timings_ms,
             "score_range": self.score_range,
             "query_variants": self.query_variants,
+            "metadata_filter": self.metadata_filter,
         }
 
 
@@ -85,24 +95,121 @@ def reset_retrieval_diagnostics() -> None:
     _LAST_RETRIEVAL_DIAGNOSTICS.set(RetrievalDiagnostics())
 
 
-def filter_active_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
+def filter_active_candidates(
+    candidates: list[VectorSearchResult],
+    *,
+    include_inactive: bool = False,
+) -> list[VectorSearchResult]:
     """Keep only candidates backed by the current active SQLite index."""
 
     document_ids = {candidate.document_id for candidate in candidates if candidate.document_id}
     if not document_ids:
         return []
     with SessionLocal() as db:
-        rows = (
-            db.query(Document.document_id)
-            .filter(
-                Document.document_id.in_(document_ids),
-                Document.status == "indexed",
-                Document.index_version == INDEX_VERSION,
-            )
-            .all()
+        query = db.query(Document).filter(
+            Document.document_id.in_(document_ids),
+            Document.status == "indexed",
+            Document.index_version == INDEX_VERSION,
         )
-    active_ids = {row[0] for row in rows}
-    return [candidate for candidate in candidates if candidate.document_id in active_ids]
+        if not include_inactive:
+            query = query.filter(Document.version_status.notin_(("repealed", "superseded")))
+        rows = query.all()
+    active_documents = {document.document_id: document for document in rows}
+    active_ids = set(active_documents)
+    active_candidates = [candidate for candidate in candidates if candidate.document_id in active_ids]
+    for candidate in active_candidates:
+        if candidate.metadata is None:
+            candidate.metadata = {}
+        document = active_documents[candidate.document_id]
+        authoritative_metadata = {
+            "source_title": document.title or document.filename,
+            "external_doc_id": document.external_doc_id,
+            "issuing_authority": document.issuing_authority,
+            "publication_date": document.publication_date,
+            "effective_date": document.effective_date,
+            "expiration_date": document.expiration_date,
+            "document_number": document.document_number,
+            "regulatory_topic": document.regulatory_topic,
+            "business_domain": document.business_domain,
+            "source_url": document.source_url,
+            "attachment_url": document.attachment_url,
+            "version_status": document.version_status,
+            "file_type": document.file_type,
+            "source_format": document.file_type,
+        }
+        extension_metadata = _json_object(document.document_metadata)
+        candidate.metadata.update(
+            {
+                key: value
+                for key, value in {**extension_metadata, **authoritative_metadata}.items()
+                if value not in (None, "")
+            }
+        )
+        candidate.metadata["active_index_verified"] = True
+    return active_candidates
+
+
+def _json_object(raw: str | None) -> dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def filter_candidates_by_metadata(
+    candidates: list[VectorSearchResult],
+    filters: dict[str, Any] | None,
+) -> list[VectorSearchResult]:
+    """Apply auditable document filters after hybrid recall.
+
+    Table-specific fields remain handled by SpreadsheetCell. This function is
+    deliberately strict only for explicit document metadata constraints.
+    """
+
+    filters = filters or {}
+    mappings = {
+        "source_title": ("title", "source_title", "filename"),
+        "filename": ("source_filename", "filename"),
+        "external_doc_id": ("external_doc_id",),
+        "issuing_authority": ("issuing_authority",),
+        "publication_date": ("publication_date",),
+        "document_number": ("document_number",),
+        "regulatory_topic": ("regulatory_topic",),
+        "business_domain": ("business_domain",),
+        "article_number": ("article_number", "section_number"),
+        "version_status": ("version_status",),
+        "file_type": ("source_format", "file_type"),
+    }
+    active_filters = {
+        key: value
+        for key, value in filters.items()
+        if key in mappings and value not in (None, "", [])
+    }
+    if not active_filters:
+        return candidates
+
+    def matches(candidate: VectorSearchResult) -> bool:
+        metadata = candidate.metadata or {}
+        for key, expected in active_filters.items():
+            actual_values: list[Any] = []
+            for field_name in mappings[key]:
+                if field_name == "filename":
+                    actual_values.append(candidate.filename)
+                elif field_name == "section_number":
+                    actual_values.append(candidate.section_number)
+                else:
+                    actual_values.append(metadata.get(field_name))
+            expected_norm = _normalize_for_match(str(expected))
+            if key in {"publication_date", "version_status", "external_doc_id", "file_type"}:
+                accepted = any(_normalize_for_match(str(actual)) == expected_norm for actual in actual_values if actual)
+            else:
+                accepted = any(expected_norm in _normalize_for_match(str(actual)) for actual in actual_values if actual)
+            if not accepted:
+                return False
+        return True
+
+    return [candidate for candidate in candidates if matches(candidate)]
 
 
 def retrieve_citations(question: str, progress_reporter: ProgressReporter | None = None) -> list[RetrievalMatch]:
@@ -209,6 +316,8 @@ def _collect_candidates(question: str, diagnostics: RetrievalDiagnostics) -> lis
 def collect_candidates_for_queries(
     queries: list[str],
     diagnostics: RetrievalDiagnostics | None = None,
+    *,
+    metadata_filter: dict[str, Any] | None = None,
 ) -> list[VectorSearchResult]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -218,17 +327,24 @@ def collect_candidates_for_queries(
 
     candidates_by_chunk_id: dict[str, VectorSearchResult] = {}
     embedding_started_at = perf_counter()
-    query_embeddings = embed_texts(queries)
+    query_embeddings = _embed_search_queries(queries)
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    for query_embedding in query_embeddings:
-        for candidate in hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K):
+    raw_results_by_query = _hybrid_search_many(
+        query_embeddings,
+        limit=RETRIEVAL_TOP_K,
+        metadata_filter=metadata_filter,
+    )
+    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    merge_started_at = perf_counter()
+    for raw_results in raw_results_by_query:
+        for candidate in raw_results:
             diagnostics.raw_candidate_count += 1
             existing = candidates_by_chunk_id.get(candidate.chunk_id)
             if existing is None or candidate.score > existing.score:
                 candidates_by_chunk_id[candidate.chunk_id] = candidate
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    diagnostics.timings_ms["candidate_merge"] = _elapsed_ms(merge_started_at)
     diagnostics.candidate_count = len(candidates_by_chunk_id)
     return list(candidates_by_chunk_id.values())
 
@@ -238,6 +354,7 @@ def collect_candidates_with_query_hits(
     *,
     query_metadata: list[dict[str, Any]] | None = None,
     diagnostics: RetrievalDiagnostics | None = None,
+    metadata_filter: dict[str, Any] | None = None,
 ) -> tuple[list[VectorSearchResult], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -251,12 +368,19 @@ def collect_candidates_with_query_hits(
     per_query_diagnostics: list[dict[str, Any]] = []
 
     embedding_started_at = perf_counter()
-    query_embeddings = embed_texts(queries)
+    query_embeddings = _embed_search_queries(queries)
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    for query, query_embedding, metadata in zip(queries, query_embeddings, metadata_items, strict=True):
-        raw_results = hybrid_search(query_embedding, limit=RETRIEVAL_TOP_K)
+    diagnostics.metadata_filter = dict(metadata_filter or {})
+    raw_results_by_query = _hybrid_search_many(
+        query_embeddings,
+        limit=RETRIEVAL_TOP_K,
+        metadata_filter=metadata_filter,
+    )
+    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    merge_started_at = perf_counter()
+    for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
         for candidate in raw_results:
             candidate.score += _query_anchor_boost(query, candidate)
         raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
@@ -287,15 +411,38 @@ def collect_candidates_with_query_hits(
                 "filtered_count": 0,
                 "match_count": 0,
                 "query_variants": [query],
-                "timings_ms": {},
+                "timings_ms": {"qdrant_batch_total": diagnostics.timings_ms["qdrant"]},
                 "score_range": _score_range(raw_results, []),
                 **metadata,
             }
         )
 
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    diagnostics.timings_ms["candidate_merge"] = _elapsed_ms(merge_started_at)
     diagnostics.candidate_count = len(candidates_by_chunk_id)
     return list(candidates_by_chunk_id.values()), query_hits_by_chunk_id, per_query_diagnostics
+
+
+def _embed_search_queries(queries: list[str]) -> list[Any]:
+    # Keep the long-standing test/extension hook while using the query cache in production.
+    if embed_texts is not _DEFAULT_EMBED_TEXTS:
+        return embed_texts(queries)
+    return embed_queries(queries)
+
+
+def _hybrid_search_many(
+    query_embeddings: list[Any],
+    *,
+    limit: int,
+    metadata_filter: dict[str, Any] | None = None,
+) -> list[list[VectorSearchResult]]:
+    # A patched single-search hook is intentionally honored for deterministic tests.
+    if hybrid_search is not _DEFAULT_HYBRID_SEARCH:
+        return [hybrid_search(embedding, limit=limit) for embedding in query_embeddings]
+    return hybrid_search_batch(
+        query_embeddings,
+        limit=limit,
+        metadata_filter=metadata_filter,
+    )
 
 
 def _query_anchor_boost(query: str, candidate: VectorSearchResult) -> float:
@@ -460,10 +607,18 @@ def _should_enforce_diversity(question: str) -> bool:
 
 def _to_citation(item: _AnnotatedChunk) -> Citation:
     candidate = item.candidate
+    metadata = candidate.metadata or {}
     return Citation(
         document_id=candidate.document_id,
         chunk_id=candidate.chunk_id,
         filename=candidate.filename,
+        source_url=_optional_text(metadata.get("source_url")),
+        attachment_url=_optional_text(metadata.get("attachment_url")),
+        source_title=_optional_text(metadata.get("title") or metadata.get("source_title")),
+        issuing_authority=_optional_text(metadata.get("issuing_authority")),
+        publication_date=_optional_text(metadata.get("publication_date")),
+        document_number=_optional_text(metadata.get("document_number")),
+        version_status=_optional_text(metadata.get("version_status")),
         section_title=candidate.section_title,
         section_path=candidate.section_path or ([candidate.section_title] if candidate.section_title else []),
         section_number=candidate.section_number,
@@ -476,8 +631,13 @@ def _to_citation(item: _AnnotatedChunk) -> Citation:
         rerank_score=item.rerank_score,
         chunk_type=candidate.chunk_type,
         evidence_role=item.evidence_role,
-        metadata=candidate.metadata or {},
+        metadata=metadata,
     )
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def question_terms(question: str) -> list[str]:

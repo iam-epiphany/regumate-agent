@@ -44,6 +44,82 @@ def test_query_planner_fallback_recognizes_excel_lookup_question(monkeypatch) ->
     assert any(query.query_type == "table_locator" for query in aspect.search_queries)
 
 
+def test_query_planner_does_not_route_policy_threshold_question_to_table(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    threshold_plan = plan_query("资产合计差异超过多少万元时需要复核？复核期限是多少？")
+    scope_plan = plan_query("普惠小微贷款余额是否包括个人住房贷款？")
+
+    assert all(aspect.modality == "text" for aspect in threshold_plan.aspects)
+    assert all(aspect.table_task == "none" for aspect in threshold_plan.aspects)
+    assert all(aspect.modality == "text" for aspect in scope_plan.aspects)
+    assert all(aspect.table_task == "none" for aspect in scope_plan.aspects)
+
+
+def test_query_planner_recognizes_self_made_monthly_report_lookup_and_difference(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    lookup_plan = plan_query("根据自制月报，2026年1月资产合计是多少？")
+    difference_plan = plan_query("根据自制月报，2026年1月贷款余额比证券投资多多少万元？")
+    sum_plan = plan_query("结合自制制度和自制月报，2026年1月资产合计是否等于四个分项之和？")
+    missing_period_plan = plan_query("请根据资料说明 2027 年 3 月绿色信贷余额是多少？")
+
+    lookup = lookup_plan.aspects[0]
+    assert lookup.modality == "table"
+    assert lookup.table_filters["year"] == 2026
+    assert lookup.table_filters["month"] == 1
+    assert lookup.table_filters["indicator"] == "资产合计"
+
+    difference = difference_plan.aspects[0]
+    assert difference.table_task == "calculate"
+    assert difference.operation == "difference"
+    assert list(difference.selectors) == [{"row_or_indicator": "证券投资"}, {"row_or_indicator": "贷款余额"}]
+
+    table, regulation = sum_plan.aspects
+    assert table.modality == "table"
+    assert table.table_task == "calculate"
+    assert table.operation == "sum"
+    assert [selector["row_or_indicator"] for selector in table.selectors] == ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
+    assert regulation.modality == "text"
+
+    missing_period = missing_period_plan.aspects[0]
+    assert missing_period.modality == "table"
+    assert missing_period.table_filters["year"] == 2027
+    assert missing_period.table_filters["month"] == 3
+    assert missing_period.table_filters["indicator"] == "绿色信贷余额"
+
+
+def test_query_planner_sanitizes_llm_table_filters_for_policy_question() -> None:
+    aspects = query_planner_service._aspects_from_payload(
+        "资产合计差异超过多少万元时需要复核？复核期限是多少？",
+        {
+            "aspects": [
+                {
+                    "aspect_id": "asset_threshold",
+                    "question": "资产合计差异超过多少万元时需要复核？复核期限是多少？",
+                    "modality": "mixed",
+                    "table_task": "lookup",
+                    "table_filters": {
+                        "indicator": "资产合计",
+                        "row_label": "资产合计",
+                        "column_label": "复核期限",
+                        "unit": "万元",
+                    },
+                    "operation": "none",
+                    "search_queries": ["资产合计差异复核阈值和期限"],
+                    "keywords": ["资产合计", "复核期限"],
+                }
+            ]
+        },
+    )
+
+    assert aspects[0].modality == "text"
+    assert aspects[0].table_task == "none"
+    assert aspects[0].operation == "none"
+    assert aspects[0].table_filters == {}
+    assert aspects[0].explicit_filter_keys == ()
+
+
 def test_query_planner_builds_deterministic_mcq_title_and_option_queries(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
     options = [
@@ -110,7 +186,9 @@ def test_query_planner_fallback_recognizes_mixed_excel_policy_question(monkeypat
 
     plan = plan_query("根据监管制度口径和 Excel 附件，2024年一季度全国合计原保险保费收入是多少？")
 
-    assert plan.aspects[0].modality == "mixed"
+    assert [aspect.modality for aspect in plan.aspects] == ["table", "text"]
+    assert plan.aspects[0].aspect_id == "table_evidence"
+    assert plan.aspects[1].aspect_id == "regulatory_basis"
 
 
 def test_query_planner_llm_returns_structured_multi_view_queries(monkeypatch) -> None:
@@ -162,7 +240,7 @@ def test_query_planner_llm_returns_structured_multi_view_queries(monkeypatch) ->
     plan = plan_query("资产合计差异应该优先排查哪些问题？")
 
     assert plan.fallback_used is False
-    assert plan.planner.startswith("deepseek:")
+    assert plan.planner.startswith("openai_compatible:")
     aspect = plan.aspects[0]
     assert aspect.evidence_need == "资产合计差异处理流程、优先排查原因或校验规则"
     assert [query.query_type for query in aspect.search_queries] == [

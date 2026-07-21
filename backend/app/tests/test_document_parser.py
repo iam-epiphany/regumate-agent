@@ -1,9 +1,15 @@
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from backend.app.core.database import Base
+from backend.app.models.document import Document, DocumentChunk, SpreadsheetCell
 from backend.app.services.chunk_service import build_chunks_from_parsed, count_tokens
 from backend.app.services.document_types import ParsedBlock, ParsedDocument
-from backend.app.services.document_parser import available_loader_names, parse_document
+from backend.app.services.document_parser import DocumentParseError, available_loader_names, parse_document
+from backend.app.services.document_processing_service import ensure_document_chunks
 from backend.app.services.loader_evaluation import evaluate_document_loaders
+from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
 
 
 def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
@@ -12,10 +18,129 @@ def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
 
     parsed = parse_document(path)
 
-    assert parsed.metadata["parser_version"] == "structured-v2"
+    assert parsed.metadata["parser_version"] == "structured-v3-provenance"
     assert parsed.metadata["loader_name"] == "markdown"
     assert [block.block_type for block in parsed.blocks] == ["heading", "heading", "paragraph"]
     assert parsed.blocks[2].section_title == "资产合计"
+
+
+def test_parse_csv_builds_cell_level_rows(tmp_path) -> None:
+    path = tmp_path / "监管统计.csv"
+    path.write_text("指标,2025年\n资本充足率,12.5\n", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    row = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
+    assert row.metadata["spreadsheet_table"] is True
+    assert row.metadata["period"]["year"] == 2025
+    assert row.metadata["cells"][1]["coordinate"] == "B2"
+    assert row.metadata["cells"][1]["normalized_value"] == 12.5
+
+
+def test_parse_csv_infers_month_period_and_row_unit(tmp_path) -> None:
+    path = tmp_path / "自制月报.csv"
+    path.write_text("指标,2026年1月,单位\n资产合计,7000,万元\n", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    row = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
+    value_cell = next(cell for cell in row.metadata["cells"] if cell["coordinate"] == "B2")
+    assert row.metadata["period"] == {"year": 2026, "month": 1}
+    assert value_cell["normalized_value"] == 7000
+    assert value_cell["unit"] == "万元"
+
+
+def test_force_rebuild_refreshes_spreadsheet_cell_index(tmp_path) -> None:
+    path = tmp_path / "自制月报.csv"
+    path.write_text("指标,2026年1月,单位\n资产合计,7000,万元\n", encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        document = Document(
+            document_id="DOC-TEST-REBUILD",
+            filename=path.name,
+            filename_norm=path.name,
+            file_type="csv",
+            size=path.stat().st_size,
+            file_sha256="b" * 64,
+            storage_path=str(path),
+            status="indexed",
+            index_version="old",
+            version_status="unknown",
+            metadata_status="inferred",
+            document_metadata="{}",
+            chunk_count=1,
+        )
+        stale_chunk = DocumentChunk(
+            chunk_id="DOC-TEST-REBUILD-CHUNK-STALE",
+            document_id=document.document_id,
+            text="旧表格行证据",
+            embedding_text="旧表格行证据",
+            chunk_metadata='{"table_chunk_role":"row","period":{},"cells":[{"coordinate":"B2","value":"7000","normalized_value":7000}]}',
+            token_count=4,
+            index_status="indexed",
+            index_version="old",
+            title=path.stem,
+            source_file=path.name,
+        )
+        db.add_all([document, stale_chunk])
+        db.flush()
+        rebuild_spreadsheet_cell_index(db, document, [stale_chunk])
+        assert db.query(SpreadsheetCell).one().year is None
+        stale_chunk_id = stale_chunk.chunk_id
+        document_id = document.document_id
+
+        rebuilt = ensure_document_chunks(db, document, force_rebuild=True)
+
+        assert all(chunk.chunk_id != stale_chunk_id for chunk in rebuilt)
+        cell = (
+            db.query(SpreadsheetCell)
+            .filter(SpreadsheetCell.document_id == document_id, SpreadsheetCell.coordinate == "B2")
+            .one()
+        )
+        assert cell.year == 2026
+        assert cell.month == 1
+        assert cell.unit == "万元"
+        assert cell.numeric_value == 7000
+
+
+def test_parse_jsonl_requires_content_and_rejects_qa_answers(tmp_path) -> None:
+    valid = tmp_path / "rules.jsonl"
+    valid.write_text('{"title":"规则一","text":"资本充足率应符合监管要求。"}\n', encoding="utf-8")
+    parsed = parse_document(valid)
+    assert parsed.blocks[0].section_title == "规则一"
+
+    qa = tmp_path / "qa.jsonl"
+    qa.write_text('{"question":"答案是什么","answer":"A","evidence":"标准答案"}\n', encoding="utf-8")
+    with pytest.raises(DocumentParseError, match="QA/答案数据"):
+        parse_document(qa)
+
+
+def test_parse_normal_paragraph_articles_adds_article_locator(tmp_path) -> None:
+    path = tmp_path / "rules.txt"
+    path.write_text("第一章 总则\n\n第一条 银行业金融机构应当依法报送。\n第二条 不得迟报。", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    articles = [block for block in parsed.blocks if block.metadata.get("structure_type") == "article"]
+    assert [block.metadata["article_number"] for block in articles] == ["第一条", "第二条"]
+    assert articles[0].text.startswith("第一条")
+
+
+def test_parse_html_preserves_headings_paragraphs_and_tables(tmp_path) -> None:
+    path = tmp_path / "rule.html"
+    path.write_text(
+        "<html><head><title>监管规则</title></head><body><h1>第一章</h1><p>正文依据。</p>"
+        "<table><tr><th>指标</th><th>值</th></tr><tr><td>资本</td><td>12</td></tr></table></body></html>",
+        encoding="utf-8",
+    )
+
+    parsed = parse_document(path)
+
+    assert parsed.metadata["html_title"] == "监管规则"
+    assert any(block.block_type == "heading" and block.text == "第一章" for block in parsed.blocks)
+    assert any(block.block_type == "table" and "资本" in block.text for block in parsed.blocks)
 
 
 def test_loader_order_is_configured_by_file_type(tmp_path) -> None:

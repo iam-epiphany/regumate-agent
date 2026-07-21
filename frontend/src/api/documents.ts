@@ -1,6 +1,7 @@
 import { apiFetch } from "./client";
 import type {
   DocumentBatchUploadResponse,
+  DocumentBulkDeleteResponse,
   DocumentDeleteResponse,
   DocumentDetailResponse,
   DocumentListResponse,
@@ -34,6 +35,7 @@ export function uploadDocument(
     idempotencyKey: string;
     filenameOverride?: string;
     overwriteDocumentId?: string;
+    metadata?: Record<string, unknown>;
     onProgress?: (loaded: number, total: number) => void;
   },
 ): Promise<DocumentUploadResponse> {
@@ -44,6 +46,9 @@ export function uploadDocument(
   }
   if (options.overwriteDocumentId) {
     formData.append("overwrite_document_id", options.overwriteDocumentId);
+  }
+  if (options.metadata && Object.keys(options.metadata).length > 0) {
+    formData.append("metadata_json", JSON.stringify(options.metadata));
   }
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -125,5 +130,13 @@ export function deleteDocument(documentId: string, signal?: AbortSignal): Promis
   return apiFetch<DocumentDeleteResponse>(`/api/documents/${documentId}`, {
     method: "DELETE",
     signal,
+  });
+}
+
+export function deleteDocumentsBulk(documentIds: string[]): Promise<DocumentBulkDeleteResponse> {
+  return apiFetch<DocumentBulkDeleteResponse>("/api/documents/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ document_ids: documentIds }),
   });
 }

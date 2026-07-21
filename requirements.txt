@@ -17,6 +17,9 @@ python-docx==1.2.0
 openpyxl==3.1.5
 xlrd==2.0.1
 pypdf==6.4.2
+reportlab==4.4.9
+pillow==12.2.0
+charset-normalizer==3.4.9
 pymupdf==1.28.0
 pymupdf-layout==1.28.0
 pymupdf4llm==1.28.0

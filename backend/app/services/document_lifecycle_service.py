@@ -16,6 +16,7 @@ from backend.app.services.vector_store_service import (
     document_vector_chunk_ids,
 )
 from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
+from backend.app.services.rerank_service import invalidate_rerank_score_cache
 
 
 class DocumentDeletionError(RuntimeError):
@@ -79,6 +80,10 @@ def delete_document_record(db: Session, document: Document) -> None:
     try:
         db.delete(document)
         db.commit()
+        from backend.app.services.rag_service import clear_document_snapshot_cache
+
+        clear_document_snapshot_cache({document.document_id})
+        invalidate_rerank_score_cache()
     except Exception as exc:
         db.rollback()
         current = db.scalar(

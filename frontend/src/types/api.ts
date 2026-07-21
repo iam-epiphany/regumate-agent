@@ -52,9 +52,10 @@ export interface RagHealthResponse {
   antiword_version: string | null;
   index_tasks: Record<string, number>;
   qa_tasks: Record<string, number>;
+  review_tasks?: Record<string, number>;
   model_runtime: {
-    embedding?: { loaded?: boolean; warmed?: boolean };
-    reranker?: { loaded?: boolean; warmed?: boolean };
+    embedding?: { loaded?: boolean; warmed?: boolean; query_cache?: Record<string, number | boolean> };
+    reranker?: { loaded?: boolean; warmed?: boolean; score_cache?: Record<string, number | boolean> };
   };
   ready: boolean;
   model_device: {
@@ -67,6 +68,29 @@ export interface RagHealthResponse {
     cuda_total_memory_gb?: number | null;
     cuda_free_memory_gb?: number | null;
     fallback_reason: string | null;
+  };
+  performance?: {
+    requested_mode: "auto" | "gpu" | "cpu_balanced" | "cpu_low_resource" | string;
+    selected_mode: "gpu" | "cpu_balanced" | "cpu_low_resource" | string;
+    requested_backend?: string;
+    backend: string;
+    backend_fallback_reason?: string | null;
+    effective_cpu_cores: number;
+    memory_limit_bytes: number | null;
+    embedding_batch_size: number;
+    rerank_batch_size: number;
+    rerank_max_length: number;
+    rerank_input_mode?: string;
+    torch_num_threads: number;
+    torch_num_interop_threads: number;
+    omp_num_threads?: number;
+    mkl_num_threads?: number;
+    warmup_policy: string;
+    experimental: boolean;
+    warmup?: { state?: string; warmed?: boolean; warming?: boolean; elapsed_ms?: number | null; error?: string | null };
+    timings?: Record<string, { count?: number; last_ms?: number; avg_ms?: number; max_ms?: number }>;
+    resources?: Record<string, unknown>;
+    recent_traces?: Array<Record<string, unknown>>;
   };
 }
 
@@ -166,6 +190,20 @@ export interface DocumentDeleteResponse {
   vector_warning: string | null;
 }
 
+export interface DocumentBulkDeleteItem {
+  document_id: string;
+  filename: string | null;
+  status: "deleted" | "not_found" | "blocked" | "failed";
+  message: string | null;
+}
+
+export interface DocumentBulkDeleteResponse {
+  requested_count: number;
+  deleted_count: number;
+  failed_count: number;
+  items: DocumentBulkDeleteItem[];
+}
+
 export interface ChunkSummary {
   chunk_id: string;
   text: string;
@@ -202,6 +240,13 @@ export interface Citation {
   document_id: string;
   chunk_id: string;
   filename: string;
+  source_url?: string | null;
+  attachment_url?: string | null;
+  source_title?: string | null;
+  issuing_authority?: string | null;
+  publication_date?: string | null;
+  document_number?: string | null;
+  version_status?: string | null;
   section_title: string | null;
   page_number: number | null;
   excerpt: string;
@@ -210,6 +255,79 @@ export interface Citation {
   chunk_type: string;
   evidence_role: string;
   metadata: Record<string, unknown>;
+}
+
+export type ReviewRuleType = "required" | "non_negative" | "range" | "equality" | "sum" | "allowed_values";
+export type ReviewSeverity = "info" | "warning" | "error";
+export type ReportReviewStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type ReviewFindingStatus = "open" | "confirmed" | "dismissed" | "resolved";
+
+export interface ReviewRule {
+  rule_id: string;
+  name: string;
+  description: string;
+  rule_type: ReviewRuleType;
+  severity: ReviewSeverity;
+  parameters: Record<string, unknown>;
+  regulation_document_id: string;
+  evidence_chunk_id: string;
+  evidence_excerpt: string;
+  source: Record<string, unknown>;
+  remediation_template: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReviewRuleListResponse {
+  rules: ReviewRule[];
+}
+
+export interface ReviewFinding {
+  finding_id: string;
+  review_id: string;
+  rule_id: string;
+  finding_kind: "violation" | "not_evaluable";
+  severity: ReviewSeverity;
+  status: ReviewFindingStatus;
+  title: string;
+  description: string;
+  location: Record<string, unknown>;
+  observed: Record<string, unknown>;
+  expected: Record<string, unknown>;
+  remediation: string;
+  regulatory_evidence: Record<string, unknown>;
+  report_evidence: Array<Record<string, unknown>>;
+  reviewer_comment: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportReviewSummary {
+  review_id: string;
+  report_document_id: string;
+  report_filename: string;
+  status: ReportReviewStatus;
+  stage: string;
+  completed_rules: number;
+  total_rules: number;
+  finding_count: number;
+  summary: Record<string, unknown>;
+  error: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface ReportReviewDetail extends ReportReviewSummary {
+  findings: ReviewFinding[];
+}
+
+export interface ReportReviewListResponse {
+  reviews: ReportReviewSummary[];
 }
 
 export interface RetrievalResult {
@@ -366,12 +484,37 @@ export interface QAResponse {
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
-  answer_type: "table_deterministic" | "llm_grounded" | "extractive_fallback" | "refusal" | string;
+  answer_type:
+    | "table_deterministic"
+    | "llm_grounded"
+    | "mixed_grounded"
+    | "scenario_assessment"
+    | "extractive_fallback"
+    | "refusal"
+    | string;
   generation_status: string;
-  claims: Array<{ text: string; citation_ids: string[] }>;
+  claims: Array<{
+    text: string;
+    citation_ids: string[];
+    role?:
+      | "conclusion"
+      | "regulatory_basis"
+      | "table_fact"
+      | "calculation"
+      | "explanation"
+      | "recommendation"
+      | "other";
+    aspect_ids?: string[];
+  }>;
   grounding_validation: Record<string, unknown>;
   refusal_reason: string | null;
   degraded: boolean;
+  evidence_coverage?: {
+    expected_aspect_ids: string[];
+    covered_aspect_ids: string[];
+    missing_aspect_ids: string[];
+    complete: boolean;
+  } | null;
 }
 
 export interface QAAnswerPreview {

@@ -1,14 +1,18 @@
+from collections import OrderedDict
 from dataclasses import dataclass
 import json
 import re
-from time import perf_counter
+from threading import RLock
+from time import monotonic, perf_counter
 from typing import Any, Callable
 from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from backend.app.core.config import (
+    DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS,
+    DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS,
     FINAL_CITATION_LIMIT,
     FORCE_MIN_CHUNKS,
     MAX_PROMPT_CHUNKS,
@@ -24,6 +28,7 @@ from backend.app.models.document import Document, DocumentChunk, QALog
 from backend.app.schemas.qa import (
     AnswerClaim,
     Citation,
+    EvidenceCoverage,
     LLMContextPackage,
     QAAnswerPreview,
     QAResponse,
@@ -34,6 +39,9 @@ from backend.app.services.answer_generation_service import generate_answer, is_o
 from backend.app.services.prompt_builder import RAGPromptBuilder
 from backend.app.services.question_preprocessing_service import preprocess_qa_request
 from backend.app.services.query_planner_service import QueryAspect, QueryPlan, plan_query
+from backend.app.services.retrieval_metadata_filter_service import (
+    build_retrieval_metadata_filter,
+)
 from backend.app.services.retrieval_service import (
     RetrievalDiagnostics,
     RetrievalMatch,
@@ -42,6 +50,7 @@ from backend.app.services.retrieval_service import (
     collect_candidates_with_query_hits,
     evidence_coverage,
     filter_active_candidates,
+    filter_candidates_by_metadata,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
     matches_from_reranked,
@@ -51,6 +60,7 @@ from backend.app.services.retrieval_service import (
 )
 from backend.app.services.embedding_service import EmbeddingServiceError
 from backend.app.services.model_device_service import get_model_device_info
+from backend.app.services.performance_metrics import measure, trace_operation
 from backend.app.services.rerank_service import RerankServiceError, rerank_candidates
 from backend.app.services.spreadsheet_retrieval_service import (
     get_last_spreadsheet_diagnostic,
@@ -76,6 +86,33 @@ QUERY_TYPE_WEIGHTS = {
     "fallback": 0.85,
 }
 _DEFAULT_RETRIEVE_CITATIONS = retrieve_citations
+@dataclass(frozen=True)
+class _DocumentChunkSnapshot:
+    id: int
+    chunk_id: str
+    document_id: str
+    text: str
+    embedding_text: str | None
+    chunk_metadata: str | None
+    index_status: str
+    source_file: str
+    page_number: int | None
+    section_title: str | None
+
+
+_DOCUMENT_SNAPSHOT_CACHE: OrderedDict[str, tuple[float, list[_DocumentChunkSnapshot]]] = OrderedDict()
+_DOCUMENT_SNAPSHOT_CACHE_LOCK = RLock()
+
+
+def clear_document_snapshot_cache(document_ids: set[str] | list[str] | tuple[str, ...] | None = None) -> None:
+    """Drop cached chunk snapshots after indexing, deletion, recovery, or metadata changes."""
+
+    with _DOCUMENT_SNAPSHOT_CACHE_LOCK:
+        if document_ids is None:
+            _DOCUMENT_SNAPSHOT_CACHE.clear()
+            return
+        for document_id in document_ids:
+            _DOCUMENT_SNAPSHOT_CACHE.pop(str(document_id), None)
 
 
 @dataclass(frozen=True)
@@ -100,6 +137,7 @@ class AspectRetrieval:
     covered: bool = False
 
 
+@trace_operation("qa")
 def answer_question(
     db: Session,
     question: str,
@@ -219,9 +257,12 @@ def answer_question(
         package.context_chunks,
         options=normalized_options,
         option_labels=option_labels,
+        llm_prompt=package.llm_prompt,
         has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
         verified_claim_reporter=report_verified_claim,
         cancellation_checker=cancellation_checker,
+        answer_mode=_answer_mode(cleaned_question, package.retrieval_summary),
+        required_aspect_ids=_required_aspect_ids(package.retrieval_summary),
     )
     if not generated.refused and not bool(generated.grounding_validation.get("passed")):
         generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
@@ -282,10 +323,15 @@ def answer_question(
             "summary": generated.grounding_validation,
         },
     )
+    cited_results = _cited_context_results(
+        package.context_chunks,
+        answer=generated.answer,
+        claims=generated.claims,
+    )
     response = QAResponse(
         answer=generated.answer,
-        citations=[_citation_from_result(result) for result in package.context_chunks],
-        confidence=_confidence_from_results(package.context_chunks),
+        citations=[_citation_from_result(result) for result in cited_results],
+        confidence=_confidence_from_results(cited_results),
         refused=generated.refused,
         context_package=package if include_debug else None,
         answer_type=generated.answer_type,
@@ -294,6 +340,11 @@ def answer_question(
         grounding_validation=generated.grounding_validation,
         refusal_reason=generated.refusal_reason,
         degraded=generated.degraded,
+        evidence_coverage=_build_evidence_coverage(
+            package.retrieval_summary,
+            generated.claims,
+            cited_results,
+        ),
     )
     _save_qa_log(db, original_question, response)
     _log_qa_audit(db, "qa_context_built", original_question, response)
@@ -474,6 +525,7 @@ def _retrieve_aspects(
         },
     )
     aspect_retrievals: list[AspectRetrieval] = []
+    document_chunk_cache: dict[str, list[DocumentChunk]] = {}
     for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
         _report_progress(
             progress_reporter,
@@ -494,8 +546,14 @@ def _retrieve_aspects(
             db,
             aspect,
             progress_reporter=progress_reporter,
+            document_chunk_cache=document_chunk_cache,
         )
-        matches = _expand_neighbor_matches(db, aspect.question, matches)
+        matches = _expand_neighbor_matches(
+            db,
+            aspect.question,
+            matches,
+            document_chunk_cache=document_chunk_cache,
+        )
         candidates = _to_retrieval_results(matches)
         for candidate in candidates:
             candidate.metadata["aspect_id"] = aspect.aspect_id
@@ -567,6 +625,7 @@ def _retrieve_aspect_matches(
     db: Session,
     aspect: QueryAspect,
     progress_reporter: ProgressReporter | None = None,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
 ) -> tuple[list[RetrievalMatch], list[dict[str, Any]]]:
     if retrieve_citations is not _DEFAULT_RETRIEVE_CITATIONS:
         return _retrieve_aspect_matches_legacy_hook(db, aspect, progress_reporter)
@@ -619,6 +678,32 @@ def _retrieve_aspect_matches(
     fusion_scores: dict[str, float] = {}
     diagnostics = RetrievalDiagnostics()
     total_started_at = perf_counter()
+    vector_filter_values, vector_explicit_keys, mixed_table_scoped_keys = _vector_metadata_filter_inputs(aspect)
+    retrieval_filter = build_retrieval_metadata_filter(
+        db,
+        vector_filter_values,
+        vector_explicit_keys,
+    )
+    filter_debug = retrieval_filter.to_debug_dict()
+    filter_debug["mixed_table_scoped_keys"] = mixed_table_scoped_keys
+    if retrieval_filter.no_match:
+        filter_diagnostic = {
+            "search_query": aspect.question,
+            "query_type": "metadata_filter",
+            "rationale": "用户明确条件在 SQLite 文档元数据中零命中，禁止退回无约束全库检索",
+            "match_count": 0,
+            "query_count": 0,
+            "raw_candidate_count": 0,
+            "candidate_count": 0,
+            "pre_filter_candidate_count": 0,
+            "post_filter_candidate_count": 0,
+            "metadata_filter": filter_debug,
+            "match_status": "metadata_filter_no_match",
+            "refusal_reason": retrieval_filter.reason,
+            "timings_ms": {},
+            "score_range": {},
+        }
+        return table_matches, table_diagnostics + [filter_diagnostic]
     search_queries = [search_query.query for search_query in aspect.search_queries]
     query_metadata = [
         {
@@ -628,10 +713,22 @@ def _retrieve_aspect_matches(
         for search_query in aspect.search_queries
     ]
     try:
+        collect_kwargs: dict[str, Any] = {
+            "query_metadata": query_metadata,
+            "diagnostics": diagnostics,
+        }
+        qdrant_filter = retrieval_filter.qdrant_filter()
+        if aspect.modality != "table":
+            # Period fields describe SpreadsheetCell coordinates, not a
+            # regulation document's publication year. Applying them to mixed
+            # text retrieval would remove the required regulation evidence.
+            for period_key in ("year", "month", "quarter"):
+                qdrant_filter.pop(period_key, None)
+        if qdrant_filter:
+            collect_kwargs["metadata_filter"] = qdrant_filter
         candidates, query_hits_by_chunk_id, diagnostics_by_query = collect_candidates_with_query_hits(
             search_queries,
-            query_metadata=query_metadata,
-            diagnostics=diagnostics,
+            **collect_kwargs,
         )
     except (EmbeddingServiceError, VectorStoreError) as exc:
         raise RetrievalServiceUnavailable(str(exc)) from exc
@@ -655,9 +752,21 @@ def _retrieve_aspect_matches(
             candidates = title_matched
             diagnostics.candidate_count = len(candidates)
 
-    candidates = filter_active_candidates(candidates)
+    pre_filter_candidate_count = len(candidates)
+    explicit_post_filters = retrieval_filter.explicit
+    candidates = filter_candidates_by_metadata(
+        filter_active_candidates(
+            candidates,
+            include_inactive=str(explicit_post_filters.get("version_status") or "") in {"repealed", "superseded"},
+        ),
+        explicit_post_filters,
+    )
     diagnostics.candidate_count = len(candidates)
     preferred_file_type = str(aspect.table_filters.get("file_type") or "").lower()
+    inferred_filter_scores = {
+        candidate.chunk_id: _inferred_metadata_score(candidate, retrieval_filter.inferred)
+        for candidate in candidates
+    }
     document_style_scores = {
         candidate.chunk_id: _document_style_evidence_score(candidate, aspect)
         for candidate in candidates
@@ -668,9 +777,13 @@ def _retrieve_aspect_matches(
         candidate.metadata["document_style_evidence_score"] = round(
             document_style_scores.get(candidate.chunk_id, 0.0), 6
         )
+        candidate.metadata["inferred_metadata_score"] = round(
+            inferred_filter_scores.get(candidate.chunk_id, 0.0), 6
+        )
     candidates.sort(
         key=lambda candidate: (
             bool(preferred_file_type and candidate.filename.lower().endswith(f".{preferred_file_type}")),
+            inferred_filter_scores.get(candidate.chunk_id, 0.0),
             document_style_scores.get(candidate.chunk_id, 0.0),
             fusion_scores.get(candidate.chunk_id, 0.0),
             candidate.score,
@@ -732,7 +845,12 @@ def _retrieve_aspect_matches(
         match.metadata["evidence_need"] = aspect.evidence_need
 
     if aspect.aspect_id == "multiple_choice_evidence":
-        supplements = _mcq_exact_support_matches(db, aspect, matches)
+        supplements = _mcq_exact_support_matches(
+            db,
+            aspect,
+            matches,
+            document_chunk_cache=document_chunk_cache,
+        )
         if supplements:
             best_fusion = max(fusion_scores.values(), default=0.0)
             for offset, supplement in enumerate(supplements, start=1):
@@ -761,6 +879,26 @@ def _retrieve_aspect_matches(
             "query_type": "aspect_fused",
             "rationale": "同一 aspect 的多条 search query 先召回融合，再单次 BGE rerank",
             "match_count": len(matches),
+            "pre_filter_candidate_count": pre_filter_candidate_count,
+            "post_filter_candidate_count": len(candidates),
+            "metadata_filter": filter_debug,
+            "rerank_input_ranking": [
+                {
+                    "rank": rank,
+                    "chunk_id": candidate.chunk_id,
+                    "fusion_score": round(fusion_scores.get(candidate.chunk_id, 0.0), 6),
+                    "vector_score": round(float(candidate.score), 6),
+                }
+                for rank, candidate in enumerate(rerank_input, start=1)
+            ],
+            "reranked_ranking": [
+                {
+                    "rank": rank,
+                    "chunk_id": item.candidate.chunk_id,
+                    "rerank_score": round(float(item.rerank_score), 8),
+                }
+                for rank, item in enumerate(reranked, start=1)
+            ],
             **diagnostics.to_summary_fields(),
         }
     )
@@ -841,6 +979,68 @@ def _should_stop_after_spreadsheet_refusal(aspect: QueryAspect, diagnostic: dict
         )
     )
     return has_explicit_constraint
+
+
+def _vector_metadata_filter_inputs(
+    aspect: QueryAspect,
+) -> tuple[dict[str, Any], set[str], list[str]]:
+    values = dict(aspect.table_filters)
+    explicit_keys = set(getattr(aspect, "explicit_filter_keys", ()))
+    table_scoped_keys: list[str] = []
+    if aspect.modality != "mixed":
+        return values, explicit_keys, table_scoped_keys
+    for key in (
+        "filename",
+        "source_title",
+        "file_type",
+        "year",
+        "month",
+        "quarter",
+        "sheet",
+        "indicator",
+        "row_label",
+        "column_label",
+        "unit",
+        "metric",
+        "scope",
+    ):
+        if key in values:
+            table_scoped_keys.append(key)
+            values.pop(key, None)
+            explicit_keys.discard(key)
+    return values, explicit_keys, table_scoped_keys
+
+
+def _inferred_metadata_score(candidate: Any, filters: dict[str, Any]) -> float:
+    if not filters:
+        return 0.0
+    metadata = candidate.metadata or {}
+    mappings = {
+        "source_title": metadata.get("source_title") or candidate.filename,
+        "filename": candidate.filename,
+        "external_doc_id": metadata.get("external_doc_id"),
+        "issuing_authority": metadata.get("issuing_authority"),
+        "publication_date": metadata.get("publication_date"),
+        "document_number": metadata.get("document_number"),
+        "regulatory_topic": metadata.get("regulatory_topic"),
+        "business_domain": metadata.get("business_domain"),
+        "article_number": metadata.get("article_number") or candidate.section_number,
+        "version_status": metadata.get("version_status"),
+        "file_type": metadata.get("file_type"),
+    }
+    comparable = [(key, value) for key, value in filters.items() if key in mappings]
+    if not comparable:
+        return 0.0
+    matched = 0
+    for key, expected in comparable:
+        actual = mappings.get(key)
+        if actual is None:
+            continue
+        expected_norm = re.sub(r"\W+", "", str(expected)).casefold()
+        actual_norm = re.sub(r"\W+", "", str(actual)).casefold()
+        if expected_norm and expected_norm in actual_norm:
+            matched += 1
+    return matched / len(comparable)
 
 
 def _retrieve_aspect_matches_legacy_hook(
@@ -1067,6 +1267,7 @@ def _mcq_exact_support_matches(
     db: Session,
     aspect: QueryAspect,
     matches: list[RetrievalMatch],
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
 ) -> list[RetrievalMatch]:
     if not matches:
         return []
@@ -1089,13 +1290,17 @@ def _mcq_exact_support_matches(
         anchors_by_document.setdefault(match.citation.document_id, match)
     existing_by_id = {match.citation.chunk_id: match for match in matches}
     supplements_by_chunk_id: dict[str, tuple[float, int, RetrievalMatch]] = {}
+    chunks_by_document = _chunks_by_document(
+        db,
+        set(anchors_by_document),
+        document_chunk_cache=document_chunk_cache,
+    )
     for document_id, anchor in anchors_by_document.items():
-        document_chunks = (
-            db.query(DocumentChunk)
-            .filter(DocumentChunk.document_id == document_id, DocumentChunk.index_status == "indexed")
-            .order_by(DocumentChunk.id.asc())
-            .all()
-        )
+        document_chunks = [
+            chunk
+            for chunk in chunks_by_document.get(document_id, [])
+            if chunk.index_status == "indexed"
+        ]
         best_statement_matches: dict[str, tuple[float, DocumentChunk]] = {}
         for chunk in document_chunks:
             searchable_raw = "\n".join(
@@ -1340,6 +1545,12 @@ def _select_prompt_chunks(
 
     selected = _sort_prompt_chunks(selected, query_plan)
     selected = _apply_prompt_token_budget(selected)
+    final_chunk_ids = {item.chunk_id for item in selected}
+    for item in aspect_retrievals:
+        item.selected_chunk_ids = [
+            chunk_id for chunk_id in item.selected_chunk_ids if chunk_id in final_chunk_ids
+        ]
+        item.covered = bool(item.selected_chunk_ids)
     _renumber_context_chunks(selected)
     covered_aspects = {item.aspect.aspect_id for item in aspect_retrievals if item.covered}
     return selected, _prompt_selection_summary(
@@ -1659,6 +1870,29 @@ def _normalize_for_dedupe(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
+def _cited_context_results(
+    context_chunks: list[RetrievalResult],
+    *,
+    answer: str,
+    claims: list[AnswerClaim],
+) -> list[RetrievalResult]:
+    """Return only context chunks explicitly cited by the final answer."""
+    citation_labels = {
+        citation_id
+        for claim in claims
+        for citation_id in claim.citation_ids
+        if citation_id
+    }
+    citation_labels.update(re.findall(r"\[\d+\]", answer or ""))
+    if not citation_labels:
+        return []
+    return [
+        result
+        for result in context_chunks
+        if result.citation_label in citation_labels
+    ]
+
+
 def _citation_from_result(result: RetrievalResult) -> Citation:
     metadata = result.metadata
     return Citation(
@@ -1681,12 +1915,21 @@ def _citation_from_result(result: RetrievalResult) -> Citation:
     )
 
 
-def _expand_neighbor_matches(db: Session, question: str, matches: list[RetrievalMatch]) -> list[RetrievalMatch]:
+def _expand_neighbor_matches(
+    db: Session,
+    question: str,
+    matches: list[RetrievalMatch],
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[RetrievalMatch]:
     if not matches:
         return []
 
     document_ids = {match.citation.document_id for match in matches}
-    chunks_by_document = _chunks_by_document(db, document_ids)
+    chunks_by_document = _chunks_by_document(
+        db,
+        document_ids,
+        document_chunk_cache=document_chunk_cache,
+    )
     selected: list[RetrievalMatch] = []
     selected_chunk_ids: set[str] = set()
 
@@ -1714,18 +1957,75 @@ def _expand_neighbor_matches(db: Session, question: str, matches: list[Retrieval
     return selected[: max(MAX_PROMPT_CHUNKS * 3, MAX_PROMPT_CHUNKS)]
 
 
-def _chunks_by_document(db: Session, document_ids: set[str]) -> dict[str, list[DocumentChunk]]:
+def _chunks_by_document(
+    db: Session,
+    document_ids: set[str],
+    document_chunk_cache: dict[str, list[_DocumentChunkSnapshot]] | None = None,
+) -> dict[str, list[_DocumentChunkSnapshot]]:
     if not document_ids:
         return {}
-    chunks = db.scalars(
-        select(DocumentChunk)
-        .where(DocumentChunk.document_id.in_(document_ids))
-        .order_by(DocumentChunk.document_id.asc(), DocumentChunk.id.asc())
-    ).all()
-    grouped: dict[str, list[DocumentChunk]] = {}
-    for chunk in chunks:
-        grouped.setdefault(chunk.document_id, []).append(chunk)
-    return grouped
+    cache = document_chunk_cache if document_chunk_cache is not None else {}
+    now = monotonic()
+    missing_ids = set(document_ids).difference(cache)
+    with _DOCUMENT_SNAPSHOT_CACHE_LOCK:
+        for document_id in list(missing_ids):
+            cached = _DOCUMENT_SNAPSHOT_CACHE.get(document_id)
+            if cached is None:
+                continue
+            cached_at, chunks = cached
+            if now - cached_at > DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS:
+                _DOCUMENT_SNAPSHOT_CACHE.pop(document_id, None)
+                continue
+            _DOCUMENT_SNAPSHOT_CACHE.move_to_end(document_id)
+            cache[document_id] = chunks
+            missing_ids.remove(document_id)
+    if missing_ids:
+        with measure("rag.document_snapshot_fetch"):
+            chunk_models = db.scalars(
+                select(DocumentChunk)
+                .options(
+                    load_only(
+                        DocumentChunk.id,
+                        DocumentChunk.chunk_id,
+                        DocumentChunk.document_id,
+                        DocumentChunk.text,
+                        DocumentChunk.embedding_text,
+                        DocumentChunk.chunk_metadata,
+                        DocumentChunk.index_status,
+                        DocumentChunk.source_file,
+                        DocumentChunk.page_number,
+                        DocumentChunk.section_title,
+                    )
+                )
+                .where(DocumentChunk.document_id.in_(missing_ids))
+                .order_by(DocumentChunk.document_id.asc(), DocumentChunk.id.asc())
+            ).all()
+        chunks = [
+            _DocumentChunkSnapshot(
+                id=chunk.id,
+                chunk_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                text=chunk.text,
+                embedding_text=chunk.embedding_text,
+                chunk_metadata=chunk.chunk_metadata,
+                index_status=chunk.index_status,
+                source_file=chunk.source_file,
+                page_number=chunk.page_number,
+                section_title=chunk.section_title,
+            )
+            for chunk in chunk_models
+        ]
+        for document_id in missing_ids:
+            cache[document_id] = []
+        for chunk in chunks:
+            cache.setdefault(chunk.document_id, []).append(chunk)
+        with _DOCUMENT_SNAPSHOT_CACHE_LOCK:
+            for document_id in missing_ids:
+                _DOCUMENT_SNAPSHOT_CACHE[document_id] = (now, cache.get(document_id, []))
+                _DOCUMENT_SNAPSHOT_CACHE.move_to_end(document_id)
+            while len(_DOCUMENT_SNAPSHOT_CACHE) > DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS:
+                _DOCUMENT_SNAPSHOT_CACHE.popitem(last=False)
+    return {document_id: cache.get(document_id, []) for document_id in document_ids}
 
 
 def _neighbor_candidates(
@@ -1915,6 +2215,17 @@ def _build_retrieval_summary(
         if item.retrieval_covered and not item.covered
     ]
     prompt_capacity_limited = bool(covered_by_retrieval_but_not_prompted)
+    metadata_filters = [
+        diagnostic["metadata_filter"]
+        for item in aspect_retrievals
+        for diagnostic in item.diagnostics
+        if isinstance(diagnostic.get("metadata_filter"), dict)
+    ]
+    metadata_filter_no_match = any(
+        diagnostic.get("match_status") == "metadata_filter_no_match"
+        for item in aspect_retrievals
+        for diagnostic in item.diagnostics
+    )
 
     has_sufficient_context = bool(context_chunks) and not missing_aspects and not prompt_capacity_limited
     summary = {
@@ -1925,6 +2236,13 @@ def _build_retrieval_summary(
         "retrieval_covered_aspect_count": sum(1 for item in aspect_retrievals if item.retrieval_covered),
         "prompt_covered_aspect_count": sum(1 for item in aspect_retrievals if item.covered),
         "prompt_capacity_limited": prompt_capacity_limited,
+        "metadata_filters": metadata_filters,
+        "metadata_filter_no_match": metadata_filter_no_match,
+        "metadata_filter_no_match_reason": (
+            "用户明确元数据条件未匹配到已发布文档，未执行无约束回退"
+            if metadata_filter_no_match
+            else None
+        ),
         "covered_by_retrieval_but_not_prompted": covered_by_retrieval_but_not_prompted,
         "coverage_notes": coverage_notes,
           "missing_aspects": missing_aspects,
@@ -2105,6 +2423,60 @@ def _confidence_from_results(results: list[RetrievalResult]) -> float:
     return min(max(float(best_score), 0.0), 0.95)
 
 
+def _required_aspect_ids(retrieval_summary: dict[str, Any]) -> list[str]:
+    aspects = retrieval_summary.get("query_plan", {}).get("aspects", [])
+    return [
+        str(item.get("aspect_id"))
+        for item in aspects
+        if isinstance(item, dict) and item.get("aspect_id")
+    ]
+
+
+def _answer_mode(question: str, retrieval_summary: dict[str, Any]) -> str:
+    aspects = retrieval_summary.get("query_plan", {}).get("aspects", [])
+    modalities = {
+        str(item.get("modality"))
+        for item in aspects
+        if isinstance(item, dict) and item.get("modality")
+    }
+    is_mixed = "mixed" in modalities or ({"table", "text"}.issubset(modalities))
+    if not is_mixed:
+        return "text"
+    scenario_markers = ("是否合规", "是否违规", "合规吗", "违反", "判断", "整改", "应如何处理")
+    return "scenario" if any(marker in question for marker in scenario_markers) else "mixed"
+
+
+def _build_evidence_coverage(
+    retrieval_summary: dict[str, Any],
+    claims: list[AnswerClaim],
+    cited_results: list[RetrievalResult],
+) -> EvidenceCoverage:
+    expected = _required_aspect_ids(retrieval_summary)
+    covered = {
+        aspect_id
+        for claim in claims
+        for aspect_id in claim.aspect_ids
+        if aspect_id
+    }
+    for result in cited_results:
+        aspect_id = result.metadata.get("aspect_id")
+        if aspect_id:
+            covered.add(str(aspect_id))
+        covered.update(
+            str(value)
+            for value in result.metadata.get("prompt_matched_aspects") or []
+            if value
+        )
+    covered_ordered = [aspect_id for aspect_id in expected if aspect_id in covered]
+    missing = [aspect_id for aspect_id in expected if aspect_id not in covered]
+    return EvidenceCoverage(
+        expected_aspect_ids=expected,
+        covered_aspect_ids=covered_ordered,
+        missing_aspect_ids=missing,
+        complete=not missing and bool(expected),
+    )
+
+
 def _elapsed_ms(started_at: float) -> float:
     return round((perf_counter() - started_at) * 1000, 2)
 
@@ -2139,14 +2511,22 @@ def _filter_indexed_matches(db: Session, matches: list[RetrievalMatch]) -> list[
     if not matches:
         return []
     document_ids = {match.citation.document_id for match in matches}
-    indexed_ids = set(
-        db.scalars(
-            select(Document.document_id).where(
-                Document.document_id.in_(document_ids),
-                Document.status.in_(["indexed", "table_indexed"]),
-            )
-        ).all()
-    )
+    verified_ids = {
+        match.citation.document_id
+        for match in matches
+        if bool(match.metadata.get("active_index_verified"))
+    }
+    unchecked_ids = document_ids.difference(verified_ids)
+    indexed_ids = set(verified_ids)
+    if unchecked_ids:
+        indexed_ids.update(
+            db.scalars(
+                select(Document.document_id).where(
+                    Document.document_id.in_(unchecked_ids),
+                    Document.status.in_(["indexed", "table_indexed"]),
+                )
+            ).all()
+        )
     return [match for match in matches if match.citation.document_id in indexed_ids]
 
 

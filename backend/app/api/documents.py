@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,9 @@ from backend.app.models.document import Document, DocumentChunk, DocumentIndexTa
 from backend.app.schemas.documents import (
     DocumentBatchUploadItem,
     DocumentBatchUploadResponse,
+    DocumentBulkDeleteItem,
+    DocumentBulkDeleteRequest,
+    DocumentBulkDeleteResponse,
     ChunkSummary,
     DocumentDeleteResponse,
     DocumentDetailResponse,
@@ -25,6 +30,11 @@ from backend.app.schemas.documents import (
     DocumentUploadPreflightRequest,
     DocumentUploadPreflightResponse,
     DocumentUploadResponse,
+    DocumentMetadataInput,
+    DocumentMetadataUpdateResponse,
+    DocumentManifestImportItem,
+    DocumentManifestImportResponse,
+    DocumentUrlImportRequest,
 )
 from backend.app.schemas.qa import ApiError
 from backend.app.services.audit_service import log_action
@@ -51,6 +61,21 @@ from backend.app.services.document_upload_service import (
     build_upload_preflight,
     create_document_upload,
 )
+from backend.app.services.document_manifest_service import (
+    ManifestImportError,
+    import_manifest_records,
+    parse_manifest,
+)
+from backend.app.services.document_metadata_service import (
+    DocumentMetadataError,
+    apply_document_metadata,
+    document_metadata_snapshot,
+    resolve_version_relation,
+)
+from backend.app.services.document_url_import_service import (
+    DocumentUrlImportError,
+    fetch_url_document,
+)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -65,29 +90,135 @@ async def upload_document(
     file: UploadFile = File(...),
     filename_override: str | None = Form(None),
     overwrite_document_id: str | None = Form(None),
+    metadata_json: str | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
     request_id = (idempotency_key or uuid4().hex).strip()[:128]
     try:
+        metadata = _parse_metadata_json(metadata_json)
         document, task = await create_document_upload(
             db,
             file=file,
             request_id=request_id,
             filename_override=filename_override,
             overwrite_document_id=overwrite_document_id,
+            metadata=metadata,
             max_bytes=MAX_UPLOAD_BYTES,
             enqueue_index=enqueue_document_index,
         )
         return _to_upload_response(document, task)
     except DocumentTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except (UnsupportedDocumentTypeError, EmptyDocumentError) as exc:
+    except (UnsupportedDocumentTypeError, EmptyDocumentError, DocumentMetadataError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except UploadTaskMissingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DocumentUploadConflictError as exc:
         return _upload_conflict_response(exc)
+
+
+@router.post("/manifest", response_model=DocumentManifestImportResponse)
+async def import_document_manifest(
+    manifest: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> DocumentManifestImportResponse:
+    try:
+        content = await manifest.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise ManifestImportError("manifest 超过上传大小限制")
+        records = parse_manifest(content, manifest.filename or "manifest.json")
+        results = import_manifest_records(db, records)
+    except (ManifestImportError, DocumentMetadataError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated = [item for item in results if item.status == "updated" and item.document_id]
+    # Manifest enrichment refreshes SQLite chunks and Qdrant payloads in place;
+    # re-enqueuing full indexing here would recompute unchanged embeddings.
+    return DocumentManifestImportResponse(
+        total_count=len(results),
+        updated_count=len(updated),
+        failed_count=len(results) - len(updated),
+        items=[
+            DocumentManifestImportItem(
+                record_index=item.record_index,
+                status=item.status,
+                document_id=item.document_id,
+                filename=item.filename,
+                message=item.message,
+            )
+            for item in results
+        ],
+    )
+
+
+@router.post(
+    "/url-import",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def import_document_from_url(
+    payload: DocumentUrlImportRequest,
+    db: Session = Depends(get_db),
+) -> DocumentUploadResponse:
+    try:
+        fetched = fetch_url_document(
+            payload.url,
+            max_bytes=MAX_UPLOAD_BYTES,
+            filename_override=payload.filename,
+        )
+        upload = UploadFile(
+            file=BytesIO(fetched.content),
+            filename=fetched.filename,
+            size=len(fetched.content),
+            headers=Headers({"content-type": fetched.content_type}),
+        )
+        metadata = _metadata_input_dict(payload.metadata)
+        metadata.setdefault("source_url", fetched.final_url)
+        if fetched.content_type != "text/html":
+            metadata.setdefault("attachment_url", fetched.final_url)
+        metadata.setdefault("source_type", "official_url")
+        document, task = await create_document_upload(
+            db,
+            file=upload,
+            request_id=payload.client_request_id or uuid4().hex,
+            filename_override=fetched.filename,
+            metadata=metadata,
+            metadata_source="user",
+            max_bytes=MAX_UPLOAD_BYTES,
+            enqueue_index=enqueue_document_index,
+        )
+        return _to_upload_response(document, task)
+    except (DocumentUrlImportError, DocumentMetadataError, UnsupportedDocumentTypeError, EmptyDocumentError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DocumentTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except DocumentUploadConflictError as exc:
+        return _upload_conflict_response(exc)
+
+
+@router.patch("/{document_id}/metadata", response_model=DocumentMetadataUpdateResponse)
+def update_document_metadata(
+    document_id: str,
+    payload: DocumentMetadataInput,
+    db: Session = Depends(get_db),
+) -> DocumentMetadataUpdateResponse:
+    document = db.scalar(select(Document).where(Document.document_id == document_id))
+    if document is None:
+        raise HTTPException(status_code=404, detail="未找到指定文档")
+    try:
+        metadata = _metadata_input_dict(payload)
+        apply_document_metadata(document, metadata, source="user", confidence=1.0)
+        resolve_version_relation(db, document)
+        db.commit()
+    except (DocumentMetadataError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    reindex_queued = enqueue_document_index(document.document_id)
+    return DocumentMetadataUpdateResponse(
+        document_id=document.document_id,
+        metadata=document_metadata_snapshot(document),
+        reindex_queued=reindex_queued,
+    )
 
 
 @router.post(
@@ -214,13 +345,26 @@ async def upload_documents_batch(
 
 
 @router.post("/{document_id}/index", response_model=DocumentDetailResponse)
-def build_document_index(document_id: str, db: Session = Depends(get_db)) -> DocumentDetailResponse:
+def build_document_index(
+    document_id: str,
+    force_rebuild_chunks: bool = Query(
+        False,
+        description="Reparse the original file and rebuild SQLite chunks/cell index before vector indexing.",
+    ),
+    db: Session = Depends(get_db),
+) -> DocumentDetailResponse:
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
 
-    enqueue_document_index(document_id)
-    log_action(db, "document_index_queued", "document", document_id, f"chunks={document.chunk_count}")
+    enqueue_document_index(document_id, force_rebuild_chunks=force_rebuild_chunks)
+    log_action(
+        db,
+        "document_index_queued",
+        "document",
+        document_id,
+        f"chunks={document.chunk_count}; force_rebuild_chunks={force_rebuild_chunks}",
+    )
     db.refresh(document)
     return _to_detail(document, db)
 
@@ -267,6 +411,70 @@ def list_documents(
     return DocumentListResponse(documents=[_to_summary(document) for document in documents])
 
 
+@router.post("/bulk-delete", response_model=DocumentBulkDeleteResponse)
+def bulk_delete_documents(
+    payload: DocumentBulkDeleteRequest,
+    db: Session = Depends(get_db),
+) -> DocumentBulkDeleteResponse:
+    document_ids = list(dict.fromkeys(payload.document_ids))
+    items: list[DocumentBulkDeleteItem] = []
+
+    for document_id in document_ids:
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        if document is None:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document_id,
+                    status="not_found",
+                    message="未找到指定文档",
+                )
+            )
+            continue
+
+        filename = document.filename
+        blocked_message = _document_delete_block_message(document)
+        if blocked_message is not None:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document.document_id,
+                    filename=filename,
+                    status="blocked",
+                    message=blocked_message,
+                )
+            )
+            continue
+
+        try:
+            _delete_document_with_audit(db, document)
+        except DocumentDeletionError as exc:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document_id,
+                    filename=filename,
+                    status="failed",
+                    message=f"文档删除未完成，记录已保留为 delete_failed，可稍后重试：{exc}",
+                )
+            )
+            continue
+
+        items.append(
+            DocumentBulkDeleteItem(
+                document_id=document_id,
+                filename=filename,
+                status="deleted",
+                message="删除成功",
+            )
+        )
+
+    deleted_count = sum(1 for item in items if item.status == "deleted")
+    return DocumentBulkDeleteResponse(
+        requested_count=len(document_ids),
+        deleted_count=deleted_count,
+        failed_count=len(items) - deleted_count,
+        items=items,
+    )
+
+
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 def get_document(
     document_id: str,
@@ -308,22 +516,37 @@ def delete_document(document_id: str, db: Session = Depends(get_db)) -> Document
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
-    if document.status in {"uploaded", "index_queued", "indexing"}:
-        raise HTTPException(status_code=409, detail="文档正在解析或构建索引，请等待处理完成后再删除")
-    if document.status == "deleting":
-        raise HTTPException(status_code=409, detail="文档正在删除，请稍后刷新列表")
+    blocked_message = _document_delete_block_message(document)
+    if blocked_message is not None:
+        raise HTTPException(status_code=409, detail=blocked_message)
 
     try:
-        delete_document_record(db, document)
+        _delete_document_with_audit(db, document)
     except DocumentDeletionError as exc:
-        log_action(db, "document_delete_failed", "document", document_id, str(exc)[:500])
         raise HTTPException(
             status_code=503,
             detail=f"文档删除未完成，记录已保留为 delete_failed，可稍后重试：{exc}",
         ) from exc
 
-    log_action(db, "document_deleted", "document", document_id, "document deleted")
     return DocumentDeleteResponse(document_id=document_id, deleted=True, vector_warning=None)
+
+
+def _document_delete_block_message(document: Document) -> str | None:
+    if document.status in {"uploaded", "index_queued", "indexing"}:
+        return "文档正在解析或构建索引，请等待处理完成后再删除"
+    if document.status == "deleting":
+        return "文档正在删除，请稍后刷新列表"
+    return None
+
+
+def _delete_document_with_audit(db: Session, document: Document) -> None:
+    document_id = document.document_id
+    try:
+        delete_document_record(db, document)
+    except DocumentDeletionError as exc:
+        log_action(db, "document_delete_failed", "document", document_id, str(exc)[:500])
+        raise
+    log_action(db, "document_deleted", "document", document_id, "document deleted")
 
 
 def _batch_file_request_id(batch_id: str, index: int, filename: str) -> str:
@@ -414,13 +637,26 @@ def _to_summary(document: Document) -> DocumentSummary:
 
 
 def _document_metadata(document: Document) -> dict:
-    if not document.document_metadata:
+    return document_metadata_snapshot(document)
+
+
+def _parse_metadata_json(raw: str | None) -> dict:
+    if not raw:
         return {}
     try:
-        value = json.loads(document.document_metadata)
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("metadata_json 必须是 JSON 对象") from exc
+    if not isinstance(value, dict):
+        raise ValueError("metadata_json 必须是 JSON 对象")
+    payload = DocumentMetadataInput.model_validate(value)
+    return _metadata_input_dict(payload)
+
+
+def _metadata_input_dict(payload: DocumentMetadataInput) -> dict:
+    value = payload.model_dump(exclude_none=True)
+    extra = value.pop("extra", {})
+    return {**value, **(extra if isinstance(extra, dict) else {})}
 
 
 def _to_upload_response(

@@ -31,6 +31,14 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     return value
 
 
+def _env_choice(name: str, default: str, choices: set[str]) -> str:
+    value = (os.getenv(name) or default).strip().lower()
+    if value not in choices:
+        allowed = ", ".join(sorted(choices))
+        raise RuntimeError(f"{name} must be one of {allowed}; received {value!r}")
+    return value
+
+
 APP_NAME = "ReguMate"
 API_TITLE = "ReguMate API"
 BUILD_ID = os.getenv("REGUMATE_BUILD_ID", "dev").strip() or "dev"
@@ -39,10 +47,11 @@ CORS_ORIGINS = [
     value.strip()
     for value in os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
     ).split(",")
     if value.strip()
 ]
+FRONTEND_DEV_SERVER = os.getenv("REGUMATE_FRONTEND_DEV_SERVER", "").strip().rstrip("/")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(os.getenv("REGUMATE_DATA_DIR", PROJECT_ROOT / "data"))
@@ -67,6 +76,42 @@ EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH")
 RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH")
 MODEL_DEVICE = os.getenv("MODEL_DEVICE", "auto").strip().lower()
 MODEL_GPU_MIN_FREE_MEMORY_GB = _env_float("MODEL_GPU_MIN_FREE_MEMORY_GB", 1.0)
+REGUMATE_PERFORMANCE_MODE = _env_choice(
+    "REGUMATE_PERFORMANCE_MODE",
+    "auto",
+    {"auto", "gpu", "cpu_balanced", "cpu_low_resource"},
+)
+MODEL_BACKEND = _env_choice(
+    "MODEL_BACKEND",
+    "pytorch",
+    {"pytorch", "onnx", "openvino"},
+)
+MODEL_WARMUP_POLICY = _env_choice(
+    "MODEL_WARMUP_POLICY",
+    "background",
+    {"background", "lazy"},
+)
+RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
+RERANK_MAX_LENGTH = _env_int("RERANK_MAX_LENGTH", 1024, minimum=1)
+RERANK_INPUT_MODE = _env_choice(
+    "RERANK_INPUT_MODE",
+    "embedding",
+    {"embedding", "compact"},
+)
+TORCH_NUM_THREADS = _env_int("TORCH_NUM_THREADS", 0)
+TORCH_NUM_INTEROP_THREADS = _env_int("TORCH_NUM_INTEROP_THREADS", 0)
+QUERY_EMBEDDING_CACHE_BYTES = _env_int(
+    "QUERY_EMBEDDING_CACHE_BYTES", 64 * 1024 * 1024, minimum=0
+)
+RERANK_SCORE_CACHE_BYTES = _env_int(
+    "RERANK_SCORE_CACHE_BYTES", 32 * 1024 * 1024, minimum=0
+)
+QUERY_EMBEDDING_CACHE_ITEMS = _env_int("QUERY_EMBEDDING_CACHE_ITEMS", 2048, minimum=0)
+RERANK_SCORE_CACHE_ITEMS = _env_int("RERANK_SCORE_CACHE_ITEMS", 50_000, minimum=0)
+
+if TORCH_NUM_THREADS > 0:
+    os.environ.setdefault("OMP_NUM_THREADS", str(TORCH_NUM_THREADS))
+    os.environ.setdefault("MKL_NUM_THREADS", str(TORCH_NUM_THREADS))
 
 os.environ.setdefault("HF_HOME", str(HF_HOME))
 os.environ.setdefault("HF_HUB_CACHE", str(HF_HUB_CACHE))
@@ -77,7 +122,10 @@ if REGUMATE_OFFLINE_MODE:
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {
+    ".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx",
+    ".csv", ".jsonl", ".html", ".htm",
+}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
@@ -111,22 +159,60 @@ MIN_RERANK_SCORE = 0.30
 MIN_EVIDENCE_COVERAGE = 0.25
 DIRECT_EVIDENCE_COVERAGE = 0.45
 TABLE_STRICT_EVIDENCE_VALIDATION = _env_bool("TABLE_STRICT_EVIDENCE_VALIDATION", True)
+DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS = _env_float(
+    "DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS", 600.0, minimum=1.0
+)
+DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS = _env_int(
+    "DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS", 12, minimum=1
+)
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai_compatible").strip() or "openai_compatible"
+LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+LLM_BASE_URL = (
+    os.getenv("LLM_BASE_URL")
+    or os.getenv("DEEPSEEK_BASE_URL")
+    or "https://api.deepseek.com"
+)
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
+LLM_INCLUDE_THINKING = _env_bool("LLM_INCLUDE_THINKING", False)
+LLM_RESPONSE_FORMAT = os.getenv("LLM_RESPONSE_FORMAT", "json_object").strip() or "json_object"
+LLM_STREAM = _env_bool("LLM_STREAM", True)
 
 QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", True)
-QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", "deepseek")
-QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", "https://api.deepseek.com")
-QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", "deepseek-v4-flash")
+QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", LLM_PROVIDER)
+QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or LLM_API_KEY
+QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", LLM_BASE_URL)
+QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", LLM_MODEL)
 QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 20.0, minimum=0.1)
 QUERY_PLANNER_MAX_ASPECTS = _env_int("QUERY_PLANNER_MAX_ASPECTS", 12, minimum=1)
 QUERY_PLANNER_MAX_SEARCH_QUERIES = _env_int("QUERY_PLANNER_MAX_SEARCH_QUERIES", 3, minimum=1)
+QUERY_PLANNER_INCLUDE_THINKING = _env_bool("QUERY_PLANNER_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+QUERY_PLANNER_RESPONSE_FORMAT = os.getenv("QUERY_PLANNER_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 
 ANSWER_GENERATION_ENABLED = _env_bool("ANSWER_GENERATION_ENABLED", True)
-ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", QUERY_PLANNER_BASE_URL)
-ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", "deepseek-v4-flash")
+ANSWER_GENERATION_PROVIDER = os.getenv("ANSWER_GENERATION_PROVIDER", LLM_PROVIDER)
+ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or LLM_API_KEY
+ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_URL)
+ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
 ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 900, minimum=1)
+ANSWER_GENERATION_INCLUDE_THINKING = _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+ANSWER_GENERATION_RESPONSE_FORMAT = os.getenv("ANSWER_GENERATION_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
+ANSWER_GENERATION_STREAM = _env_bool("ANSWER_GENERATION_STREAM", LLM_STREAM)
+SEMANTIC_GROUNDING_MODE = _env_choice(
+    "SEMANTIC_GROUNDING_MODE",
+    "risk_based",
+    {"off", "risk_based", "all"},
+)
+SEMANTIC_GROUNDING_PROVIDER = os.getenv("SEMANTIC_GROUNDING_PROVIDER", LLM_PROVIDER)
+SEMANTIC_GROUNDING_API_KEY = os.getenv("SEMANTIC_GROUNDING_API_KEY") or LLM_API_KEY
+SEMANTIC_GROUNDING_BASE_URL = os.getenv("SEMANTIC_GROUNDING_BASE_URL", LLM_BASE_URL)
+SEMANTIC_GROUNDING_MODEL = os.getenv("SEMANTIC_GROUNDING_MODEL", LLM_MODEL)
+SEMANTIC_GROUNDING_TIMEOUT_SECONDS = _env_float(
+    "SEMANTIC_GROUNDING_TIMEOUT_SECONDS", 12.0, minimum=0.1
+)
+SEMANTIC_GROUNDING_INCLUDE_THINKING = _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+SEMANTIC_GROUNDING_RESPONSE_FORMAT = os.getenv("SEMANTIC_GROUNDING_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 MAX_UPLOAD_BYTES = _env_int("MAX_UPLOAD_BYTES", 50 * 1024 * 1024, minimum=1)
 MAX_BATCH_UPLOAD_FILES = _env_int("MAX_BATCH_UPLOAD_FILES", 20, minimum=1)
 INDEX_QUEUE_CAPACITY = _env_int("INDEX_QUEUE_CAPACITY", 8, minimum=1)
@@ -153,6 +239,10 @@ SUPPORTED_DOCUMENT_MIME_TYPES = {
     ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
     ".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
     ".pdf": {"application/pdf"},
+    ".csv": {"text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"},
+    ".jsonl": {"application/x-ndjson", "application/jsonl", "application/json", "text/plain"},
+    ".html": {"text/html", "application/xhtml+xml"},
+    ".htm": {"text/html", "application/xhtml+xml"},
 }
 
 DOCUMENT_LOADER_ORDER = {
@@ -163,6 +253,10 @@ DOCUMENT_LOADER_ORDER = {
     ".pdf": ["pymupdf4llm", "docling", "unstructured", "pypdf"],
     ".xls": ["spreadsheet-xls"],
     ".xlsx": ["spreadsheet-xlsx"],
+    ".csv": ["spreadsheet-csv"],
+    ".jsonl": ["jsonl"],
+    ".html": ["html"],
+    ".htm": ["html"],
 }
 
 

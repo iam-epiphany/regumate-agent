@@ -3,10 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import logging
+import os
 from threading import Lock
 from typing import Any
 
-from backend.app.core.config import MODEL_DEVICE, MODEL_GPU_MIN_FREE_MEMORY_GB
+from backend.app.core.config import (
+    MODEL_DEVICE,
+    MODEL_GPU_MIN_FREE_MEMORY_GB,
+    REGUMATE_PERFORMANCE_MODE,
+)
+from backend.app.core.performance_profile import configure_torch_runtime, resolve_performance_profile
 
 
 logger = logging.getLogger(__name__)
@@ -14,6 +20,11 @@ logger = logging.getLogger(__name__)
 _RUNTIME_CPU_FALLBACK_REASON: str | None = None
 _RUNTIME_LOCK = Lock()
 _DEVICE_LOGGED = False
+
+# Configure native thread pools before PyTorch/FlagEmbedding is imported.
+_BOOTSTRAP_PROFILE = resolve_performance_profile("cpu")
+os.environ.setdefault("OMP_NUM_THREADS", str(_BOOTSTRAP_PROFILE.torch_num_threads))
+os.environ.setdefault("MKL_NUM_THREADS", str(_BOOTSTRAP_PROFILE.torch_num_threads))
 
 
 @dataclass(frozen=True)
@@ -70,7 +81,12 @@ def is_cuda_failure(exc: BaseException) -> bool:
 
 @lru_cache(maxsize=1)
 def get_model_device_info() -> ModelDeviceInfo:
-    requested = MODEL_DEVICE if MODEL_DEVICE in {"auto", "cpu", "cuda"} else "auto"
+    if REGUMATE_PERFORMANCE_MODE == "gpu":
+        requested = "cuda"
+    elif REGUMATE_PERFORMANCE_MODE in {"cpu_balanced", "cpu_low_resource"}:
+        requested = "cpu"
+    else:
+        requested = MODEL_DEVICE if MODEL_DEVICE in {"auto", "cpu", "cuda"} else "auto"
     runtime_reason = _RUNTIME_CPU_FALLBACK_REASON
     try:
         import torch
@@ -111,7 +127,9 @@ def get_model_device_info() -> ModelDeviceInfo:
         selected = "cuda"
     else:
         selected = "cpu"
-        fallback_reason = "auto selected CPU because CUDA is unavailable"
+        fallback_reason = None
+
+    configure_torch_runtime(torch, selected)
 
     info = ModelDeviceInfo(
         requested_device=requested,
@@ -175,3 +193,17 @@ def _log_device_once(info: ModelDeviceInfo) -> None:
         logger.warning(message + " fallback=%s。CPU 模式处理速度可能较慢。", *args, info.fallback_reason)
     else:
         logger.info(message, *args)
+    profile = resolve_performance_profile(info.selected_device)
+    logger.info(
+        "性能配置：mode=%s backend=%s embedding_batch=%s rerank_batch=%s "
+        "rerank_max_length=%s torch_threads=%s interop_threads=%s OMP=%s MKL=%s",
+        profile.selected_mode,
+        profile.backend,
+        profile.embedding_batch_size,
+        profile.rerank_batch_size,
+        profile.rerank_max_length,
+        profile.torch_num_threads,
+        profile.torch_num_interop_threads,
+        profile.omp_num_threads,
+        profile.mkl_num_threads,
+    )

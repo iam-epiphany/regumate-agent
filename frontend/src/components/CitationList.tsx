@@ -57,6 +57,7 @@ export function CitationList({ citations, activeCitation, onSelectCitation, comp
                 <button className="text-button" type="button" onClick={() => onSelectCitation?.(label)}>
                   对照正文 [{label}]
                 </button>
+                <span className="source-note">来源文件：{citation.filename}</span>
                 {canCollapse ? (
                   <button className="text-button" type="button" onClick={() => toggleExpanded(key)} aria-expanded={isExpanded}>
                     {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -104,7 +105,10 @@ function TableCitationMeta({ citation }: { citation: Citation }) {
 }
 
 function sourceLocation(citation: Citation): string {
-  const parts = [citation.section_title || "未标注章节"];
+  const article = typeof citation.metadata?.article_number === "string" ? citation.metadata.article_number : null;
+  const parts = [citation.issuing_authority, citation.publication_date, citation.document_number, article, citation.section_title || "未标注章节"].filter(
+    (item): item is string => Boolean(item),
+  );
   if (citation.page_number) parts.push(`第 ${citation.page_number} 页`);
   return parts.join(" · ");
 }

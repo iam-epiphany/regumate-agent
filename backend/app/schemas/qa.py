@@ -48,12 +48,36 @@ class RagProgressEvent(BaseModel):
 class AnswerClaim(BaseModel):
     text: str
     citation_ids: list[str] = Field(default_factory=list)
+    role: Literal[
+        "conclusion",
+        "regulatory_basis",
+        "table_fact",
+        "calculation",
+        "explanation",
+        "recommendation",
+        "other",
+    ] = "other"
+    aspect_ids: list[str] = Field(default_factory=list)
+
+
+class EvidenceCoverage(BaseModel):
+    expected_aspect_ids: list[str] = Field(default_factory=list)
+    covered_aspect_ids: list[str] = Field(default_factory=list)
+    missing_aspect_ids: list[str] = Field(default_factory=list)
+    complete: bool = False
 
 
 class Citation(BaseModel):
     document_id: str
     chunk_id: str
     filename: str
+    source_url: str | None = None
+    attachment_url: str | None = None
+    source_title: str | None = None
+    issuing_authority: str | None = None
+    publication_date: str | None = None
+    document_number: str | None = None
+    version_status: str | None = None
     section_title: str | None = None
     section_path: list[str] = Field(default_factory=list)
     section_number: str | None = None
@@ -103,6 +127,7 @@ class QAResponse(BaseModel):
     grounding_validation: dict[str, Any] = Field(default_factory=dict)
     refusal_reason: str | None = None
     degraded: bool = False
+    evidence_coverage: EvidenceCoverage | None = None
 
 
 class QAAnswerPreview(BaseModel):

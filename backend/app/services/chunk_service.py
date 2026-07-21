@@ -52,6 +52,7 @@ def build_chunks_from_parsed(
     document_id: str,
     parsed: ParsedDocument,
     source_file: str | None = None,
+    inherited_metadata: dict[str, Any] | None = None,
 ) -> list[ChunkDraft]:
     """Build retrievable chunks from structured parser blocks."""
 
@@ -61,6 +62,12 @@ def build_chunks_from_parsed(
     for group in groups:
         for piece in _split_group(group, document_id=document_id):
             token_count = count_tokens(piece.text)
+            piece_metadata = {
+                key: value
+                for key, value in (piece.metadata or {}).items()
+                if value not in (None, "", [])
+            }
+            chunk_metadata = {**(inherited_metadata or {}), **piece_metadata}
             chunks.append(
                 ChunkDraft(
                     chunk_id=f"{document_id}-CHUNK-{len(chunks) + 1:04d}",
@@ -76,7 +83,7 @@ def build_chunks_from_parsed(
                         parent_section_number=group.parent_section_number,
                         page_number=group.page_number,
                         chunk_type=group.block_type,
-                        chunk_metadata=piece.metadata,
+                        chunk_metadata=chunk_metadata,
                     ),
                     token_count=token_count,
                     title=group.section_title,
@@ -86,7 +93,7 @@ def build_chunks_from_parsed(
                     section_path=group.section_path,
                     section_number=group.section_number,
                     parent_section_number=group.parent_section_number,
-                    metadata=piece.metadata,
+                    metadata=chunk_metadata,
                 )
             )
     for previous, current, next_chunk in zip([None, *chunks[:-1]], chunks, [*chunks[1:], None], strict=True):
@@ -121,6 +128,7 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
     current_section_number: str | None = None
     current_parent_section_number: str | None = None
     current_page: int | None = None
+    current_metadata: dict[str, Any] = {}
     has_body = False
 
     def flush() -> None:
@@ -135,6 +143,7 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                     section_path=list(current_path),
                     section_number=current_section_number,
                     parent_section_number=current_parent_section_number,
+                    metadata=dict(current_metadata),
                 )
             )
         buffer = []
@@ -150,6 +159,7 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
             current_path = _updated_section_path(current_path, block.text, block.level, current_section_number)
             buffer = [block.text]
             current_page = block.page_number
+            current_metadata = dict(block.metadata or {})
             has_body = False
             continue
 
@@ -208,6 +218,8 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
                     block.level,
                     current_section_number,
                 )
+        if block.metadata:
+            current_metadata = {**current_metadata, **block.metadata}
         if block.page_number is not None and (current_page is None or not has_body):
             current_page = block.page_number
 
@@ -222,7 +234,13 @@ def _section_number(section_title: str | None) -> str | None:
     if not section_title:
         return None
     match = re.match(r"^\s*(\d+(?:\.\d+)*)[\.、\s]", section_title)
-    return match.group(1) if match else None
+    if match:
+        return match.group(1)
+    article = re.match(
+        r"^\s*(第[零〇一二三四五六七八九十百千万两\d]+条(?:之[零〇一二三四五六七八九十百千万两\d]+)?)",
+        section_title,
+    )
+    return article.group(1) if article else None
 
 
 def _parent_section_number(section_number: str | None) -> str | None:
@@ -258,7 +276,7 @@ def _split_group(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPiece]:
     if not cleaned:
         return []
     if count_tokens(cleaned) <= CHUNK_MAX_TOKENS:
-        return [_ChunkPiece(text=cleaned, metadata={})]
+        return [_ChunkPiece(text=cleaned, metadata=dict(group.metadata or {}))]
 
     paragraphs = [paragraph.strip() for paragraph in cleaned.split("\n\n") if paragraph.strip()]
     if len(paragraphs) >= 2:
@@ -269,7 +287,10 @@ def _split_group(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPiece]:
     pieces: list[str] = []
     for piece in semantic_pieces:
         pieces.extend(_split_by_token_limit(piece))
-    return [_ChunkPiece(text=piece, metadata={}) for piece in _add_overlap([piece for piece in pieces if piece])]
+    return [
+        _ChunkPiece(text=piece, metadata=dict(group.metadata or {}))
+        for piece in _add_overlap([piece for piece in pieces if piece])
+    ]
 
 
 def _split_by_semantic_breaks(paragraphs: list[str]) -> list[str]:

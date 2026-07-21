@@ -4,6 +4,7 @@ import { AppShell } from "./components/AppShell";
 import { AuditPage } from "./pages/AuditPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { RagPage } from "./pages/RagPage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { QATaskProvider } from "./state/qaTaskContext";
 import { SystemStatusProvider } from "./state/systemStatusContext";
 
@@ -32,7 +33,7 @@ export function App() {
   );
 }
 
-type Route = { name: "documents" } | { name: "qa" } | { name: "audit" };
+type Route = { name: "documents" } | { name: "qa" } | { name: "audit" } | { name: "review" };
 
 function matchRoute(path: string): Route {
   const parts = path.split("/").filter(Boolean);
@@ -44,6 +45,9 @@ function matchRoute(path: string): Route {
   }
   if (parts[0] === "audit") {
     return { name: "audit" };
+  }
+  if (parts[0] === "review") {
+    return { name: "review" };
   }
   return { name: "qa" };
 }
@@ -57,6 +61,9 @@ function renderRoute(route: Route) {
   }
   if (route.name === "audit") {
     return <AuditPage />;
+  }
+  if (route.name === "review") {
+    return <ReviewPage />;
   }
   return <RagPage />;
 }
