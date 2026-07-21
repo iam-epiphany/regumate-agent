@@ -1,0 +1,140 @@
+{
+  "report_generated_at": "2026-07-17T01:51:17.667159+08:00",
+  "test_created_at": "2026-07-17 01:50:27 +0800",
+  "source_result": "data/evaluation/contest_qa_test/20260716_173747/contest_qa_all_results.json",
+  "source_result_sha256": "35853cf5f416b97d5ab1b364bd88e6aa73643643caf2ffdf651ad86f87c8651e",
+  "environment": {
+    "build_id": "dev",
+    "runtime": "Docker Compose + docker-compose.gpu.yml",
+    "qdrant_collection": "regumate_chunks",
+    "qdrant_points": 45651,
+    "model_device": "cuda",
+    "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+    "torch_version": "2.11.0+cu128",
+    "qa_sha256": "bb43588e9fb45b51a57c61516bc7ff7bd33775863b0828c74212ae69c6395a51"
+  },
+  "knowledge_base": {
+    "contest_attachments": 500,
+    "indexed_documents": 500,
+    "failed_documents": 0,
+    "qdrant_points": 45651
+  },
+  "summary": {
+    "case_count": 300,
+    "completed_count": 300,
+    "error_count": 0,
+    "answer_accuracy": 1.0,
+    "source_hit_rate": 1.0,
+    "elapsed_ms": {
+      "avg": 2469.61,
+      "p50": 2640.36,
+      "p95": 4966.69
+    },
+    "cold_start_ms": 138.16,
+    "warm_elapsed_ms": {
+      "avg": 2477.41,
+      "p50": 2641.39,
+      "p95": 5548.3
+    },
+    "by_slice": {
+      "source_type": {
+        "excel": {
+          "count": 100,
+          "accuracy": 1.0
+        },
+        "pdf": {
+          "count": 100,
+          "accuracy": 1.0
+        },
+        "word": {
+          "count": 100,
+          "accuracy": 1.0
+        }
+      },
+      "qa_type": {
+        "单事实检索": {
+          "count": 134,
+          "accuracy": 1.0
+        },
+        "多事实检索": {
+          "count": 66,
+          "accuracy": 1.0
+        },
+        "表格取数": {
+          "count": 34,
+          "accuracy": 1.0
+        },
+        "表格比较": {
+          "count": 33,
+          "accuracy": 1.0
+        },
+        "表格计算": {
+          "count": 33,
+          "accuracy": 1.0
+        }
+      },
+      "difficulty": {
+        "中等": {
+          "count": 99,
+          "accuracy": 1.0
+        },
+        "困难": {
+          "count": 99,
+          "accuracy": 1.0
+        },
+        "简单": {
+          "count": 102,
+          "accuracy": 1.0
+        }
+      }
+    },
+    "excel_cell_recall": 1.0,
+    "text_evidence_coverage_rate": 0.86,
+    "text_evidence_bigram_recall": 0.8632,
+    "grounding_pass_rate": 1.0,
+    "key_entity_error_rate": 0.0,
+    "ood_refusal_rate": 0.0,
+    "citation_coverage_rate": 1.0,
+    "failure_stage_counts": {
+      "success": 300
+    },
+    "generation_status_counts": {
+      "completed": 300
+    },
+    "answer_type_counts": {
+      "table_deterministic": 100,
+      "choice_evidence_deterministic": 114,
+      "llm_grounded": 86
+    },
+    "incorrect_generation_status_counts": {}
+  },
+  "q105": {
+    "expected": "A",
+    "predicted": "A",
+    "correct": true,
+    "answer_type": "choice_evidence_deterministic"
+  },
+  "supplemental_evidence": {
+    "ood_gpu_30": {
+      "source_result": "data/evaluation/performance_baseline/gpu_20260718_182304/ood/contest_qa_ood_results.json",
+      "source_result_sha256": "00132fc1597ed76593d919d6feb2fbaf93cd5bfb0e73bc4b7314a64db8b1b655",
+      "case_count": 30,
+      "completed_count": 30,
+      "error_count": 0,
+      "answer_accuracy": 1.0,
+      "ood_refusal_rate": 1.0
+    },
+    "current_index_audit": {
+      "source_result": "outputs/evaluation/vector_index_audit.json",
+      "sqlite_documents": 500,
+      "sqlite_chunks": 46575,
+      "qdrant_collection": "regumate_chunks",
+      "qdrant_points": 46575,
+      "sqlite_qdrant_chunk_id_match": true,
+      "missing_chunk_ids_in_qdrant": 0,
+      "extra_chunk_ids_in_qdrant": 0
+    }
+  },
+  "incorrect_cases": [],
+  "note": "The primary QA metrics come from the 2026-07-17 official 300-case all split. OOD refusal and current index audit are included as supplemental, separately reproducible evidence and should not be merged into the primary QA snapshot."
+}

@@ -1,0 +1,27 @@
+services:
+  app:
+    command: python -m uvicorn backend.main:app --reload --reload-dir /app/backend --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./data:/app/data
+      - ./data/models:/app/data/models:ro
+
+  frontend-dev:
+    image: node:22-bookworm-slim
+    container_name: regumate-frontend-dev
+    working_dir: /app/frontend
+    depends_on:
+      - app
+    environment:
+      VITE_API_PROXY_TARGET: http://app:8000
+    ports:
+      - "127.0.0.1:${REGUMATE_DOCKER_FRONTEND_PORT:-5174}:5174"
+    volumes:
+      - ./frontend:/app/frontend
+      - regumate-frontend-node-modules:/app/frontend/node_modules
+    restart: unless-stopped
+    command: sh -c "test -d node_modules/.vite || npm install && npm run dev -- --host 0.0.0.0 --port 5174"
+
+volumes:
+  regumate-frontend-node-modules:

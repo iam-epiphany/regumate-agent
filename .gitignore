@@ -50,6 +50,9 @@ data/documents/originals/*
 !data/documents/originals/.gitkeep
 data/test_documents/parser_samples/*
 data/evaluation/
+data/contest-data/
+data/contest-data-self-made/
+data/contest_dataset/
 data/contest_staging/
 data/contest dataset/
 data/dev_runtime/
