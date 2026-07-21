@@ -39,6 +39,7 @@ def index_document(
 
     with measure("index.embedding_text_build"):
         drafts = _to_chunk_drafts(chunks, document)
+    chunk_ids = [draft.chunk_id for draft in drafts]
     document.status = "indexing"
     document.index_version = INDEX_VERSION
     document.index_error = None
@@ -59,6 +60,7 @@ def index_document(
             stage_reporter("embedding", len(drafts), len(drafts))
             stage_reporter("vector_upsert", 0, len(drafts))
         with measure("index.vector_upsert"):
+            delete_document_vectors(document.document_id)
             upsert_chunk_embeddings(chunks=drafts, embeddings=embeddings, filename=document.filename)
         if stage_reporter is not None:
             stage_reporter("vector_upsert", len(drafts), len(drafts))
@@ -70,11 +72,17 @@ def index_document(
         if stage_reporter is not None:
             stage_reporter("verifying", vector_count, len(drafts))
     except (EmbeddingServiceError, VectorStoreError) as exc:
-        _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])
-        _mark_index_failed(db, document, chunks, str(exc))
+        _cleanup_partial_vectors(document.document_id, chunk_ids)
+        failed_chunks = _load_chunks_by_ids(db, document.document_id, chunk_ids)
+        _mark_index_failed(db, document, failed_chunks, str(exc))
         raise DocumentIndexingError(str(exc)) from exc
 
     try:
+        chunks = _load_chunks_by_ids(db, document.document_id, chunk_ids)
+        if len(chunks) != len(chunk_ids):
+            raise DocumentIndexingError(
+                f"SQLite chunk 数量在向量写入后发生变化：expected={len(chunk_ids)}, actual={len(chunks)}"
+            )
         document.status = "indexed"
         document.index_version = INDEX_VERSION
         document.index_error = None
@@ -83,10 +91,13 @@ def index_document(
             chunk.index_version = INDEX_VERSION
         with measure("index.sqlite_finalize"):
             db.commit()
+        from backend.app.services.rag_service import clear_document_snapshot_cache
+
+        clear_document_snapshot_cache({document.document_id})
         invalidate_rerank_score_cache()
     except Exception as exc:
         db.rollback()
-        _cleanup_partial_vectors(document.document_id, [chunk.chunk_id for chunk in chunks])
+        _cleanup_partial_vectors(document.document_id, chunk_ids)
         raise DocumentIndexingError(f"SQLite 索引状态提交失败：{exc}") from exc
 
 
@@ -158,6 +169,18 @@ def _chunk_metadata(chunk: DocumentChunk) -> dict:
     except json.JSONDecodeError:
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _load_chunks_by_ids(db: Session, document_id: str, chunk_ids: list[str]) -> list[DocumentChunk]:
+    if not chunk_ids:
+        return []
+    chunks = db.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id, DocumentChunk.chunk_id.in_(chunk_ids))
+        .order_by(DocumentChunk.id.asc())
+    ).all()
+    by_id = {chunk.chunk_id: chunk for chunk in chunks}
+    return [by_id[chunk_id] for chunk_id in chunk_ids if chunk_id in by_id]
 
 
 def _section_number(section_title: str | None) -> str | None:

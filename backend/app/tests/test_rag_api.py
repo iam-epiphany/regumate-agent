@@ -70,11 +70,15 @@ def fake_indexing_services(monkeypatch, tmp_path):
     monkeypatch.setattr("backend.app.services.document_indexing_service.upsert_chunk_embeddings", fake_upsert_chunk_embeddings)
     monkeypatch.setattr("backend.app.services.document_indexing_service.count_document_vectors", fake_count_document_vectors)
     monkeypatch.setattr(
+        "backend.app.services.document_indexing_service.delete_document_vectors",
+        lambda document_id, chunk_ids=None: None,
+    )
+    monkeypatch.setattr(
         "backend.app.services.document_lifecycle_service.delete_document_vectors",
         lambda document_id, chunk_ids=None: None,
     )
 
-    def synchronous_test_enqueue(document_id: str) -> bool:
+    def synchronous_test_enqueue(document_id: str, **kwargs) -> bool:
         with SessionLocal() as db:
             document = db.scalar(select(Document).where(Document.document_id == document_id))
             assert document is not None
@@ -82,7 +86,7 @@ def fake_indexing_services(monkeypatch, tmp_path):
             from backend.app.services.document_processing_service import ensure_document_chunks
             from backend.app.models.document import DocumentIndexTask
 
-            ensure_document_chunks(db, document)
+            ensure_document_chunks(db, document, force_rebuild=bool(kwargs.get("force_rebuild_chunks")))
             index_document(db, document)
             task = db.scalar(
                 select(DocumentIndexTask).where(DocumentIndexTask.document_id == document_id)
@@ -197,6 +201,7 @@ def test_openapi_only_exposes_rag_main_routes() -> None:
     assert "/api/documents/upload" in paths
     assert "/api/documents/upload-preflight" in paths
     assert "/api/documents/batch-upload" in paths
+    assert "/api/documents/bulk-delete" in paths
     assert "/api/documents/{document_id}/index" in paths
     assert "/api/documents" in paths
     assert "/api/documents/{document_id}" in paths
@@ -328,7 +333,8 @@ def test_report_review_api_closes_rule_finding_and_report_loop(monkeypatch) -> N
     detail = detail_response.json()
     assert detail["status"] == "completed"
     assert detail["finding_count"] == 1
-    assert detail["findings"][0]["regulatory_evidence"]["source_url"].startswith("https://")
+    assert detail["findings"][0]["regulatory_evidence"]["filename"] == "制度.md"
+    assert "余额不得为负数" in detail["findings"][0]["regulatory_evidence"]["excerpt"]
     finding_id = detail["findings"][0]["finding_id"]
 
     review_response = client.patch(
@@ -342,7 +348,8 @@ def test_report_review_api_closes_rule_finding_and_report_loop(monkeypatch) -> N
         f"/api/report-reviews/{review_id}/report?format=markdown"
     )
     assert report_response.status_code == 200
-    assert "https://example.gov.cn/rule/api" in report_response.text
+    assert "监管依据文件" in report_response.text
+    assert "监管填报制度" in report_response.text
     assert "复核员A" in report_response.text
 
 
@@ -904,6 +911,46 @@ def test_build_document_index_persists_bounded_queue_task(monkeypatch) -> None:
         assert task.status == "queued"
 
 
+def test_index_document_reloads_chunks_after_stage_commits(fake_indexing_services) -> None:
+    reset_database()
+    with SessionLocal() as db:
+        document = Document(
+            document_id="DOC-TEST-RELOAD",
+            filename="reload.md",
+            file_type="md",
+            size=128,
+            storage_path="reload.md",
+            status="uploaded",
+            chunk_count=1,
+        )
+        chunk = DocumentChunk(
+            document_id=document.document_id,
+            chunk_id="DOC-TEST-RELOAD-CHUNK-0001",
+            text="资产合计应当等于现金及存放同业、贷款余额、证券投资和其他资产四项金额之和。",
+            embedding_text="资产合计应当等于现金及存放同业、贷款余额、证券投资和其他资产四项金额之和。",
+            token_count=20,
+            index_status="uploaded",
+            index_version=INDEX_VERSION,
+            source_file=document.filename,
+        )
+        db.add_all([document, chunk])
+        db.commit()
+
+        from backend.app.services.document_indexing_service import index_document
+
+        def stage_reporter(stage: str, completed: int | None = None, total: int | None = None) -> None:
+            db.commit()
+
+        index_document(db, document, stage_reporter=stage_reporter)
+
+        indexed_chunk = db.scalar(
+            select(DocumentChunk).where(DocumentChunk.chunk_id == "DOC-TEST-RELOAD-CHUNK-0001")
+        )
+        assert indexed_chunk is not None
+        assert indexed_chunk.index_status == "indexed"
+        assert document.status == "indexed"
+
+
 def test_queued_index_failure_is_recorded_for_retry(monkeypatch) -> None:
     reset_database()
     monkeypatch.setattr("backend.app.services.index_task_service.start_index_task_worker", lambda: None)
@@ -1121,6 +1168,43 @@ def test_delete_document_removes_document_from_list() -> None:
     assert response.status_code == 200
     assert response.json()["deleted"] is True
     assert client.get("/api/documents").json()["documents"] == []
+
+
+def test_bulk_delete_documents_reports_partial_results() -> None:
+    reset_database()
+    first_upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules-a.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
+    )
+    second_upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("rules-b.txt", "资本净额不得为负。", "text/plain")},
+    )
+    first_id = first_upload.json()["document_id"]
+    second_id = second_upload.json()["document_id"]
+    with SessionLocal() as db:
+        second = db.scalar(select(Document).where(Document.document_id == second_id))
+        assert second is not None
+        second.status = "indexing"
+        db.commit()
+
+    response = client.post(
+        "/api/documents/bulk-delete",
+        json={"document_ids": [first_id, second_id, "DOC-NOT-FOUND"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_count"] == 3
+    assert body["deleted_count"] == 1
+    assert body["failed_count"] == 2
+    statuses = {item["document_id"]: item["status"] for item in body["items"]}
+    assert statuses[first_id] == "deleted"
+    assert statuses[second_id] == "blocked"
+    assert statuses["DOC-NOT-FOUND"] == "not_found"
+    remaining_ids = {item["document_id"] for item in client.get("/api/documents").json()["documents"]}
+    assert first_id not in remaining_ids
+    assert second_id in remaining_ids
 
 
 def test_delete_document_keeps_record_when_qdrant_cleanup_fails(monkeypatch) -> None:
@@ -2288,53 +2372,98 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
     reset_database()
     old_created_at = datetime.now(timezone.utc) - timedelta(days=2)
     old_date = old_created_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
-    archive_path = AUDIT_ARCHIVE_DIR / f"audit-{old_date}.md"
+    archive_path = AUDIT_ARCHIVE_DIR / f"audit-{old_date}.pdf"
+    legacy_archive_path = AUDIT_ARCHIVE_DIR / f"audit-{old_date}.md"
+    deleted_marker_path = AUDIT_ARCHIVE_DIR / ".deleted-audit-archives.json"
+    marker_backup = deleted_marker_path.read_text(encoding="utf-8") if deleted_marker_path.exists() else None
     if archive_path.exists():
         archive_path.unlink()
+    if legacy_archive_path.exists():
+        legacy_archive_path.unlink()
+    if deleted_marker_path.exists():
+        deleted_marker_path.unlink()
 
-    with SessionLocal() as db:
-        db.add(
-            AuditLog(
+    try:
+        with SessionLocal() as db:
+            db.add(
+                AuditLog(
+                        action="qa_answered",
+                        target_type="question",
+                        target_id=None,
+                        detail=json.dumps({"question": "old question", "answer": "old answer"}, ensure_ascii=False),
+                        created_at=old_created_at,
+                    )
+                )
+            db.add(
+                AuditLog(
+                    action="document_uploaded",
+                    target_type="document",
+                    target_id="DOC-TODAY",
+                    detail="today document",
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+            db.commit()
+
+        from backend.app.services.audit_service import archive_expired_audit_logs
+
+        with SessionLocal() as db:
+            archive_expired_audit_logs(db)
+
+        log_response = client.get("/api/audit/logs")
+        archive_response = client.get("/api/audit/archives")
+
+        assert log_response.status_code == 200
+        assert [log["action"] for log in log_response.json()["logs"]] == ["document_uploaded"]
+        assert archive_path.exists()
+        assert not legacy_archive_path.exists()
+        assert any(archive["date"] == old_date for archive in archive_response.json()["archives"])
+        assert any(archive["filename"] == archive_path.name for archive in archive_response.json()["archives"])
+
+        detail_response = client.get(f"/api/audit/archives/{old_date}")
+        assert detail_response.status_code == 200
+        assert "old question" in detail_response.json()["content"]
+        assert "old answer" in detail_response.json()["content"]
+
+        delete_response = client.delete(f"/api/audit/archives/{old_date}")
+        assert delete_response.status_code == 200
+        assert delete_response.json()["deleted"] is True
+        assert not archive_path.exists()
+
+        legacy_archive_path.write_text("legacy content should stay deleted", encoding="utf-8")
+        with SessionLocal() as db:
+            db.add(
+                AuditLog(
                     action="qa_answered",
                     target_type="question",
                     target_id=None,
-                    detail=json.dumps({"question": "old question", "answer": "old answer"}, ensure_ascii=False),
+                    detail="old log should not be rearchived",
                     created_at=old_created_at,
                 )
             )
-        db.add(
-            AuditLog(
-                action="document_uploaded",
-                target_type="document",
-                target_id="DOC-TODAY",
-                detail="today document",
-                created_at=datetime.now(timezone.utc),
-            )
-        )
-        db.commit()
+            db.commit()
+            archive_expired_audit_logs(db)
 
-    from backend.app.services.audit_service import archive_expired_audit_logs
-
-    with SessionLocal() as db:
-        archive_expired_audit_logs(db)
-
-    log_response = client.get("/api/audit/logs")
-    archive_response = client.get("/api/audit/archives")
-
-    assert log_response.status_code == 200
-    assert [log["action"] for log in log_response.json()["logs"]] == ["document_uploaded"]
-    assert archive_path.exists()
-    assert any(archive["date"] == old_date for archive in archive_response.json()["archives"])
-
-    detail_response = client.get(f"/api/audit/archives/{old_date}")
-    assert detail_response.status_code == 200
-    assert "old question" in detail_response.json()["content"]
-    assert "old answer" in detail_response.json()["content"]
-
-    delete_response = client.delete(f"/api/audit/archives/{old_date}")
-    assert delete_response.status_code == 200
-    assert delete_response.json()["deleted"] is True
-    assert not archive_path.exists()
+        assert not archive_path.exists()
+        assert not legacy_archive_path.exists()
+        assert old_date not in {archive["date"] for archive in client.get("/api/audit/archives").json()["archives"]}
+        with SessionLocal() as db:
+            old_logs = [
+                log
+                for log in db.scalars(select(AuditLog).order_by(AuditLog.created_at.asc())).all()
+                if log.created_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() == old_date
+            ]
+        assert old_logs == []
+    finally:
+        if archive_path.exists():
+            archive_path.unlink()
+        if legacy_archive_path.exists():
+            legacy_archive_path.unlink()
+        if marker_backup is None:
+            if deleted_marker_path.exists():
+                deleted_marker_path.unlink()
+        else:
+            deleted_marker_path.write_text(marker_backup, encoding="utf-8")
 
 
 def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> None:

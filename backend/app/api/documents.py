@@ -16,6 +16,9 @@ from backend.app.models.document import Document, DocumentChunk, DocumentIndexTa
 from backend.app.schemas.documents import (
     DocumentBatchUploadItem,
     DocumentBatchUploadResponse,
+    DocumentBulkDeleteItem,
+    DocumentBulkDeleteRequest,
+    DocumentBulkDeleteResponse,
     ChunkSummary,
     DocumentDeleteResponse,
     DocumentDetailResponse,
@@ -129,8 +132,8 @@ async def import_document_manifest(
     except (ManifestImportError, DocumentMetadataError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     updated = [item for item in results if item.status == "updated" and item.document_id]
-    for item in updated:
-        enqueue_document_index(str(item.document_id))
+    # Manifest enrichment refreshes SQLite chunks and Qdrant payloads in place;
+    # re-enqueuing full indexing here would recompute unchanged embeddings.
     return DocumentManifestImportResponse(
         total_count=len(results),
         updated_count=len(updated),
@@ -342,13 +345,26 @@ async def upload_documents_batch(
 
 
 @router.post("/{document_id}/index", response_model=DocumentDetailResponse)
-def build_document_index(document_id: str, db: Session = Depends(get_db)) -> DocumentDetailResponse:
+def build_document_index(
+    document_id: str,
+    force_rebuild_chunks: bool = Query(
+        False,
+        description="Reparse the original file and rebuild SQLite chunks/cell index before vector indexing.",
+    ),
+    db: Session = Depends(get_db),
+) -> DocumentDetailResponse:
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
 
-    enqueue_document_index(document_id)
-    log_action(db, "document_index_queued", "document", document_id, f"chunks={document.chunk_count}")
+    enqueue_document_index(document_id, force_rebuild_chunks=force_rebuild_chunks)
+    log_action(
+        db,
+        "document_index_queued",
+        "document",
+        document_id,
+        f"chunks={document.chunk_count}; force_rebuild_chunks={force_rebuild_chunks}",
+    )
     db.refresh(document)
     return _to_detail(document, db)
 
@@ -395,6 +411,70 @@ def list_documents(
     return DocumentListResponse(documents=[_to_summary(document) for document in documents])
 
 
+@router.post("/bulk-delete", response_model=DocumentBulkDeleteResponse)
+def bulk_delete_documents(
+    payload: DocumentBulkDeleteRequest,
+    db: Session = Depends(get_db),
+) -> DocumentBulkDeleteResponse:
+    document_ids = list(dict.fromkeys(payload.document_ids))
+    items: list[DocumentBulkDeleteItem] = []
+
+    for document_id in document_ids:
+        document = db.scalar(select(Document).where(Document.document_id == document_id))
+        if document is None:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document_id,
+                    status="not_found",
+                    message="未找到指定文档",
+                )
+            )
+            continue
+
+        filename = document.filename
+        blocked_message = _document_delete_block_message(document)
+        if blocked_message is not None:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document.document_id,
+                    filename=filename,
+                    status="blocked",
+                    message=blocked_message,
+                )
+            )
+            continue
+
+        try:
+            _delete_document_with_audit(db, document)
+        except DocumentDeletionError as exc:
+            items.append(
+                DocumentBulkDeleteItem(
+                    document_id=document_id,
+                    filename=filename,
+                    status="failed",
+                    message=f"文档删除未完成，记录已保留为 delete_failed，可稍后重试：{exc}",
+                )
+            )
+            continue
+
+        items.append(
+            DocumentBulkDeleteItem(
+                document_id=document_id,
+                filename=filename,
+                status="deleted",
+                message="删除成功",
+            )
+        )
+
+    deleted_count = sum(1 for item in items if item.status == "deleted")
+    return DocumentBulkDeleteResponse(
+        requested_count=len(document_ids),
+        deleted_count=deleted_count,
+        failed_count=len(items) - deleted_count,
+        items=items,
+    )
+
+
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 def get_document(
     document_id: str,
@@ -436,22 +516,37 @@ def delete_document(document_id: str, db: Session = Depends(get_db)) -> Document
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
-    if document.status in {"uploaded", "index_queued", "indexing"}:
-        raise HTTPException(status_code=409, detail="文档正在解析或构建索引，请等待处理完成后再删除")
-    if document.status == "deleting":
-        raise HTTPException(status_code=409, detail="文档正在删除，请稍后刷新列表")
+    blocked_message = _document_delete_block_message(document)
+    if blocked_message is not None:
+        raise HTTPException(status_code=409, detail=blocked_message)
 
     try:
-        delete_document_record(db, document)
+        _delete_document_with_audit(db, document)
     except DocumentDeletionError as exc:
-        log_action(db, "document_delete_failed", "document", document_id, str(exc)[:500])
         raise HTTPException(
             status_code=503,
             detail=f"文档删除未完成，记录已保留为 delete_failed，可稍后重试：{exc}",
         ) from exc
 
-    log_action(db, "document_deleted", "document", document_id, "document deleted")
     return DocumentDeleteResponse(document_id=document_id, deleted=True, vector_warning=None)
+
+
+def _document_delete_block_message(document: Document) -> str | None:
+    if document.status in {"uploaded", "index_queued", "indexing"}:
+        return "文档正在解析或构建索引，请等待处理完成后再删除"
+    if document.status == "deleting":
+        return "文档正在删除，请稍后刷新列表"
+    return None
+
+
+def _delete_document_with_audit(db: Session, document: Document) -> None:
+    document_id = document.document_id
+    try:
+        delete_document_record(db, document)
+    except DocumentDeletionError as exc:
+        log_action(db, "document_delete_failed", "document", document_id, str(exc)[:500])
+        raise
+    log_action(db, "document_deleted", "document", document_id, "document deleted")
 
 
 def _batch_file_request_id(batch_id: str, index: int, filename: str) -> str:

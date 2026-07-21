@@ -83,9 +83,9 @@ def get_audit_archive(archive_date: str) -> AuditArchiveDetailResponse:
 
 
 @router.delete("/archives/{archive_date}", response_model=AuditArchiveDeleteResponse)
-def remove_audit_archive(archive_date: str) -> AuditArchiveDeleteResponse:
+def remove_audit_archive(archive_date: str, db: Session = Depends(get_db)) -> AuditArchiveDeleteResponse:
     try:
-        delete_audit_archive(archive_date)
+        delete_audit_archive(archive_date, db)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="未找到指定日期的日志归档") from exc
     return AuditArchiveDeleteResponse(date=archive_date, deleted=True)

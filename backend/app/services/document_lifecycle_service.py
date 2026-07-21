@@ -80,6 +80,9 @@ def delete_document_record(db: Session, document: Document) -> None:
     try:
         db.delete(document)
         db.commit()
+        from backend.app.services.rag_service import clear_document_snapshot_cache
+
+        clear_document_snapshot_cache({document.document_id})
         invalidate_rerank_score_cache()
     except Exception as exc:
         db.rollback()

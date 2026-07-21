@@ -707,6 +707,24 @@ code {
   font-weight: 700;
 }
 
+.bulk-selection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+}
+
+.bulk-selection-actions span {
+  padding: 0 6px;
+  color: #7f1d1d;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .document-list-toolbar select {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
@@ -746,12 +764,37 @@ table {
   border-collapse: collapse;
 }
 
+tr.is-selected {
+  background: #f8fafc;
+}
+
 th,
 td {
   border-bottom: 1px solid #e5e7eb;
   padding: 11px 8px;
   text-align: left;
   vertical-align: top;
+}
+
+.selection-column {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+}
+
+.selection-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.selection-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--danger);
 }
 
 th {
@@ -1410,6 +1453,33 @@ textarea {
 .confirm-dialog__facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.bulk-delete-list {
+  display: grid;
+  gap: 6px;
+  max-height: 210px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bulk-delete-list li {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.bulk-delete-list span {
+  font-weight: 800;
+}
+
+.bulk-delete-list small {
+  color: var(--muted);
 }
 
 .upload-conflict-dialog {
@@ -2232,10 +2302,14 @@ textarea {
   color: var(--text);
 }
 
+.system-status-row strong .system-status-model-lines,
+.system-status-row strong .system-status-model-lines span {
+  color: var(--text);
+}
+
 .system-status-model-lines span {
   display: block;
   overflow: hidden;
-  color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3327,6 +3401,12 @@ textarea {
   margin-top: 8px;
 }
 
+.source-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .technical-panel {
   display: grid;
   gap: 12px;
@@ -3978,79 +4058,23 @@ textarea {
   }
 }
 
-/* Business review uses the visual language of a reconciled evidence ledger. */
 .review-page {
-  --review-ink: #10213d;
-  --review-paper: #fffdf6;
-  --review-rule: #dbc98f;
-  --review-stamp: #174f8a;
+  --review-ink: var(--text);
+  --review-paper: var(--surface-solid);
+  --review-rule: var(--border);
+  --review-stamp: var(--primary);
 }
 
-.review-hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px 28px;
-  padding: 28px;
-  overflow: hidden;
-  border: 1px solid var(--review-rule);
-  border-radius: var(--radius);
-  background:
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(154, 122, 47, 0.07) 31px 32px),
-    var(--review-paper);
-  box-shadow: var(--shadow-subtle);
-}
-
-.review-hero::before {
-  content: "EVIDENCE LEDGER";
-  position: absolute;
-  top: 17px;
-  right: 102px;
-  color: rgba(23, 79, 138, 0.08);
-  font-family: Consolas, "SFMono-Regular", monospace;
-  font-size: 42px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  transform: rotate(-2deg);
-  pointer-events: none;
-}
-
-.review-hero h1 {
-  max-width: 760px;
-  color: var(--review-ink);
-  font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
-  font-size: clamp(28px, 3vw, 44px);
-  line-height: 1.16;
-  letter-spacing: -0.035em;
-}
-
-.review-hero > div:first-child > p:last-child {
-  max-width: 760px;
-  margin: 12px 0 0;
-  color: #56657a;
-  line-height: 1.7;
-}
-
-.evidence-ledger {
-  grid-column: 1 / -1;
-  display: grid;
+.review-evidence-strip {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--review-rule);
-  border-bottom: 1px solid var(--review-rule);
-  background: rgba(255, 255, 255, 0.7);
 }
 
 .ledger-step {
-  position: relative;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: 11px;
-  min-height: 70px;
-  padding: 12px 18px;
-}
-
-.ledger-step:not(:last-child) {
-  border-right: 1px solid var(--review-rule);
+  min-width: 0;
 }
 
 .ledger-step > span {
@@ -4058,40 +4082,42 @@ textarea {
   place-items: center;
   width: 34px;
   height: 34px;
+  margin-bottom: 0;
   color: var(--review-stamp);
-  border: 1px solid rgba(23, 79, 138, 0.25);
-  border-radius: 50%;
-  background: #f5f9ff;
-}
-
-.ledger-step strong,
-.ledger-step small {
-  display: block;
+  font-size: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  border-radius: 7px;
+  background: var(--primary-soft);
 }
 
 .ledger-step strong {
+  display: block;
   color: var(--review-ink);
   font-size: 14px;
 }
 
-.ledger-step small {
-  margin-top: 3px;
+.ledger-step p {
+  margin: 6px 0 0;
   color: var(--muted);
-  font-family: Consolas, "SFMono-Regular", monospace;
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .review-message {
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  color: #315170;
-  border-left: 3px solid var(--review-stamp);
-  background: rgba(237, 245, 255, 0.72);
+  margin: 16px 0 0;
+  border: 1px solid #d8e7ff;
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .review-message.error {
   color: var(--danger);
-  border-color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, white);
   background: var(--danger-soft);
 }
 
@@ -4487,33 +4513,13 @@ textarea {
 
 @media (max-width: 1120px) {
   .review-grid,
-  .finding-evidence-grid {
+  .finding-evidence-grid,
+  .review-evidence-strip {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
-  .review-hero {
-    grid-template-columns: 1fr;
-    padding: 20px;
-  }
-
-  .review-hero .icon-button {
-    justify-self: start;
-  }
-
-  .evidence-ledger {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ledger-step:nth-child(2) {
-    border-right: 0;
-  }
-
-  .ledger-step:nth-child(-n+2) {
-    border-bottom: 1px solid var(--review-rule);
-  }
-
   .review-rule-form .form-grid {
     grid-template-columns: 1fr;
   }

@@ -1,5 +1,6 @@
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import json
 import re
 from time import perf_counter
 from typing import Any, Callable
@@ -61,6 +62,7 @@ class RetrievalDiagnostics:
     query_variants: list[str] = field(default_factory=list)
     timings_ms: dict[str, float] = field(default_factory=dict)
     score_range: dict[str, float | None] = field(default_factory=dict)
+    metadata_filter: dict[str, Any] = field(default_factory=dict)
 
     def to_summary_fields(self) -> dict[str, Any]:
         return {
@@ -75,6 +77,7 @@ class RetrievalDiagnostics:
             "timings_ms": self.timings_ms,
             "score_range": self.score_range,
             "query_variants": self.query_variants,
+            "metadata_filter": self.metadata_filter,
         }
 
 
@@ -103,7 +106,7 @@ def filter_active_candidates(
     if not document_ids:
         return []
     with SessionLocal() as db:
-        query = db.query(Document.document_id).filter(
+        query = db.query(Document).filter(
             Document.document_id.in_(document_ids),
             Document.status == "indexed",
             Document.index_version == INDEX_VERSION,
@@ -111,13 +114,47 @@ def filter_active_candidates(
         if not include_inactive:
             query = query.filter(Document.version_status.notin_(("repealed", "superseded")))
         rows = query.all()
-    active_ids = {row[0] for row in rows}
+    active_documents = {document.document_id: document for document in rows}
+    active_ids = set(active_documents)
     active_candidates = [candidate for candidate in candidates if candidate.document_id in active_ids]
     for candidate in active_candidates:
         if candidate.metadata is None:
             candidate.metadata = {}
+        document = active_documents[candidate.document_id]
+        authoritative_metadata = {
+            "source_title": document.title or document.filename,
+            "external_doc_id": document.external_doc_id,
+            "issuing_authority": document.issuing_authority,
+            "publication_date": document.publication_date,
+            "effective_date": document.effective_date,
+            "expiration_date": document.expiration_date,
+            "document_number": document.document_number,
+            "regulatory_topic": document.regulatory_topic,
+            "business_domain": document.business_domain,
+            "source_url": document.source_url,
+            "attachment_url": document.attachment_url,
+            "version_status": document.version_status,
+            "file_type": document.file_type,
+            "source_format": document.file_type,
+        }
+        extension_metadata = _json_object(document.document_metadata)
+        candidate.metadata.update(
+            {
+                key: value
+                for key, value in {**extension_metadata, **authoritative_metadata}.items()
+                if value not in (None, "")
+            }
+        )
         candidate.metadata["active_index_verified"] = True
     return active_candidates
+
+
+def _json_object(raw: str | None) -> dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def filter_candidates_by_metadata(
@@ -279,6 +316,8 @@ def _collect_candidates(question: str, diagnostics: RetrievalDiagnostics) -> lis
 def collect_candidates_for_queries(
     queries: list[str],
     diagnostics: RetrievalDiagnostics | None = None,
+    *,
+    metadata_filter: dict[str, Any] | None = None,
 ) -> list[VectorSearchResult]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -292,7 +331,11 @@ def collect_candidates_for_queries(
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    raw_results_by_query = _hybrid_search_many(query_embeddings, limit=RETRIEVAL_TOP_K)
+    raw_results_by_query = _hybrid_search_many(
+        query_embeddings,
+        limit=RETRIEVAL_TOP_K,
+        metadata_filter=metadata_filter,
+    )
     diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
     merge_started_at = perf_counter()
     for raw_results in raw_results_by_query:
@@ -311,6 +354,7 @@ def collect_candidates_with_query_hits(
     *,
     query_metadata: list[dict[str, Any]] | None = None,
     diagnostics: RetrievalDiagnostics | None = None,
+    metadata_filter: dict[str, Any] | None = None,
 ) -> tuple[list[VectorSearchResult], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -328,7 +372,12 @@ def collect_candidates_with_query_hits(
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
     qdrant_started_at = perf_counter()
-    raw_results_by_query = _hybrid_search_many(query_embeddings, limit=RETRIEVAL_TOP_K)
+    diagnostics.metadata_filter = dict(metadata_filter or {})
+    raw_results_by_query = _hybrid_search_many(
+        query_embeddings,
+        limit=RETRIEVAL_TOP_K,
+        metadata_filter=metadata_filter,
+    )
     diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
     merge_started_at = perf_counter()
     for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
@@ -380,11 +429,20 @@ def _embed_search_queries(queries: list[str]) -> list[Any]:
     return embed_queries(queries)
 
 
-def _hybrid_search_many(query_embeddings: list[Any], *, limit: int) -> list[list[VectorSearchResult]]:
+def _hybrid_search_many(
+    query_embeddings: list[Any],
+    *,
+    limit: int,
+    metadata_filter: dict[str, Any] | None = None,
+) -> list[list[VectorSearchResult]]:
     # A patched single-search hook is intentionally honored for deterministic tests.
     if hybrid_search is not _DEFAULT_HYBRID_SEARCH:
         return [hybrid_search(embedding, limit=limit) for embedding in query_embeddings]
-    return hybrid_search_batch(query_embeddings, limit=limit)
+    return hybrid_search_batch(
+        query_embeddings,
+        limit=limit,
+        metadata_filter=metadata_filter,
+    )
 
 
 def _query_anchor_boost(query: str, candidate: VectorSearchResult) -> float:

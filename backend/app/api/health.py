@@ -114,7 +114,6 @@ def _rag_health() -> RagHealthResponse:
             and collection_ready
             and sqlite_ready
             and bool(office["libreoffice_ready"])
-            and (profile.warmup_policy != "background" or bool(warmup["warmed"]))
         ),
         embedding_model_error=embedding_error,
         reranker_model_error=reranker_error,

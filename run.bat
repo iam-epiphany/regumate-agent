@@ -3,6 +3,10 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 set "APP_IMAGE=regumate/app:contest-v3"
+if exist "%~dp0.env" (
+  for /f "tokens=1,* delims==" %%A in ('findstr /b "REGUMATE_APP_IMAGE=" "%~dp0.env" 2^>nul') do set "APP_IMAGE=%%B"
+)
+if defined REGUMATE_APP_IMAGE set "APP_IMAGE=%REGUMATE_APP_IMAGE%"
 if not defined REGUMATE_BUILD_RETRY_LIMIT set "REGUMATE_BUILD_RETRY_LIMIT=5"
 if not defined REGUMATE_BUILD_RETRY_DELAY_SECONDS set "REGUMATE_BUILD_RETRY_DELAY_SECONDS=10"
 set "BUILD_RETRY_LIMIT=%REGUMATE_BUILD_RETRY_LIMIT%"
@@ -46,7 +50,7 @@ if "%BUILD_APP%"=="1" (
     echo.
     if "%HAVE_APP_IMAGE%"=="1" (
       echo [WARN] ReguMate image rebuild failed. Starting with existing image !OLD_APP_IMAGE_ID!.
-      echo [WARN] Re-run run-dev.bat after network or Docker build issues are fixed to refresh the image.
+      echo [WARN] Re-run rebuild-run.bat after network or Docker build issues are fixed to refresh the image.
     ) else (
       echo [FAIL] ReguMate image rebuild failed and no existing ReguMate app image is available.
       pause

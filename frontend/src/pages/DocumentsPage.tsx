@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   deleteDocument,
+  deleteDocumentsBulk,
   getDocument,
   getDocumentProcessing,
   listDocuments,
@@ -74,7 +75,7 @@ interface BatchConflictIssue {
 
 const DOCUMENT_PAGE_SIZE = 20;
 const CHUNK_PAGE_SIZE = 50;
-const productWordmarkUrl = new URL("../assets/brand/regumate-wordmark.png", import.meta.url).href;
+const pageHeaderWordmarkUrl = new URL("../assets/brand/regumate-page-header-wordmark.png", import.meta.url).href;
 
 export function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -85,7 +86,10 @@ export function DocumentsPage() {
   const [batchConflictIssues, setBatchConflictIssues] = useState<BatchConflictIssue[]>([]);
   const [toastNotice, setToastNotice] = useState<ToastNotice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DocumentSummary | null>(null);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [rebuildingDocumentId, setRebuildingDocumentId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -296,7 +300,7 @@ export function DocumentsPage() {
   }, [toastNotice]);
 
   useEffect(() => {
-    if (!deleteTarget) {
+    if (!deleteTarget && !bulkDeleteOpen) {
       return;
     }
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -305,6 +309,7 @@ export function DocumentsPage() {
       if (event.key === "Escape") {
         event.preventDefault();
         setDeleteTarget(null);
+        setBulkDeleteOpen(false);
         return;
       }
       if (event.key !== "Tab" || !deleteDialogRef.current) {
@@ -331,7 +336,12 @@ export function DocumentsPage() {
       document.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [deleteTarget]);
+  }, [bulkDeleteOpen, deleteTarget]);
+
+  useEffect(() => {
+    const availableIds = new Set(documents.map((document) => document.document_id));
+    setSelectedDocumentIds((current) => current.filter((documentId) => availableIds.has(documentId)));
+  }, [documents]);
 
   useEffect(() => {
     if (!selectedDetail) return;
@@ -670,6 +680,29 @@ export function DocumentsPage() {
     setSelectedDetail(detail);
   }
 
+  function toggleDocumentSelection(document: DocumentSummary, checked: boolean) {
+    if (isDocumentDeletionBlocked(document)) {
+      return;
+    }
+    setSelectedDocumentIds((current) => {
+      if (checked) {
+        return current.includes(document.document_id) ? current : [...current, document.document_id];
+      }
+      return current.filter((documentId) => documentId !== document.document_id);
+    });
+  }
+
+  function toggleVisibleSelection(checked: boolean) {
+    const visibleIds = visibleDeletableDocuments.map((document) => document.document_id);
+    setSelectedDocumentIds((current) => {
+      if (checked) {
+        return Array.from(new Set([...current, ...visibleIds]));
+      }
+      const visibleIdSet = new Set(visibleIds);
+      return current.filter((documentId) => !visibleIdSet.has(documentId));
+    });
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) {
       return;
@@ -699,6 +732,40 @@ export function DocumentsPage() {
         deleteAbortController.current = null;
       }
       setDeletingDocumentId(null);
+      await refreshKnowledgeBaseView();
+    }
+  }
+
+  async function confirmBulkDelete() {
+    const documentIds = selectedDocumentIds.slice();
+    if (documentIds.length === 0) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+
+    setBulkDeleteOpen(false);
+    setIsBulkDeleting(true);
+    setUploadNotice(null);
+    setToastNotice(null);
+    try {
+      const result = await deleteDocumentsBulk(documentIds);
+      const deletedIds = new Set(
+        result.items.filter((item) => item.status === "deleted").map((item) => item.document_id),
+      );
+      setSelectedDocumentIds([]);
+      if (selectedDetail && deletedIds.has(selectedDetail.document_id)) {
+        setSelectedDetail(null);
+      }
+      setToastNotice({
+        message: result.failed_count > 0
+          ? `已删除 ${result.deleted_count} 份，${result.failed_count} 份未删除`
+          : `已删除 ${result.deleted_count} 份文档`,
+        tone: result.failed_count > 0 ? "error" : "success",
+      });
+    } catch (error) {
+      setToastNotice({ message: error instanceof Error ? error.message : "批量删除失败", tone: "error" });
+    } finally {
+      setIsBulkDeleting(false);
       await refreshKnowledgeBaseView();
     }
   }
@@ -737,6 +804,13 @@ export function DocumentsPage() {
     (activePage - 1) * DOCUMENT_PAGE_SIZE,
     activePage * DOCUMENT_PAGE_SIZE,
   );
+  const selectedDocumentIdSet = new Set(selectedDocumentIds);
+  const visibleDeletableDocuments = visibleDocuments.filter((document) => !isDocumentDeletionBlocked(document));
+  const visibleSelectedCount = visibleDeletableDocuments.filter((document) => selectedDocumentIdSet.has(document.document_id)).length;
+  const allVisibleSelected = visibleDeletableDocuments.length > 0 && visibleSelectedCount === visibleDeletableDocuments.length;
+  const selectedDocuments = selectedDocumentIds
+    .map((documentId) => documents.find((document) => document.document_id === documentId))
+    .filter((document): document is DocumentSummary => Boolean(document));
   const indexedCount = documents.filter((document) => document.status === "indexed").length;
   const processingCount = documents.filter((document) => ["uploaded", "index_queued", "indexing"].includes(document.status)).length;
   const failedCount = documents.filter((document) => ["index_failed", "source_missing", "delete_failed"].includes(document.status)).length;
@@ -748,7 +822,7 @@ export function DocumentsPage() {
         <div>
           <p className="eyebrow">知识库台账</p>
           <div className="product-title-lockup">
-            <img className="product-wordmark" src={productWordmarkUrl} alt="ReguMate" />
+            <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
             <h1>监管与报表口径文档</h1>
             <StatusBadge tone={ragHealth?.ready && indexedCount > 0 ? "ok" : "warning"}>
               {ragHealth?.ready && indexedCount > 0 ? "可支撑问答" : "待完善"}
@@ -833,7 +907,7 @@ export function DocumentsPage() {
             onSkipAll={() => setBatchConflictIssues([])}
           />
         ) : null}
-        <p className="hint">可上传 .txt、.md、.doc、.docx、.pdf、.xls 或 .xlsx 文件。</p>
+        <p className="hint">可上传 doc、.docx、.pdf、.xls 、.xlsx 、.jsonl、.csv、.md、.txt文件</p>
       </section>
 
       <section className="panel">
@@ -852,6 +926,18 @@ export function DocumentsPage() {
             </p>
           </div>
           <div className="document-filters">
+            {selectedDocumentIds.length > 0 ? (
+              <div className="bulk-selection-actions" role="status" aria-live="polite">
+                <span>已选 {selectedDocumentIds.length} 份</span>
+                <button className="secondary-button danger-button" type="button" disabled={isBulkDeleting} onClick={() => setBulkDeleteOpen(true)}>
+                  <Trash2 size={15} />
+                  批量删除
+                </button>
+                <button className="secondary-button" type="button" disabled={isBulkDeleting} onClick={() => setSelectedDocumentIds([])}>
+                  清空选择
+                </button>
+              </div>
+            ) : null}
             <label className="document-search">
               <span className="sr-only">搜索文件名或文档编号</span>
               <Search size={16} />
@@ -892,6 +978,18 @@ export function DocumentsPage() {
             <table>
               <thead>
                 <tr>
+                  <th className="selection-column">
+                    <label className="selection-checkbox">
+                      <input
+                        type="checkbox"
+                        aria-label="选择本页可删除文档"
+                        checked={allVisibleSelected}
+                        disabled={visibleDeletableDocuments.length === 0 || isBulkDeleting}
+                        onChange={(event) => toggleVisibleSelection(event.target.checked)}
+                      />
+                      <span className="sr-only">选择本页</span>
+                    </label>
+                  </th>
                   <th>文件名称</th>
                   <th>文档分类</th>
                   <th>解析与索引状态</th>
@@ -902,7 +1000,18 @@ export function DocumentsPage() {
               </thead>
               <tbody>
                 {visibleDocuments.map((document) => (
-                  <tr key={document.document_id}>
+                  <tr key={document.document_id} className={selectedDocumentIdSet.has(document.document_id) ? "is-selected" : undefined}>
+                    <td data-label="选择" className="selection-column">
+                      <label className="selection-checkbox">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择 ${document.filename}`}
+                          checked={selectedDocumentIdSet.has(document.document_id)}
+                          disabled={isDocumentDeletionBlocked(document) || isBulkDeleting}
+                          onChange={(event) => toggleDocumentSelection(document, event.target.checked)}
+                        />
+                      </label>
+                    </td>
                     <td data-label="文件名称">
                       <strong className="document-title">{document.filename}</strong>
                       <span className="document-subtle">编号：{document.document_id}</span>
@@ -942,7 +1051,7 @@ export function DocumentsPage() {
                         <button
                           className="secondary-button danger-button"
                           type="button"
-                          disabled={["uploaded", "index_queued", "indexing", "deleting"].includes(document.status)}
+                          disabled={isDocumentDeletionBlocked(document)}
                           onClick={() => setDeleteTarget(document)}
                         >
                           <Trash2 size={15} />
@@ -1064,6 +1173,51 @@ export function DocumentsPage() {
                 <button className="icon-button danger-solid-button" type="button" onClick={() => void confirmDelete()}>
                   <Trash2 size={16} />
                   确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkDeleteOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div ref={deleteDialogRef} className="confirm-dialog bulk-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-dialog-title">
+            <div className="confirm-dialog__icon">
+              <AlertTriangle size={22} />
+            </div>
+            <div className="confirm-dialog__body">
+              <h2 id="bulk-delete-dialog-title">确认批量删除文档</h2>
+              <p>
+                将删除已选文档的原始文件、内容片段和检索索引。此操作完成后无法从界面恢复。
+              </p>
+              <dl className="confirm-dialog__facts">
+                <div>
+                  <dt>已选数量</dt>
+                  <dd>{selectedDocuments.length} 份文档</dd>
+                </div>
+                <div>
+                  <dt>文档清单</dt>
+                  <dd>
+                    <ul className="bulk-delete-list">
+                      {selectedDocuments.slice(0, 8).map((document) => (
+                        <li key={document.document_id}>
+                          <span>{document.filename}</span>
+                          <small className="mono">{document.document_id}</small>
+                        </li>
+                      ))}
+                    </ul>
+                    {selectedDocuments.length > 8 ? <span className="muted">另有 {selectedDocuments.length - 8} 份未展开显示</span> : null}
+                  </dd>
+                </div>
+              </dl>
+              <div className="button-row">
+                <button ref={deleteCancelButtonRef} className="secondary-button" type="button" onClick={() => setBulkDeleteOpen(false)}>
+                  取消
+                </button>
+                <button className="icon-button danger-solid-button" type="button" onClick={() => void confirmBulkDelete()}>
+                  <Trash2 size={16} />
+                  确认批量删除
                 </button>
               </div>
             </div>
@@ -1356,6 +1510,10 @@ function friendlyIndexError(error: string): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isDocumentDeletionBlocked(document: DocumentSummary): boolean {
+  return ["uploaded", "index_queued", "indexing", "deleting"].includes(document.status);
 }
 
 function buildRuntimeWarning(ragHealth: RagHealthResponse): string | null {

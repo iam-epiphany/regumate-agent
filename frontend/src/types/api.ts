@@ -190,6 +190,20 @@ export interface DocumentDeleteResponse {
   vector_warning: string | null;
 }
 
+export interface DocumentBulkDeleteItem {
+  document_id: string;
+  filename: string | null;
+  status: "deleted" | "not_found" | "blocked" | "failed";
+  message: string | null;
+}
+
+export interface DocumentBulkDeleteResponse {
+  requested_count: number;
+  deleted_count: number;
+  failed_count: number;
+  items: DocumentBulkDeleteItem[];
+}
+
 export interface ChunkSummary {
   chunk_id: string;
   text: string;
@@ -470,12 +484,37 @@ export interface QAResponse {
   confidence: number;
   refused: boolean;
   context_package: LLMContextPackage | null;
-  answer_type: "table_deterministic" | "llm_grounded" | "extractive_fallback" | "refusal" | string;
+  answer_type:
+    | "table_deterministic"
+    | "llm_grounded"
+    | "mixed_grounded"
+    | "scenario_assessment"
+    | "extractive_fallback"
+    | "refusal"
+    | string;
   generation_status: string;
-  claims: Array<{ text: string; citation_ids: string[] }>;
+  claims: Array<{
+    text: string;
+    citation_ids: string[];
+    role?:
+      | "conclusion"
+      | "regulatory_basis"
+      | "table_fact"
+      | "calculation"
+      | "explanation"
+      | "recommendation"
+      | "other";
+    aspect_ids?: string[];
+  }>;
   grounding_validation: Record<string, unknown>;
   refusal_reason: string | null;
   degraded: boolean;
+  evidence_coverage?: {
+    expected_aspect_ids: string[];
+    covered_aspect_ids: string[];
+    missing_aspect_ids: string[];
+    complete: boolean;
+  } | null;
 }
 
 export interface QAAnswerPreview {

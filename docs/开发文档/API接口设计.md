@@ -29,6 +29,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | GET | `/api/documents/{document_id}` | 获取文档详情与 chunk |
 | POST | `/api/documents/{document_id}/index` | 手动重建单个文档的向量索引 |
 | DELETE | `/api/documents/{document_id}` | 删除文档、chunk 和向量索引 |
+| POST | `/api/documents/bulk-delete` | 批量删除文档、chunk 和向量索引，并返回逐文档结果 |
 | POST | `/api/qa/ask` | 提交问题并获得可信回答 |
 | POST | `/api/qa/ask/stream` | 提交流式问答请求并通过 SSE 观察 RAG 执行过程 |
 | POST | `/api/qa/tasks` | 创建可恢复的可信问答任务 |
@@ -58,7 +59,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 `POST /api/documents/upload`
 
 - 请求：`multipart/form-data`，字段名为 `file`；可选字段 `filename_override` 用于重命名新文件，`overwrite_document_id` 用于覆盖已有文档。
-- 支持：`.txt`、`.md`、`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls`、`.xlsx`。
+- 支持：`.doc`、`.docx`、可提取文本的 `.pdf`、`.xls`、`.xlsx`、`.jsonl`、`.csv`、`.md`、`.txt`。
 - 上传时校验扩展名、MIME 类型和文件内容签名，避免仅靠后缀判断文件类型。
 - 文件按 1MB 分块写入同目录临时文件，超过限额立即停止；内容校验通过后原子改名。超限、伪格式或解析失败都会清理临时文件，避免大文件常驻内存和残留半文件。
 - `.doc` 和 `.xls` 校验 OLE 签名；`.docx` 和 `.xlsx` 校验 ZIP 结构和核心内部文件。
@@ -126,6 +127,13 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 - 成功后文档列表不再返回该文档。
 - 如果文档正在 `indexing` 或 `deleting`，返回 409，避免边索引边删除。
 - Qdrant、文件删除或 SQLite 提交任一步失败都返回 503；文档保留为 `delete_failed` 并记录失败阶段，可稍后重试，不会出现异常直接越过状态记录。
+
+`POST /api/documents/bulk-delete`
+
+- 请求体：`{"document_ids": ["DOC-..."]}`，单次最多 100 个，后端会按顺序去重。
+- 执行顺序与单文档删除完全一致，仍然先删 Qdrant 向量，再删原文件，最后删 SQLite 元数据。
+- 返回 `requested_count/deleted_count/failed_count/items`。单项状态包括 `deleted/not_found/blocked/failed`；单个文档失败不会阻塞其它可删除文档。
+- `blocked` 表示文档仍在上传后处理、排队索引、索引中或删除中；`failed` 表示清理过程中失败，文档会保留为 `delete_failed` 供后续重试。
 
 `GET /api/documents?repair_sources=true` 会扫描 `data/documents/originals/` 中仍存在但 SQLite 缺失的 `DOC-*` 原始文件，并尽力恢复 document/chunk 元数据；只有当前 `index_version` 的 Qdrant point ID 集合与 SQLite 全部 chunk ID 精确一致时才恢复为 `indexed`，否则标记为待重建。该显式修复模式发现 SQLite 记录指向的原始文件缺失时，不会自动删除数据库和 Qdrant 记录，而是将文档标记为 `source_missing`；用户可以恢复原始文件，或通过删除接口显式清理。
 
@@ -266,17 +274,17 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 
 `GET /api/audit/archives`
 
-- 返回历史归档文件列表，包含日期、文件名、大小和更新时间。
+- 返回历史 PDF 归档文件列表，包含日期、文件名、大小和更新时间。
 
 `GET /api/audit/archives/{archive_date}`
 
 - `archive_date` 格式为 `YYYY-MM-DD`。
-- 返回指定日期归档文件的 Markdown 内容。
+- 返回指定日期 PDF 归档中的结构化文本内容，用于前端展示日志摘要和表格。
 
 `DELETE /api/audit/archives/{archive_date}`
 
-- 删除指定日期的归档文件。
-- 删除后该天历史日志不再显示，接口返回 `deleted=true`。
+- 删除指定日期的归档文件、同日遗留 SQLite 审计日志和旧版 Markdown 归档，并记录本地删除标记。
+- 删除后该天历史日志不再显示；后续服务启动归档或旧 Markdown 迁移会跳过该日期，避免被已删除归档重新生成。接口返回 `deleted=true`。
 
 ## 业务报表审查接口
 
@@ -317,7 +325,7 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 }
 ```
 
-正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。README 面向测试人员使用 `scripts/warmup_models.ps1` 调用该接口，脚本在同步请求等待期间用 PowerShell 进度条显示耗时反馈，并在完成后输出接口 JSON；接口本身仍保持无业务数据写入。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；任何必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用。诊断接口不会返回 API key。
+正式交付版额外返回 `build_id`、`qdrant_collection`、`qdrant_collection_ready`、`sqlite_ready`、`libreoffice_ready`、`antiword_ready`、两个 Office 工具版本、`index_tasks`、`qa_tasks`、`model_runtime`、`model_device` 和总 `ready` 状态。`embedding_model_ready` 与 `reranker_model_ready` 表示本地模型文件已经存在；在线模式下尚未下载模型时仍返回 `false`，避免前端把未下载状态显示为已就绪。`model_runtime` 分别报告 embedding/reranker 的 `loaded/warmed`；`POST /api/health/warmup` 执行一条不写业务数据的 embedding/rerank 预热。README 面向测试人员使用 `scripts/warmup_models.ps1` 调用该接口，脚本在同步请求等待期间用 PowerShell 进度条显示耗时反馈，并在完成后输出接口 JSON；接口本身仍保持无业务数据写入。`model_device` 包含 `requested_device/selected_device/torch_version/cuda_available/cuda_device_count/cuda_device_name/cuda_total_memory_gb/cuda_free_memory_gb/fallback_reason`，用于确认当前是否使用 GPU 或因 CUDA/显存/加载失败降级到 CPU。`GET /api/health/ready` 返回相同结构；模型文件、SQLite、Qdrant collection 和 Office 解析器等必需依赖未就绪时使用 HTTP 503，供 Docker Compose readiness 使用；后台预热状态只作为首次问答延迟诊断，不再阻塞 `ready`。诊断接口不会返回 API key。
 
 性能优化后新增 `performance`：包含 requested/selected performance mode、requested/active backend、backend fallback reason、有效 CPU 核数与内存限制、Embedding/Rerank batch、Rerank 最大长度和输入模式、PyTorch/OMP/MKL 线程、预热状态、缓存容量与 hit/miss/eviction、聚合 timings、1 秒资源采样及近期 QA/index trace。近期 trace 只包含阶段名和耗时，不包含问题正文。公开 QA 响应契约不因性能配置改变；仅 `include_debug=true` 时上下文诊断保存 pre-rerank 与 reranked 完整排名。
 
@@ -325,11 +333,24 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 
 ## 来源、版本与结构化导入接口
 
-核心来源字段不再只放在通用 metadata 中。`Document` 一等字段包括 `external_doc_id/title/issuing_authority/publication_date/effective_date/expiration_date/document_number/regulatory_topic/business_domain/source_column/source_url/attachment_url/source_type/version_label/version_status/supersedes_document_id/metadata_status`。响应仍通过 `metadata` 统一返回，以保持旧客户端兼容，同时包含字段级 `metadata_provenance`。
+核心来源字段不再只放在通用 metadata 中。`Document` 一等字段包括 `external_doc_id/title/issuing_authority/publication_date/effective_date/expiration_date/document_number/regulatory_topic/business_domain/source_column/source_url/attachment_url/source_type/version_label/version_status/supersedes_document_id/metadata_status`。其中 `source_url/attachment_url` 仅为可空兼容字段，交付来源命中以文件名、标题、chunk/页码和表格单元格为准。响应仍通过 `metadata` 统一返回，以保持旧客户端兼容，同时包含字段级 `metadata_provenance`。
 
 - `POST /api/documents/upload`：multipart 新增可选 `metadata_json`。显式 metadata 优先于正文和文件名推断。
 - `PATCH /api/documents/{document_id}/metadata`：人工确认或修订结构化字段，保存后排队刷新向量 payload。
-- `POST /api/documents/manifest`：上传 UTF-8 的 `.json/.jsonl/.csv` manifest，按 SHA-256、官方 doc_id、文件名依次匹配并回填。含 `question + answer/evidence/options` 的 QA 数据会拒绝导入生产知识库。
+- `POST /api/documents/manifest`：上传 UTF-8 的 `.json/.jsonl/.csv` manifest，按 SHA-256、doc_id、文件名依次匹配并回填描述性 metadata。含 `question + answer/evidence/options` 的 QA 数据会拒绝导入生产知识库。
 - `POST /api/documents/url-import`：JSON 请求包含 `url/filename/metadata/client_request_id`。仅允许公网 HTTP(S)，限制重定向与下载大小，拒绝内网、本机和带凭据 URL。
 
-`Citation` 增加 `source_url/attachment_url/source_title/issuing_authority/publication_date/document_number/version_status`。表格和文本引用使用同一来源契约。
+`Citation` 可返回 `source_url/attachment_url/source_title/issuing_authority/publication_date/document_number/version_status`。URL 字段可为空；表格和文本引用必须保留文件名、chunk/页码或单元格定位。
+
+## 可信问答增量字段
+
+`AnswerClaim` 保留原有 `text` 与 `citation_ids`，并新增：
+
+- `role`: `conclusion | regulatory_basis | table_fact | calculation | explanation | recommendation | other`，旧数据缺省为 `other`。
+- `aspect_ids`: claim 实际支持的 Query Aspect，旧数据缺省为空数组。
+
+`QAResponse` 新增可选 `evidence_coverage`，包含 `expected_aspect_ids`、`covered_aspect_ids`、`missing_aspect_ids` 与 `complete`。新增 `mixed_grounded`、`scenario_assessment` answer type，不删除既有类型。
+
+`retrieval_summary` 会记录显式与推断元数据条件、匹配文档数、召回前后候选数及 `metadata_filter_no_match`。用户明确条件零匹配时服务不会执行无条件回退。
+
+`grounding_validation` 新增逐 claim 语义 frame/verdict、冲突原因、校验模式和 verifier 状态。流式 preview 仍只发布已经通过引用、实体和语义校验的 claim。

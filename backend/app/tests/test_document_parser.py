@@ -1,9 +1,15 @@
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from backend.app.core.database import Base
+from backend.app.models.document import Document, DocumentChunk, SpreadsheetCell
 from backend.app.services.chunk_service import build_chunks_from_parsed, count_tokens
 from backend.app.services.document_types import ParsedBlock, ParsedDocument
 from backend.app.services.document_parser import DocumentParseError, available_loader_names, parse_document
+from backend.app.services.document_processing_service import ensure_document_chunks
 from backend.app.services.loader_evaluation import evaluate_document_loaders
+from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
 
 
 def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
@@ -26,8 +32,77 @@ def test_parse_csv_builds_cell_level_rows(tmp_path) -> None:
 
     row = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
     assert row.metadata["spreadsheet_table"] is True
+    assert row.metadata["period"]["year"] == 2025
     assert row.metadata["cells"][1]["coordinate"] == "B2"
     assert row.metadata["cells"][1]["normalized_value"] == 12.5
+
+
+def test_parse_csv_infers_month_period_and_row_unit(tmp_path) -> None:
+    path = tmp_path / "自制月报.csv"
+    path.write_text("指标,2026年1月,单位\n资产合计,7000,万元\n", encoding="utf-8")
+
+    parsed = parse_document(path)
+
+    row = next(block for block in parsed.blocks if block.metadata.get("table_chunk_role") == "row")
+    value_cell = next(cell for cell in row.metadata["cells"] if cell["coordinate"] == "B2")
+    assert row.metadata["period"] == {"year": 2026, "month": 1}
+    assert value_cell["normalized_value"] == 7000
+    assert value_cell["unit"] == "万元"
+
+
+def test_force_rebuild_refreshes_spreadsheet_cell_index(tmp_path) -> None:
+    path = tmp_path / "自制月报.csv"
+    path.write_text("指标,2026年1月,单位\n资产合计,7000,万元\n", encoding="utf-8")
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        document = Document(
+            document_id="DOC-TEST-REBUILD",
+            filename=path.name,
+            filename_norm=path.name,
+            file_type="csv",
+            size=path.stat().st_size,
+            file_sha256="b" * 64,
+            storage_path=str(path),
+            status="indexed",
+            index_version="old",
+            version_status="unknown",
+            metadata_status="inferred",
+            document_metadata="{}",
+            chunk_count=1,
+        )
+        stale_chunk = DocumentChunk(
+            chunk_id="DOC-TEST-REBUILD-CHUNK-STALE",
+            document_id=document.document_id,
+            text="旧表格行证据",
+            embedding_text="旧表格行证据",
+            chunk_metadata='{"table_chunk_role":"row","period":{},"cells":[{"coordinate":"B2","value":"7000","normalized_value":7000}]}',
+            token_count=4,
+            index_status="indexed",
+            index_version="old",
+            title=path.stem,
+            source_file=path.name,
+        )
+        db.add_all([document, stale_chunk])
+        db.flush()
+        rebuild_spreadsheet_cell_index(db, document, [stale_chunk])
+        assert db.query(SpreadsheetCell).one().year is None
+        stale_chunk_id = stale_chunk.chunk_id
+        document_id = document.document_id
+
+        rebuilt = ensure_document_chunks(db, document, force_rebuild=True)
+
+        assert all(chunk.chunk_id != stale_chunk_id for chunk in rebuilt)
+        cell = (
+            db.query(SpreadsheetCell)
+            .filter(SpreadsheetCell.document_id == document_id, SpreadsheetCell.coordinate == "B2")
+            .one()
+        )
+        assert cell.year == 2026
+        assert cell.month == 1
+        assert cell.unit == "万元"
+        assert cell.numeric_value == 7000
 
 
 def test_parse_jsonl_requires_content_and_rejects_qa_answers(tmp_path) -> None:
