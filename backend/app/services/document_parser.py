@@ -8,6 +8,11 @@ from typing import Any, Protocol
 
 from backend.app.core.config import DOCUMENT_LOADER_ORDER
 from backend.app.services.document_types import LoaderResult, PARSER_VERSION, ParsedBlock, ParsedDocument
+from backend.app.services.formula_parser_service import (
+    annotate_blocks_with_pdf_formulas,
+    extract_docx_paragraph_text,
+    formula_metadata,
+)
 
 
 class DocumentParseError(ValueError):
@@ -242,12 +247,14 @@ class DocxDocumentLoader:
         for child in document.element.body.iterchildren():
             if child.tag.endswith("}p"):
                 paragraph = Paragraph(child, document)
-                text = _normalize_text(paragraph.text)
+                extraction = extract_docx_paragraph_text(paragraph._p)
+                text = _normalize_text(extraction.text)
                 if not text:
                     continue
 
                 style_name = (paragraph.style.name if paragraph.style is not None else "") or ""
                 heading_level = _docx_heading_level(style_name)
+                metadata = formula_metadata(extraction.formulas, "omml")
                 if heading_level is not None:
                     current_section = text
                     blocks.append(
@@ -257,6 +264,7 @@ class DocxDocumentLoader:
                             order_index=len(blocks) + 1,
                             section_title=current_section,
                             level=heading_level,
+                            metadata=metadata,
                         )
                     )
                 else:
@@ -266,22 +274,27 @@ class DocxDocumentLoader:
                             block_type="paragraph",
                             order_index=len(blocks) + 1,
                             section_title=current_section,
+                            metadata=metadata,
                         )
                     )
                 continue
 
             if child.tag.endswith("}tbl"):
                 table = Table(child, document)
-                table_text = _docx_table_to_text(table)
+                table_text, formulas = _docx_table_to_text(table)
                 if table_text:
                     table_index += 1
+                    metadata = {
+                        **_table_metadata(table_text, table_index),
+                        **formula_metadata(formulas, "omml"),
+                    }
                     blocks.append(
                         ParsedBlock(
                             text=table_text,
                             block_type="table",
                             order_index=len(blocks) + 1,
                             section_title=current_section,
-                            metadata=_table_metadata(table_text, table_index),
+                            metadata=metadata,
                         )
                     )
         return LoaderResult(blocks=blocks, loader_name=self.name)
@@ -422,12 +435,15 @@ class PyMuPDF4LLMLoader:
         blocks: list[ParsedBlock] = []
         if isinstance(pages, str):
             blocks.extend(_markdown_to_blocks(pages))
+            annotate_blocks_with_pdf_formulas(blocks, pages)
         else:
             for index, page in enumerate(pages, start=1):
                 metadata = page.get("metadata") or {}
                 page_number = metadata.get("page_number") or index
                 text = page.get("text") or ""
-                blocks.extend(_markdown_to_blocks(text, page_number=int(page_number)))
+                page_blocks = _markdown_to_blocks(text, page_number=int(page_number))
+                annotate_blocks_with_pdf_formulas(page_blocks, text, page_number=int(page_number))
+                blocks.extend(page_blocks)
         return LoaderResult(blocks=blocks, loader_name=self.name)
 
 
@@ -519,13 +535,17 @@ class PypdfDocumentLoader:
         for page_number, page in enumerate(reader.pages, start=1):
             text = _normalize_text(page.extract_text() or "")
             if text:
-                blocks.append(
+                blocks_for_page = [
                     ParsedBlock(
                         text=text,
                         block_type="page",
                         order_index=len(blocks) + 1,
                         page_number=page_number,
                     )
+                ]
+                annotate_blocks_with_pdf_formulas(blocks_for_page, text, page_number=page_number)
+                blocks.append(
+                    blocks_for_page[0]
                 )
         return LoaderResult(blocks=blocks, loader_name=self.name)
 
@@ -978,14 +998,23 @@ def _docx_heading_level(style_name: str) -> int | None:
     return None
 
 
-def _docx_table_to_text(table) -> str:
+def _docx_table_to_text(table) -> tuple[str, list[Any]]:
     rows: list[list[str]] = []
+    formulas: list[Any] = []
     for row in table.rows:
-        cells = [_normalize_text(cell.text) for cell in row.cells]
+        cells: list[str] = []
+        for cell in row.cells:
+            paragraph_texts: list[str] = []
+            for paragraph in cell.paragraphs:
+                extraction = extract_docx_paragraph_text(paragraph._p)
+                if extraction.text:
+                    paragraph_texts.append(extraction.text)
+                formulas.extend(extraction.formulas)
+            cells.append(_normalize_text("\n".join(paragraph_texts)))
         if any(cells):
             rows.append(cells)
     if not rows:
-        return ""
+        return "", formulas
 
     width = max(len(row) for row in rows)
     padded_rows = [row + [""] * (width - len(row)) for row in rows]
@@ -994,7 +1023,7 @@ def _docx_table_to_text(table) -> str:
     body = padded_rows[1:]
     markdown_rows = [_markdown_table_row(header), _markdown_table_row(separator)]
     markdown_rows.extend(_markdown_table_row(row) for row in body)
-    return "\n".join(markdown_rows).strip()
+    return "\n".join(markdown_rows).strip(), formulas
 
 
 def _markdown_table_row(cells: list[str]) -> str:

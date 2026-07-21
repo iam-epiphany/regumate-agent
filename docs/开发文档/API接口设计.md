@@ -151,7 +151,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 
 ## 可信回答与调试上下文
 
-- `POST /api/qa/ask`：返回完整 `QAResponse`。Excel 取数与计算由程序确定性完成；Word/PDF 使用 DeepSeek 生成结构化答案并校验引用和关键实体。`include_debug=true` 时才附带 `context_package`。
+- `POST /api/qa/ask`：返回完整 `QAResponse`。Excel 取数与计算由程序确定性完成；Word/PDF 普通文本题使用 DeepSeek 生成结构化答案并校验引用和关键实体；Word/PDF 真数学公式题只在公式、变量和单位均明确时走受限确定性计算。`include_debug=true` 时才附带 `context_package`。
 - `POST /api/qa/ask/stream`：返回 `text/event-stream`，先推送 RAG 阶段进度事件，最后推送完整 `QAResponse`；用于前端动态“检索观测”面板。
 - `POST /api/qa/tasks`：请求必须提供 8–128 字符的 `client_request_id`。该字段在 SQLite 中唯一；相同 ID 重复提交返回原任务，不重复推理。任务进入持久化积压，由默认 1 个有界 worker 执行，服务重启会恢复 `queued/running` 任务，不再为每个请求创建 daemon thread。
 - `GET /api/qa/tasks/{task_id}`：返回 `client_request_id/question/options/include_debug/status/progress_events/answer/error/created_at/updated_at/completed_at`。`status` 固定为 `queued/running/completed/refused/failed/cancelled`；`error` 使用统一对象。返回的 `progress_events` 是完整后端快照，可用于断线重连后恢复时间线。
@@ -191,7 +191,7 @@ DeepSeek 未配置或暂不可用时，`llm_generation` 显示降级/跳过；Ex
 - `is_final_answer`：固定为 `false`。
 - `instruction`：要求 LLM 只能基于检索片段回答，依据不足时明确说明无法判断。
 - `retrieval_summary`：包含 `top_k`、`used_chunks`、`has_sufficient_context`、`coverage_notes`、`missing_aspects`，并扩展返回 `query_plan`、`aspect_retrievals`、`final_prompt_chunk_ids`、`fusion_method`、`query_count`、`candidate_count`、`reranked_count`、`filtered_count`、`prompt_filtered_count`、`prompt_selection`、`timings_ms`、`score_range` 和 `citation_validation`。
-- `context_chunks`：去重、清洗、动态筛选后的最终入 Prompt 片段，包含 `chunk_id`、`rank`、`score`、`source_doc`、`section_title`、`section_path`、`text`、`citation_label` 和 `metadata`。表格 chunk 的 `metadata` 会额外包含 `table_id`、`table_title`、`sheet_name`、`unit`、`period`、`table_headers`、`row_index`、`row_cells`、`cells`、`table_chunk_role` 和 `raw_table_preview` 等结构化字段。
+- `context_chunks`：去重、清洗、动态筛选后的最终入 Prompt 片段，包含 `chunk_id`、`rank`、`score`、`source_doc`、`section_title`、`section_path`、`text`、`citation_label` 和 `metadata`。表格 chunk 的 `metadata` 会额外包含 `table_id`、`table_title`、`sheet_name`、`unit`、`period`、`table_headers`、`row_index`、`row_cells`、`cells`、`table_chunk_role` 和 `raw_table_preview` 等结构化字段。Word/PDF 真数学公式证据会额外包含 `contains_formula`、`formula_count`、`formulas` 和 `formula_source_type`。
 - `llm_prompt`：由 `RAGPromptBuilder` 统一构造，作为生成服务的受控证据输入。
 
 检索结果组装会去掉重复证据、去掉片段开头重复章节标题，保留原文片段，不提前改写成结论式答案。系统会先通过 QueryPlanner 把复合问题拆成多个 aspect；每个 aspect 生成结构化 `search_queries` 对象数组，单条 query 包含 `query`、`query_type` 和 `rationale`，其中 `query_type` 包括 `semantic_question`、`document_style_statement`、`keyword_anchor`、`table_locator`，用于让 LLM 生成贴近监管制度原文、填报说明证据句或表格定位锚点的检索表达。每个 aspect 还包含 `modality=text|table|mixed`、`table_task=lookup|compare|calculate|locate|none`、`table_filters` 和 `operation=max|min|difference|sum|ratio|none`。`modality=table` 时优先走结构化表格检索；`modality=mixed` 时保留制度文本检索并补充表格证据。上下文片段必须来自 `indexed` 文档；普通摘录需要能回溯到 SQLite 原始 chunk；动态表格单元格/计算证据会追溯到对应行级 chunk，并在 `metadata.dynamic_table_evidence=true` 标记。
@@ -213,10 +213,11 @@ DeepSeek 未配置或暂不可用时，`llm_generation` 显示降级/跳过；Ex
 - `chunk_type`：`paragraph` 或 `table`。
 - `evidence_role`：`direct_evidence`、`table_evidence`、`related_context`、`table_context` 或 `expanded_context`。
 - 表格结构字段：命中表格时，`metadata` 中保留表格标题、工作表、单位、期间、表头、行号、行数据和单元格列表；单元格级证据还包含 `sheet_name`、`cell`、`unit`、`value`、`row_label`、`column_label`、`table_task` 和 `operation`。计算证据包含参与单元格列表、计算公式和计算结果。
+- 公式结构字段：命中 Word/PDF 真数学公式时，`metadata.contains_formula=true`，`formula_count` 为当前证据窗口内公式数量，`formulas[]` 保留线性化公式文本、来源类型、顺序、页码和前后上下文，`formula_source_type` 固定区分 `omml` 或 `pdf_text`。
 
-系统现在生成最终可信答案。表格题的数值和运算由确定性程序给出，LLM 不重新计算；文本题由配置化 DeepSeek 生成结构化 claim，并在返回前校验引用编号以及数字、比例、日期、机构和文号。校验失败时最多自动修复一次，仍失败则拒答。`has_sufficient_context=false`、资料冲突、问题含糊或知识库外问题均不得补写答案。
+系统现在生成最终可信答案。表格题的数值和运算由确定性程序给出，LLM 不重新计算；Word/PDF 公式题只支持加减乘除、括号、幂、分式和百分比等安全算术，且变量值只能来自用户问题、同一检索证据或已上传表格证据；文本题由配置化 DeepSeek 生成结构化 claim，并在返回前校验引用编号以及数字、比例、日期、机构和文号。校验失败时最多自动修复一次，仍失败则拒答。`has_sufficient_context=false`、资料冲突、问题含糊或知识库外问题均不得补写答案。
 
-`QARequest` 可选 `options` 和 `include_debug`。`QAResponse` 除 `answer/citations/confidence/refused` 外，还包含 `answer_type`、`generation_status`、`claims`、`grounding_validation`、`refusal_reason`、`degraded`。仅当 `include_debug=true` 时返回 `context_package`。
+`QARequest` 可选 `options` 和 `include_debug`。`QAResponse` 除 `answer/citations/confidence/refused` 外，还包含 `answer_type`、`generation_status`、`claims`、`grounding_validation`、`refusal_reason`、`refusal_code`、`missing_variables`、`ambiguous_variables`、`unsupported_formula`、`degraded`。仅当 `include_debug=true` 时返回 `context_package`。
 
 可信回答硬性不变量：任何 `refused=false` 的最终响应都必须满足 `grounding_validation.passed=true`。生成修复失败时可返回逐条带引用的抽取式降级答案，但该降级答案也必须重新通过校验；仍不通过则返回 `refused=true`。列表序号和引用编号不会被误当作监管数字，比例、日期、金额和机构仍按其绑定 citation 逐条核验。`confidence` 为“证据强度”，不是校准后的正确概率。
 
@@ -238,7 +239,7 @@ HTTP 错误保留兼容字段 `detail`，同时固定返回：
 
 无依据时返回 `200` 且 `refused=true`；embedding、Qdrant 或 reranker 不可用时返回 503。
 
-问答审计日志会为每次请求记录独立事件，不参与重复异常聚合。`detail` 和 `details_json` 均保存结构化问答摘要，包括 `question`、`answer`、`refused`、`refusal_reason`、`generation_status`、`used_chunks`、`confidence` 和 `citation_count`；不写入完整引用正文，避免日志膨胀。前端默认展示缩短后的问题和回答，用户点击详情文本后可展开查看完整内容。
+问答审计日志会为每次请求记录独立事件，不参与重复异常聚合。`detail` 和 `details_json` 均保存结构化问答摘要，包括 `question`、`answer`、`refused`、`refusal_reason`、`refusal_code`、`generation_status`、`used_chunks`、`confidence` 和 `citation_count`；不写入完整引用正文，避免日志膨胀。前端默认展示缩短后的问题和回答，用户点击详情文本后可展开查看完整内容。
 
 问答入口会先做选择题预处理：如果请求已提供 `options`，直接使用；如果用户把选项粘贴在 `question` 中，系统会尝试抽取 2–8 个内嵌选项，支持 `A/B/C`、`1/2/3`、`①②③`、换行、多空格、竖线等常见格式，不要求固定 A–D 四项。抽取成功后，后续 QueryPlanner、检索和答案生成均使用“剥离选项后的题干 + 结构化 options”。只有问题明显属于选择题但既没有 `options`、也无法从题干中抽取选项时，接口才会快速返回 `answer_type=clarification`、`refusal_reason=missing_options_for_choice_question`，提示用户补充选项或改成普通问法。普通开放式问题不需要 `options`，仍按可信 RAG 流程检索和回答。
 
@@ -271,6 +272,12 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 - `period_not_found`、`indicator_not_found`、`column_not_found`、`ambiguous_candidates`、`unit_mismatch`、`empty_value`：只可用于解释拒答，不进入确定性数值答案。
 
 `QAResponse.grounding_validation.table_refusal_reasons` 会保留表格拒答原因。表格证据只有 `valid_*` 状态才允许生成最终答案；否则返回 `refusal_reason=table_evidence_not_found`，前端展示“未找到有效单元格/指定期间不存在/指定指标不存在/候选不唯一/单位不一致”等中文说明。
+
+### v4 Word/PDF 公式拒答与调试信息
+
+DOCX loader 会按 XML 顺序抽取 Word OMML 真数学公式，并将普通文本与公式拼入同一证据窗口；PDF loader 只从可提取文本中标记公式候选，不做图片/扫描公式 OCR。公式统一以 `[公式] <formula>` 写入证据文本，metadata 使用 `contains_formula/formula_count/formulas/formula_source_type` 标注。
+
+公式计算是受限确定性路径，排在 Excel 表格确定性计算之后、LLM 生成之前。成功时 `answer_type=formula_deterministic`，返回公式、变量取值、代入计算式、结果和引用；失败时 `answer_type=formula_refusal`，`refused=true`，并返回固定 `refusal_code`。允许的公式拒答码为：`formula_not_found`、`formula_not_parseable`、`missing_variables`、`ambiguous_variables`、`unit_conflict`、`unsupported_operation`、`insufficient_context`、`out_of_scope`。
 
 `GET /api/audit/archives`
 

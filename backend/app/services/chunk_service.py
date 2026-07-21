@@ -423,6 +423,18 @@ def build_contextual_embedding_text(
         labels.append(f"父条款号：{parent_section_number}")
     if page_number is not None:
         labels.append(f"页码：{page_number}")
+    if chunk_metadata.get("contains_formula"):
+        labels.append("内容类型：公式上下文")
+        labels.append("检索提示：公式、计算、变量、指标、口径")
+        formulas = chunk_metadata.get("formulas")
+        if isinstance(formulas, list):
+            formula_texts = [
+                str(item.get("text") or "").strip()
+                for item in formulas
+                if isinstance(item, dict) and str(item.get("text") or "").strip()
+            ]
+            if formula_texts:
+                labels.append("公式：" + "；".join(formula_texts[:5]))
     if chunk_type == "table":
         labels.append("内容类型：表格")
         labels.append(_table_header_label(text))

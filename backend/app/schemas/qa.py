@@ -126,6 +126,10 @@ class QAResponse(BaseModel):
     claims: list[AnswerClaim] = Field(default_factory=list)
     grounding_validation: dict[str, Any] = Field(default_factory=dict)
     refusal_reason: str | None = None
+    refusal_code: str | None = None
+    missing_variables: list[str] = Field(default_factory=list)
+    ambiguous_variables: list[str] = Field(default_factory=list)
+    unsupported_formula: str | None = None
     degraded: bool = False
     evidence_coverage: EvidenceCoverage | None = None
 

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #fbfdff;
   --bg-tint-blue: #eef6ff;
   --bg-tint-violet: #f5f0ff;
@@ -4055,5 +4055,220 @@ textarea {
   .mobile-status-button {
     width: 34px;
     height: 34px;
+  }
+}
+
+/* Knowledge base row actions and audit detail drawer */
+.icon-button--plain {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button--plain:hover:not(:disabled),
+.icon-button--plain:focus-visible {
+  border-color: var(--border);
+  color: var(--primary-strong);
+  background: var(--surface-muted);
+}
+
+.document-title-button {
+  display: block;
+  border: 0;
+  padding: 0;
+  color: #0f172a;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.document-title-button:hover,
+.document-title-button:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.documents-table th,
+.documents-table td {
+  vertical-align: middle;
+}
+
+.documents-table th {
+  line-height: 1.25;
+}
+
+.documents-table .document-meta-cell {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.documents-table .document-count-cell {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.document-count-heading {
+  display: inline-block;
+  min-width: 2.5em;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+
+.document-status-cell {
+  line-height: 1;
+}
+
+.document-status-cell .status-badge {
+  align-items: center;
+  min-height: 28px;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.row-actions {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+}
+
+.row-actions__trigger {
+  width: 32px;
+  height: 32px;
+}
+
+.row-actions__menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 148px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 6px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-float);
+}
+
+.row-actions__menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-actions__menu button:hover:not(:disabled),
+.row-actions__menu button:focus-visible {
+  background: var(--surface-muted);
+}
+
+.row-actions__menu .row-actions__danger {
+  color: var(--danger);
+}
+
+.audit-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 460px;
+  white-space: normal;
+}
+
+.audit-detail > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-detail-drawer {
+  width: min(720px, 96vw);
+}
+
+.audit-detail-drawer__body {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.audit-detail-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.audit-detail-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.audit-detail-section h3 {
+  margin: 0;
+}
+
+.audit-detail-section p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+
+.audit-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.audit-detail-grid div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 10px;
+  background: var(--surface-subtle);
+}
+
+.audit-detail-grid dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.audit-detail-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.audit-detail-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: inherit;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .audit-detail-grid {
+    grid-template-columns: 1fr;
   }
 }

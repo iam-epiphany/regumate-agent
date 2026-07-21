@@ -1,0 +1,3725 @@
+{
+  "run": {
+    "created_at": "2026-07-13T03:23:53.922773+00:00",
+    "split": "all",
+    "case_count": 100,
+    "base_url": "http://127.0.0.1:8010",
+    "split_seed": 20260713
+  },
+  "summary": {
+    "case_count": 100,
+    "completed_count": 100,
+    "error_count": 0,
+    "answer_accuracy": 1.0,
+    "source_hit_rate": 1.0,
+    "elapsed_ms": {
+      "avg": 60.84,
+      "p50": 38.45,
+      "p95": 80.55
+    },
+    "by_slice": {
+      "source_type": {
+        "excel": {
+          "count": 100,
+          "accuracy": 1.0
+        }
+      },
+      "qa_type": {
+        "表格取数": {
+          "count": 34,
+          "accuracy": 1.0
+        },
+        "表格比较": {
+          "count": 33,
+          "accuracy": 1.0
+        },
+        "表格计算": {
+          "count": 33,
+          "accuracy": 1.0
+        }
+      },
+      "difficulty": {
+        "中等": {
+          "count": 33,
+          "accuracy": 1.0
+        },
+        "困难": {
+          "count": 33,
+          "accuracy": 1.0
+        },
+        "简单": {
+          "count": 34,
+          "accuracy": 1.0
+        }
+      }
+    },
+    "excel_cell_recall": 0.986
+  },
+  "results": [
+    {
+      "id": "Q001",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年10月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：31739.18。依据表格证据，核验值为 31739.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 1890.99,
+      "error": null
+    },
+    {
+      "id": "Q002",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年10月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全国合计”在“合计”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：45167.98。依据表格证据，核验值为 45167.98。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 67.68,
+      "error": null
+    },
+    {
+      "id": "Q003",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年10月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：13428.79。依据表格证据，核验值为 13428.79。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6"
+        ],
+        "actual_cells": [
+          "C6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.65,
+      "error": null
+    },
+    {
+      "id": "Q004",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年12月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：35378.91。依据表格证据，核验值为 35378.91。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 13.52,
+      "error": null
+    },
+    {
+      "id": "Q005",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年12月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：51246.71。依据表格证据，核验值为 51246.71。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 14.27,
+      "error": null
+    },
+    {
+      "id": "Q006",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年12月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全国合计”在“合计”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：51246.71。依据表格证据，核验值为 51246.71。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 61.51,
+      "error": null
+    },
+    {
+      "id": "Q007",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年12月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：15867.79。依据表格证据，核验值为 15867.79。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.86,
+      "error": null
+    },
+    {
+      "id": "Q008",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年3季度保险业资金运用情况表》（工作表：2023年3季度保险资金运用情况表），“资金运用余额”在“截至当期-账面余额”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：275230.63。依据表格证据，核验值为 275230.6254。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6"
+        ],
+        "actual_cells": [
+          "B6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "275230.63"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 21.48,
+      "error": null
+    },
+    {
+      "id": "Q009",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年4季度保险业资金运用情况表》（工作表：2023年4季度保险资金运用情况表），“资金运用余额”在“截至当期-账面余额”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：281573.61。依据表格证据，核验值为 281573.6094。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6"
+        ],
+        "actual_cells": [
+          "B6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "281573.61"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 46.88,
+      "error": null
+    },
+    {
+      "id": "Q010",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年8月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：27679.08。依据表格证据，核验值为 27679.08。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 22.22,
+      "error": null
+    },
+    {
+      "id": "Q011",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年8月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：38731.77。依据表格证据，核验值为 38731.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.42,
+      "error": null
+    },
+    {
+      "id": "Q012",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年8月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全国合计”在“合计”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：38731.77。依据表格证据，核验值为 38731.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 40.72,
+      "error": null
+    },
+    {
+      "id": "Q013",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年8月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：11052.68。依据表格证据，核验值为 11052.68。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 11.76,
+      "error": null
+    },
+    {
+      "id": "Q014",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：30146.59。依据表格证据，核验值为 30146.59。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 10.17,
+      "error": null
+    },
+    {
+      "id": "Q015",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年9月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：42526.85。依据表格证据，核验值为 42526.85。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.88,
+      "error": null
+    },
+    {
+      "id": "Q016",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全国合计”在“合计”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：42526.85。依据表格证据，核验值为 42526.85。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 60.16,
+      "error": null
+    },
+    {
+      "id": "Q017",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年9月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：12380.25。依据表格证据，核验值为 12380.25。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 21.85,
+      "error": null
+    },
+    {
+      "id": "Q018",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），“不良贷款余额”在“大型商业银行”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：12461.06。依据表格证据，核验值为 12461.05849。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "12461.06"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 72.55,
+      "error": null
+    },
+    {
+      "id": "Q019",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年商业银行主要监管指标情况表（季度）》（工作表：商业银行季度），“正常类贷款”在“季度”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：1852723.73。依据表格证据，核验值为 1852723.73。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6"
+        ],
+        "actual_cells": [
+          "B6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 37.21,
+      "error": null
+    },
+    {
+      "id": "Q020",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年银行业总资产、总负债（季度）》（工作表：资产负债季度），“总资产”在“年-季度”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：3972513.86。依据表格证据，核验值为 3972513.855。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6"
+        ],
+        "actual_cells": [
+          "B6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "3972513.86"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 74.2,
+      "error": null
+    },
+    {
+      "id": "Q021",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年银行业金融机构保障性安居工程贷款情况表(季度)》（工作表： 保障房贷款），“银行业金融机构合计”在“年-季度”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：66289.5。依据表格证据，核验值为 66289.49572。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5"
+        ],
+        "actual_cells": [
+          "B5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "66289.5"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 18.47,
+      "error": null
+    },
+    {
+      "id": "Q022",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2023年银行业金融机构普惠型小微企业贷款情况（季度）》（工作表：普惠型小微企业贷款），“银行业金融机构合计”在“年-季度”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：259039.99。依据表格证据，核验值为 259039.9876。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5"
+        ],
+        "actual_cells": [
+          "B5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": false,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [
+          "259039.99"
+        ],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 16.14,
+      "error": null
+    },
+    {
+      "id": "Q023",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2024年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：34878.78。依据表格证据，核验值为 34878.78。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6"
+        ],
+        "actual_cells": [
+          "C6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 9.9,
+      "error": null
+    },
+    {
+      "id": "Q024",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2024年9月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：47945.35。依据表格证据，核验值为 47945.35。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6"
+        ],
+        "actual_cells": [
+          "C6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 34.98,
+      "error": null
+    },
+    {
+      "id": "Q025",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全国合计”在“合计”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：47945.35。依据表格证据，核验值为 47945.35。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 31.88,
+      "error": null
+    },
+    {
+      "id": "Q026",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2024年9月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：13066.56。依据表格证据，核验值为 13066.56。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 10.04,
+      "error": null
+    },
+    {
+      "id": "Q027",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年3月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：16590.18。依据表格证据，核验值为 16590.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6"
+        ],
+        "actual_cells": [
+          "C6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 20.93,
+      "error": null
+    },
+    {
+      "id": "Q028",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年3月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：21745。依据表格证据，核验值为 21745。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6"
+        ],
+        "actual_cells": [
+          "C6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 31.43,
+      "error": null
+    },
+    {
+      "id": "Q029",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全 国”在“合计”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：21745.18。依据表格证据，核验值为 21745.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 59.09,
+      "error": null
+    },
+    {
+      "id": "Q030",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年3月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：5155。依据表格证据，核验值为 5155。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.96,
+      "error": null
+    },
+    {
+      "id": "Q031",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：38433.67。依据表格证据，核验值为 38433.67。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5"
+        ],
+        "actual_cells": [
+          "C5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 22.29,
+      "error": null
+    },
+    {
+      "id": "Q032",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年9月保险业经营情况表》（工作表：保险业经营数据（月度）），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：52145.77。依据表格证据，核验值为 52145.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 31.83,
+      "error": null
+    },
+    {
+      "id": "Q033",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），“全 国”在“合计”口径下的数值是多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：52145.77。依据表格证据，核验值为 52145.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4"
+        ],
+        "actual_cells": [
+          "C4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 37.21,
+      "error": null
+    },
+    {
+      "id": "Q034",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格取数",
+      "difficulty": "简单",
+      "question": "根据 Excel 附件《2025年9月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：13712.1。依据表格证据，核验值为 13712.1。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7"
+        ],
+        "actual_cells": [
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 25.92,
+      "error": null
+    },
+    {
+      "id": "Q035",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年4季度保险业资金运用情况表》（工作表：2023年4季度保险资金运用情况表），在“截至当期-账面余额”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：资金运用余额。依据表格证据，核验值为 281573.6094。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B12",
+          "B13",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "actual_cells": [
+          "B13",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "cell_recall": 0.8
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 39.42,
+      "error": null
+    },
+    {
+      "id": "Q036",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“农村商业银行”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：不良贷款余额。依据表格证据，核验值为 8017.85054。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "G5",
+          "G6",
+          "G7",
+          "G8"
+        ],
+        "actual_cells": [
+          "G5",
+          "G6",
+          "G7",
+          "G8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 65.91,
+      "error": null
+    },
+    {
+      "id": "Q037",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“城市商业银行”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：不良贷款余额。依据表格证据，核验值为 5149.463916。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "E5",
+          "E6",
+          "E7",
+          "E8"
+        ],
+        "actual_cells": [
+          "E5",
+          "E6",
+          "E7",
+          "E8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 85.74,
+      "error": null
+    },
+    {
+      "id": "Q038",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“外资银行”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：不良贷款余额。依据表格证据，核验值为 121.7685609。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "H5",
+          "H6",
+          "H7",
+          "H8"
+        ],
+        "actual_cells": [
+          "H5",
+          "H6",
+          "H7",
+          "H8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 81.75,
+      "error": null
+    },
+    {
+      "id": "Q039",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“大型商业银行”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：不良贷款余额。依据表格证据，核验值为 12461.05849。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "actual_cells": [
+          "C5",
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 71.47,
+      "error": null
+    },
+    {
+      "id": "Q040",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“民营银行”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：不良贷款余额。依据表格证据，核验值为 185.5230316。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "F5",
+          "F6",
+          "F7",
+          "F8"
+        ],
+        "actual_cells": [
+          "F5",
+          "F6",
+          "F7",
+          "F8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 71.69,
+      "error": null
+    },
+    {
+      "id": "Q041",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年商业银行主要指标分机构类情况表（季度）》（工作表：商业银行分机构类情况表），在“股份制商业 银行”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：不良贷款余额。依据表格证据，核验值为 5234.461835。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "D5",
+          "D6",
+          "D7",
+          "D8"
+        ],
+        "actual_cells": [
+          "D5",
+          "D6",
+          "D7",
+          "D8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 80.55,
+      "error": null
+    },
+    {
+      "id": "Q042",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年银行业金融机构保障性安居工程贷款情况表(季度)》（工作表： 保障房贷款），在“年-季度”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：银行业金融机构合计。依据表格证据，核验值为 66289.49572。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "actual_cells": [
+          "B5",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 18.28,
+      "error": null
+    },
+    {
+      "id": "Q043",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2023年银行业金融机构普惠型小微企业贷款情况（季度）》（工作表：普惠型小微企业贷款），在“年-季度”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：银行业金融机构合计。依据表格证据，核验值为 259039.9876。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "actual_cells": [
+          "B5",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 35.39,
+      "error": null
+    },
+    {
+      "id": "Q044",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：原保险保费收入。依据表格证据，核验值为 34878.78。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "actual_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 9.78,
+      "error": null
+    },
+    {
+      "id": "Q045",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月保险业经营情况表》（工作表：保险业经营数据（月度）），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：原保险保费收入。依据表格证据，核验值为 47945.35。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C10",
+          "C11",
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "actual_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "cell_recall": 0.6
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 32.1,
+      "error": null
+    },
+    {
+      "id": "Q046",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“健康险”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：全国合计。依据表格证据，核验值为 8225.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "actual_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 51.04,
+      "error": null
+    },
+    {
+      "id": "Q047",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“合计”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：全国合计。依据表格证据，核验值为 47945.35。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "actual_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 155.33,
+      "error": null
+    },
+    {
+      "id": "Q048",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“寿险”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：全国合计。依据表格证据，核验值为 28138.87。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "E4",
+          "E6",
+          "E7",
+          "E8"
+        ],
+        "actual_cells": [
+          "E4",
+          "E6",
+          "E7",
+          "E8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 59.7,
+      "error": null
+    },
+    {
+      "id": "Q049",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“意外险”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：全国合计。依据表格证据，核验值为 736.61。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "actual_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 41.76,
+      "error": null
+    },
+    {
+      "id": "Q050",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“财产险”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：全国合计。依据表格证据，核验值为 10844.7。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "actual_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 65.91,
+      "error": null
+    },
+    {
+      "id": "Q051",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2024年9月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：原保险保费收入。依据表格证据，核验值为 13066.56。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "actual_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 11.51,
+      "error": null
+    },
+    {
+      "id": "Q052",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月人身险公司经营情况表》（工作表：人身保险公司（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：原保险保费收入。依据表格证据，核验值为 16590.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "actual_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.61,
+      "error": null
+    },
+    {
+      "id": "Q053",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月保险业经营情况表》（工作表：保险业经营数据（月度）），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：原保险保费收入。依据表格证据，核验值为 21745。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C10",
+          "C11",
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "actual_cells": [
+          "C6",
+          "C7",
+          "C8"
+        ],
+        "cell_recall": 0.6
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 12.65,
+      "error": null
+    },
+    {
+      "id": "Q054",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“健康险”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：全 国。依据表格证据，核验值为 3781.8。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "actual_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 70.02,
+      "error": null
+    },
+    {
+      "id": "Q055",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“合计”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：全 国。依据表格证据，核验值为 21745.18。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "actual_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 66.73,
+      "error": null
+    },
+    {
+      "id": "Q056",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“寿险”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：全 国。依据表格证据，核验值为 13832.14。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "E4",
+          "E5",
+          "E6",
+          "E7"
+        ],
+        "actual_cells": [
+          "E4",
+          "E5",
+          "E6",
+          "E7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 55.96,
+      "error": null
+    },
+    {
+      "id": "Q057",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“意外险”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：全 国。依据表格证据，核验值为 264.61。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "actual_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 61.18,
+      "error": null
+    },
+    {
+      "id": "Q058",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“财产险”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：全 国。依据表格证据，核验值为 3866.63。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "actual_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 37.41,
+      "error": null
+    },
+    {
+      "id": "Q059",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年3月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：原保险保费收入。依据表格证据，核验值为 5155。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "actual_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 29.73,
+      "error": null
+    },
+    {
+      "id": "Q060",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：原保险保费收入。依据表格证据，核验值为 38433.67。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "actual_cells": [
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 32.18,
+      "error": null
+    },
+    {
+      "id": "Q061",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月保险业经营情况表》（工作表：保险业经营数据（月度）），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：原保险保费收入。依据表格证据，核验值为 52145.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C11",
+          "C12",
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "actual_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "cell_recall": 0.6
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 27.07,
+      "error": null
+    },
+    {
+      "id": "Q062",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“健康险”口径下，以下哪一项数值最高？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：全 国。依据表格证据，核验值为 8426.99。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "actual_cells": [
+          "G4",
+          "G5",
+          "G6",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 63.91,
+      "error": null
+    },
+    {
+      "id": "Q063",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“合计”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：全 国。依据表格证据，核验值为 52145.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "actual_cells": [
+          "C4",
+          "C5",
+          "C6",
+          "C7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 41.92,
+      "error": null
+    },
+    {
+      "id": "Q064",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“寿险”口径下，以下哪一项数值最高？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：全 国。依据表格证据，核验值为 31707.75。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "E4",
+          "E5",
+          "E6",
+          "E7"
+        ],
+        "actual_cells": [
+          "E4",
+          "E5",
+          "E6",
+          "E7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 42.73,
+      "error": null
+    },
+    {
+      "id": "Q065",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“意外险”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：全 国。依据表格证据，核验值为 760.71。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "actual_cells": [
+          "F4",
+          "F5",
+          "F6",
+          "F7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 70.23,
+      "error": null
+    },
+    {
+      "id": "Q066",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月全国各地区原保险保费收入情况表》（工作表：各地区数据（月度）），在“财产险”口径下，以下哪一项数值最高？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：全 国。依据表格证据，核验值为 11250.32。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "actual_cells": [
+          "D4",
+          "D5",
+          "D6",
+          "D7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 37.37,
+      "error": null
+    },
+    {
+      "id": "Q067",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格比较",
+      "difficulty": "中等",
+      "question": "根据 Excel 附件《2025年9月财产保险公司经营情况表》（工作表：产险公司数据（月度） ），在“本年累计/截至当期”口径下，以下哪一项数值最高？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：原保险保费收入。依据表格证据，核验值为 13712.1。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "actual_cells": [
+          "C7",
+          "C8",
+          "C9"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 9.93,
+      "error": null
+    },
+    {
+      "id": "Q068",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年12月全国各地区原保险保费收入情况表》，“全国合计”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-42212.17。依据表格证据，核验值为 -42212.17。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "G4"
+        ],
+        "actual_cells": [
+          "C4",
+          "G4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 70.03,
+      "error": null
+    },
+    {
+      "id": "Q069",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年12月全国各地区原保险保费收入情况表》，“集团、总公司本级”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-29.21。依据表格证据，核验值为 -29.21。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "G5"
+        ],
+        "actual_cells": [
+          "C5",
+          "G5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 36.68,
+      "error": null
+    },
+    {
+      "id": "Q070",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年商业银行主要指标分机构类情况表（季度）》，“不良贷款余额”从“大型商业银行”到“外资银行”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-12339.29。依据表格证据，核验值为 -12339.289926091。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "H5"
+        ],
+        "actual_cells": [
+          "C5",
+          "H5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 52.14,
+      "error": null
+    },
+    {
+      "id": "Q071",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年商业银行主要指标分机构类情况表（季度）》，“可疑类贷款余额”从“大型商业银行”到“外资银行”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-4458.79。依据表格证据，核验值为 -4458.791439467。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "H7"
+        ],
+        "actual_cells": [
+          "C7",
+          "H7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 65.55,
+      "error": null
+    },
+    {
+      "id": "Q072",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年商业银行主要指标分机构类情况表（季度）》，“损失类贷款余额”从“大型商业银行”到“外资银行”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-1902.91。依据表格证据，核验值为 -1902.913980143。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C8",
+          "H8"
+        ],
+        "actual_cells": [
+          "C8",
+          "H8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 60.1,
+      "error": null
+    },
+    {
+      "id": "Q073",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年商业银行主要指标分机构类情况表（季度）》，“次级类贷款余额”从“大型商业银行”到“外资银行”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-5977.58。依据表格证据，核验值为 -5977.584506481。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "H6"
+        ],
+        "actual_cells": [
+          "C6",
+          "H6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 61.52,
+      "error": null
+    },
+    {
+      "id": "Q074",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业总资产、总负债（季度）》，“总负债”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：182804.47。依据表格证据，核验值为 182804.4711329499。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B8",
+          "E8"
+        ],
+        "actual_cells": [
+          "B8",
+          "E8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 76.94,
+      "error": null
+    },
+    {
+      "id": "Q075",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业总资产、总负债（季度）》，“总资产”从“年-季度”到“季度-季度”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-424047.16。依据表格证据，核验值为 -424047.1551074199。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6",
+          "E16"
+        ],
+        "actual_cells": [
+          "B6",
+          "E16"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 80.14,
+      "error": null
+    },
+    {
+      "id": "Q076",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构保障性安居工程贷款情况表(季度)》，“商业银行合计”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-251.14。依据表格证据，核验值为 -251.142283696。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6",
+          "E6"
+        ],
+        "actual_cells": [
+          "B6",
+          "E6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 19.98,
+      "error": null
+    },
+    {
+      "id": "Q077",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构保障性安居工程贷款情况表(季度)》，“城市商业银行”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-31.59。依据表格证据，核验值为 -31.59469677。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B9",
+          "E9"
+        ],
+        "actual_cells": [
+          "B9",
+          "E9"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 17.21,
+      "error": null
+    },
+    {
+      "id": "Q078",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构保障性安居工程贷款情况表(季度)》，“大型商业银行”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：94.45。依据表格证据，核验值为 94.449458044。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B7",
+          "E7"
+        ],
+        "actual_cells": [
+          "B7",
+          "E7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 18.23,
+      "error": null
+    },
+    {
+      "id": "Q079",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构保障性安居工程贷款情况表(季度)》，“股份制商业银行”从“年-季度”到“本年累计/截至当期”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：-5669.48。依据表格证据，核验值为 -5669.4815368818。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B8",
+          "J8"
+        ],
+        "actual_cells": [
+          "B8",
+          "J8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 17.5,
+      "error": null
+    },
+    {
+      "id": "Q080",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构保障性安居工程贷款情况表(季度)》，“银行业金融机构合计”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-3480.71。依据表格证据，核验值为 -3480.707097385。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5",
+          "E5"
+        ],
+        "actual_cells": [
+          "B5",
+          "E5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 40.32,
+      "error": null
+    },
+    {
+      "id": "Q081",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构普惠型小微企业贷款情况（季度）》，“农村金融机构”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：6089.33。依据表格证据，核验值为 6089.33。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B9",
+          "E9"
+        ],
+        "actual_cells": [
+          "B9",
+          "E9"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 30.57,
+      "error": null
+    },
+    {
+      "id": "Q082",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构普惠型小微企业贷款情况（季度）》，“城市商业银行”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：4262.01。依据表格证据，核验值为 4262.008498276。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B8",
+          "E8"
+        ],
+        "actual_cells": [
+          "B8",
+          "E8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 17.42,
+      "error": null
+    },
+    {
+      "id": "Q083",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构普惠型小微企业贷款情况（季度）》，“大型商业银行”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：16425.26。依据表格证据，核验值为 16425.260245378。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B6",
+          "E6"
+        ],
+        "actual_cells": [
+          "B6",
+          "E6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 42.04,
+      "error": null
+    },
+    {
+      "id": "Q084",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构普惠型小微企业贷款情况（季度）》，“股份制商业银行”从“年-季度”到“本年累计/截至当期”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-42906.94。依据表格证据，核验值为 -42906.9428066546。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B7",
+          "J7"
+        ],
+        "actual_cells": [
+          "B7",
+          "J7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 32.0,
+      "error": null
+    },
+    {
+      "id": "Q085",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2023年银行业金融机构普惠型小微企业贷款情况（季度）》，“银行业金融机构合计”从“年-季度”到“季度”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：31519.08。依据表格证据，核验值为 31519.082435133。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "B5",
+          "E5"
+        ],
+        "actual_cells": [
+          "B5",
+          "E5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 15.94,
+      "error": null
+    },
+    {
+      "id": "Q086",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2024年9月全国各地区原保险保费收入情况表》，“全国合计”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "A",
+      "predicted": "A",
+      "answer": "答案为 A：-39720.17。依据表格证据，核验值为 -39720.17。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "G4"
+        ],
+        "actual_cells": [
+          "C4",
+          "G4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 42.67,
+      "error": null
+    },
+    {
+      "id": "Q087",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2024年9月全国各地区原保险保费收入情况表》，“公司本级”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-20.68。依据表格证据，核验值为 -20.68。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "G5"
+        ],
+        "actual_cells": [
+          "C5",
+          "G5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 52.72,
+      "error": null
+    },
+    {
+      "id": "Q088",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2024年9月全国各地区原保险保费收入情况表》，“北 京”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-2464.27。依据表格证据，核验值为 -2464.27。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "G6"
+        ],
+        "actual_cells": [
+          "C6",
+          "G6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 47.45,
+      "error": null
+    },
+    {
+      "id": "Q089",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2024年9月全国各地区原保险保费收入情况表》，“天 津”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-572.48。依据表格证据，核验值为 -572.48。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "G7"
+        ],
+        "actual_cells": [
+          "C7",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 64.84,
+      "error": null
+    },
+    {
+      "id": "Q090",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2024年9月全国各地区原保险保费收入情况表》，“河 北”从“合计”到“意外险”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：-1989.98。依据表格证据，核验值为 -1989.98。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C8",
+          "F8"
+        ],
+        "actual_cells": [
+          "C8",
+          "F8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 41.89,
+      "error": null
+    },
+    {
+      "id": "Q091",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年3月全国各地区原保险保费收入情况表》，“全 国”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-17963.38。依据表格证据，核验值为 -17963.38。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "G4"
+        ],
+        "actual_cells": [
+          "C4",
+          "G4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 41.11,
+      "error": null
+    },
+    {
+      "id": "Q092",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年3月全国各地区原保险保费收入情况表》，“北 京”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-1007.01。依据表格证据，核验值为 -1007.01。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "G5"
+        ],
+        "actual_cells": [
+          "C5",
+          "G5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 36.06,
+      "error": null
+    },
+    {
+      "id": "Q093",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年3月全国各地区原保险保费收入情况表》，“天 津”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "B",
+      "predicted": "B",
+      "answer": "答案为 B：-229.77。依据表格证据，核验值为 -229.77。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "G6"
+        ],
+        "actual_cells": [
+          "C6",
+          "G6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 37.49,
+      "error": null
+    },
+    {
+      "id": "Q094",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年3月全国各地区原保险保费收入情况表》，“山 西”从“合计”到“意外险”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：-459.49。依据表格证据，核验值为 -459.49。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C8",
+          "F8"
+        ],
+        "actual_cells": [
+          "C8",
+          "F8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 34.57,
+      "error": null
+    },
+    {
+      "id": "Q095",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年3月全国各地区原保险保费收入情况表》，“河 北”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "D",
+      "predicted": "D",
+      "answer": "答案为 D：-732.16。依据表格证据，核验值为 -732.16。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "G7"
+        ],
+        "actual_cells": [
+          "C7",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 62.32,
+      "error": null
+    },
+    {
+      "id": "Q096",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年9月全国各地区原保险保费收入情况表》，“全 国”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：-43718.78。依据表格证据，核验值为 -43718.78。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C4",
+          "G4"
+        ],
+        "actual_cells": [
+          "C4",
+          "G4"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 59.09,
+      "error": null
+    },
+    {
+      "id": "Q097",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年9月全国各地区原保险保费收入情况表》，“北 京”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：-2755.54。依据表格证据，核验值为 -2755.54。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C5",
+          "G5"
+        ],
+        "actual_cells": [
+          "C5",
+          "G5"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 56.4,
+      "error": null
+    },
+    {
+      "id": "Q098",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年9月全国各地区原保险保费收入情况表》，“天 津”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：-610.72。依据表格证据，核验值为 -610.72。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C6",
+          "G6"
+        ],
+        "actual_cells": [
+          "C6",
+          "G6"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 47.67,
+      "error": null
+    },
+    {
+      "id": "Q099",
+      "split": "holdout",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年9月全国各地区原保险保费收入情况表》，“山 西”从“合计”到“意外险”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：-1039.44。依据表格证据，核验值为 -1039.44。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C8",
+          "F8"
+        ],
+        "actual_cells": [
+          "C8",
+          "F8"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 124.88,
+      "error": null
+    },
+    {
+      "id": "Q100",
+      "split": "dev",
+      "source_type": "excel",
+      "qa_type": "表格计算",
+      "difficulty": "困难",
+      "question": "需要对同一 Excel 附件做两处取数并计算。根据《2025年9月全国各地区原保险保费收入情况表》，“河 北”从“合计”到“健康险”的数值变化约为多少？",
+      "expected": "C",
+      "predicted": "C",
+      "answer": "答案为 C：-1831.01。依据表格证据，核验值为 -1831.01。[1]",
+      "answer_correct": true,
+      "refused": false,
+      "source_hit": true,
+      "excel_evidence": {
+        "expected_cells": [
+          "C7",
+          "G7"
+        ],
+        "actual_cells": [
+          "C7",
+          "G7"
+        ],
+        "cell_recall": 1.0
+      },
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "unsupported_entities": [],
+        "missing_claim_citations": []
+      },
+      "elapsed_ms": 50.25,
+      "error": null
+    }
+  ]
+}

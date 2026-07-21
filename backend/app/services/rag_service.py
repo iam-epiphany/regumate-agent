@@ -302,6 +302,7 @@ def answer_question(
                 "answer_type": generated.answer_type,
                 "refused": generated.refused,
                 "refusal_reason": generated.refusal_reason,
+                "refusal_code": generated.refusal_code,
                 "first_verified_claim_ms": first_preview_ms,
                 "generation_total_ms": round((perf_counter() - generation_started) * 1000, 2),
                 "verified_claim_count": len(preview_claims),
@@ -339,6 +340,10 @@ def answer_question(
         claims=generated.claims,
         grounding_validation=generated.grounding_validation,
         refusal_reason=generated.refusal_reason,
+        refusal_code=generated.refusal_code,
+        missing_variables=generated.missing_variables,
+        ambiguous_variables=generated.ambiguous_variables,
+        unsupported_formula=generated.unsupported_formula,
         degraded=generated.degraded,
         evidence_coverage=_build_evidence_coverage(
             package.retrieval_summary,
@@ -2554,6 +2559,7 @@ def _log_qa_audit(db: Session, action: str, question: str, response: QAResponse)
         "used_chunks": used_chunks,
         "refused": response.refused,
         "refusal_reason": response.refusal_reason,
+        "refusal_code": response.refusal_code,
         "confidence": response.confidence,
         "citation_count": len(response.citations),
     }

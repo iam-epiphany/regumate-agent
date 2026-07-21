@@ -1,3 +1,5 @@
+import zipfile
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -18,7 +20,7 @@ def test_parse_markdown_returns_structured_blocks(tmp_path) -> None:
 
     parsed = parse_document(path)
 
-    assert parsed.metadata["parser_version"] == "structured-v3-provenance"
+    assert parsed.metadata["parser_version"] == "structured-v4-formula"
     assert parsed.metadata["loader_name"] == "markdown"
     assert [block.block_type for block in parsed.blocks] == ["heading", "heading", "paragraph"]
     assert parsed.blocks[2].section_title == "资产合计"
@@ -477,6 +479,136 @@ def test_docx_loader_preserves_paragraph_and_table_order(tmp_path) -> None:
     assert parsed.blocks[0].text == "一、填报说明"
     assert "资产合计" in parsed.blocks[1].text
     assert parsed.blocks[2].text == "二、留痕要求"
+
+
+def test_docx_loader_preserves_omml_formula_context_and_metadata(tmp_path) -> None:
+    from docx import Document as DocxDocument
+
+    path = tmp_path / "formula_rules.docx"
+    document = DocxDocument()
+    document.add_paragraph("Capital requirement is calculated as FORMULA_PLACEHOLDER where A and B are exposures.")
+    document.save(path)
+    _replace_docx_text_with_omml(
+        path,
+        "FORMULA_PLACEHOLDER",
+        """
+        <m:oMath>
+          <m:r><m:t>K</m:t></m:r>
+          <m:r><m:t>=</m:t></m:r>
+          <m:f>
+            <m:num>
+              <m:r><m:t>A</m:t></m:r>
+              <m:r><m:t>+</m:t></m:r>
+              <m:r><m:t>B</m:t></m:r>
+            </m:num>
+            <m:den><m:r><m:t>C</m:t></m:r></m:den>
+          </m:f>
+        </m:oMath>
+        """,
+    )
+
+    parsed = parse_document(path)
+    block = parsed.blocks[0]
+
+    assert "[公式] K=(A+B)/(C)" in block.text
+    assert "Capital requirement" in block.text
+    assert "where A and B are exposures" in block.text
+    assert block.metadata["contains_formula"] is True
+    assert block.metadata["formula_count"] == 1
+    assert block.metadata["formulas"][0]["source_type"] == "omml"
+    assert block.metadata["formulas"][0]["text"] == "K=(A+B)/(C)"
+
+
+def test_docx_loader_preserves_omml_formula_inside_table_cell(tmp_path) -> None:
+    from docx import Document as DocxDocument
+
+    path = tmp_path / "table_formula_rules.docx"
+    document = DocxDocument()
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Metric"
+    table.cell(0, 1).text = "Formula"
+    table.cell(1, 0).text = "LGD"
+    table.cell(1, 1).text = "FORMULA_PLACEHOLDER"
+    document.save(path)
+    _replace_docx_text_with_omml(
+        path,
+        "FORMULA_PLACEHOLDER",
+        """
+        <m:oMath>
+          <m:sSup>
+            <m:e><m:r><m:t>LGD</m:t></m:r></m:e>
+            <m:sup><m:r><m:t>*</m:t></m:r></m:sup>
+          </m:sSup>
+          <m:r><m:t>=</m:t></m:r>
+          <m:r><m:t>LGD</m:t></m:r>
+          <m:sSub><m:e><m:r><m:t>s</m:t></m:r></m:e><m:sub><m:r><m:t>1</m:t></m:r></m:sub></m:sSub>
+        </m:oMath>
+        """,
+    )
+
+    parsed = parse_document(path)
+    block = parsed.blocks[0]
+
+    assert block.block_type == "table"
+    assert "[公式] LGD^*=LGDs_1" in block.text
+    assert block.metadata["contains_formula"] is True
+    assert block.metadata["formula_source_type"] == "omml"
+
+
+def test_pdf_text_formula_is_annotated_without_ocr(tmp_path) -> None:
+    import pymupdf
+
+    path = tmp_path / "formula.pdf"
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Capital formula")
+    page.insert_text((72, 96), "K = A + B")
+    page.insert_text((72, 120), "A and B are risk components.")
+    document.save(path)
+    document.close()
+
+    parsed = parse_document(path)
+    formula_blocks = [block for block in parsed.blocks if block.metadata.get("contains_formula")]
+
+    assert formula_blocks
+    assert any("K=A+B" in item["text"] for block in formula_blocks for item in block.metadata["formulas"])
+
+
+def test_pdf_non_text_formula_is_not_misreported(tmp_path) -> None:
+    import pymupdf
+
+    path = tmp_path / "image_formula.pdf"
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "The formula is shown in the image below.")
+    page.draw_rect((72, 96, 180, 130))
+    document.save(path)
+    document.close()
+
+    parsed = parse_document(path)
+
+    assert not any(block.metadata.get("contains_formula") for block in parsed.blocks)
+
+
+def _replace_docx_text_with_omml(path, placeholder: str, omml_xml: str) -> None:
+    original_bytes = path.read_bytes()
+    tmp_path = path.with_suffix(".tmp.docx")
+    with zipfile.ZipFile(path, "r") as source, zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                xml = data.decode("utf-8")
+                assert placeholder in xml
+                xml = xml.replace(
+                    placeholder,
+                    f"</w:t></w:r>{omml_xml.strip()}<w:r><w:t>",
+                    1,
+                )
+                data = xml.encode("utf-8")
+            target.writestr(item, data)
+    path.write_bytes(tmp_path.read_bytes())
+    tmp_path.unlink()
+    assert path.read_bytes() != original_bytes
 
 
 def test_office_conversion_rejects_oversized_output(tmp_path, monkeypatch) -> None:

@@ -1,4 +1,4 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, FileUp, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, FileUp, MoreVertical, RefreshCw, Search, Trash2, X } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -86,12 +86,15 @@ export function DocumentsPage() {
   const [batchConflictIssues, setBatchConflictIssues] = useState<BatchConflictIssue[]>([]);
   const [toastNotice, setToastNotice] = useState<ToastNotice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DocumentSummary | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [openDocumentMenu, setOpenDocumentMenu] = useState<string | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [rebuildingDocumentId, setRebuildingDocumentId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
   const [ragHealth, setRagHealth] = useState<RagHealthResponse | null>(null);
@@ -351,6 +354,16 @@ export function DocumentsPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedDetail]);
+
+  useEffect(() => {
+    if (!openDocumentMenu) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenDocumentMenu(null);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [openDocumentMenu]);
 
   async function submitSingleUpload(
     file: File,
@@ -692,6 +705,17 @@ export function DocumentsPage() {
     });
   }
 
+  function cancelSelectionMode() {
+    setIsSelectionMode(false);
+    setSelectedDocumentIds([]);
+    setBulkDeleteOpen(false);
+  }
+
+  function selectAllFilteredDocuments() {
+    const filteredIds = filteredDeletableDocuments.map((document) => document.document_id);
+    setSelectedDocumentIds((current) => Array.from(new Set([...current, ...filteredIds])));
+  }
+
   function toggleVisibleSelection(checked: boolean) {
     const visibleIds = visibleDeletableDocuments.map((document) => document.document_id);
     setSelectedDocumentIds((current) => {
@@ -753,6 +777,7 @@ export function DocumentsPage() {
         result.items.filter((item) => item.status === "deleted").map((item) => item.document_id),
       );
       setSelectedDocumentIds([]);
+      setIsSelectionMode(false);
       if (selectedDetail && deletedIds.has(selectedDetail.document_id)) {
         setSelectedDetail(null);
       }
@@ -793,10 +818,11 @@ export function DocumentsPage() {
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase("zh-CN");
   const filteredDocuments = documents.filter((document) => {
     const matchesStatus = statusFilter === "all" || document.status === statusFilter;
+    const matchesType = typeFilter === "all" || document.file_type.toLowerCase() === typeFilter;
     const matchesSearch = !normalizedSearch
       || document.filename.toLocaleLowerCase("zh-CN").includes(normalizedSearch)
       || document.document_id.toLocaleLowerCase("zh-CN").includes(normalizedSearch);
-    return matchesStatus && matchesSearch;
+    return matchesStatus && matchesType && matchesSearch;
   });
   const pageCount = Math.max(1, Math.ceil(filteredDocuments.length / DOCUMENT_PAGE_SIZE));
   const activePage = Math.min(pageNumber, pageCount);
@@ -805,15 +831,19 @@ export function DocumentsPage() {
     activePage * DOCUMENT_PAGE_SIZE,
   );
   const selectedDocumentIdSet = new Set(selectedDocumentIds);
+  const filteredDeletableDocuments = filteredDocuments.filter((document) => !isDocumentDeletionBlocked(document));
   const visibleDeletableDocuments = visibleDocuments.filter((document) => !isDocumentDeletionBlocked(document));
   const visibleSelectedCount = visibleDeletableDocuments.filter((document) => selectedDocumentIdSet.has(document.document_id)).length;
   const allVisibleSelected = visibleDeletableDocuments.length > 0 && visibleSelectedCount === visibleDeletableDocuments.length;
+  const filteredSelectedCount = filteredDeletableDocuments.filter((document) => selectedDocumentIdSet.has(document.document_id)).length;
+  const allFilteredSelected = filteredDeletableDocuments.length > 0 && filteredSelectedCount === filteredDeletableDocuments.length;
   const selectedDocuments = selectedDocumentIds
     .map((documentId) => documents.find((document) => document.document_id === documentId))
     .filter((document): document is DocumentSummary => Boolean(document));
   const indexedCount = documents.filter((document) => document.status === "indexed").length;
   const processingCount = documents.filter((document) => ["uploaded", "index_queued", "indexing"].includes(document.status)).length;
   const failedCount = documents.filter((document) => ["index_failed", "source_missing", "delete_failed"].includes(document.status)).length;
+  const availableFileTypes = Array.from(new Set(documents.map((document) => document.file_type.toLowerCase()).filter(Boolean))).sort();
 
   return (
     <main className="page">
@@ -926,18 +956,25 @@ export function DocumentsPage() {
             </p>
           </div>
           <div className="document-filters">
-            {selectedDocumentIds.length > 0 ? (
+            {isSelectionMode ? (
               <div className="bulk-selection-actions" role="status" aria-live="polite">
                 <span>已选 {selectedDocumentIds.length} 份</span>
-                <button className="secondary-button danger-button" type="button" disabled={isBulkDeleting} onClick={() => setBulkDeleteOpen(true)}>
+                <button className="secondary-button" type="button" disabled={isBulkDeleting || allFilteredSelected || filteredDeletableDocuments.length === 0} onClick={selectAllFilteredDocuments}>
+                  全选
+                </button>
+                <button className="secondary-button danger-button" type="button" disabled={isBulkDeleting || selectedDocumentIds.length === 0} onClick={() => setBulkDeleteOpen(true)}>
                   <Trash2 size={15} />
                   批量删除
                 </button>
-                <button className="secondary-button" type="button" disabled={isBulkDeleting} onClick={() => setSelectedDocumentIds([])}>
-                  清空选择
+                <button className="secondary-button" type="button" disabled={isBulkDeleting} onClick={cancelSelectionMode}>
+                  取消选择
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <button className="secondary-button" type="button" disabled={isBulkDeleting || filteredDeletableDocuments.length === 0} onClick={() => setIsSelectionMode(true)}>
+                选择
+              </button>
+            )}
             <label className="document-search">
               <span className="sr-only">搜索文件名或文档编号</span>
               <Search size={16} />
@@ -950,6 +987,20 @@ export function DocumentsPage() {
                   setPageNumber(1);
                 }}
               />
+            </label>
+            <label>
+              <span className="sr-only">类型筛选</span>
+              <select
+                aria-label="类型筛选"
+                value={typeFilter}
+                onChange={(event) => {
+                  setTypeFilter(event.target.value);
+                  setPageNumber(1);
+                }}
+              >
+                <option value="all">全部类型</option>
+                {availableFileTypes.map((type) => <option key={type} value={type}>{type.toUpperCase()}</option>)}
+              </select>
             </label>
             <label>
               <span className="sr-only">状态筛选</span>
@@ -975,49 +1026,55 @@ export function DocumentsPage() {
           <div className="empty-state"><RefreshCw size={24} className="spinning" /><p>正在读取知识库台账…</p></div>
         ) : filteredDocuments.length > 0 ? (
           <div className="table-wrap">
-            <table>
+            <table className="documents-table">
               <thead>
                 <tr>
-                  <th className="selection-column">
-                    <label className="selection-checkbox">
-                      <input
-                        type="checkbox"
-                        aria-label="选择本页可删除文档"
-                        checked={allVisibleSelected}
-                        disabled={visibleDeletableDocuments.length === 0 || isBulkDeleting}
-                        onChange={(event) => toggleVisibleSelection(event.target.checked)}
-                      />
-                      <span className="sr-only">选择本页</span>
-                    </label>
-                  </th>
+                  {isSelectionMode ? (
+                    <th className="selection-column">
+                      <label className="selection-checkbox">
+                        <input
+                          type="checkbox"
+                          aria-label="选择本页可删除文档"
+                          checked={allVisibleSelected}
+                          disabled={visibleDeletableDocuments.length === 0 || isBulkDeleting}
+                          onChange={(event) => toggleVisibleSelection(event.target.checked)}
+                        />
+                        <span className="sr-only">选择本页</span>
+                      </label>
+                    </th>
+                  ) : null}
                   <th>文件名称</th>
                   <th>文档分类</th>
                   <th>解析与索引状态</th>
-                  <th>分块数量</th>
+                  <th><span className="document-count-heading">分块<br />数量</span></th>
                   <th>上传时间</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleDocuments.map((document) => (
-                  <tr key={document.document_id} className={selectedDocumentIdSet.has(document.document_id) ? "is-selected" : undefined}>
-                    <td data-label="选择" className="selection-column">
-                      <label className="selection-checkbox">
-                        <input
-                          type="checkbox"
-                          aria-label={`选择 ${document.filename}`}
-                          checked={selectedDocumentIdSet.has(document.document_id)}
-                          disabled={isDocumentDeletionBlocked(document) || isBulkDeleting}
-                          onChange={(event) => toggleDocumentSelection(document, event.target.checked)}
-                        />
-                      </label>
-                    </td>
+                  <tr key={document.document_id} className={isSelectionMode && selectedDocumentIdSet.has(document.document_id) ? "is-selected" : undefined}>
+                    {isSelectionMode ? (
+                      <td data-label="选择" className="selection-column">
+                        <label className="selection-checkbox">
+                          <input
+                            type="checkbox"
+                            aria-label={`选择 ${document.filename}`}
+                            checked={selectedDocumentIdSet.has(document.document_id)}
+                            disabled={isDocumentDeletionBlocked(document) || isBulkDeleting}
+                            onChange={(event) => toggleDocumentSelection(document, event.target.checked)}
+                          />
+                        </label>
+                      </td>
+                    ) : null}
                     <td data-label="文件名称">
-                      <strong className="document-title">{document.filename}</strong>
+                      <button className="document-title-button" type="button" onClick={() => void showDetail(document.document_id)}>
+                        {document.filename}
+                      </button>
                       <span className="document-subtle">编号：{document.document_id}</span>
                     </td>
-                    <td data-label="文档分类">{documentTypeLabel(document)}</td>
-                    <td data-label="处理状态" title={document.index_error ?? undefined}>
+                    <td data-label="文档分类" className="document-meta-cell">{documentTypeLabel(document)}</td>
+                    <td data-label="处理状态" className="document-status-cell" title={document.index_error ?? undefined}>
                       <StatusBadge tone={statusTone(document.status)}>{statusLabel(document.status)}</StatusBadge>
                       {document.index_error ? (
                         <details className="source-details">
@@ -1025,39 +1082,52 @@ export function DocumentsPage() {
                         </details>
                       ) : null}
                     </td>
-                    <td data-label="分块数量">{document.chunk_count}</td>
-                    <td data-label="上传时间">{formatDateTime(document.uploaded_at)}</td>
+                    <td data-label="分块数量" className="document-meta-cell document-count-cell">{document.chunk_count}</td>
+                    <td data-label="上传时间" className="document-meta-cell">{formatDateTime(document.uploaded_at)}</td>
                     <td data-label="操作">
-                      <button className="secondary-button" type="button" onClick={() => void showDetail(document.document_id)}>
-                        {document.chunk_count > CHUNK_PAGE_SIZE ? "分页查看" : "查看内容"}
-                      </button>
-                      {document.status === "index_failed" || document.status === "uploaded" ? (
+                      <div className="row-actions">
                         <button
-                          className="secondary-button"
+                          className="icon-button--plain row-actions__trigger"
                           type="button"
-                          disabled={rebuildingDocumentId === document.document_id}
-                          onClick={() => void rebuildIndex(document.document_id)}
+                          aria-label={`${document.filename} 更多操作`}
+                          aria-expanded={openDocumentMenu === document.document_id}
+                          onClick={() => setOpenDocumentMenu((current) => current === document.document_id ? null : document.document_id)}
                         >
-                          <RefreshCw size={15} />
-                          {rebuildingDocumentId === document.document_id ? "提交中" : "重建索引"}
+                          <MoreVertical size={17} />
                         </button>
-                      ) : null}
-                      {deletingDocumentId === document.document_id ? (
-                        <button className="secondary-button" type="button" onClick={cancelDeleteRequest}>
-                          <X size={15} />
-                          停止等待
-                        </button>
-                      ) : (
-                        <button
-                          className="secondary-button danger-button"
-                          type="button"
-                          disabled={isDocumentDeletionBlocked(document)}
-                          onClick={() => setDeleteTarget(document)}
-                        >
-                          <Trash2 size={15} />
-                          {document.status === "delete_failed" ? "重试删除" : "删除"}
-                        </button>
-                      )}
+                        {openDocumentMenu === document.document_id ? (
+                          <div className="row-actions__menu" role="menu">
+                            <button type="button" role="menuitem" onClick={() => { setOpenDocumentMenu(null); void showDetail(document.document_id); }}>
+                              {document.chunk_count > CHUNK_PAGE_SIZE ? "分页查看内容" : "查看内容"}
+                            </button>
+                            {document.status === "index_failed" || document.status === "uploaded" ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={rebuildingDocumentId === document.document_id}
+                                onClick={() => { setOpenDocumentMenu(null); void rebuildIndex(document.document_id); }}
+                              >
+                                {rebuildingDocumentId === document.document_id ? "提交中" : "重建索引"}
+                              </button>
+                            ) : null}
+                            {deletingDocumentId === document.document_id ? (
+                              <button type="button" role="menuitem" onClick={() => { setOpenDocumentMenu(null); cancelDeleteRequest(); }}>
+                                停止等待
+                              </button>
+                            ) : (
+                              <button
+                                className="row-actions__danger"
+                                type="button"
+                                role="menuitem"
+                                disabled={isDocumentDeletionBlocked(document)}
+                                onClick={() => { setOpenDocumentMenu(null); setDeleteTarget(document); }}
+                              >
+                                {document.status === "delete_failed" ? "重试删除" : "删除"}
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1089,7 +1159,7 @@ export function DocumentsPage() {
             aria-labelledby="document-detail-title"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <header className="drawer-head">
+            <header className="drawer__head">
               <div>
                 <p className="eyebrow">知识源原文</p>
                 <h2 id="document-detail-title">{selectedDetail.filename}</h2>

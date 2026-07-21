@@ -40,6 +40,14 @@ ReguMate 使用 SQLite 保存文档元数据与表格单元格索引，使用服
 
 Docling 和 Unstructured 是可选候选 loader：没有安装时不会影响默认上传链路；通过 `loader_evaluation` 评测时会记录缺依赖错误。PDF loader 显式关闭 OCR，当前阶段仍只支持可提取文本的 PDF。后续如接入 OCR adapter，必须继续输出同一套 `ParsedDocument` / `ParsedBlock`，避免影响 chunk、检索和引用层。
 
+Word/PDF 真数学公式处理：
+
+- `.docx` 默认 loader 现在会直接读取 Word XML 中的 OMML 数学对象 `m:oMath` / `m:oMathPara`，并按段落原始顺序把普通文本与公式拼回同一个证据窗口。公式在文本中统一标记为 `[公式] <formula>`。
+- OMML 公式会线性化为稳定可检索文本，覆盖分式、上下标、根号、括号、求和/乘积和常见运算符；例如 Word 分式不会退化为 `EsE` 这类歧义串，而会保留为 `(Es)/(E)`。
+- DOCX 表格单元格也使用同一公式抽取逻辑，避免表格中的 Word 数学对象被 `cell.text` 静默丢弃。
+- `.pdf` 只对可文本/矢量提取的公式行做候选识别，保留页码和前后文本窗口；图片或扫描公式不做 OCR，也不标记为可计算公式。
+- 含公式 block/chunk 的 metadata 增加 `contains_formula`、`formula_count`、`formulas`、`formula_source_type`。`embedding_text` 会补充“公式、计算、变量、指标、口径”等检索提示，但 `text` 仍保留原始可引用证据。
+
 `loader_evaluation` 可对同一文档运行所有候选 loader，并返回 block 数、标题数、表格数、页码覆盖和文本预览，用于选择最适合监管制度文档的加载器。
 
 ## 检索流程
@@ -93,9 +101,11 @@ QueryPlanner 默认配置：
 - 回答必须基于检索到的 chunk。
 - 最终引用只返回答案正文或结构化 claim 实际绑定的证据，不把所有进入 Prompt 但未被答案使用的 chunk 一并暴露；每条引用必须包含文档编号、chunk 编号、文件名、章节、页码和摘录。
 - Excel 题由程序确定性生成最终答案；文本题由 DeepSeek 仅基于 `context_chunks` 生成结构化 claim，并绑定 citation ID。
+- Word/PDF 公式题只在公式已解析、变量取值明确、单位一致且表达式属于安全算术范围时做受限确定性计算；变量值只能来自用户问题、同一证据上下文或已上传表格证据。系统不得让 LLM 自动推断变量值、补写监管规则或执行无依据计算。
 - 没有命中或只有弱相关命中时返回固定拒答文本。
 - 检索系统不可用时返回 503，不伪装成无依据拒答。
 - 生成后校验正文引用、claim 引用、数字、比例、日期、机构和文号；一次修复仍失败则拒答。DeepSeek 不可用时只返回引用式摘录或拒答。
+- Word/PDF 公式计算拒答必须给出可审计原因码，包括 `formula_not_found`、`formula_not_parseable`、`missing_variables`、`ambiguous_variables`、`unit_conflict`、`unsupported_operation`、`insufficient_context` 和 `out_of_scope`。
 
 ## Chunk 质量规则
 
