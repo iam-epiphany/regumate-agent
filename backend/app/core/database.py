@@ -30,7 +30,7 @@ def init_db() -> None:
     """Create SQLite tables on startup; Alembic can replace this later."""
 
     ensure_runtime_dirs()
-    from backend.app.models import audit, document, review  # noqa: F401
+    from backend.app.models import audit, document  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _upgrade_sqlite_schema()
@@ -47,7 +47,6 @@ def _upgrade_sqlite_schema() -> None:
     index_task_columns = {column["name"] for column in inspector.get_columns("document_index_tasks")} if "document_index_tasks" in table_names else set()
     audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")} if "audit_logs" in table_names else set()
     qa_task_columns = {column["name"] for column in inspector.get_columns("qa_tasks")} if "qa_tasks" in table_names else set()
-    review_task_columns = {column["name"] for column in inspector.get_columns("report_review_tasks")} if "report_review_tasks" in table_names else set()
     document_migrations = {
         "client_request_id": "ALTER TABLE documents ADD COLUMN client_request_id VARCHAR(128)",
         "document_metadata": "ALTER TABLE documents ADD COLUMN document_metadata TEXT",
@@ -178,13 +177,6 @@ def _upgrade_sqlite_schema() -> None:
                     "ON qa_tasks(client_request_id)"
                 )
             )
-        if "report_review_tasks" in table_names and "rule_snapshot_json" not in review_task_columns:
-            connection.execute(
-                text(
-                    "ALTER TABLE report_review_tasks ADD COLUMN "
-                    "rule_snapshot_json TEXT DEFAULT '[]'"
-                )
-            )
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -268,15 +260,5 @@ def _recover_interrupted_states() -> None:
                     "completed_at=NULL, "
                     "updated_at=CURRENT_TIMESTAMP "
                     "WHERE status IN ('queued', 'running')"
-                )
-            )
-
-        if "report_review_tasks" in inspector.get_table_names():
-            connection.execute(
-                text(
-                    "UPDATE report_review_tasks SET status='queued', stage='queued', "
-                    "error='应用重启后正在恢复未完成的报表审查任务。', error_code=NULL, "
-                    "completed_at=NULL, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE status='running'"
                 )
             )

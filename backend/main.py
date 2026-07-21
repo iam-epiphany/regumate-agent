@@ -16,12 +16,10 @@ from backend.app.api.audit import router as audit_router
 from backend.app.api.documents import router as documents_router
 from backend.app.api.health import router as health_router
 from backend.app.api.qa import router as qa_router
-from backend.app.api.review import router as review_router
 from backend.app.core.config import API_TITLE, CORS_ORIGINS, FRONTEND_DEV_SERVER
 from backend.app.core.database import init_db
 from backend.app.services.index_task_service import start_index_task_worker
 from backend.app.services.qa_task_service import start_qa_task_worker
-from backend.app.services.report_review_task_service import start_report_review_worker
 from backend.app.services.document_lifecycle_service import recover_interrupted_deletions
 from backend.app.services.audit_service import archive_expired_audit_logs
 from backend.app.services.model_warmup_service import start_background_model_warmup
@@ -37,7 +35,6 @@ async def _lifespan(_app: FastAPI):
     start_resource_sampling()
     start_index_task_worker()
     start_qa_task_worker()
-    start_report_review_worker()
     recover_interrupted_deletions()
     with SessionLocal() as db:
         archive_expired_audit_logs(db)
@@ -128,7 +125,6 @@ app.include_router(health_router, prefix="/api", tags=["health"])
 app.include_router(documents_router, prefix="/api")
 app.include_router(qa_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
-app.include_router(review_router, prefix="/api")
 
 if not FRONTEND_DEV_SERVER and FRONTEND_ASSETS.exists():
     # Vite 构建后的 JS/CSS 会放在 dist/assets，FastAPI 负责按原路径托管。

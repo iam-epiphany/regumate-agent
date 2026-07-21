@@ -286,23 +286,9 @@ Excel 结构化检索会在表格证据 metadata 和 `retrieval_summary.aspect_r
 - 删除指定日期的归档文件、同日遗留 SQLite 审计日志和旧版 Markdown 归档，并记录本地删除标记。
 - 删除后该天历史日志不再显示；后续服务启动归档或旧 Markdown 迁移会跳过该日期，避免被已删除归档重新生成。接口返回 `deleted=true`。
 
-## 业务报表审查接口
-
-业务审查与 `/api/audit/*` 操作日志严格分离。报表继续通过普通文档接口上传和结构化入库；规则执行只读取 `SpreadsheetCell`，监管依据只允许引用已索引且未失效的 `DocumentChunk`。
-
-- `POST /api/review-rules`：创建确定性规则。必须提供 `evidence_chunk_id`，支持 `required/non_negative/range/equality/sum/allowed_values`。系统保存制度来源、条款、摘录和 URL 快照；失效制度或不存在的 chunk 会拒绝。
-- `GET /api/review-rules`：列出规则；`PATCH /api/review-rules/{rule_id}` 修改配置或启停。
-- `POST /api/report-reviews`：选择已索引的 XLS/XLSX/CSV 和规则列表，创建持久化异步任务。任务创建时冻结完整规则快照，之后修改规则不会改变历史结果；`client_request_id` 提供幂等语义。
-- `GET /api/report-reviews`、`GET /api/report-reviews/{review_id}`：返回任务进度、规则级结果和发现项。
-- `POST /api/report-reviews/{review_id}/cancel|retry`：停止排队/执行任务或重试终态任务。应用重启会恢复未完成任务。
-- `PATCH /api/review-findings/{finding_id}`：人工标记 `open/confirmed/dismissed/resolved`，保存复核人、意见和时间。
-- `GET /api/report-reviews/{review_id}/report?format=json|markdown`：导出审查报告。报告同时包含监管依据和报表单元格证据，并明确“仅覆盖已配置规则”。
-
-规则无法唯一定位单元格、目标为空或数值不可计算时，结果为 `not_evaluable`，不得伪装成“检查通过”。整改建议来自规则配置或所引条款的保守复核模板，不调用 LLM 扩写新的监管义务。
-
 ## 仍不提供的接口
 
-当前不提供自动生成监管规则、替代人工签批的最终合规结论、跨系统整改工单下发或外部消息通知。规则必须由业务人员配置并绑定证据。
+当前不提供自动生成监管规则、独立业务审查工作流、替代人工签批的最终合规结论、跨系统整改工单下发或外部消息通知。报表相关问题继续通过普通文档上传、结构化入库和可信问答接口处理，并必须基于检索到的证据回答。
 ## RAG 健康检查
 
 `GET /api/health/rag`

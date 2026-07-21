@@ -26,7 +26,6 @@ class RagHealthResponse(BaseModel):
     antiword_version: str | None = None
     index_tasks: dict[str, int] = Field(default_factory=dict)
     qa_tasks: dict[str, int] = Field(default_factory=dict)
-    review_tasks: dict[str, int] = Field(default_factory=dict)
     model_runtime: dict[str, object] = Field(default_factory=dict)
     ready: bool = False
     embedding_model_error: str | None = None

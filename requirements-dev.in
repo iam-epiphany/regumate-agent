@@ -1,0 +1,4 @@
+-r requirements.in
+pytest
+# Starlette's current TestClient backend in this lock.
+httpx2

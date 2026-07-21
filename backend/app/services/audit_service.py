@@ -490,14 +490,6 @@ def _display_fields(action: str, detail: str) -> dict[str, str]:
         "document_source_restored": ("原文件已恢复", "系统重新找到原文件，文档状态已恢复。"),
         "qa_context_built": ("问答完成", "系统已完成一次可信问答。"),
         "qa_cancelled": ("问答生成已停止", "用户主动停止了本次回答生成。"),
-        "review_rule_created": ("审查规则已创建", "业务人员创建了一条绑定监管依据的报表规则。"),
-        "review_rule_updated": ("审查规则已更新", "报表规则配置或启用状态已更新。"),
-        "report_review_queued": ("报表审查已排队", "报表审查任务已冻结规则快照并进入队列。"),
-        "report_review_completed": ("报表审查已完成", "系统已完成确定性规则检查，发现项等待人工复核。"),
-        "report_review_failed": ("报表审查失败", "报表审查任务执行失败，需要检查规则或报表单元格索引。"),
-        "report_review_cancelled": ("报表审查已停止", "用户停止了报表审查任务。"),
-        "report_review_retried": ("报表审查已重试", "报表审查任务已重新进入队列。"),
-        "review_finding_reviewed": ("审查发现已复核", "业务人员已确认、排除或完成一项整改。"),
     }
     summary, message = labels.get(action, (action, detail or "系统记录了一次操作。"))
     return {"summary": summary, "user_message": message}

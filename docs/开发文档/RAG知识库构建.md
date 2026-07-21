@@ -385,12 +385,6 @@ metadata 合并优先级固定为：人工输入 > manifest > URL 导入 > 正�
 
 CSV 复用表格行证据和单元格索引；JSONL 是 schema-aware 文本载体，禁止 QA 答案入库；HTML 抽取标题、段落、列表和表格。旧库无损回填使用 `python scripts/backfill_document_provenance.py --parse-body`；若要让旧 chunk 获得新条款结构，显式运行 `--parse-body --reparse --reindex`。后者会重建 chunk 和向量，不能与线上问答并发执行。
 
-## 监管证据如何进入报表审查
-
-业务审查不另建一套脱离 RAG 的制度库。创建规则时必须选择现有 `DocumentChunk`，服务校验文档已索引且 `version_status` 不是 `repealed/superseded`，并冻结文件名、标题、发文机关、发布日期、文号、条款号、章节和依据摘录。报表侧只读取解析阶段构建的 `SpreadsheetCell`，发现项保存 `sheet_name/coordinate/row_label/column_label/value/unit/period/chunk_id`。
-
-这形成两条可独立核对的证据链：监管 chunk 解释“为什么检查”，报表 cell 解释“检查了什么”。规则执行不进行向量召回和 LLM 推断；找不到或无法唯一定位目标时返回 `not_evaluable`，而不是把缺数据当成通过。
-
 ## 来源文件、召回前过滤与语义 Grounding
 
 来源文件工作流以比赛数据包和入库结果为准。`scripts/build_package_manifest.py` 从比赛 zip 生成 package manifest，记录交付包内文件的 `doc_id/title/original_name/local_path/file_size/sha256/file_type/contest_package_sha256`，用于证明文件清单、去重和本地 custody；官网 URL 不是交付必需字段。
