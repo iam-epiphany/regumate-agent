@@ -31,13 +31,14 @@ from backend.app.schemas.documents import (
     DocumentUploadPreflightResponse,
     DocumentUploadResponse,
     DocumentMetadataInput,
+    DocumentMetadataConfirmResponse,
     DocumentMetadataUpdateResponse,
     DocumentManifestImportItem,
     DocumentManifestImportResponse,
     DocumentUrlImportRequest,
 )
 from backend.app.schemas.qa import ApiError
-from backend.app.services.audit_service import log_action
+from backend.app.services.audit_service import log_action, record_event
 from backend.app.services.document_storage import (
     EmptyDocumentError,
     DocumentTooLargeError,
@@ -67,11 +68,18 @@ from backend.app.services.document_manifest_service import (
     parse_manifest,
 )
 from backend.app.services.document_metadata_service import (
+    IDENTITY_METADATA_FIELDS,
     DocumentMetadataError,
     apply_document_metadata,
+    confirm_document_identity,
     document_metadata_snapshot,
+    identity_snapshot_hash,
+    invalidate_identity_review,
     resolve_version_relation,
+    validate_document_identity,
 )
+from backend.app.services.document_metadata_index_service import refresh_document_metadata_indexes
+from backend.app.services.vector_store_service import VectorStoreError
 from backend.app.services.document_url_import_service import (
     DocumentUrlImportError,
     fetch_url_document,
@@ -205,19 +213,94 @@ def update_document_metadata(
     document = db.scalar(select(Document).where(Document.document_id == document_id))
     if document is None:
         raise HTTPException(status_code=404, detail="未找到指定文档")
+    before = document_metadata_snapshot(document)
+    refresh_warning: str | None = None
+    metadata_refreshed = False
     try:
-        metadata = _metadata_input_dict(payload)
-        apply_document_metadata(document, metadata, source="user", confidence=1.0)
-        resolve_version_relation(db, document)
+        metadata = _metadata_patch_dict(payload)
+        if metadata:
+            apply_document_metadata(
+                document,
+                metadata,
+                source="user",
+                confidence=1.0,
+                allow_clear=True,
+            )
+            invalidate_identity_review(document)
+            validate_document_identity(document)
+            try:
+                refresh_result = refresh_document_metadata_indexes(db, document)
+                metadata_refreshed = bool(refresh_result.get("qdrant_refreshed"))
+            except VectorStoreError as exc:
+                refresh_warning = f"身份信息已保存，Qdrant payload 待刷新：{exc}"
         db.commit()
     except (DocumentMetadataError, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    reindex_queued = enqueue_document_index(document.document_id)
+    after = document_metadata_snapshot(document)
+    if metadata:
+        _record_identity_audit(
+            db,
+            "document_identity_updated",
+            document,
+            before,
+            after,
+            metadata_refreshed=metadata_refreshed,
+            refresh_warning=refresh_warning,
+        )
     return DocumentMetadataUpdateResponse(
         document_id=document.document_id,
-        metadata=document_metadata_snapshot(document),
-        reindex_queued=reindex_queued,
+        metadata=after,
+        reindex_queued=False,
+        metadata_refreshed=metadata_refreshed,
+        refresh_warning=refresh_warning,
+    )
+
+
+@router.post(
+    "/{document_id}/metadata/confirm",
+    response_model=DocumentMetadataConfirmResponse,
+)
+def confirm_document_metadata(
+    document_id: str,
+    db: Session = Depends(get_db),
+) -> DocumentMetadataConfirmResponse:
+    document = db.scalar(select(Document).where(Document.document_id == document_id))
+    if document is None:
+        raise HTTPException(status_code=404, detail="未找到指定文档")
+    before = document_metadata_snapshot(document)
+    refresh_warning: str | None = None
+    metadata_refreshed = False
+    try:
+        previous = resolve_version_relation(db, document, strict=True)
+        confirm_document_identity(document)
+        refresh_targets = [document, *([previous] if previous is not None else [])]
+        try:
+            refresh_results = []
+            for target in refresh_targets:
+                refresh_results.append(refresh_document_metadata_indexes(db, target))
+            metadata_refreshed = any(bool(result.get("qdrant_refreshed")) for result in refresh_results)
+        except VectorStoreError as exc:
+            refresh_warning = f"身份卡已确认，Qdrant payload 待刷新：{exc}"
+        db.commit()
+    except (DocumentMetadataError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    after = document_metadata_snapshot(document)
+    _record_identity_audit(
+        db,
+        "document_identity_confirmed",
+        document,
+        before,
+        after,
+        metadata_refreshed=metadata_refreshed,
+        refresh_warning=refresh_warning,
+    )
+    return DocumentMetadataConfirmResponse(
+        document_id=document.document_id,
+        metadata=after,
+        metadata_refreshed=metadata_refreshed,
+        refresh_warning=refresh_warning,
     )
 
 
@@ -657,6 +740,56 @@ def _metadata_input_dict(payload: DocumentMetadataInput) -> dict:
     value = payload.model_dump(exclude_none=True)
     extra = value.pop("extra", {})
     return {**value, **(extra if isinstance(extra, dict) else {})}
+
+
+def _metadata_patch_dict(payload: DocumentMetadataInput) -> dict:
+    """Preserve explicit nulls so PATCH can represent a reviewed unknown value."""
+
+    value = payload.model_dump(exclude_unset=True)
+    extra = value.pop("extra", {})
+    return {**value, **(extra if isinstance(extra, dict) else {})}
+
+
+def _record_identity_audit(
+    db: Session,
+    action: str,
+    document: Document,
+    before: dict,
+    after: dict,
+    *,
+    metadata_refreshed: bool,
+    refresh_warning: str | None,
+) -> None:
+    fields = (*IDENTITY_METADATA_FIELDS, "identity_review_status", "identity_reviewed_at")
+    before_values = {key: before.get(key) for key in fields}
+    after_values = {key: after.get(key) for key in fields}
+    changed_fields = [key for key in fields if before_values.get(key) != after_values.get(key)]
+    current_hash = identity_snapshot_hash(document)
+    if metadata_refreshed:
+        user_message = "身份信息已保存并同步到检索元数据。"
+    elif refresh_warning:
+        user_message = "身份信息已保存，检索元数据待刷新。"
+    else:
+        user_message = "身份信息已保存。"
+    record_event(
+        db,
+        action,
+        "document",
+        document.document_id,
+        detail=f"文档身份信息变更：{', '.join(changed_fields) if changed_fields else '确认状态刷新'}",
+        event_key=f"{action}:{document.document_id}:{current_hash}",
+        summary="文档身份信息已更新" if action.endswith("updated") else "文档身份卡已人工核对",
+        user_message=user_message,
+        details={
+            "filename": document.filename,
+            "changed_fields": changed_fields,
+            "before": before_values,
+            "after": after_values,
+            "identity_snapshot_hash": current_hash,
+            "metadata_refreshed": metadata_refreshed,
+            "refresh_warning": refresh_warning,
+        },
+    )
 
 
 def _to_upload_response(

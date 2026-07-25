@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 import json
 import re
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import TABLE_STRICT_EVIDENCE_VALIDATION
@@ -93,9 +94,22 @@ def _indexed_spreadsheet_matches(
     if str(filters.get("version_status") or "") not in {"repealed", "superseded"}:
         statement = statement.where(Document.version_status.notin_(("repealed", "superseded")))
     source = normalize_table_text(filters.get("source_title") or filters.get("filename"))
+    selector_sources = {
+        normalize_table_text(item.get("source_title"))
+        for item in getattr(aspect, "selectors", ())
+        if isinstance(item, dict) and item.get("source_title")
+    }
+    # A cross-period question can produce a human-readable composite title
+    # such as “2023年10月与12月…表”.  The per-period selectors are the actual
+    # hard locators, so the composite phrase must not eliminate both files.
+    if len(selector_sources) >= 2:
+        source = ""
     sheet = normalize_table_text(filters.get("sheet"))
     if source:
-        statement = statement.where(SpreadsheetCell.source_title_norm.contains(source))
+        source_variants = _source_title_variants(source)
+        statement = statement.where(
+            or_(*(SpreadsheetCell.source_title_norm.contains(value) for value in source_variants if value))
+        )
     if sheet:
         statement = statement.where(SpreadsheetCell.sheet_name_norm.contains(sheet))
     for field_name in ("year", "month", "quarter"):
@@ -128,15 +142,35 @@ def _indexed_spreadsheet_matches(
 
     candidates = [_candidate_from_index(cell, chunk, document, question, filters) for cell, chunk, document in rows]
     label_filters = dict(filters)
-    if table_task == "calculate" and getattr(aspect, "selectors", ()):
+    selectors = [item for item in getattr(aspect, "selectors", ()) if isinstance(item, dict)]
+    question_column_target = _specific_column_target_from_question(
+        question,
+        candidates,
+        selectors=selectors,
+    )
+    if table_task in {"compare", "calculate"} and getattr(aspect, "selectors", ()):
         # In questions such as “全国合计”从“合计”到“健康险”, the parser also
         # extracts the last quoted column as table_filters["column_label"].
-        # Treating that as a global hard filter removes the first operand
-        # before selector matching.  For structured calculations, row/indicator
-        # constraints remain hard, while each operand column is checked by its
-        # own selector below.
-        label_filters.pop("row_label", None)
-        label_filters.pop("column_label", None)
+        # Treating operands as global hard filters removes the other operands
+        # before selector matching.  Each comparison/calculation operand is
+        # checked by its own selector below.  Keep a row scope such as
+        # “农村商业银行”, which is independent from the operand labels.
+        selector_labels = {
+            normalize_table_text(
+                item.get("label") or item.get("row_or_indicator") or item.get("row_label") or item.get("column_label")
+            )
+            for item in getattr(aspect, "selectors", ())
+            if isinstance(item, dict)
+        }
+        if table_task == "calculate":
+            label_filters.pop("row_label", None)
+            label_filters.pop("column_label", None)
+        elif normalize_table_text(label_filters.get("row_label")) in selector_labels:
+            label_filters.pop("row_label", None)
+        if normalize_table_text(label_filters.get("column_label")) in selector_labels:
+            label_filters.pop("column_label", None)
+        if question_column_target and _is_generic_column_target(label_filters.get("column_label")):
+            label_filters["column_label"] = question_column_target
         label_filters.pop("indicator", None)
         label_filters.pop("metric", None)
     candidates = _filter_candidates_by_required_labels(
@@ -154,10 +188,17 @@ def _indexed_spreadsheet_matches(
         return []
     candidates = [candidate for candidate in candidates if candidate.score > 0 or candidate.selected_cell]
     candidates.sort(key=lambda item: item.score, reverse=True)
-    selectors = [item for item in getattr(aspect, "selectors", ()) if isinstance(item, dict)]
-
     if table_task == "compare" and operation in {"max", "min"}:
-        selected = _cells_for_selectors(candidates, selectors) if selectors else _unique_numeric_candidates(candidates)
+        selected = (
+            _cells_for_selectors(
+                candidates,
+                selectors,
+                question=question,
+                question_column_target=question_column_target,
+            )
+            if selectors
+            else _unique_numeric_candidates(candidates)
+        )
         selected = _comparable_metric_candidates(selected)
         winner = _comparison_candidate(selected, operation)
         if winner:
@@ -170,7 +211,16 @@ def _indexed_spreadsheet_matches(
         return []
 
     if table_task == "calculate" and operation in {"difference", "sum", "ratio"}:
-        selected = _cells_for_selectors(candidates, selectors) if selectors else _unique_numeric_candidates(candidates)[:2]
+        selected = (
+            _cells_for_selectors(
+                candidates,
+                selectors,
+                question=question,
+                question_column_target=question_column_target,
+            )
+            if selectors
+            else _unique_numeric_candidates(candidates)[:2]
+        )
         calculation = _calculation_match_from_selected(
             selected,
             aspect,
@@ -185,7 +235,12 @@ def _indexed_spreadsheet_matches(
         return []
 
     if table_task == "lookup" and selectors:
-        selected = _cells_for_selectors(candidates, selectors)
+        selected = _cells_for_selectors(
+            candidates,
+            selectors,
+            question=question,
+            question_column_target=question_column_target,
+        )
         if not selected:
             _set_last_diagnostic(
                 match_status="indicator_not_found",
@@ -235,6 +290,15 @@ def _candidate_from_index(
     filters: dict[str, Any],
 ) -> SpreadsheetCandidate:
     metadata = _metadata(chunk)
+    metadata.update(
+        {
+            "year": cell.year,
+            "month": cell.month,
+            "quarter": cell.quarter,
+            "source_title": cell.source_title or metadata.get("source_title"),
+            "sheet_name": cell.sheet_name or metadata.get("sheet_name"),
+        }
+    )
     selected_cell = {
         "coordinate": cell.coordinate,
         "row": cell.row_index,
@@ -257,9 +321,20 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
     column = cell.column_label_norm
     combined = f"{row}{column}"
     score = 0.25 if cell.numeric_value is not None else 0.0
+    column_leaf = normalize_table_text(re.split(r"\s*/\s*|[|｜>]", str(cell.column_label or ""))[-1])
     for key, weight in (("row_label", 5.0), ("column_label", 5.0), ("indicator", 4.0), ("metric", 4.0), ("scope", 3.0)):
         target = normalize_table_text(filters.get(key))
-        if target and target in combined:
+        if key == "row_label":
+            structural_text = row
+        elif key == "column_label":
+            # A row such as “全国合计” must not make every numeric cell look
+            # like the requested “合计” column.  Compare column constraints
+            # only with the terminal header, excluding the repeated table
+            # title prefix and the row label.
+            structural_text = column_leaf
+        else:
+            structural_text = combined
+        if target and target in structural_text:
             score += weight
     score += _token_overlap(question, combined)
     return score
@@ -321,15 +396,50 @@ def _has_explicit_label_filters(filters: dict[str, Any]) -> bool:
     return any(normalize_table_text(filters.get(key)) for key in ("indicator", "row_label", "column_label", "metric"))
 
 
+def _source_title_variants(source: str) -> set[str]:
+    """Return conservative aliases for a user-written spreadsheet title."""
+
+    variants = {source}
+    for value in list(variants):
+        variants.add(value.replace("财产险", "财产保险"))
+        variants.add(value.replace("人身险", "人身保险"))
+        variants.add(value.replace("财产保险", "财产险"))
+        variants.add(value.replace("人身保险", "人身险"))
+    for value in list(variants):
+        variants.add(re.sub(r"(\d{4})年0([1-9])月", r"\1年\2月", value))
+        variants.add(re.sub(r"(\d{4})年([1-9])月", r"\1年0\2月", value))
+    for value in list(variants):
+        if "情况表" in value:
+            variants.add(value.replace("情况表", "表"))
+        elif value.endswith("表"):
+            variants.add(f"{value[:-1]}情况表")
+    return {value for value in variants if value}
+
+
+def _source_title_matches(requested_source: str, actual_source: str) -> bool:
+    if not requested_source:
+        return True
+    if requested_source in actual_source:
+        return True
+    return any(variant and variant in actual_source for variant in _source_title_variants(requested_source))
+
+
 def _cells_for_selectors(
     candidates: list[SpreadsheetCandidate],
     selectors: list[dict[str, Any]],
+    *,
+    question: str = "",
+    question_column_target: str | None = None,
 ) -> list[SpreadsheetCandidate]:
     selected: list[SpreadsheetCandidate] = []
+    if question_column_target is None:
+        question_column_target = _specific_column_target_from_question(question, candidates)
     for selector in selectors:
         label = normalize_table_text(selector.get("label") or selector.get("row_or_indicator"))
         row_target = normalize_table_text(selector.get("row_label"))
         column_target = normalize_table_text(selector.get("column_label"))
+        if question_column_target and _is_generic_column_target(column_target):
+            column_target = question_column_target
         quarter_mode = None
         if column_target == "年季度":
             quarter_mode, column_target = "first", ""
@@ -340,7 +450,7 @@ def _cells_for_selectors(
         scope = normalize_table_text(selector.get("scope"))
         if scope in {"季度", "年季度", "月度", "年月度"}:
             scope = ""
-        matches: list[tuple[float, SpreadsheetCandidate]] = []
+        matches: list[tuple[int, float, SpreadsheetCandidate]] = []
         for candidate in candidates:
             cell = candidate.selected_cell or {}
             if not isinstance(cell.get("normalized_value"), (int, float)):
@@ -349,13 +459,23 @@ def _cells_for_selectors(
             column = normalize_table_text(cell.get("column_label"))
             column_index = int(cell.get("column") or 0)
             combined = f"{row}{column}"
+            if any(
+                selector.get(key) is not None and int(candidate.metadata.get(key) or 0) != int(selector[key])
+                for key in ("year", "month", "quarter")
+            ):
+                continue
+            requested_source = normalize_table_text(selector.get("source_title"))
+            actual_source = normalize_table_text(candidate.metadata.get("source_title") or candidate.document.filename)
+            if requested_source and not _source_title_matches(requested_source, actual_source):
+                continue
             if label and any(term in label for term in ["总资产", "总负债"]):
                 requested_scope = normalize_table_text(selector.get("scope"))
                 if "本年累计" in requested_scope:
                     continue
-            if label and label not in combined:
+            label_specificity = _table_label_match_specificity(label, row, str(cell.get("column_label") or ""))
+            if label and label_specificity <= 0:
                 continue
-            if row_target and row_target not in row:
+            if row_target and not _row_target_matches(row_target, row):
                 continue
             unlabeled_scope_fallback = False
             if column_target and column_target not in column:
@@ -380,13 +500,114 @@ def _cells_for_selectors(
                     continue
             row_preference = -row_index * 0.01
             column_preference = column_index * 0.01 if unlabeled_scope_fallback else 0.0
-            matches.append((candidate.score + specificity * 10.0 + row_preference + column_preference, candidate))
+            matches.append(
+                (
+                    label_specificity,
+                    candidate.score + specificity * 10.0 + row_preference + column_preference,
+                    candidate,
+                )
+            )
         if matches:
-            matches.sort(key=lambda item: item[0], reverse=True)
-            chosen = matches[0][1]
+            matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            chosen = matches[0][2]
             if all(_candidate_cell_key(chosen) != _candidate_cell_key(existing) for existing in selected):
                 selected.append(chosen)
     return selected
+
+
+def _specific_column_target_from_question(
+    question: str,
+    candidates: list[SpreadsheetCandidate],
+    *,
+    selectors: list[dict[str, Any]] | None = None,
+) -> str:
+    question_norm = normalize_table_text(question)
+    if not question_norm:
+        return ""
+    selector_sources = {
+        normalize_table_text(selector.get("source_title"))
+        for selector in selectors or []
+        if isinstance(selector, dict) and selector.get("source_title")
+    }
+    column_leafs: list[str] = []
+    for candidate in candidates:
+        if selector_sources:
+            candidate_source = normalize_table_text(
+                candidate.metadata.get("source_title") or candidate.document.filename
+            )
+            if not any(source and source in candidate_source for source in selector_sources):
+                continue
+        cell = candidate.selected_cell or {}
+        leaf = _column_leaf(cell.get("column_label"))
+        if leaf and not _is_generic_column_target(leaf):
+            column_leafs.append(leaf)
+    matches = [leaf for leaf in dict.fromkeys(column_leafs) if leaf in question_norm]
+    if not matches:
+        return ""
+    matches.sort(key=len, reverse=True)
+    return matches[0]
+
+
+def _column_leaf(column_label: Any) -> str:
+    return normalize_table_text(str(column_label or "").rsplit(" / ", 1)[-1])
+
+
+def _is_generic_column_target(value: str) -> bool:
+    return normalize_table_text(value) in {
+        "",
+        "项目",
+        "名称",
+        "项目名称",
+        "指标",
+        "指标名称",
+        "地区",
+        "合计",
+        "总计",
+        "本年累计",
+        "截至当期",
+        "本年累计截至当期",
+    }
+
+
+def _table_label_match_specificity(requested: str, row: str, column_label: str) -> int:
+    """Match a selector against structural labels without table-title leakage.
+
+    Spreadsheet column labels often contain the full table title before the
+    final header (for example ``...全国各地区... / 健康险``).  Matching a row
+    selector such as ``全国`` against that entire string makes every row look
+    like the nationwide row.  Compare only the normalized row label and the
+    terminal column header, with exact row matches taking precedence.
+    """
+
+    if not requested:
+        return 0
+    row_value = normalize_table_text(row)
+    column_leaf = normalize_table_text(column_label.rsplit(" / ", 1)[-1])
+    if requested == row_value:
+        return 40
+    if requested == column_leaf:
+        return 35
+    if requested in row_value or row_value in requested:
+        return 20
+    if requested in column_leaf or column_leaf in requested:
+        return 15
+    requested_base = re.sub(r"(?:合计|总计)$", "", requested)
+    row_base = re.sub(r"(?:合计|总计)$", "", row_value)
+    column_base = re.sub(r"(?:合计|总计)$", "", column_leaf)
+    if requested_base and row_base and (requested_base in row_base or row_base in requested_base):
+        return 10
+    if requested_base and column_base and (requested_base in column_base or column_base in requested_base):
+        return 5
+    return 0
+
+
+def _row_target_matches(requested: str, row: str) -> bool:
+    if not requested:
+        return True
+    if requested in row:
+        return True
+    nationwide_aliases = {"全国", "全国合计"}
+    return requested in nationwide_aliases and row in nationwide_aliases
 
 
 def _unique_numeric_candidates(candidates: list[SpreadsheetCandidate]) -> list[SpreadsheetCandidate]:
@@ -433,36 +654,46 @@ def _calculation_match_from_selected(
     *,
     ordered_transition: bool,
 ) -> RetrievalMatch | None:
-    if not candidates or operation in {"difference", "ratio"} and len(candidates) != 2:
+    if not candidates or operation == "ratio" and len(candidates) != 2:
+        return None
+    if operation == "difference" and len(candidates) < 2:
         return None
     units = {str((candidate.selected_cell or {}).get("unit") or candidate.metadata.get("unit") or "") for candidate in candidates}
     units.discard("")
     if len(units) > 1:
         return None
-    values = [float((candidate.selected_cell or {})["normalized_value"]) for candidate in candidates]
+    decimal_values = [
+        Decimal(str((candidate.selected_cell or {})["normalized_value"]))
+        for candidate in candidates
+    ]
     if operation == "difference":
-        if ordered_transition:
-            result = values[1] - values[0]
+        if ordered_transition and len(decimal_values) == 2:
+            decimal_result = decimal_values[1] - decimal_values[0]
             formula = f"{_cell_ref(candidates[1])} - {_cell_ref(candidates[0])}"
         else:
-            result = values[0] - values[1]
-            formula = f"{_cell_ref(candidates[0])} - {_cell_ref(candidates[1])}"
+            # Reconciliation expressions commonly use A-B-C.  Operand order is
+            # preserved by selectors, so a difference with more than two cells
+            # means the first value minus every subsequent value.
+            decimal_result = decimal_values[0] - sum(decimal_values[1:], Decimal("0"))
+            formula = " - ".join(_cell_ref(candidate) for candidate in candidates)
     elif operation == "sum":
-        result = sum(values)
+        decimal_result = sum(decimal_values, Decimal("0"))
         formula = " + ".join(_cell_ref(candidate) for candidate in candidates)
     elif operation == "ratio":
-        if values[1] == 0:
+        if decimal_values[1] == 0:
             return None
-        result = values[0] / values[1]
+        decimal_result = decimal_values[0] / decimal_values[1]
         formula = f"{_cell_ref(candidates[0])} / {_cell_ref(candidates[1])}"
     else:
         return None
+    result = float(decimal_result)
     anchor = candidates[0]
     metadata = {
         **anchor.metadata,
         "dynamic_table_evidence": True,
         "table_task": "calculate",
         "operation": operation,
+        "ordered_transition": ordered_transition,
         "match_status": "valid_calculation",
         "refusal_reason": None,
         "calculation_formula": formula,
@@ -559,9 +790,9 @@ def _display_calculation_formula(
     values = [_format_number_for_formula(float((candidate.selected_cell or {})["normalized_value"])) for candidate in candidates]
     result_text = _format_number_for_formula(result)
     if operation == "difference":
-        if ordered_transition:
+        if ordered_transition and len(values) == 2:
             return f"{values[1]} - {values[0]} = {result_text}"
-        return f"{values[0]} - {values[1]} = {result_text}"
+        return f"{' - '.join(values)} = {result_text}"
     if operation == "sum":
         return f"{' + '.join(values)} = {result_text}"
     if operation == "ratio" and len(values) >= 2:
@@ -882,6 +1113,10 @@ def _cell_ref(candidate: SpreadsheetCandidate) -> str:
 def _cell_metadata(candidate: SpreadsheetCandidate) -> dict[str, Any]:
     cell = candidate.selected_cell or {}
     return {
+        "document_id": candidate.document.document_id,
+        "chunk_id": candidate.chunk.chunk_id,
+        "filename": candidate.document.filename,
+        "source_title": candidate.metadata.get("source_title") or candidate.document.title,
         "sheet_name": candidate.metadata.get("sheet_name"),
         "cell": cell.get("coordinate"),
         "value": cell.get("value"),

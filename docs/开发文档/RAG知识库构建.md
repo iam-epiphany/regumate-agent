@@ -62,7 +62,7 @@ Word/PDF 真数学公式处理：
 8. `embedding_service` 对同一 aspect 内的 search query 做批量 BGE-M3 dense / sparse embedding，避免逐 query 重复模型调用。
 9. `vector_store_service` 在 Qdrant 中执行 dense + sparse hybrid search，并用 Qdrant RRF 融合 dense/sparse 召回结果；同一 aspect 内候选按 `chunk_id` 去重后保留较高召回分。
 10. `rag_service` 对同一 aspect 内多条 query 的候选执行应用层 RRF 融合，保留每个 chunk 命中的 query、query type、rank 和融合分。
-11. `rag_service` 在融合后按向量/RRF 分数截断进入 rerank 的候选，默认最多 `RERANK_CANDIDATE_LIMIT=24` 个 chunk；`rerank_service` 对每个 aspect 只调用一次 BGE reranker，默认输出 top 20。该限制只控制重排成本，不直接决定最终入 Prompt 片段。
+11. `rag_service` 在融合后按向量/RRF 分数截断进入 rerank 的候选，默认最多 `RERANK_CANDIDATE_LIMIT=24` 个 chunk；非选择题且已有明确文档范围时可收紧到 `CONSTRAINED_RERANK_CANDIDATE_LIMIT=20`，减少同文档长尾重排成本。选择题证据矩阵仍保持 `MCQ_RERANK_CANDIDATE_LIMIT=24`，因为官方 PDF 多事实选择题需要保留较靠后的目录/正文互证片段。`rerank_service` 对每个 aspect 只调用一次 BGE reranker，默认输出 top 20。该限制只控制重排成本，不直接决定最终入 Prompt 片段。
 12. `rag_service` 回查 SQLite，只允许 `documents.status == "indexed"` 的文档引用参与上下文包，避免 Qdrant 孤儿向量成为依据。
 13. `rag_service` 在命中章节后执行 neighbor expansion：命中主章节时优先补相关子章节，命中子章节时可补父章节，并可补前后各 1 个 chunk；动态单元格和计算证据不做邻居扩展，避免精确表格证据被噪音冲淡。
 14. `retrieval_service` 使用 `section_title + embedding_text + text` 计算证据覆盖率；对“逾期/不良/风险分类/区别/资产合计差异/外币折算”等监管问法做轻量 query expansion，并允许比较类问题命中自然语言表格行证据。
@@ -349,6 +349,8 @@ LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两
 
 官方 Word/PDF 选择题不再把完整题干和四个长选项拼成一次语义检索。QueryPlanner 会先锁定书名号中的目标材料和文件类型，再把去重后的每条选项事实分别作为 `document_style_statement` 检索；dense 与 sparse 候选保持独立，经 RRF 融合后一次性进入 BGE rerank。目标文件存在时，候选限定在该材料内，防止同名、不同年份或 PDF/Word 副本互相污染。
 
+选择题的 rerank 输入上限保持 24，而不是跟随普通明确文档范围问题收紧到 20。2026-07-24 阶段 5 回归显示，官方 Q206/Q254 这类 PDF 多事实选择题在 20 候选下会丢失较靠后的正文目录证据，退化为 fallback；恢复 MCQ 24 后两题重新走 `choice_evidence_deterministic` 并回答正确。
+
 对于百分比、`属于` 类主体和高字符覆盖的选项事实，`rag_service` 会回查目标文档 SQLite chunks，补入每条事实的最佳直接证据。该补充只接受字符二元组覆盖不低于 45% 的片段，最多 10 条，并继续受最终 12 个 Prompt chunk 预算约束。精确片段即使已经以低分 direct candidate 或 expanded context 出现在候选中，也会重新提升为 `mcq_exact_support`，避免通用 Prompt 阈值把它过滤掉。Prompt 选择阶段将 `mcq_exact_support` 视为已匹配当前选择题 aspect 的直接证据，不再要求该正文 chunk 同时包含完整材料标题，防止封面或目录高分片段挤掉选项事实依据。
 
 生成前会向 DeepSeek提供每个选项的逐事实覆盖矩阵。生成后同时执行：
@@ -389,6 +391,8 @@ v4 的 Excel 优化不改变解析层和单元格索引结构，重点修复无�
 
 metadata 合并优先级固定为：人工输入 > manifest > URL 导入 > 正文结构抽取 > parser > 文件名。每个字段在 `metadata_provenance` 中保存 source、confidence、priority 和更新时间；低优先级推断只能补空值，不能覆盖显式来源。
 
+P1 文档身份抽取采用保守规则：标题优先取结构化首级标题，其次才使用文件名候选；发文机关、文号和日期仅从标题区、落款区或带明确标签的文本中提取。正文中第一次出现的日期不得直接视为发布日期，发布日期不得推导生效日期，日期不得推导版本状态。`version_status` 默认 `unknown`，解析器不自动判断现行、废止、被替代或替代关系。仅对格式和“失效日期早于生效日期”等明确矛盾报错，其余可疑组合只提示人工核对。
+
 核心字段先写 SQLite `Document`，随后下沉到所有 chunk、`SpreadsheetCell` 关联文档和 Qdrant payload。Qdrant 对官方 doc_id、发文机关、发布日期、文号、监管主题、业务领域、版本状态和条款号建立 payload 索引。QueryPlanner 的 `table_filters` 兼作文档 metadata 过滤，文本召回和表格召回均执行版本状态与显式 metadata 约束。
 
 中文条款解析只在行首识别“第×条/第×条之×”，整条原文仍保留在证据中，并写入 `article_number`。Word 普通段落和 PDF 页面文本不再必须依赖 Heading 样式才能形成条款定位。
@@ -400,6 +404,10 @@ CSV 复用表格行证据和单元格索引；JSONL 是 schema-aware 文本载�
 来源文件工作流以比赛数据包和入库结果为准。`scripts/build_package_manifest.py` 从比赛 zip 生成 package manifest，记录交付包内文件的 `doc_id/title/original_name/local_path/file_size/sha256/file_type/contest_package_sha256`，用于证明文件清单、去重和本地 custody；官网 URL 不是交付必需字段。
 
 `/api/documents/manifest` 可补充标题、文号、日期、主题和业务领域等描述性 metadata；`source_url/attachment_url` 仅为可选兼容字段，缺失时不影响入库、检索、引用或发布。metadata 刷新只更新 SQLite Document、Chunk metadata 和 Qdrant payload，不触发 Embedding 重算。
+
+`scripts/backfill_document_identity.py` 为现有知识库提供幂等身份回填：只填空字段或低优先级推断，不覆盖人工、manifest 或 URL 导入数据；随后刷新 metadata payload，不重建向量。当前冻结 500 文档回填审计中，SQLite 与 Qdrant 的 46,585 个 chunk/point 完全一致，审计文件为 `outputs/evaluation/vector_index_audit_after_formula_reindex.json`。未知率是可信审计结果，不作为强行补齐的失败条件。
+
+Word OMML 公式按文档 XML 顺序抽取并与可见上下文绑定；PDF 仅处理可提取文本中的公式候选，不对扫描图片伪造公式。8 份官方 Word 公式文档完成重解析和原位重建索引，公式证据仍以真实 chunk 和文件哈希追溯。
 
 向量检索使用类型化元数据过滤。原问题的确定性抽取结果为 `explicit`，会先在 SQLite 解析 document ID 范围，再把 document ID、条款、版本及适用期间条件同时传入 dense/sparse Prefetch。Planner 补充条件为 `inferred`，仅用于候选排序。既有后置过滤继续作为防御性校验。
 

@@ -59,6 +59,19 @@ def test_limit_rerank_candidates_can_preserve_rrf_order(monkeypatch) -> None:
     assert [item.chunk_id for item in selected] == ["rrf-first", "rrf-second"]
 
 
+def test_limit_rerank_candidates_accepts_effective_limit(monkeypatch) -> None:
+    monkeypatch.setattr("backend.app.services.retrieval_service.RERANK_CANDIDATE_LIMIT", 24)
+    items = [
+        replace(candidate(), chunk_id="rrf-first", score=0.2),
+        replace(candidate(), chunk_id="rrf-second", score=0.3),
+        replace(candidate(), chunk_id="raw-high", score=0.99),
+    ]
+
+    selected = limit_rerank_candidates(items, preserve_order=True, limit=2)
+
+    assert [item.chunk_id for item in selected] == ["rrf-first", "rrf-second"]
+
+
 def test_retrieve_citations_runs_hybrid_search_and_rerank(monkeypatch) -> None:
     calls = []
     item = candidate()

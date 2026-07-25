@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import re
 from typing import Any, Mapping
 
@@ -135,6 +136,10 @@ def build_retrieval_metadata_filter(
 
 
 def _document_matches(document: Document, filters: Mapping[str, Any]) -> bool:
+    try:
+        document_metadata = json.loads(document.document_metadata or "{}")
+    except (TypeError, json.JSONDecodeError):
+        document_metadata = {}
     mappings = {
         "filename": document.filename,
         "source_title": document.title or document.filename,
@@ -154,6 +159,16 @@ def _document_matches(document: Document, filters: Mapping[str, Any]) -> bool:
         "version_status",
     }
     for key, expected in filters.items():
+        if key in {"source_title", "filename"}:
+            candidates = [
+                document.title,
+                document.filename,
+                document_metadata.get("source_title"),
+                document_metadata.get("source_filename"),
+            ]
+            if not _title_candidate_matches(expected, candidates):
+                return False
+            continue
         actual = mappings.get(key)
         if actual in (None, ""):
             return False
@@ -165,6 +180,31 @@ def _document_matches(document: Document, filters: Mapping[str, Any]) -> bool:
         elif expected_norm not in actual_norm:
             return False
     return True
+
+
+def _title_candidate_matches(expected: Any, candidates: list[Any]) -> bool:
+    expected_norm = _normalize_title(expected)
+    if not expected_norm:
+        return False
+    for candidate in candidates:
+        actual_norm = _normalize_title(candidate)
+        if len(actual_norm) < 4:
+            continue
+        if expected_norm in actual_norm or actual_norm in expected_norm:
+            return True
+    return False
+
+
+def _normalize_title(value: Any) -> str:
+    normalized = _normalize(value)
+    normalized = re.sub(r"(\d{4}年)版", r"\1", normalized)
+    # Users often omit the generic “情况” token or use the concise insurance
+    # sector names printed in a workbook heading.  Canonicalize only these
+    # title-level aliases; period and business subject remain part of the hard
+    # identity constraint.
+    normalized = normalized.replace("人身险", "人身保险").replace("财产险", "财产保险")
+    normalized = re.sub(r"情况表", "表", normalized)
+    return re.sub(r"(?:pdf|word|docx?|excel|xlsx?|xls)$", "", normalized)
 
 
 def _normalize(value: Any) -> str:

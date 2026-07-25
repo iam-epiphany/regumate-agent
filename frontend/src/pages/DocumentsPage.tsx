@@ -15,9 +15,11 @@ import {
 } from "../api/documents";
 import { getRagHealth } from "../api/system";
 import { StatusBadge } from "../components/StatusBadge";
+import { DocumentIdentityCard } from "../components/DocumentIdentityCard";
 import type {
   ChunkSummary,
   DocumentDetailResponse,
+  DocumentMetadata,
   DocumentSummary,
   DocumentUploadPreflightItem,
   RagHealthResponse,
@@ -349,7 +351,7 @@ export function DocumentsPage() {
   useEffect(() => {
     if (!selectedDetail) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedDetail(null);
+      if (event.key === "Escape" && !document.querySelector(".identity-editor")) setSelectedDetail(null);
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
@@ -691,6 +693,16 @@ export function DocumentsPage() {
   async function showDetail(documentId: string, chunkOffset = 0) {
     const detail = await getDocument(documentId, chunkOffset, CHUNK_PAGE_SIZE);
     setSelectedDetail(detail);
+  }
+
+  function handleIdentityMetadataChange(metadata: DocumentMetadata, notice?: string) {
+    setSelectedDetail((current) => current ? { ...current, metadata } : current);
+    setDocuments((current) => current.map((document) => (
+      document.document_id === selectedDetail?.document_id ? { ...document, metadata } : document
+    )));
+    if (notice) {
+      setToastNotice({ message: notice, tone: "success" });
+    }
   }
 
   function toggleDocumentSelection(document: DocumentSummary, checked: boolean) {
@@ -1072,6 +1084,9 @@ export function DocumentsPage() {
                         {document.filename}
                       </button>
                       <span className="document-subtle">编号：{document.document_id}</span>
+                      <span className={document.metadata.identity_review_status === "confirmed" ? "document-identity-state is-confirmed" : "document-identity-state"}>
+                        {document.metadata.identity_review_status === "confirmed" ? "身份已核对" : "身份待核对"}
+                      </span>
                     </td>
                     <td data-label="文档分类" className="document-meta-cell">{documentTypeLabel(document)}</td>
                     <td data-label="处理状态" className="document-status-cell" title={document.index_error ?? undefined}>
@@ -1174,6 +1189,11 @@ export function DocumentsPage() {
               </button>
             </header>
             <div className="drawer-body">
+              <DocumentIdentityCard document={selectedDetail} onMetadataChange={handleIdentityMetadataChange} />
+              <div className="document-content-divider">
+                <span>解析内容与证据片段</span>
+                <span>{selectedDetail.chunk_total} 条</span>
+              </div>
               {selectedDetail.chunks.length > 0 ? (
                 <ol className="evidence-list document-chunk-list">
                   {selectedDetail.chunks.map((chunk, index) => (

@@ -497,12 +497,16 @@ def limit_rerank_candidates(
     candidates: list[VectorSearchResult],
     *,
     preserve_order: bool = False,
+    limit: int | None = None,
 ) -> list[VectorSearchResult]:
-    if len(candidates) <= RERANK_CANDIDATE_LIMIT:
+    candidate_limit = RERANK_CANDIDATE_LIMIT if limit is None else max(0, int(limit))
+    if len(candidates) <= candidate_limit:
         return candidates
+    if candidate_limit <= 0:
+        return []
     if preserve_order:
-        return candidates[:RERANK_CANDIDATE_LIMIT]
-    return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:RERANK_CANDIDATE_LIMIT]
+        return candidates[:candidate_limit]
+    return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:candidate_limit]
 
 
 def _limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:

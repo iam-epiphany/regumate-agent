@@ -5,6 +5,8 @@ import type {
   DocumentDeleteResponse,
   DocumentDetailResponse,
   DocumentListResponse,
+  DocumentMetadataPatch,
+  DocumentMetadataUpdateResponse,
   DocumentProcessingResponse,
   DocumentUploadPreflightRequestItem,
   DocumentUploadPreflightResponse,
@@ -25,6 +27,23 @@ export function getDocument(documentId: string, chunkOffset = 0, chunkLimit = 50
 
 export function rebuildDocumentIndex(documentId: string): Promise<DocumentDetailResponse> {
   return apiFetch<DocumentDetailResponse>(`/api/documents/${documentId}/index`, {
+    method: "POST",
+  });
+}
+
+export function updateDocumentMetadata(
+  documentId: string,
+  metadata: DocumentMetadataPatch,
+): Promise<DocumentMetadataUpdateResponse> {
+  return apiFetch<DocumentMetadataUpdateResponse>(`/api/documents/${documentId}/metadata`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(metadata),
+  });
+}
+
+export function confirmDocumentMetadata(documentId: string): Promise<DocumentMetadataUpdateResponse> {
+  return apiFetch<DocumentMetadataUpdateResponse>(`/api/documents/${documentId}/metadata/confirm`, {
     method: "POST",
   });
 }

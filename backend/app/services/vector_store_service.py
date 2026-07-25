@@ -216,6 +216,27 @@ def document_vector_chunk_ids(document_id: str) -> set[str]:
     return chunk_ids
 
 
+def get_vector_chunk_by_chunk_id(chunk_id: str) -> VectorSearchResult | None:
+    """Return one current Qdrant payload by logical chunk_id."""
+
+    if not chunk_id:
+        return None
+    ensure_vector_collection()
+    client, _models = _qdrant()
+    try:
+        points = client.retrieve(
+            collection_name=QDRANT_COLLECTION,
+            ids=[_point_id(chunk_id)],
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        raise VectorStoreError(f"读取 Qdrant chunk payload 失败：{chunk_id}") from exc
+    if not points:
+        return None
+    return _to_search_result(points[0])
+
+
 def delete_document_vectors(document_id: str, chunk_ids: list[str] | None = None) -> None:
     ensure_vector_collection()
     client, models = _qdrant()
@@ -334,6 +355,8 @@ def refresh_document_metadata_payload(document_id: str, metadata: dict[str, Any]
     client, models = _qdrant()
     allowed = {
         "source_title",
+        "source_filename",
+        "file_sha256",
         "external_doc_id",
         "issuing_authority",
         "publication_date",
@@ -344,7 +367,10 @@ def refresh_document_metadata_payload(document_id: str, metadata: dict[str, Any]
         "business_domain",
         "source_url",
         "attachment_url",
+        "source_type",
+        "version_label",
         "version_status",
+        "supersedes_document_id",
     }
     payload = {key: metadata.get(key) for key in allowed}
     payload["version_status"] = payload.get("version_status") or "unknown"
@@ -373,7 +399,10 @@ def _qdrant_client() -> Any:
         from qdrant_client import QdrantClient
     except ImportError as exc:
         raise VectorStoreError("缺少 qdrant-client 依赖，无法连接向量数据库") from exc
-    return QdrantClient(url=QDRANT_URL)
+    # Metadata-only updates on very large spreadsheet documents can touch
+    # thousands of points.  The client's short default timeout can expire even
+    # though Qdrant completes the operation, so use a bounded long timeout.
+    return QdrantClient(url=QDRANT_URL, timeout=60)
 
 
 def _ensure_payload_indexes(client: Any, models: Any) -> None:

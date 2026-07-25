@@ -50,16 +50,20 @@ def validate_grounded_answer(
             if citation_id not in valid_ids
         }
     )
-    answer_citation_ids = set(re.findall(r"\[\d+\]", answer))
+    # Four-digit bracketed years such as “财会[2009]15号” are document
+    # numbers, not inline evidence citations.  Context citation labels are
+    # bounded prompt indices, so only one-to-three digit labels participate in
+    # citation validation.
+    answer_citation_ids = set(re.findall(r"\[[1-9]\d{0,2}\]", answer))
     invalid_answer_citation_ids = sorted(answer_citation_ids - valid_ids)
     claimed_citation_ids = {
         citation_id for claim in claims for citation_id in claim.citation_ids
     }
     missing_inline_citation_ids = sorted(claimed_citation_ids - answer_citation_ids)
     evidence_by_id = {
-        chunk.citation_label: _normalize(chunk.text) for chunk in context_chunks
+        chunk.citation_label: _normalize(_chunk_support_text(chunk)) for chunk in context_chunks
     }
-    evidence = _normalize("\n".join(chunk.text for chunk in context_chunks))
+    evidence = _normalize("\n".join(_chunk_support_text(chunk) for chunk in context_chunks))
     answer_without_citations = _strip_presentation_markers(
         re.sub(r"\[\d+\]", "", answer)
     )
@@ -82,7 +86,9 @@ def validate_grounded_answer(
         unsupported = sorted(
             {
                 entity
-                for entity in _extract_entities(re.sub(r"\[\d+\]", "", claim.text))
+                for entity in _extract_entities(
+                    _strip_presentation_markers(re.sub(r"\[\d+\]", "", claim.text))
+                )
                 if not _entity_is_supported(entity, cited_evidence)
             }
         )
@@ -139,6 +145,21 @@ def _strip_presentation_markers(value: str) -> str:
         "",
         value,
     )
+
+
+def _chunk_support_text(chunk: RetrievalResult) -> str:
+    metadata = chunk.metadata or {}
+    metadata_parts = [
+        chunk.source_doc,
+        chunk.section_title,
+        *chunk.section_path,
+        metadata.get("source_title"),
+        metadata.get("source_filename"),
+        metadata.get("filename"),
+        metadata.get("table_title"),
+        metadata.get("sheet_name"),
+    ]
+    return "\n".join(str(part) for part in [chunk.text, *metadata_parts] if part)
 
 
 def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:

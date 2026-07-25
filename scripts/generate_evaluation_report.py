@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from compare_cpu_gpu import compare
-from evaluate_custom_dataset import summarize_custom_dataset
 from evaluate_evidence import summarize_evidence
 from evaluate_ingestion import summarize_ingestion
 from evaluate_qa import summarize_existing_qa
@@ -29,7 +28,7 @@ from evaluation_common import (
 
 DEFAULT_REPORT = Path("docs/系统评测报告.md")
 FINAL_CONTEST_REPORT = Path("docs/evaluation/final_contest_report.json")
-VECTOR_INDEX_AUDIT = Path("outputs/evaluation/vector_index_audit.json")
+VECTOR_INDEX_AUDIT = Path("outputs/evaluation/vector_index_audit_after_formula_reindex.json")
 
 
 def main() -> int:
@@ -44,11 +43,6 @@ def main() -> int:
     ingestion = summarize_ingestion(Path("data/evaluation/final/ingest_manifest.json"))
     qa = summarize_existing_qa()
     evidence = summarize_evidence(Path("data/evaluation/performance_experiments/phase1_gpu_full300/contest_qa_all_results.json"), "phase1_gpu_full300")
-    custom = summarize_custom_dataset(
-        Path("data/contest-data-self-made/manifest.json"),
-        Path("data/contest-data-self-made/qa/self_made_qa.jsonl"),
-        Path("data/evaluation/self_made/self_made_qa_report.json"),
-    )
     comparison = compare(
         Path("data/evaluation/performance_experiments/phase1_gpu_full300/contest_qa_all_results.json"),
         Path("data/evaluation/performance_experiments/phase1_cpu_full300/contest_qa_all_results.json"),
@@ -63,7 +57,6 @@ def main() -> int:
     write_json(output_dir / "qa_metrics.json", qa)
     write_json(output_dir / "retrieval_metrics.json", retrieval)
     write_json(output_dir / "evidence_metrics.json", evidence)
-    write_json(output_dir / "custom_dataset_metrics.json", custom)
     write_json(output_dir / "cpu_gpu_comparison.json", comparison)
 
     detail_rows: list[dict[str, Any]] = []
@@ -80,7 +73,6 @@ def main() -> int:
         ingestion=ingestion,
         qa=qa,
         evidence=evidence,
-        custom=custom,
         comparison=comparison,
         retrieval=retrieval,
         environment=environment,
@@ -102,7 +94,6 @@ def render_report(
     ingestion: dict[str, Any],
     qa: dict[str, Any],
     evidence: dict[str, Any],
-    custom: dict[str, Any],
     comparison: dict[str, Any],
     retrieval: dict[str, Any],
     environment: dict[str, Any],
@@ -135,7 +126,7 @@ def render_report(
             "",
             "## 1. 评测背景与目标",
             "",
-            "ReguMate 面向银行业监管制度、填报说明和统计报表的可信 RAG 问答。评测目标是验证 500 份官方附件入库、300 条官方 QA、证据引用、表格取数、拒答与 CPU/GPU 性能边界，并补充自制数据集的可复现评测入口。",
+            "ReguMate 面向银行业监管制度、填报说明和统计报表的可信 RAG 问答。评测目标是验证 500 份官方附件入库、300 条官方 QA、证据引用、表格取数、拒答与 CPU/GPU 性能边界。",
             "",
             "## 2. 系统及技术方案概述",
             "",
@@ -172,12 +163,11 @@ def render_report(
                 ["官方附件", "500 份", "入库、解析、分块、索引完整性", "data/contest_dataset/dataset/；data/contest_staging/"],
                 ["官方 QA", "300 题", "答案准确率、来源命中、分题型/难度、性能", "data/contest_dataset/QA数据.xlsx"],
                 ["OOD 派生题", "30 题", "依据不足拒答", "scripts/evaluate_contest_qa.py 从官方题派生"],
-                ["自制数据集", f"{custom.get('dataset', {}).get('document_count')} 文档 / {custom.get('dataset', {}).get('qa_case_count')} 题", "功能覆盖与可复现样例", custom.get("dataset", {}).get("qa_file", "")],
             ]),
             "",
             "## 7. 500 份文档入库测试方案",
             "",
-            "500 份文档入库主结果读取 `data/evaluation/final/ingest_manifest.json`，该文件记录最终入库运行的文档数、Chunk 数、表格单元格数、向量数和按扩展名/解析器统计。为避免只看解析性能实验导致误判，本报告另读取 `outputs/evaluation/vector_index_audit.json`，将冻结 SQLite 中的 `document_chunks.chunk_id` 与当前 Qdrant payload 中的 `chunk_id` 做逐项一致性审计。",
+            "500 份文档入库主结果读取 `data/evaluation/final/ingest_manifest.json`，该文件记录最终入库运行的文档数、Chunk 数、表格单元格数、向量数和按扩展名/解析器统计。为避免只看解析性能实验导致误判，本报告另读取公式文档重建索引后的 `outputs/evaluation/vector_index_audit_after_formula_reindex.json`，将冻结 SQLite 中的 `document_chunks.chunk_id` 与当前 Qdrant payload 中的 `chunk_id` 做逐项一致性审计。",
             "",
             "`data/evaluation/performance_experiments/index_parse500.json` 只作为解析/分块/SQLite persist/embedding 阶段耗时诊断，不作为主向量数来源；该诊断文件没有保存完整 Qdrant 写入结果，不代表知识库没有向量。",
             "",
@@ -206,14 +196,14 @@ def render_report(
                 ],
                 [
                     "当前交付环境独立审计",
-                    f"SQLite={audit_sources.get('sqlite_db') or 'data/evaluation/final_runtime/app.db'}；审计文件=outputs/evaluation/vector_index_audit.json；审计时间={vector_audit.get('created_at') or '未记录'}",
+                    f"SQLite={audit_sources.get('sqlite_db') or 'data/evaluation/final_runtime/app.db'}；审计文件=outputs/evaluation/vector_index_audit_after_formula_reindex.json；审计时间={vector_audit.get('created_at') or '未记录'}",
                     f"collection={audit_sources.get('qdrant_collection') or 'regumate_chunks'}；alias 未审计",
                     f"文档={audit_summary.get('sqlite_documents') or '未采集'}；SQLite Chunk={audit_summary.get('sqlite_chunks') or '未采集'}；Qdrant points={audit_summary.get('qdrant_points') or '未采集'}；Dense 维度={audit_summary.get('dense_vector_size') or '未采集'}",
                     "用于证明当前交付环境 SQLite chunk_id 与 Qdrant payload chunk_id 完全一致；属于后续交付审计证据",
                 ],
             ]),
             "",
-            "结论：官方 300 QA 使用的是 `final_contest_report.json` 记录的 `regumate_chunks` 快照，Qdrant points 为 45,651；`regumate_contest_v3_build` / `regumate_contest_v3` 是最终入库 manifest 记录的重建 collection / alias；当前交付环境审计的 `regumate_chunks` 为 46,575 points。45,530、45,651、46,575 不强行合并为同一口径。差异来自后续交付阶段对解析、分块、表格 chunk 物化和去重规则的迭代，以及审计时间点不同；当前审计中 SQLite 与 Qdrant 的 chunk_id 缺失数和额外数均为 0，未发现当前交付索引缺失写入 Qdrant 的证据。",
+            "结论：官方 300 QA 使用的是 `final_contest_report.json` 记录的 `regumate_chunks` 快照，Qdrant points 为 45,651；`regumate_contest_v3_build` / `regumate_contest_v3` 是最终入库 manifest 记录的重建 collection / alias；当前交付环境审计的 `regumate_chunks` 为 46,585 points。45,530、45,651、46,585 不强行合并为同一口径。差异来自后续交付阶段对解析、分块、表格 chunk 物化和去重规则的迭代，以及审计时间点不同；当前审计中 SQLite 与 Qdrant 的 chunk_id 缺失数和额外数均为 0，未发现当前交付索引缺失写入 Qdrant 的证据。",
             "",
             "### 汇总指标",
             "",
@@ -349,36 +339,14 @@ def render_report(
             "",
             "注意：关键实体错误率代理指标不等价于经人工逐条标注的真实幻觉率。现有数据没有人工逐条幻觉标注；报告使用 key_entity_error_rate 作为代理指标，并同时报告 OOD 拒答准确率。",
             "",
-            "## 18. 自制数据集评测",
-            "",
-            _table(["项目", "结果"], [
-                ["数据集名称", custom.get("dataset", {}).get("name")],
-                ["文档数", custom.get("dataset", {}).get("document_count")],
-                ["QA 题数", custom.get("dataset", {}).get("qa_case_count")],
-                ["题型分布", _format_counts(custom.get("dataset", {}).get("qa_type_counts") or {})],
-                ["难度分布", _format_counts(custom.get("dataset", {}).get("difficulty_counts") or {})],
-                ["API 实测模式", custom.get("run_mode")],
-                ["完成题数", (custom.get("api_result_summary") or {}).get("completed_count")],
-                ["API 答案准确率", pct((custom.get("api_result_summary") or {}).get("answer_accuracy"))],
-                ["来源文件名称命中率", pct((custom.get("api_result_summary") or {}).get("source_name_hit_rate"))],
-                ["引用覆盖率", pct((custom.get("api_result_summary") or {}).get("citation_coverage_rate"))],
-                ["依据不足拒答正确数", f"{(custom.get('api_result_summary') or {}).get('refusal_correct_count')}/{(custom.get('api_result_summary') or {}).get('refusal_expected_count')}"],
-                ["平均响应时间", ms((custom.get("api_result_summary") or {}).get("avg_elapsed_ms"))],
-                ["P95 响应时间", ms((custom.get("api_result_summary") or {}).get("p95_elapsed_ms"))],
-                ["跨文件场景判断题结果", "通过" if (custom.get("api_result_summary") or {}).get("cross_file_case_correct") else "未通过"],
-                ["数据合规", f"无敏感客户数据：{custom.get('dataset', {}).get('sensitive_customer_data') is False}；无真实银行交易数据：{custom.get('dataset', {}).get('real_bank_transaction_data') is False}"],
-            ]),
-            "",
-            "自制数据集标准答案由自制监管制度、填报说明和 CSV 报表中的显式事实人工编写。本轮已经连接运行中后端完成 8 道题在线实测，制度事实、流程、表格取数、表格计算、跨文件场景判断和依据不足拒答均通过。该数据集规模较小，定位为补充功能覆盖与复现样例，不包装为官方 300 题同等口径的核心指标。",
-            "",
-            "## 19. 性能与响应时间评测",
+            "## 18. 性能与响应时间评测",
             "",
             _table(["环境", "平均", "P50", "P90", "P95", "最大"], [
                 ["GPU", ms((primary.get("elapsed_ms") or {}).get("avg")), ms((primary.get("elapsed_ms") or {}).get("p50")), ms((primary.get("elapsed_ms") or {}).get("p90")), ms((primary.get("elapsed_ms") or {}).get("p95")), ms((primary.get("elapsed_ms") or {}).get("max"))],
                 ["CPU", ms((cpu_run.get("elapsed_ms") or {}).get("avg")), ms((cpu_run.get("elapsed_ms") or {}).get("p50")), ms((cpu_run.get("elapsed_ms") or {}).get("p90")), ms((cpu_run.get("elapsed_ms") or {}).get("p95")), ms((cpu_run.get("elapsed_ms") or {}).get("max"))],
             ]),
             "",
-            "## 20. GPU 与 CPU 问答性能对比",
+            "## 19. GPU 与 CPU 问答性能对比",
             "",
             _table(["指标", "GPU", "CPU", "对比"], [
                 ["平均响应时间", ms(qa_cmp.get("gpu_avg_ms")), ms(qa_cmp.get("cpu_avg_ms")), f"CPU/GPU = {qa_cmp.get('latency_speedup_cpu_avg_div_gpu_avg')}x"],
@@ -386,15 +354,15 @@ def render_report(
                 ["准确率", pct(qa_cmp.get("gpu_accuracy")), pct(qa_cmp.get("cpu_accuracy")), "一致"],
             ]),
             "",
-            "## 21. 典型正确案例",
+            "## 20. 典型正确案例",
             "",
             _case_block(_find_case(detail_rows, answer_correct=True, refused=False), "正确回答且证据准确"),
             "",
-            "## 22. 典型错误案例",
+            "## 21. 典型错误案例",
             "",
             "本次汇总的官方 300 题 phase1 GPU/CPU 与 OOD 结果中未发现 answer_correct=False 的错误案例，`outputs/evaluation/error_cases.jsonl` 为空。用户要求列出的“答案正确但引用不准确、检索正确但生成错误、检索未命中、表格行列或期间识别错误、新旧文件版本混淆、错误拒答、发生幻觉”等类别，在现有可核验结果中未出现，不能构造示例。",
             "",
-            "## 23. 错误原因分类",
+            "## 22. 错误原因分类",
             "",
             _table(["错误类型", "数量", "说明"], [
                 ["答案错误", len([row for row in detail_rows if row.get("answer_correct") is False]), "来自 qa_details.jsonl"],
@@ -404,29 +372,28 @@ def render_report(
                 ["Unsupported entity", evidence_run.get("unsupported_entity_case_count"), "来自 grounding_validation"],
             ]),
             "",
-            "## 24. 当前系统已知问题",
+            "## 23. 当前系统已知问题",
             "",
             "- 500 文档完整 GPU/CPU 向量入库耗时对比未找到同一口径结果，因此不报告入库加速比；向量完整性已通过最终入库 manifest 与 SQLite/Qdrant chunk_id 审计补证。",
             "- 当前 Recall@1/3/5 结果来自已保存候选列表的离线重算，不等价于完整 300 题在线 Qdrant 检索实验；在线脚本已补充，但需要在同一官方 SQLite/collection 快照上执行后才可形成正式在线指标。",
-            "- 自制数据集已经完成在线 API 实测且 8 题全部通过，但规模较小，只能证明补充样例覆盖，不能替代官方 300 题与 OOD 指标。",
             "- 幻觉率没有人工逐条标注，当前只报告 key_entity_error_rate 对应的关键实体错误率代理指标和 grounding 结果。",
             "",
-            "## 25. 评测局限性",
+            "## 24. 评测局限性",
             "",
             "官方 300 题能覆盖 Excel、Word、PDF、表格取数/比较/计算和文本证据，但仍是固定题集；OOD 为派生 30 题，不代表所有越界问题。资源采样来自后端内部采样，不等价于整机监控。外部 LLM API 网络耗时未独立拆分。",
             "",
-            "## 26. 改进方向",
+            "## 25. 改进方向",
             "",
             "- 在入库脚本中保存 parse、chunk、embedding、Qdrant upsert、SQLite persist 的完整阶段耗时、upsert 成功/失败数和资源峰值。",
             "- 在同一冻结 collection 快照上补跑 `scripts/evaluate_online_retrieval_recall.py`，保存每题 Top1/3/5、初始召回与 rerank 后排名变化。",
-            "- 扩充自制数据集的表格期间、跨文件场景和依据不足样本，并保留后续回归结果 JSON/JSONL。",
+            "- 已建立基于官方 500 文档且问题/金标隔离的冻结挑战集；由于首次封存门禁未通过，挑战结果仅保留在独立失败报告中。后续优先改进跨文件与制度—报表联合问题的分来源召回、结论组装和 Aspect 证据完整性。",
             "- 增加人工抽样复核文件，区分答案错误、引用错误、检索错误和幻觉。",
             "",
-            "## 27. 结论",
+            "## 26. 结论",
             "",
             f"可核验的官方最终 GPU 报告显示 300/300 完成、答案准确率 {pct(final_summary.get('answer_accuracy'))}、来源命中率 {pct(final_summary.get('source_hit_rate'))}，该 QA 快照记录 collection=`{final_env.get('qdrant_collection') or '未记录'}`、points={final_env.get('qdrant_points') or final_kb.get('qdrant_points') or '未记录'}。phase1 GPU/CPU 300 题均为 {pct(primary.get('answer_accuracy'))} 准确率；GPU 平均响应 {ms((primary.get('elapsed_ms') or {}).get('avg'))}，CPU 平均响应 {ms((cpu_run.get('elapsed_ms') or {}).get('avg'))}。500 文档最终入库清单为 {ingest_summary.get('success_count')}/{ingest_summary.get('document_count')} 成功、{ingest_summary.get('vector_count')} 个向量；当前交付环境独立审计证明 SQLite {audit_summary.get('sqlite_chunks') or '未采集'} 个 chunk_id 与 Qdrant {audit_summary.get('qdrant_points') or '未采集'} 个 points 完全匹配，missing=0、extra=0。",
             "",
-            "## 28. 复现方法",
+            "## 27. 复现方法",
             "",
             "从已有结果生成统一评测产物和报告：",
             "",
@@ -444,7 +411,7 @@ def render_report(
             "",
             "```powershell",
             "$env:PYTHONIOENCODING='utf-8'",
-            "python scripts\\audit_vector_index.py --db data\\evaluation\\final_runtime\\app.db --ingest-manifest data\\evaluation\\final\\ingest_manifest.json --qdrant-url http://127.0.0.1:6333 --collection regumate_chunks --output outputs\\evaluation\\vector_index_audit.json",
+            "python scripts\\audit_vector_index.py --db data\\evaluation\\final_runtime\\app.db --ingest-manifest data\\evaluation\\final\\ingest_manifest.json --qdrant-url http://127.0.0.1:6333 --collection regumate_chunks --output outputs\\evaluation\\vector_index_audit_after_formula_reindex.json",
             "```",
             "",
             "从已有 QA 结果生成 QA 指标：",
@@ -457,13 +424,6 @@ def render_report(
             "",
             "```powershell",
             "python scripts\\evaluate_qa.py --run-backend-eval --dataset data\\contest_dataset\\QA数据.xlsx --base-url http://127.0.0.1:8000 --device cuda --split all --output-dir outputs\\evaluation",
-            "```",
-            "",
-            "自制数据集复现：",
-            "",
-            "```powershell",
-            "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\run_self_made_evaluation.ps1",
-            "python scripts\\evaluate_custom_dataset.py --output-dir outputs\\evaluation",
             "```",
             "",
             "CPU/GPU QA 对比：",
@@ -480,7 +440,7 @@ def render_report(
             "",
             "运行该在线检索脚本前，必须确认 `/api/health/ready` 绑定的是官方 500 文档 SQLite 与同一 Qdrant collection；空库或不同 collection 只可作为环境诊断，不得计入正式 Recall。",
             "",
-            "## 29. 实验结果文件索引",
+            "## 28. 实验结果文件索引",
             "",
             _table(["实验", "原始结果文件", "执行/生成脚本", "说明"], [
                 ["官方最终 300 QA", final.get("source_result") or "data/evaluation/contest_qa_test/20260716_173747/contest_qa_all_results.json", "scripts/build_contest_report.py", "官方最终口径"],
@@ -488,9 +448,8 @@ def render_report(
                 ["phase1 CPU 300 QA", cpu_run.get("source_file"), "scripts/evaluate_contest_qa.py", "CPU 问答性能"],
                 ["GPU OOD 30", gpu_ood.get("source_file"), "scripts/evaluate_contest_qa.py --split ood", "拒答评测"],
                 ["最终入库 manifest 500", ingest_run.get("source_file"), "scripts/ingest_contest_dataset.py", "500 文档成功数、Chunk、Cells、Vector"],
-                ["SQLite/Qdrant 向量审计", "outputs/evaluation/vector_index_audit.json", "scripts/audit_vector_index.py", "SQLite chunk_id 与 Qdrant payload chunk_id 一致性"],
+                ["SQLite/Qdrant 向量审计", "outputs/evaluation/vector_index_audit_after_formula_reindex.json", "scripts/audit_vector_index.py", "SQLite chunk_id 与 Qdrant payload chunk_id 一致性"],
                 ["CPU 解析/分块性能诊断 500", "data/evaluation/performance_experiments/index_parse500.json", "scripts/ingest_contest_dataset.py", "解析/分块/SQLite persist/embedding 阶段耗时；不作为向量数来源"],
-                ["自制数据集", custom.get("dataset", {}).get("manifest_file"), "scripts/generate_self_made_artifacts.py", "离线设计与 PDF/MD/JSON 产物"],
                 ["统一报告源", rel(output_dir), "scripts/generate_evaluation_report.py", "本次派生输出目录"],
             ]),
         ]

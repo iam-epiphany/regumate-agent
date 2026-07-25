@@ -102,27 +102,27 @@ Invoke-Stage "contest_report" {
         --output (Join-Path $RunDir "final_contest_report.json")
 }
 Invoke-Stage "trust_challenge" {
-    $RuntimeStatePath = Join-Path $ProjectRoot ".run-state\runtime.json"
-    $ChallengeBaseUrl = "http://127.0.0.1:8000"
-    if (Test-Path -LiteralPath $RuntimeStatePath) {
-        $RuntimeState = Get-Content -LiteralPath $RuntimeStatePath -Raw | ConvertFrom-Json
-        if ($RuntimeState.app_url) { $ChallengeBaseUrl = [string]$RuntimeState.app_url }
+    $ChallengeLock = Join-Path $ProjectRoot 'data\evaluation\trust_challenge_100\lock.json'
+    $FirstRunSeal = Join-Path $ProjectRoot 'outputs\evaluation\trust_challenge_100\holdout_first_run_seal.json'
+    $FirstReport = Join-Path $ProjectRoot 'outputs\evaluation\trust_challenge_100\holdout_first_report.json'
+    foreach ($artifact in @($ChallengeLock, $FirstRunSeal, $FirstReport)) {
+        if (-not (Test-Path -LiteralPath $artifact)) { throw "Frozen challenge evidence is missing: $artifact" }
     }
-    python scripts\run_trust_challenge.py `
-        --gold data\evaluation\trust_challenge_60.jsonl `
-        --output $ChallengeResults `
-        --base-url $ChallengeBaseUrl
-    python scripts\evaluate_trust_challenge.py `
-        --gold data\evaluation\trust_challenge_60.jsonl `
-        --results $ChallengeResults `
-        --report (Join-Path $RunDir "trust_challenge_report.json")
+    $ChallengeReport = Get-Content -LiteralPath $FirstReport -Raw | ConvertFrom-Json
+    Copy-Item -LiteralPath $FirstReport -Destination (Join-Path $RunDir 'trust_challenge_report.json') -Force
+    if (-not $ChallengeReport.summary.gate_passed) {
+        Write-Warning 'The first holdout did not pass. Preserving the sealed failure report; full 100-case publication was not run.'
+    }
 }
 Invoke-Stage "secret_scan" { python scripts\scan_secrets.py }
 Invoke-Stage "release_identity" {
     python scripts\build_release_manifest.py `
         --output (Join-Path $RunDir "release_manifest.json") `
         --image "regumate/app:contest-v3" `
-        --artifact data\evaluation\trust_challenge_60.jsonl `
+        --artifact data\evaluation\trust_challenge_100\questions.jsonl `
+        --artifact data\evaluation\trust_challenge_100\lock.json `
+        --artifact outputs\evaluation\trust_challenge_100\holdout_first_run_seal.json `
+        --artifact outputs\evaluation\trust_challenge_100\holdout_failure_report.md `
         --artifact data\evaluation\final\parse_manifest.json `
         --artifact data\evaluation\final\ingest_manifest.json `
         --artifact (Join-Path $RunDir "source_metadata_audit.json") `

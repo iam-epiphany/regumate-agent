@@ -27,6 +27,8 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | GET | `/api/documents/{document_id}/processing` | 查询解析、切片和索引的持久化处理快照 |
 | GET | `/api/documents` | 获取文档列表 |
 | GET | `/api/documents/{document_id}` | 获取文档详情与 chunk |
+| PATCH | `/api/documents/{document_id}/metadata` | 部分更新文档身份信息；显式 `null` 表示人工置为未知 |
+| POST | `/api/documents/{document_id}/metadata/confirm` | 确认当前文档身份快照，未知字段不阻止确认 |
 | POST | `/api/documents/{document_id}/index` | 手动重建单个文档的向量索引 |
 | DELETE | `/api/documents/{document_id}` | 删除文档、chunk 和向量索引 |
 | POST | `/api/documents/bulk-delete` | 批量删除文档、chunk 和向量索引，并返回逐文档结果 |
@@ -329,11 +331,14 @@ DOCX loader 会按 XML 顺序抽取 Word OMML 真数学公式，并将普通文�
 核心来源字段不再只放在通用 metadata 中。`Document` 一等字段包括 `external_doc_id/title/issuing_authority/publication_date/effective_date/expiration_date/document_number/regulatory_topic/business_domain/source_column/source_url/attachment_url/source_type/version_label/version_status/supersedes_document_id/metadata_status`。其中 `source_url/attachment_url` 仅为可空兼容字段，交付来源命中以文件名、标题、chunk/页码和表格单元格为准。响应仍通过 `metadata` 统一返回，以保持旧客户端兼容，同时包含字段级 `metadata_provenance`。
 
 - `POST /api/documents/upload`：multipart 新增可选 `metadata_json`。显式 metadata 优先于正文和文件名推断。
-- `PATCH /api/documents/{document_id}/metadata`：人工确认或修订结构化字段，保存后排队刷新向量 payload。
+- `PATCH /api/documents/{document_id}/metadata`：真正的部分更新。请求中省略的字段保持不变；显式 `null` 表示人工将该字段置为“未知”。继续兼容现有平铺 metadata 请求。保存后只刷新 SQLite chunk metadata 和 Qdrant payload，不重新计算 embedding。
+- `POST /api/documents/{document_id}/metadata/confirm`：确认当前身份快照。未知字段不阻止确认；成功后写入 `identity_review_status=confirmed`、`identity_reviewed_at` 和 `identity_reviewed_snapshot_hash`。任何身份字段后续发生修改或清空都会自动撤销旧确认，重新确认会生成新哈希。
 - `POST /api/documents/manifest`：上传 UTF-8 的 `.json/.jsonl/.csv` manifest，按 SHA-256、doc_id、文件名依次匹配并回填描述性 metadata。含 `question + answer/evidence/options` 的 QA 数据会拒绝导入生产知识库。
 - `POST /api/documents/url-import`：JSON 请求包含 `url/filename/metadata/client_request_id`。仅允许公网 HTTP(S)，限制重定向与下载大小，拒绝内网、本机和带凭据 URL。
 
 `Citation` 可返回 `source_url/attachment_url/source_title/issuing_authority/publication_date/document_number/version_status`。URL 字段可为空；表格和文本引用必须保留文件名、chunk/页码或单元格定位。
+
+身份字段的 `metadata_provenance` 记录 `系统提取 / manifest / URL 导入 / 人工填写 / 人工置为未知` 的来源、优先级和时间。人工修改、清空、确认、确认撤销及显式版本关系变更均写入操作日志，保存变更前后值和相关快照哈希。`supersedes_document_id` 只接受用户明确填写的关系；系统不根据文件名或日期自动建立版本关系。官网 URL、附件 URL 和 manifest 始终为可选信息。
 
 ## 可信问答增量字段
 

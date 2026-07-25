@@ -26,7 +26,7 @@ from backend.main import app
 from backend.app.services.embedding_service import EmbeddingServiceError, SparseEmbedding, TextEmbedding
 from backend.app.services.document_storage import next_document_id
 from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
-from backend.app.services.retrieval_service import RetrievalMatch, RetrievalServiceUnavailable
+from backend.app.services.retrieval_service import RetrievalDiagnostics, RetrievalMatch, RetrievalServiceUnavailable
 from backend.app.services.rerank_service import RerankedChunk
 from backend.app.services.vector_store_service import VectorStoreError
 from backend.app.services.vector_store_service import VectorSearchResult
@@ -274,6 +274,124 @@ def test_upload_metadata_propagates_to_document_and_chunks(fake_indexing_service
     assert detail["metadata"]["source_url"] == metadata["source_url"]
     assert detail["chunks"][0]["metadata"]["issuing_authority"] == metadata["issuing_authority"]
     assert detail["chunks"][0]["metadata"]["article_number"] == "第一条"
+
+
+def test_document_identity_patch_clear_confirm_and_invalidate(
+    fake_indexing_services,
+    monkeypatch,
+) -> None:
+    reset_database()
+    refreshed: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "backend.app.services.document_metadata_index_service.refresh_document_metadata_payload",
+        lambda document_id, metadata: refreshed.append((document_id, metadata)),
+    )
+    upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("identity.txt", "监管规则正文。", "text/plain")},
+        data={
+            "metadata_json": json.dumps(
+                {"title": "原标题", "publication_date": "2026-01-02"},
+                ensure_ascii=False,
+            )
+        },
+    )
+    document_id = upload.json()["document_id"]
+    initial_index_calls = len(fake_indexing_services)
+
+    patch = client.patch(
+        f"/api/documents/{document_id}/metadata",
+        json={"title": "人工标题", "publication_date": None},
+    )
+
+    assert patch.status_code == 200
+    assert patch.json()["metadata"]["title"] == "人工标题"
+    assert "publication_date" not in patch.json()["metadata"]
+    assert patch.json()["metadata"]["identity_review_status"] == "unreviewed"
+    assert patch.json()["reindex_queued"] is False
+    assert patch.json()["metadata_refreshed"] is True
+    assert len(fake_indexing_services) == initial_index_calls
+    assert refreshed[-1][0] == document_id
+
+    confirmed = client.post(f"/api/documents/{document_id}/metadata/confirm")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["metadata"]["identity_review_status"] == "confirmed"
+    assert len(confirmed.json()["metadata"]["identity_reviewed_snapshot_hash"]) == 64
+    assert confirmed.json()["metadata_refreshed"] is True
+
+    changed = client.patch(
+        f"/api/documents/{document_id}/metadata",
+        json={"document_number": "银发〔2026〕1号"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["metadata"]["identity_review_status"] == "unreviewed"
+    assert changed.json()["metadata"]["identity_reviewed_snapshot_hash"] is None
+    assert changed.json()["metadata_refreshed"] is True
+
+    with SessionLocal() as db:
+        identity_logs = [
+            log
+            for log in db.scalars(select(AuditLog).order_by(AuditLog.id.asc())).all()
+            if log.action in {"document_identity_updated", "document_identity_confirmed"}
+        ]
+    actions = [log.action for log in identity_logs]
+    assert "document_identity_updated" in actions
+    assert "document_identity_confirmed" in actions
+    assert all(log.user_message == "身份信息已保存并同步到检索元数据。" for log in identity_logs)
+    assert all(json.loads(log.details_json or "{}")["metadata_refreshed"] is True for log in identity_logs)
+
+
+def test_document_identity_refresh_failure_records_degraded_audit(
+    fake_indexing_services,
+    monkeypatch,
+) -> None:
+    reset_database()
+
+    def failing_refresh_payload(document_id: str, metadata: dict) -> None:
+        raise VectorStoreError("qdrant unavailable")
+
+    monkeypatch.setattr(
+        "backend.app.services.document_metadata_index_service.refresh_document_metadata_payload",
+        failing_refresh_payload,
+    )
+    upload = client.post(
+        "/api/documents/upload",
+        files={"file": ("identity.txt", "监管规则正文。", "text/plain")},
+        data={
+            "metadata_json": json.dumps(
+                {"title": "原标题", "publication_date": "2026-01-02"},
+                ensure_ascii=False,
+            )
+        },
+    )
+    document_id = upload.json()["document_id"]
+
+    patch = client.patch(
+        f"/api/documents/{document_id}/metadata",
+        json={"title": "人工标题", "publication_date": None},
+    )
+
+    assert patch.status_code == 200
+    assert patch.json()["metadata_refreshed"] is False
+    assert "Qdrant payload 待刷新" in patch.json()["refresh_warning"]
+
+    confirmed = client.post(f"/api/documents/{document_id}/metadata/confirm")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["metadata_refreshed"] is False
+    assert "Qdrant payload 待刷新" in confirmed.json()["refresh_warning"]
+
+    with SessionLocal() as db:
+        identity_logs = [
+            log
+            for log in db.scalars(select(AuditLog).order_by(AuditLog.id.asc())).all()
+            if log.action in {"document_identity_updated", "document_identity_confirmed"}
+        ]
+
+    assert identity_logs
+    assert all(log.user_message == "身份信息已保存，检索元数据待刷新。" for log in identity_logs)
+    details = [json.loads(log.details_json or "{}") for log in identity_logs]
+    assert all(item["metadata_refreshed"] is False for item in details)
+    assert all("Qdrant payload 待刷新" in item["refresh_warning"] for item in details)
 
 
 def test_manifest_enriches_existing_document_and_rejects_qa_manifest(fake_indexing_services) -> None:
@@ -2443,6 +2561,72 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
     assert fused["query_count"] == 3
 
 
+def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="rule_scope",
+        question="根据指定材料说明披露频率",
+        search_queries=(
+            QuerySearchQuery("商业银行信息披露内容和要求 披露频率", "semantic_question", ""),
+        ),
+        evidence_need="指定材料中的披露频率",
+        keywords=("披露", "频率"),
+    )
+    candidates = [
+        VectorSearchResult(
+            chunk_id=f"DOC-TEST-0001-CHUNK-{index:04d}",
+            document_id="DOC-TEST-0001",
+            filename="rules.docx",
+            section_title="披露要求",
+            page_number=None,
+            text="商业银行应根据表格要求披露信息。",
+            embedding_text="商业银行应根据表格要求披露信息。",
+            token_count=40,
+            score=1.0 - index * 0.001,
+            chunk_type="paragraph",
+        )
+        for index in range(30)
+    ]
+
+    assert (
+        rag_service._effective_rerank_candidate_limit(
+            aspect,
+            candidates,
+            retrieval_filter_document_ids=set(),
+            mcq_material_document_ids=set(),
+        )
+        == 24
+    )
+    assert (
+        rag_service._effective_rerank_candidate_limit(
+            aspect,
+            candidates,
+            retrieval_filter_document_ids={"DOC-TEST-0001"},
+            mcq_material_document_ids=set(),
+        )
+        == 20
+    )
+    mcq_aspect = QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question="根据指定材料判断哪两项表述正确",
+        search_queries=(
+            QuerySearchQuery("商业银行信息披露内容和要求 正确表述", "semantic_question", ""),
+        ),
+        evidence_need="选择题选项证据",
+        keywords=("披露", "正确"),
+    )
+    assert (
+        rag_service._effective_rerank_candidate_limit(
+            mcq_aspect,
+            candidates,
+            retrieval_filter_document_ids=set(),
+            mcq_material_document_ids={"DOC-TEST-0001"},
+        )
+        == 24
+    )
+
+
 def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
     from backend.app.services import rag_service
 
@@ -2484,6 +2668,515 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
     assert diagnostics[0]["early_stopped"] is True
     assert diagnostics[0]["early_stop_reason"] == "structured_spreadsheet_refusal"
     assert diagnostics[0]["rerank_call_count"] == 0
+
+
+def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question="关于重要实体与处置工具，下列哪项同时符合材料？",
+        search_queries=(
+            QuerySearchQuery("重要实体 承载 本机构核心业务条线和关键功能", "document_style_statement", ""),
+            QuerySearchQuery("处置工具 包括 机构自救 股东注资 引入战略投资者", "document_style_statement", ""),
+        ),
+        evidence_need="在指定材料中核对候选项并找到直接支持证据",
+        keywords=("重要实体", "处置工具"),
+    )
+    exact_matches = [
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-A",
+                chunk_id="DOC-A-CHUNK-0001",
+                filename="商业银行业务连续性监管指引.docx",
+                section_title="重要实体",
+                excerpt="重要实体承载本机构核心业务条线和关键功能。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-B",
+                chunk_id="DOC-B-CHUNK-0001",
+                filename="银行保险机构恢复和处置计划实施暂行办法.docx",
+                section_title="处置工具",
+                excerpt="处置工具包括机构自救、股东注资、引入战略投资者等。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+    ]
+
+    monkeypatch.setattr(rag_service, "_mcq_exact_support_matches", lambda *args, **kwargs: exact_matches)
+
+    def fail_collect(*args, **kwargs):
+        raise AssertionError("hybrid retrieval should not run after sufficient MCQ exact support")
+
+    def fail_rerank(*args, **kwargs):
+        raise AssertionError("rerank should not run after sufficient MCQ exact support")
+
+    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fail_collect)
+    monkeypatch.setattr(rag_service, "rerank_candidates", fail_rerank)
+
+    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+
+    assert matches == exact_matches
+    assert diagnostics[-1]["match_status"] == "mcq_exact_support_early_stop"
+    assert diagnostics[-1]["rerank_call_count"] == 0
+    assert all(match.metadata["fusion_method"] == "mcq_exact_support_early_stop" for match in matches)
+
+
+def test_mcq_seed_title_terms_cover_operational_and_disclosure_topics() -> None:
+    from backend.app.services import rag_service
+
+    terms = rag_service._mcq_seed_document_title_terms(
+        [
+            "重要实体 承载 本机构核心业务条线和关键功能",
+            "处置工具 包括 机构自救 股东注资 引入战略投资者",
+            "一份询证函 只列示 一个函证基准日",
+            "商业银行 应按照 监管并表范围 披露相关信息",
+        ]
+    )
+
+    assert "商业银行业务连续性监管指引" in terms
+    assert "银行保险机构恢复和处置计划实施暂行办法" in terms
+    assert "银行函证工作操作指引" in terms
+    assert "商业银行信息披露内容和要求" in terms
+    assert "第三支柱信息披露" in terms
+
+
+def test_mcq_exact_support_requires_all_requested_topic_groups() -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question="关于交易账簿和第三支柱披露，下列哪项完整正确？",
+        search_queries=(
+            QuerySearchQuery("交易账簿 交易头寸 每日公允价值计量", "document_style_statement", ""),
+            QuerySearchQuery("商业银行 应按照 监管并表范围 披露相关信息", "document_style_statement", ""),
+        ),
+        evidence_need="选项事实核验",
+        keywords=("交易账簿", "第三支柱"),
+    )
+    trade_only = [
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-TRADE",
+                chunk_id="DOC-TRADE-CHUNK-0001",
+                filename="商业银行账簿划分和名词解释.docx",
+                section_title="交易账簿",
+                excerpt="交易账簿中的头寸应能够每日进行公允价值计量，变动计入损益。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-TRADE",
+                chunk_id="DOC-TRADE-CHUNK-0002",
+                filename="商业银行账簿划分和名词解释.docx",
+                section_title="交易头寸",
+                excerpt="以交易目的持有的头寸包括自营业务、做市业务和对客交易。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+    ]
+
+    assert rag_service._mcq_exact_support_sufficient(trade_only, aspect) is False
+
+
+def test_mcq_exact_support_requires_explicit_material_anchor() -> None:
+    from backend.app.services import rag_service
+
+    assert rag_service._explicit_material_anchor_terms("检索《银行函证工作操作指引（PDF）》后回答。") == [
+        "银行函证工作操作指引"
+    ]
+
+    aspect = QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question="数据安全事件分级",
+        search_queries=(
+            QuerySearchQuery("数据安全事件分级", "keyword_anchor", ""),
+            QuerySearchQuery("检索《数据安全事件分级》后，以下哪一项与材料内容一致？", "semantic_question", ""),
+            QuerySearchQuery(
+                "消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样",
+                "document_style_statement",
+                "",
+            ),
+            QuerySearchQuery(
+                "核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件",
+                "document_style_statement",
+                "",
+            ),
+        ),
+        evidence_need="在指定材料中核对候选项并找到直接支持证据",
+        keywords=("数据安全事件分级",),
+    )
+    off_topic_matches = [
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-CONSUMER",
+                chunk_id="DOC-CONSUMER-CHUNK-0001",
+                filename="消费金融公司管理办法.doc",
+                section_title="名称",
+                excerpt="消费金融公司名称中应当标明“消费金融”字样。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-CONSUMER",
+                chunk_id="DOC-CONSUMER-CHUNK-0002",
+                filename="消费金融公司管理办法.doc",
+                section_title="业务范围",
+                excerpt="消费贷款不包括购买住房和汽车的贷款。",
+                score=0.99,
+                rerank_score=0.99,
+                evidence_role="mcq_exact_support",
+            ),
+            score=0.99,
+            rerank_score=0.99,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+    ]
+    anchored_matches = [
+        *off_topic_matches[:1],
+        RetrievalMatch(
+            citation=Citation(
+                document_id="DOC-DATA",
+                chunk_id="DOC-DATA-CHUNK-0001",
+                filename="数据安全事件分级.docx",
+                section_title="特别重大数据安全事件",
+                excerpt="核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                score=1.0,
+                rerank_score=1.0,
+                evidence_role="mcq_exact_support",
+            ),
+            score=1.0,
+            rerank_score=1.0,
+            coverage_score=1.0,
+            evidence_role="mcq_exact_support",
+            metadata={"evidence_role": "mcq_exact_support"},
+        ),
+    ]
+
+    assert rag_service._mcq_exact_support_sufficient(off_topic_matches, aspect) is False
+    assert rag_service._mcq_exact_support_sufficient(anchored_matches, aspect) is True
+
+
+def test_mcq_exact_support_seed_respects_explicit_material_anchor() -> None:
+    from backend.app.services import rag_service
+
+    reset_database()
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Document(
+                    document_id="DOC-DATA",
+                    filename="数据安全事件分级.docx",
+                    filename_norm="数据安全事件分级.docx",
+                    content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    file_type="docx",
+                    size=100,
+                    file_sha256="1" * 64,
+                    storage_path="data.docx",
+                    title="数据安全事件分级",
+                    status="indexed",
+                    chunk_count=1,
+                ),
+                Document(
+                    document_id="DOC-CONSUMER",
+                    filename="消费金融公司管理办法.doc",
+                    filename_norm="消费金融公司管理办法.doc",
+                    content_type="application/msword",
+                    file_type="doc",
+                    size=100,
+                    file_sha256="2" * 64,
+                    storage_path="consumer.doc",
+                    title="消费金融公司管理办法",
+                    status="indexed",
+                    chunk_count=1,
+                ),
+                DocumentChunk(
+                    chunk_id="DOC-DATA-CHUNK-0001",
+                    document_id="DOC-DATA",
+                    text="附件 数据安全事件分级。核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                    embedding_text="附件 数据安全事件分级。核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                    chunk_metadata=json.dumps({"source_title": "数据安全事件分级"}, ensure_ascii=False),
+                    token_count=20,
+                    index_status="indexed",
+                    source_file="数据安全事件分级.docx",
+                ),
+                DocumentChunk(
+                    chunk_id="DOC-CONSUMER-CHUNK-0001",
+                    document_id="DOC-CONSUMER",
+                    text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                    embedding_text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                    chunk_metadata=json.dumps({"source_title": "消费金融公司管理办法"}, ensure_ascii=False),
+                    token_count=20,
+                    index_status="indexed",
+                    source_file="消费金融公司管理办法.doc",
+                ),
+            ]
+        )
+        db.commit()
+        aspect = QueryAspect(
+            aspect_id="multiple_choice_evidence",
+            question="数据安全事件分级",
+            search_queries=(
+                QuerySearchQuery("检索《数据安全事件分级》后，以下哪一项与材料内容一致？", "semantic_question", ""),
+                QuerySearchQuery(
+                    "消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样",
+                    "document_style_statement",
+                    "",
+                ),
+                QuerySearchQuery(
+                    "核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件",
+                    "document_style_statement",
+                    "",
+                ),
+            ),
+            evidence_need="在指定材料中核对候选项并找到直接支持证据",
+            keywords=("数据安全事件分级",),
+        )
+
+        matches = rag_service._mcq_exact_support_matches(db, aspect, [])
+
+    assert matches
+    assert {match.citation.document_id for match in matches} == {"DOC-DATA"}
+
+
+def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatch) -> None:
+    from backend.app.services import rag_service
+
+    reset_database()
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                Document(
+                    document_id="DOC-DATA",
+                    filename="数据安全事件分级.docx",
+                    filename_norm="数据安全事件分级.docx",
+                    content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    file_type="docx",
+                    size=100,
+                    file_sha256="1" * 64,
+                    storage_path="data.docx",
+                    title="数据安全事件分级",
+                    status="indexed",
+                    chunk_count=1,
+                ),
+                Document(
+                    document_id="DOC-CONSUMER",
+                    filename="消费金融公司管理办法.doc",
+                    filename_norm="消费金融公司管理办法.doc",
+                    content_type="application/msword",
+                    file_type="doc",
+                    size=100,
+                    file_sha256="2" * 64,
+                    storage_path="consumer.doc",
+                    title="消费金融公司管理办法",
+                    status="indexed",
+                    chunk_count=1,
+                ),
+                DocumentChunk(
+                    chunk_id="DOC-DATA-CHUNK-0001",
+                    document_id="DOC-DATA",
+                    text="核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                    embedding_text="核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                    chunk_metadata=json.dumps({"source_title": "数据安全事件分级"}, ensure_ascii=False),
+                    token_count=20,
+                    index_status="indexed",
+                    source_file="数据安全事件分级.docx",
+                ),
+                DocumentChunk(
+                    chunk_id="DOC-CONSUMER-CHUNK-0001",
+                    document_id="DOC-CONSUMER",
+                    text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                    embedding_text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                    chunk_metadata=json.dumps({"source_title": "消费金融公司管理办法"}, ensure_ascii=False),
+                    token_count=20,
+                    index_status="indexed",
+                    source_file="消费金融公司管理办法.doc",
+                ),
+            ]
+        )
+        db.commit()
+
+        aspect = QueryAspect(
+            aspect_id="multiple_choice_evidence",
+            question="检索《数据安全事件分级》后，以下哪一项与材料内容一致？",
+            search_queries=(
+                QuerySearchQuery("检索《数据安全事件分级》后，以下哪一项与材料内容一致？", "semantic_question", ""),
+                QuerySearchQuery(
+                    "消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样",
+                    "document_style_statement",
+                    "",
+                ),
+                QuerySearchQuery(
+                    "核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件",
+                    "document_style_statement",
+                    "",
+                ),
+            ),
+            evidence_need="在指定材料中核对候选项并找到直接支持证据",
+            keywords=("数据安全事件分级",),
+        )
+
+        candidates = [
+            VectorSearchResult(
+                chunk_id="DOC-CONSUMER-CHUNK-0001",
+                document_id="DOC-CONSUMER",
+                filename="消费金融公司管理办法.doc",
+                section_title="名称",
+                page_number=None,
+                text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                embedding_text="消费金融公司名称中应当标明“消费金融”字样，未经批准不得在名称中使用该字样。",
+                token_count=20,
+                score=0.99,
+                metadata={"document_id": "DOC-CONSUMER"},
+            ),
+            VectorSearchResult(
+                chunk_id="DOC-DATA-CHUNK-0001",
+                document_id="DOC-DATA",
+                filename="数据安全事件分级.docx",
+                section_title="特别重大数据安全事件",
+                page_number=None,
+                text="核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                embedding_text="核心数据遭到泄露、破坏或者非法获取、非法利用，属于特别重大数据安全事件。",
+                token_count=20,
+                score=0.72,
+                metadata={"document_id": "DOC-DATA"},
+            ),
+        ]
+        rerank_seen_document_ids: list[str] = []
+
+        def fake_collect(queries, **kwargs):
+            diagnostics = kwargs.get("diagnostics")
+            if diagnostics is not None:
+                diagnostics.query_count = len(queries)
+                diagnostics.raw_candidate_count = len(candidates)
+                diagnostics.candidate_count = len(candidates)
+            return (
+                candidates,
+                {
+                    candidate.chunk_id: [
+                        {"query": queries[0], "query_type": "semantic_question", "rank": index + 1}
+                    ]
+                    for index, candidate in enumerate(candidates)
+                },
+                [],
+            )
+
+        def fake_rerank(question, candidates, limit):
+            rerank_seen_document_ids.extend(candidate.document_id for candidate in candidates)
+            return [RerankedChunk(candidate=candidate, rerank_score=0.9) for candidate in candidates]
+
+        def fake_matches_from_reranked(question, reranked, diagnostics=None, limit=5):
+            return [
+                RetrievalMatch(
+                    citation=Citation(
+                        document_id=item.candidate.document_id,
+                        chunk_id=item.candidate.chunk_id,
+                        filename=item.candidate.filename,
+                        section_title=item.candidate.section_title,
+                        excerpt=item.candidate.text,
+                        score=item.candidate.score,
+                        rerank_score=item.rerank_score,
+                        evidence_role="direct_evidence",
+                    ),
+                    score=item.candidate.score,
+                    rerank_score=item.rerank_score,
+                    coverage_score=1.0,
+                    evidence_role="direct_evidence",
+                    metadata={},
+                )
+                for item in reranked
+            ]
+
+        monkeypatch.setattr(rag_service, "_mcq_exact_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
+        monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
+        monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
+        monkeypatch.setattr(rag_service, "filter_active_candidates", lambda candidates, **kwargs: candidates)
+        monkeypatch.setattr(rag_service, "_bounded_document_lexical_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(rag_service, "_bounded_formula_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(rag_service, "_exact_anchor_support_matches", lambda *args, **kwargs: [])
+
+        matches, diagnostics = rag_service._retrieve_aspect_matches(db, aspect)
+
+    assert rerank_seen_document_ids == ["DOC-DATA"]
+    assert {match.citation.document_id for match in matches} == {"DOC-DATA"}
+    assert diagnostics[-1]["post_filter_candidate_count"] == 1
+
+
+def test_explicit_material_document_ids_normalize_title_variants() -> None:
+    from backend.app.services import rag_service
+
+    reset_database()
+    with SessionLocal() as db:
+        db.add(
+            Document(
+                document_id="DOC-CMB",
+                filename="430_附件：中资商业银行行政许可事项申请材料目录及格式要求（2023年.pdf",
+                filename_norm="430_附件：中资商业银行行政许可事项申请材料目录及格式要求（2023年.pdf",
+                content_type="application/pdf",
+                file_type="pdf",
+                size=100,
+                file_sha256="3" * 64,
+                storage_path="cmb.pdf",
+                title="中资商业银行行政许可事项申请材料目录及格式要求 （2023 年版）",
+                status="indexed",
+                chunk_count=1,
+            )
+        )
+        db.commit()
+        aspect = QueryAspect(
+            aspect_id="multiple_choice_evidence",
+            question="关于《中资商业银行行政许可事项申请材料目录及格式要求（2023年版）》，下列哪一项正确？",
+            search_queries=(),
+            evidence_need="指定材料核验",
+            keywords=(),
+        )
+
+        document_ids = rag_service._explicit_material_document_ids(db, aspect)
+
+    assert document_ids == {"DOC-CMB"}
 
 
 def test_mcq_exact_support_is_selected_even_without_title_keyword() -> None:
@@ -2552,6 +3245,350 @@ def test_mcq_exact_support_is_selected_even_without_title_keyword() -> None:
     assert "DOC-TEST-CHUNK-0013" in summary["aspect_selected_chunk_ids"]["multiple_choice_evidence"]
 
 
+def test_condition_preamble_recovers_following_clause_chunk() -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="trading_book_purpose_and_fair_value",
+        question="交易账簿头寸定义和公允价值计量频率",
+        search_queries=(
+            QuerySearchQuery(
+                "能够每日进行公允价值计量 变动计入损益",
+                "document_style_statement",
+                "制度条件短句锚点",
+            ),
+        ),
+        evidence_need="交易账簿头寸范围和每日公允价值计量要求",
+        keywords=("交易账簿", "公允价值计量", "损益"),
+    )
+    chunks = [
+        DocumentChunk(
+            chunk_id="DOC-TRADE-CHUNK-0002",
+            document_id="DOC-TRADE",
+            text="交易账簿中的金融工具、外汇和商品头寸原则上应同时满足以下条件：",
+            index_status="indexed",
+            source_file="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+        ),
+        DocumentChunk(
+            chunk_id="DOC-TRADE-CHUNK-0003",
+            document_id="DOC-TRADE",
+            text="（一）具有明确的交易策略和管理政策。",
+            index_status="indexed",
+            source_file="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+        ),
+        DocumentChunk(
+            chunk_id="DOC-TRADE-CHUNK-0004",
+            document_id="DOC-TRADE",
+            text="（二）能够准确估值并进行独立验证。",
+            index_status="indexed",
+            source_file="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+        ),
+        DocumentChunk(
+            chunk_id="DOC-TRADE-CHUNK-0005",
+            document_id="DOC-TRADE",
+            text="（三）能够每日进行公允价值计量，变动计入损益。",
+            index_status="indexed",
+            source_file="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+        ),
+    ]
+
+    matches = rag_service._condition_continuation_support_matches(
+        chunks[0],
+        chunks,
+        aspect,
+        ["能够每日进行公允价值计量 变动计入损益"],
+        existing_ids=set(),
+        seen_ids=set(),
+    )
+
+    assert [match.citation.chunk_id for _score, match in matches] == ["DOC-TRADE-CHUNK-0005"]
+    assert matches[0][1].metadata["fusion_method"] == "bounded_document_condition_continuation"
+    assert matches[0][1].metadata["condition_preamble_chunk_id"] == "DOC-TRADE-CHUNK-0002"
+
+
+def test_prompt_context_expands_condition_preamble_from_document_snapshot() -> None:
+    from backend.app.services import rag_service
+
+    class FakeScalarResult:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def all(self) -> list[DocumentChunk]:
+            return self._chunks
+
+    class FakeDb:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def scalars(self, _statement) -> FakeScalarResult:
+            return FakeScalarResult(self._chunks)
+
+    aspect = QueryAspect(
+        aspect_id="trading_book_purpose_and_fair_value",
+        question="交易账簿头寸定义和公允价值计量频率",
+        search_queries=(
+            QuerySearchQuery(
+                "能够每日进行公允价值计量 变动计入损益",
+                "document_style_statement",
+                "制度条件短句锚点",
+            ),
+        ),
+        evidence_need="交易账簿头寸范围和每日公允价值计量要求",
+        keywords=("交易账簿", "公允价值计量", "损益"),
+    )
+    snapshots = [
+        DocumentChunk(
+            id=index,
+            chunk_id=f"DOC-TRADE-CHUNK-{index:04d}",
+            document_id="DOC-TRADE",
+            text=text,
+            index_status="indexed",
+            source_file="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+        )
+        for index, text in (
+            (2, "交易账簿中的金融工具、外汇和商品头寸原则上应同时满足以下条件："),
+            (3, "1.不存在实施平盘或完全对冲交易的法律障碍；"),
+            (4, "2.能够每日进行公允价值计量，变动计入损益；"),
+        )
+    ]
+    context = [
+        RetrievalResult(
+            chunk_id="DOC-TRADE-CHUNK-0002",
+            rank=1,
+            score=0.95,
+            source_doc="账簿划分和名词解释.docx",
+            section_title="一、交易账簿的范围及划分的标准",
+            section_path=["一、交易账簿的范围及划分的标准"],
+            text="交易账簿中的金融工具、外汇和商品头寸原则上应同时满足以下条件：",
+            citation_label="[1]",
+            metadata={
+                "document_id": "DOC-TRADE",
+                "next_chunk_id": "DOC-TRADE-CHUNK-0003",
+                "aspect_id": "trading_book_purpose_and_fair_value",
+                "prompt_matched_aspects": ["trading_book_purpose_and_fair_value"],
+            },
+        )
+    ]
+
+    expanded = rag_service._expand_condition_preamble_prompt_chunks(
+        FakeDb(snapshots),
+        context,
+        rag_service.QueryPlan(
+            original_question="判断交易账簿头寸公允价值计量频率。",
+            aspects=(aspect,),
+            planner="test",
+        ),
+    )
+
+    assert [chunk.chunk_id for chunk in expanded] == [
+        "DOC-TRADE-CHUNK-0002",
+        "DOC-TRADE-CHUNK-0004",
+    ]
+    assert expanded[1].metadata["prompt_selection_reason"] == "condition_continuation"
+    assert expanded[1].citation_label == "[2]"
+
+
+def test_prompt_context_recovers_numbered_list_continuation_after_pdf_footnote() -> None:
+    from backend.app.services import rag_service
+
+    class FakeScalarResult:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def all(self) -> list[DocumentChunk]:
+            return self._chunks
+
+    class FakeDb:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def scalars(self, _statement) -> FakeScalarResult:
+            return FakeScalarResult(self._chunks)
+
+    aspect = QueryAspect(
+        aspect_id="bank_confirmation_public_info",
+        question="根据《银行函证工作操作指引（PDF）》，请说明与“银行业金融机构公示信息”相关的明确规定。",
+        search_queries=(
+            QuerySearchQuery(
+                "银行业金融机构公示信息 函证范围 回函用章",
+                "document_style_statement",
+                "制度列表续段锚点",
+            ),
+        ),
+        evidence_need="银行业金融机构公示信息包括的范围和回函用章要求",
+        keywords=("银行业金融机构公示信息", "函证范围", "回函用章"),
+    )
+    snapshots = [
+        DocumentChunk(
+            id=index,
+            chunk_id=f"DOC-CONFIRM-PDF-CHUNK-{index:04d}",
+            document_id="DOC-CONFIRM-PDF",
+            text=text,
+            index_status="indexed",
+            source_file="银行函证工作操作指引.pdf",
+            section_title="（二）银行业金融机构公示信息说明。",
+        )
+        for index, text in (
+            (
+                3,
+                "银行业金融机构应当在其总行或总部网站、微信公众号等公开渠道就办理函证相关事项进行公示。"
+                "公示信息包括：1.各种函证方式下办理回函工作的机构及其联系方式。"
+            ),
+            (4, "> 1 本指引中，1—14项及附表或类似表述，指附录中银行询证函项目。 2"),
+            (
+                5,
+                "2 公示后，对于符合公示条件的申请，银行业金融机构不应拒绝。"
+                "3.函证范围和回函用章。在实现集约化或数字化的情况下，银行业金融机构应当就询证函的函证范围"
+                "以及所采用的回函用章的适用范围进行公示。"
+            ),
+        )
+    ]
+    context = [
+        RetrievalResult(
+            chunk_id="DOC-CONFIRM-PDF-CHUNK-0003",
+            rank=1,
+            score=0.95,
+            source_doc="银行函证工作操作指引.pdf",
+            section_title="（二）银行业金融机构公示信息说明。",
+            section_path=["（二）银行业金融机构公示信息说明。"],
+            text=snapshots[0].text,
+            citation_label="[1]",
+            metadata={
+                "document_id": "DOC-CONFIRM-PDF",
+                "next_chunk_id": "DOC-CONFIRM-PDF-CHUNK-0004",
+                "aspect_id": "bank_confirmation_public_info",
+                "prompt_matched_aspects": ["bank_confirmation_public_info"],
+            },
+        )
+    ]
+
+    expanded = rag_service._expand_condition_preamble_prompt_chunks(
+        FakeDb(snapshots),
+        context,
+        rag_service.QueryPlan(
+            original_question="说明银行业金融机构公示信息包括哪些范围要求。",
+            aspects=(aspect,),
+            planner="test",
+        ),
+    )
+
+    assert [chunk.chunk_id for chunk in expanded] == [
+        "DOC-CONFIRM-PDF-CHUNK-0003",
+        "DOC-CONFIRM-PDF-CHUNK-0005",
+    ]
+    assert expanded[1].metadata["prompt_selection_reason"] == "condition_continuation"
+    assert expanded[1].metadata["lexical_support_phrase"] in {
+        "银行业金融机构公示信息",
+        "函证范围",
+        "回函用章",
+        "公示",
+        "函证",
+        "函证范围回函用章",
+        "回函",
+        "范围",
+        "用章",
+    }
+    assert expanded[1].citation_label == "[2]"
+
+
+def test_prompt_context_recovers_previous_preamble_for_orphan_condition_tail() -> None:
+    from backend.app.services import rag_service
+
+    class FakeScalarResult:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def all(self) -> list[DocumentChunk]:
+            return self._chunks
+
+    class FakeDb:
+        def __init__(self, chunks: list[DocumentChunk]) -> None:
+            self._chunks = chunks
+
+        def scalars(self, _statement) -> FakeScalarResult:
+            return FakeScalarResult(self._chunks)
+
+    aspect = QueryAspect(
+        aspect_id="information_disclosure",
+        question="关于《商业银行信息披露内容和要求》中与“商业银行应”相关的明确规定。",
+        search_queries=(
+            QuerySearchQuery(
+                "商业银行应 信息披露 要求 条件 例外 期限",
+                "document_style_statement",
+                "宽泛义务锚点",
+            ),
+        ),
+        evidence_need="查找商业银行信息披露中商业银行应遵守的披露内容、频率和例外。",
+        keywords=("商业银行应", "信息披露", "披露频率"),
+    )
+    snapshots = [
+        DocumentChunk(
+            id=6,
+            chunk_id="DOC-DISCLOSURE-CHUNK-0006",
+            document_id="DOC-DISCLOSURE",
+            text=(
+                "二、披露内容。（一）商业银行以表格形式进行第三支柱信息披露，包括固定表格和可变表格。"
+                "商业银行应按说明填写固定表格。商业银行应根据表格要求，分别按照季度、半年和年度的频率披露信息。"
+            ),
+            index_status="indexed",
+            source_file="商业银行信息披露内容和要求.docx",
+            section_title="商业银行信息披露内容和要求",
+        ),
+        DocumentChunk(
+            id=7,
+            chunk_id="DOC-DISCLOSURE-CHUNK-0007",
+            document_id="DOC-DISCLOSURE",
+            text="表格中另有规定的除外。商业银行应根据表格要求，分别按照季度、半年和年度的频率披露信息。",
+            index_status="indexed",
+            source_file="商业银行信息披露内容和要求.docx",
+            section_title="商业银行信息披露内容和要求",
+        ),
+    ]
+    context = [
+        RetrievalResult(
+            chunk_id="DOC-DISCLOSURE-CHUNK-0007",
+            rank=1,
+            score=0.93,
+            source_doc="商业银行信息披露内容和要求.docx",
+            section_title="商业银行信息披露内容和要求",
+            section_path=["商业银行信息披露内容和要求"],
+            text=snapshots[1].text,
+            citation_label="[1]",
+            metadata={
+                "document_id": "DOC-DISCLOSURE",
+                "previous_chunk_id": "DOC-DISCLOSURE-CHUNK-0006",
+                "next_chunk_id": "DOC-DISCLOSURE-CHUNK-0008",
+                "aspect_id": "information_disclosure",
+                "prompt_matched_aspects": ["information_disclosure"],
+            },
+        )
+    ]
+
+    expanded = rag_service._expand_condition_preamble_prompt_chunks(
+        FakeDb(snapshots),
+        context,
+        rag_service.QueryPlan(
+            original_question="说明商业银行信息披露要求。",
+            aspects=(aspect,),
+            planner="test",
+        ),
+    )
+
+    assert [chunk.chunk_id for chunk in expanded] == [
+        "DOC-DISCLOSURE-CHUNK-0006",
+        "DOC-DISCLOSURE-CHUNK-0007",
+    ]
+    assert expanded[0].metadata["prompt_selection_reason"] == "condition_preamble"
+    assert expanded[0].metadata["condition_continuation_chunk_id"] == "DOC-DISCLOSURE-CHUNK-0007"
+    assert expanded[0].citation_label == "[1]"
+    assert expanded[1].citation_label == "[2]"
+
+
 def test_prompt_budget_recomputes_real_aspect_coverage(monkeypatch) -> None:
     from backend.app.services import rag_service
 
@@ -2607,6 +3644,82 @@ def test_prompt_budget_recomputes_real_aspect_coverage(monkeypatch) -> None:
     assert summary["covered_by_retrieval_but_not_prompted"] == ["aspect_2"]
     assert summary["prompt_capacity_limited"] is True
     assert summary["aspect_selected_chunk_ids"]["aspect_2"] == []
+
+
+def test_prompt_coverage_sync_marks_late_recovered_context_as_sufficient() -> None:
+    from backend.app.services import rag_service
+
+    aspect = QueryAspect(
+        aspect_id="bank_confirmation_process_control_subject",
+        question="核对银行询证函全过程控制主体",
+        search_queries=(
+            QuerySearchQuery(
+                "询证函全过程控制 主体 责任部门 岗位职责 内部控制",
+                "document_style_statement",
+                "制度原文锚点",
+            ),
+        ),
+        evidence_need="银行询证函全过程控制主体的定义、责任部门、岗位职责或制度规定",
+        keywords=("银行询证函", "全过程控制", "主体", "责任部门", "岗位职责"),
+    )
+    recovered_chunk = RetrievalResult(
+        chunk_id="DOC-CONFIRM-CHUNK-0002",
+        rank=1,
+        score=0.91,
+        source_doc="银行函证工作操作指引.pdf",
+        section_title="银行询证函全过程控制",
+        section_path=["银行询证函全过程控制"],
+        text=(
+            "注册会计师应当始终对银行询证函的全过程保持控制，包括确定需要确认或填列的信息、"
+            "选择适当的被询证者、填写询证函、发出询证函并予以跟进。"
+        ),
+        citation_label="[1]",
+        metadata={"document_id": "DOC-CONFIRM", "rerank_score": 0.91},
+    )
+    retrieval = rag_service.AspectRetrieval(
+        aspect=aspect,
+        candidates=[],
+        diagnostics=[],
+        citation_validation={"valid_chunks": 0},
+        selected_chunk_ids=[],
+        retrieval_covered=False,
+        covered=False,
+    )
+    plan = rag_service.QueryPlan(
+        original_question="核对银行询证函全过程控制主体。",
+        aspects=(aspect,),
+        planner="test",
+    )
+
+    rag_service._sync_aspect_coverage_from_prompt([recovered_chunk], [retrieval])
+    prompt_selection = rag_service._prompt_selection_summary(
+        1,
+        [recovered_chunk],
+        plan,
+        [retrieval],
+        {retrieval.aspect.aspect_id for retrieval in [retrieval] if retrieval.covered},
+    )
+    summary = rag_service._build_retrieval_summary(
+        "核对银行询证函全过程控制主体。",
+        [recovered_chunk],
+        plan,
+        [retrieval],
+        RetrievalDiagnostics(),
+        {"valid_chunks": 1, "invalid_chunks": 0},
+        prompt_selection,
+    )
+
+    assert retrieval.retrieval_covered is True
+    assert retrieval.covered is True
+    assert retrieval.selected_chunk_ids == ["DOC-CONFIRM-CHUNK-0002"]
+    assert recovered_chunk.metadata["prompt_matched_aspects"] == [
+        "bank_confirmation_process_control_subject"
+    ]
+    assert summary["has_sufficient_context"] is True
+    assert summary["missing_aspects"] == []
+    assert summary["prompt_selection"]["covered_aspects"] == [
+        "bank_confirmation_process_control_subject"
+    ]
 
 
 def test_final_citations_only_include_explicitly_referenced_context() -> None:

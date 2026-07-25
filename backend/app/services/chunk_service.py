@@ -204,6 +204,41 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
             )
             continue
 
+        if (block.metadata or {}).get("contains_formula"):
+            # Formula metadata belongs to the paragraph that contains the
+            # equation.  Merging it into the section-wide metadata copied the
+            # last equation onto every chunk in a long chapter and hid later
+            # equations from deterministic formula retrieval.  Keep each
+            # formula paragraph as an independently traceable chunk instead.
+            flush()
+            if block.section_title:
+                current_section = block.section_title
+                current_section_number = _section_number(block.section_title)
+                current_parent_section_number = _parent_section_number(current_section_number)
+                if not current_path or current_path[-1] != block.section_title:
+                    current_path = _updated_section_path(
+                        current_path,
+                        block.section_title,
+                        block.level,
+                        current_section_number,
+                    )
+            if block.page_number is not None:
+                current_page = block.page_number
+            groups.append(
+                _ChunkGroup(
+                    text=block.text,
+                    section_title=current_section,
+                    page_number=current_page,
+                    block_type="paragraph",
+                    section_path=list(current_path),
+                    section_number=current_section_number,
+                    parent_section_number=current_parent_section_number,
+                    metadata=dict(block.metadata or {}),
+                )
+            )
+            current_metadata = _without_formula_metadata(current_metadata)
+            continue
+
         if block.section_title and block.section_title != current_section and has_body:
             flush()
 
@@ -228,6 +263,16 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
 
     flush()
     return groups
+
+
+def _without_formula_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    formula_keys = {
+        "contains_formula",
+        "formula_count",
+        "formulas",
+        "formula_source_type",
+    }
+    return {key: value for key, value in metadata.items() if key not in formula_keys}
 
 
 def _section_number(section_title: str | None) -> str | None:

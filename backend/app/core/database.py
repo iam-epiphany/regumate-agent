@@ -73,6 +73,9 @@ def _upgrade_sqlite_schema() -> None:
         "supersedes_document_id": "ALTER TABLE documents ADD COLUMN supersedes_document_id VARCHAR(128)",
         "metadata_status": "ALTER TABLE documents ADD COLUMN metadata_status VARCHAR(30) DEFAULT 'inferred'",
         "metadata_provenance": "ALTER TABLE documents ADD COLUMN metadata_provenance TEXT",
+        "identity_review_status": "ALTER TABLE documents ADD COLUMN identity_review_status VARCHAR(30) DEFAULT 'unreviewed'",
+        "identity_reviewed_at": "ALTER TABLE documents ADD COLUMN identity_reviewed_at DATETIME",
+        "identity_reviewed_snapshot_hash": "ALTER TABLE documents ADD COLUMN identity_reviewed_snapshot_hash VARCHAR(64)",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
@@ -108,6 +111,7 @@ def _upgrade_sqlite_schema() -> None:
                 "version_status",
                 "supersedes_document_id",
                 "metadata_status",
+                "identity_review_status",
             ):
                 connection.execute(
                     text(f"CREATE INDEX IF NOT EXISTS ix_documents_{field_name} ON documents({field_name})")

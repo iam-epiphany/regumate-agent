@@ -812,3 +812,39 @@ def test_loader_evaluation_compares_pdf_loaders(tmp_path) -> None:
     names = [evaluation.loader_name for evaluation in evaluations]
     assert names == ["pymupdf4llm", "docling", "unstructured", "pypdf"]
     assert any(evaluation.ok and evaluation.block_count > 0 for evaluation in evaluations)
+
+
+def test_formula_metadata_is_scoped_to_its_own_chunk() -> None:
+    parsed = ParsedDocument(
+        text="第一段\nd=SD*Notional\n第三段",
+        blocks=[
+            ParsedBlock(text="第一章 计量规则", block_type="heading", order_index=1, level=1),
+            ParsedBlock(text="第一段普通说明。", block_type="paragraph", order_index=2, section_title="第一章 计量规则"),
+            ParsedBlock(
+                text="[公式] d=SD*Notional",
+                block_type="paragraph",
+                order_index=3,
+                section_title="第一章 计量规则",
+                metadata={
+                    "contains_formula": True,
+                    "formula_count": 1,
+                    "formulas": [{"text": "d=SD*Notional", "source_type": "omml", "order_index": 1}],
+                    "formula_source_type": "omml",
+                },
+            ),
+            ParsedBlock(text="第三段普通说明。", block_type="paragraph", order_index=4, section_title="第一章 计量规则"),
+        ],
+        metadata={"source_format": "docx"},
+    )
+
+    chunks = build_chunks_from_parsed("DOC-FORMULA-SCOPE", parsed)
+    formula_chunks = [chunk for chunk in chunks if (chunk.metadata or {}).get("contains_formula")]
+
+    assert len(formula_chunks) == 1
+    assert formula_chunks[0].text == "[公式] d=SD*Notional"
+    assert formula_chunks[0].metadata["formulas"][0]["text"] == "d=SD*Notional"
+    assert all(
+        not (chunk.metadata or {}).get("contains_formula")
+        for chunk in chunks
+        if chunk is not formula_chunks[0]
+    )
