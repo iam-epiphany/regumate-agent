@@ -4,28 +4,6 @@ from backend.app.services import query_planner_service, rag_service
 from backend.app.services.query_planner_service import plan_query
 
 
-def test_query_planner_fallback_decomposes_asset_difference_question(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-
-    plan = plan_query("资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？")
-
-    assert plan.fallback_used is True
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "asset_total_difference_check",
-        "foreign_currency_evidence",
-    ]
-    first_queries = plan.aspects[0].search_queries
-    assert [query.query_type for query in first_queries] == [
-        "semantic_question",
-        "document_style_statement",
-        "keyword_anchor",
-    ]
-    assert first_queries[0].query == "资产合计与分项合计存在差异时应优先检查哪些原因"
-    assert "资产合计校验差异处理流程" in first_queries[1].query
-    assert plan.aspects[1].evidence_need == "外币折算差异的留痕依据或支持材料"
-    assert all(aspect.modality == "text" for aspect in plan.aspects)
-
-
 def test_query_planner_fallback_recognizes_excel_lookup_question(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
 
@@ -68,22 +46,6 @@ def test_query_planner_does_not_treat_policy_table_wording_as_spreadsheet(monkey
 
     assert all(aspect.modality == "text" for aspect in format_plan.aspects)
     assert all(aspect.modality == "text" for aspect in frequency_plan.aspects)
-
-
-def test_pillar3_disclosure_frequency_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query(
-        "根据《商业银行信息披露内容和要求》，请说明与“商业银行应根据表格要求，分别”相关的明确规定。"
-    )
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == ["pillar3_disclosure_frequency"]
-    assert any(
-        "季度" in query.query and "半年" in query.query and "年度" in query.query
-        for query in plan.aspects[0].search_queries
-    )
-    assert any("另有规定" in query.query for query in plan.aspects[0].search_queries)
 
 
 def test_query_planner_recognizes_monthly_report_lookup_and_difference(monkeypatch) -> None:
@@ -241,26 +203,6 @@ def test_query_planner_builds_deterministic_mcq_title_and_option_queries(monkeyp
     assert "35%" in option_query
 
 
-def test_query_planner_prioritizes_mcq_document_style_aliases_within_budget(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-
-    plan = plan_query(
-        "关于交易账簿和第三支柱披露，下列哪项完整正确？",
-        options=[
-            "交易头寸不含做市和对客交易；只按单体口径披露。",
-            "以交易目的持有的头寸包括自营、做市、对客交易和相关对冲；商业银行按监管并表范围披露相关信息。",
-            "交易账簿头寸按月计量；第三支柱披露只包括文字说明。",
-            "交易账簿仅包含贷款；披露范围由机构自行决定。",
-        ],
-    )
-
-    aspect = plan.aspects[0]
-    query_text = "\n".join(query.query for query in aspect.search_queries)
-    assert len(aspect.search_queries) <= query_planner_service.MCQ_OPTION_SEARCH_QUERY_BUDGET + 2
-    assert "以交易目的持有的头寸 包括 自营业务 做市业务" in query_text
-    assert "商业银行 应按照 监管并表范围 披露相关信息" in query_text
-
-
 def test_query_planner_fallback_recognizes_excel_compare_and_calculate(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
 
@@ -363,7 +305,7 @@ def test_mixed_table_plan_splits_same_line_regulation_and_report_labels(monkeypa
     assert table.modality == "table"
     assert regulation.question == "说明账簿转换的禁止理由和不可撤销例外。"
     assert "保障房贷款表" not in regulation.question
-    assert regulation.search_queries[1].query == regulation.question
+    assert regulation.search_queries[1].query == regulation.question.rstrip("。")
 
 
 def test_llm_postprocessor_splits_two_coordinated_requirement_categories() -> None:
@@ -458,172 +400,6 @@ def test_coordinated_definition_and_pricing_inherits_subject() -> None:
         "意外伤害保险的定义是什么？",
         "意外伤害保险的定价原则是什么？",
     ]
-
-
-def test_llm_split_can_exceed_underestimated_top_level_budget() -> None:
-    budget = query_planner_service.QueryBudget(
-        detected_items=(),
-        max_aspects=3,
-        system_max_aspects=12,
-        capacity_limited=False,
-    )
-    aspects = [
-        query_planner_service.QueryAspect(
-            aspect_id="insurance_group_reporting",
-            question="保险集团报告义务有哪些？",
-            search_queries=(query_planner_service.QuerySearchQuery("保险集团报告义务", "semantic_question"),),
-            evidence_need="保险集团报告义务",
-            keywords=("保险集团",),
-        ),
-        query_planner_service.QueryAspect(
-            aspect_id="accident_definition_pricing",
-            question="意外伤害保险的定义与定价原则是什么？",
-            search_queries=(query_planner_service.QuerySearchQuery("意外伤害保险定义与定价原则", "semantic_question"),),
-            evidence_need="意外伤害保险定义与定价原则",
-            keywords=("意外伤害保险",),
-        ),
-        query_planner_service.QueryAspect(
-            aspect_id="book_audit",
-            question="账簿划分政策的年度内部审计和留档要求是什么？",
-            search_queries=(query_planner_service.QuerySearchQuery("账簿划分内部审计留档", "semantic_question"),),
-            evidence_need="账簿审计留档",
-            keywords=("账簿划分",),
-        ),
-    ]
-
-    split = query_planner_service._split_merged_llm_aspects(aspects, budget)
-
-    assert [aspect.question for aspect in split] == [
-        "保险集团报告义务有哪些？",
-        "意外伤害保险的定义是什么？",
-        "意外伤害保险的定价原则是什么？",
-        "账簿划分政策的年度内部审计和留档要求是什么？",
-    ]
-    pricing = split[2]
-    definition_queries = " ".join(query.query for query in split[1].search_queries)
-    pricing_queries = " ".join(query.query for query in pricing.search_queries)
-    assert "本办法所称意外伤害保险" in definition_queries
-    assert "厘定保险费" in pricing_queries
-
-
-def test_document_style_alias_uses_regulatory_phrasing_without_answer_terms() -> None:
-    assert query_planner_service._document_style_alias("说明处置计划的沟通对象") == (
-        "说明处置计划的沟通策略 与哪些主体开展有效沟通"
-    )
-    assert "投资连结险" in query_planner_service._document_style_alias(
-        "说明万能险、投连险和变额年金的综合溢价"
-    )
-    assert "本办法所称意外伤害保险" in query_planner_service._document_style_alias("意外伤害保险定义")
-    assert "一般精算原理" in query_planner_service._document_style_alias("说明保费厘定要求")
-    assert "编报 保险集团偿付能力报告" in query_planner_service._document_style_alias("核对保险集团报告义务")
-    assert "应当编报保险集团偿付能力报告的公司名单" in query_planner_service._document_style_alias("核对保险集团报告义务")
-    assert "40%以上" in query_planner_service._document_style_alias("概括消费金融公司薪酬递延")
-    assert "不得对与债务无关的第三人进行催收" in query_planner_service._document_style_alias("催收禁限")
-    assert "5.125%" in query_planner_service._document_style_alias("给出资本工具持续经营触发阈值")
-    assert "二级资本工具" in query_planner_service._document_style_alias("损失吸收顺序")
-    assert "10个工作日内" in query_planner_service._document_style_alias("合规询证函回复时限")
-    assert "总行或总部网站 微信公众号" in query_planner_service._document_style_alias("函证事项应通过哪些公开渠道公示")
-    assert "全国范围内开展业务" in query_planner_service._document_style_alias("消费金融公司的业务地域范围")
-    assert "专利权质押登记 全流程无纸化线上办理 全覆盖" in query_planner_service._document_style_alias(
-        "专利权质押登记线上全覆盖目标"
-    )
-    assert "终极利率 暂定为 4.5%" in query_planner_service._document_style_alias("终极利率暂定值")
-
-
-def test_llm_payload_preserves_local_document_style_aliases() -> None:
-    payload = {
-        "aspects": [
-            {
-                "aspect_id": "insurance_group_reporting",
-                "question": "保险集团报告义务有哪些？",
-                "evidence_need": "保险集团报告义务",
-                "search_queries": [
-                    {"query": "保险集团报告义务有哪些", "query_type": "semantic_question"},
-                    {"query": "保险集团年度和半年度偿付能力报告", "query_type": "document_style_statement"},
-                    {"query": "保险集团 报告义务", "query_type": "keyword_anchor"},
-                ],
-                "keywords": ["保险集团", "报告义务"],
-                "modality": "text",
-                "table_task": "none",
-                "table_filters": {},
-                "operation": "none",
-            },
-            {
-                "aspect_id": "accident_definition_pricing",
-                "question": "意外伤害保险的定义与定价原则是什么？",
-                "evidence_need": "意外伤害保险定义与定价原则",
-                "search_queries": [
-                    {"query": "意外伤害保险定义与定价原则", "query_type": "semantic_question"},
-                    {"query": "意外伤害保险定义 定价原则", "query_type": "document_style_statement"},
-                    {"query": "意外险 定价", "query_type": "keyword_anchor"},
-                ],
-                "keywords": ["意外伤害保险", "定价原则"],
-                "modality": "text",
-                "table_task": "none",
-                "table_filters": {},
-                "operation": "none",
-            },
-        ],
-        "omitted_or_merged_items": [],
-    }
-
-    aspects = query_planner_service._aspects_from_payload(
-        "分别核对保险集团报告义务、意外伤害保险定义与定价原则。",
-        payload,
-    )
-
-    group_queries = [query.query for query in aspects[0].search_queries]
-    accident_queries = [query.query for query in aspects[1].search_queries]
-    assert any("应当编报保险集团偿付能力报告的公司名单" in query for query in group_queries)
-    assert any("编报 保险集团偿付能力报告" in query for query in group_queries)
-    assert any("意外伤害保险业务监管办法" in query and "厘定保险费" in query for query in accident_queries)
-    assert len(group_queries) <= query_planner_service.QUERY_PLANNER_MAX_SEARCH_QUERIES
-    assert len(accident_queries) <= query_planner_service.QUERY_PLANNER_MAX_SEARCH_QUERIES
-
-
-def test_mcq_document_style_aliases_use_public_option_facts() -> None:
-    aliases = query_planner_service._mcq_document_style_aliases(
-        "申请书列名称、拟设地、注册资本、股权结构和业务范围，目录为2023年版"
-    )
-    assert any("拟设立中资商业银行" in alias for alias in aliases)
-    assert any("2023年版" in alias for alias in aliases)
-
-    aliases = query_planner_service._mcq_document_style_aliases("曲线由基础利率加综合溢价形成")
-    assert any("折现率曲线" in alias and "综合溢价" in alias for alias in aliases)
-
-    aliases = query_planner_service._mcq_document_style_aliases(
-        "敏感级及以上数据事件造成难以消除的个人负面影响或使机构部分业务异常等可构成较大事件"
-    )
-    assert any("较大数据安全事件" in alias and "部分业务无法正常开展" in alias for alias in aliases)
-
-    aliases = query_planner_service._mcq_document_style_aliases(
-        "重要实体承载核心业务条线和关键功能；工具可包括自救、注资、战略投资、不良资产处置、接管、收购承接、过桥机构和破产清算"
-    )
-    assert any("重要实体 承载 本机构核心业务条线和关键功能" in alias for alias in aliases)
-    assert any("处置工具 包括 机构自救" in alias for alias in aliases)
-
-    aliases = query_planner_service._mcq_document_style_aliases(
-        "禁止暴力等不正当催收且不得催收无关第三人；一函一个基准日，并应通过总行或总部公开渠道公示函证事项"
-    )
-    assert any(all(term in alias for term in ("不正当手段", "催收", "债务无关", "第三人")) for alias in aliases)
-    assert any("一个函证基准日" in alias for alias in aliases)
-    assert any("办理函证相关事项进行公示" in alias for alias in aliases)
-
-    aliases = query_planner_service._mcq_document_style_aliases(
-        "交易头寸包括自营、做市、对客及相关对冲，原则上每日公允价值计量且变动计入损益；披露按监管并表范围，表格另有规定除外"
-    )
-    assert any("自营业务 做市业务" in alias for alias in aliases)
-    assert any("监管并表范围" in alias for alias in aliases)
-    title_terms = rag_service._mcq_seed_document_title_terms(
-        [
-            "申请书列名称、拟设地、注册资本、股权结构和业务范围，目录为2023年版",
-            "曲线由基础利率加综合溢价形成",
-            "敏感级及以上数据事件造成难以消除的个人负面影响或使机构部分业务异常等可构成较大事件",
-        ]
-    )
-    assert "中资商业银行行政许可事项申请材料" in title_terms
-    assert "寿险合同负债评估的折现率曲线" in title_terms
-    assert "数据安全事件分级" in title_terms
 
 
 def test_mixed_text_aspects_do_not_inherit_report_source_title(monkeypatch) -> None:
@@ -890,45 +666,6 @@ def test_query_planner_accepts_legacy_string_search_queries() -> None:
     assert aspects[0].search_queries[0].query_type == "legacy"
 
 
-def test_query_planner_dynamic_budget_detects_complex_question_aspects(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-    question = (
-        "系统应如何分别处理普惠小微贷款纳入、绿色信贷识别、逾期与不良贷款关系、"
-        "资产合计差异排查、外币折算依据保留、历史差错更正记录、多期间影响说明，"
-        "以及在依据不足时是否可以直接判断银行违规或生成正式监管报告？"
-    )
-
-    plan = plan_query(question)
-
-    assert plan.fallback_used is True
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "inclusive_micro_loan_scope",
-        "green_credit_identification",
-        "overdue_nonperforming_relationship",
-        "asset_total_difference_check",
-        "foreign_currency_evidence",
-        "historical_error_correction",
-        "multi_period_impact",
-        "insufficient_evidence_safety_boundary",
-    ]
-    assert plan.budget is not None
-    assert plan.budget["detected_item_count"] == 8
-    assert plan.budget["max_aspects"] == 8
-    assert plan.budget["capacity_limited"] is False
-
-
-def test_query_planner_budget_marks_capacity_limit(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_MAX_ASPECTS", 3)
-
-    budget = query_planner_service.plan_query_budget(
-        "系统应如何分别处理普惠小微贷款纳入、绿色信贷识别、逾期与不良贷款关系、资产合计差异排查？"
-    )
-
-    assert budget.max_aspects == 3
-    assert budget.capacity_limited is True
-    assert budget.omitted_or_merged_items == ("资产合计差异排查",)
-
-
 def test_query_planner_budget_honors_explicit_three_item_summary(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_MAX_ASPECTS", 8)
 
@@ -1020,41 +757,6 @@ def test_unlabelled_joint_check_separates_table_and_regulation_clauses(monkeypat
     ]
     assert any("数字化回函效力" in aspect.question for aspect in plan.aspects[1:])
     assert all("最后说明" not in aspect.question for aspect in plan.aspects)
-
-
-def test_mixed_disposal_self_rescue_uses_document_style_alias(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-
-    plan = plan_query(
-        "联合核验：说明大额风险暴露门槛和处置自救原则；"
-        "再比较2025年9月人身险表中意外险、寿险和原保险保费收入，给出最大项、数值和单位。"
-    )
-
-    large_exposure_aspect = next(aspect for aspect in plan.aspects if "大额风险暴露门槛" in aspect.question)
-    large_exposure_query_text = " ".join(query.query for query in large_exposure_aspect.search_queries)
-    assert "2.5%" in large_exposure_query_text
-    assert "一级资本净额" in large_exposure_query_text
-    assert "商业银行版" in large_exposure_query_text
-
-    self_rescue_aspect = next(aspect for aspect in plan.aspects if "处置自救原则" in aspect.question)
-    self_rescue_query_text = " ".join(query.query for query in self_rescue_aspect.search_queries)
-    assert "自救为本" in self_rescue_query_text
-    assert "商业银行版" in self_rescue_query_text
-    assert "自救为本" in self_rescue_aspect.keywords
-
-
-def test_mixed_capital_tool_loss_absorption_uses_source_anchor(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-
-    plan = plan_query(
-        "联合核验：给出资本工具持续经营触发阈值和损失吸收顺序；"
-        "再比较2025年9月保险业经营表的人身险、财产险与原保险保费收入，给出最大项。"
-    )
-
-    loss_aspect = next(aspect for aspect in plan.aspects if "损失吸收顺序" in aspect.question)
-    query_text = " ".join(query.query for query in loss_aspect.search_queries)
-    assert "资本工具合格标准" in query_text
-    assert "二级资本工具" in query_text
 
 
 def test_table_compare_uses_source_local_labels(monkeypatch) -> None:
@@ -1160,173 +862,6 @@ def test_bounded_lexical_phrases_do_not_use_regulatory_keywords_for_table_aspect
 
     assert "大额风险暴露" not in phrases
     assert "自救为本" not in phrases
-
-
-def test_coordinated_definition_requirement_inherits_subject() -> None:
-    parts = query_planner_service._coordinated_aspect_questions("意外伤害保险定义及定价要求")
-
-    assert parts == ["意外伤害保险定义", "意外伤害保险的定价要求"]
-    alias = query_planner_service._document_style_alias(parts[1])
-    assert "厘定保险费" in alias
-    assert "公平 合理 定价假设" in alias
-
-
-def test_coordinated_information_and_version_are_separate_aspects() -> None:
-    parts = query_planner_service._coordinated_aspect_questions(
-        "中资商业银行法人机构筹建申请书需说明的五类基本信息及目录版本"
-    )
-
-    assert parts == ["中资商业银行法人机构筹建申请书需说明的五类基本信息", "目录版本"]
-    assert "2023年版" in query_planner_service._document_style_alias(parts[1])
-
-
-def test_coordinated_principle_pair_splits_left_fact_and_right_principle() -> None:
-    parts = query_planner_service._coordinated_aspect_questions("大额风险暴露与自救原则是什么？")
-
-    assert parts == ["处置计划建议示例中的大额风险暴露是什么？", "自救原则是什么？"]
-    assert "2.5%" in query_planner_service._document_style_alias(parts[0])
-    assert "自救为本" in query_planner_service._document_style_alias(parts[1])
-
-
-def test_summary_enumeration_splits_each_visible_requirement() -> None:
-    parts = query_planner_service._coordinated_aspect_questions(
-        "用一段可核验摘要串联意外伤害保险定义及定价要求、大额风险暴露与自救原则、第三支柱披露频率。"
-    )
-
-    assert parts == [
-        "意外伤害保险定义",
-        "意外伤害保险的定价要求",
-        "大额风险暴露",
-        "处置策略建议的自救原则",
-        "第三支柱披露频率",
-    ]
-    assert "厘定保险费" in query_planner_service._document_style_alias(parts[1])
-    assert "2.5%" in query_planner_service._document_style_alias(parts[2])
-    assert "自救为本" in query_planner_service._document_style_alias(parts[3])
-    assert "季度 半年 年度" in query_planner_service._document_style_alias(parts[4])
-
-
-def test_bounded_lexical_support_extracts_required_percentage_anchor(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
-    plan = plan_query("大额风险暴露的门槛是多少？")
-    aspect = plan.aspects[0]
-
-    assert rag_service._bounded_required_numeric_terms(aspect) == ["2.5%"]
-
-
-def test_cross_policy_direct_citation_question_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query(
-        "跨制度回答消费金融公司的业务地域范围、第三支柱表格类型，以及大额风险暴露门槛和处置自救原则。每项都需直接引用。"
-    )
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "consumer_finance_geographic_scope",
-        "pillar3_table_types",
-        "large_exposure_threshold",
-        "bail_in_resolution_principle",
-    ]
-    assert any("全国范围" in query.query for query in plan.aspects[0].search_queries)
-    assert any("固定表格和可变表格" in query.query for query in plan.aspects[1].search_queries)
-    assert any("2.5%" in query.query for query in plan.aspects[2].search_queries)
-    assert any("自救为本" in query.query for query in plan.aspects[3].search_queries)
-
-
-def test_confirmation_and_trading_book_question_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("分别核验数字化银行回函的效力与回函时限，以及交易账簿划分政策内部审计的频率和留档要求。四项信息均不得省略。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "digital_confirmation_effectiveness",
-        "confirmation_response_deadline",
-        "trading_book_policy_audit_retention",
-    ]
-    assert any("同等法律效力和证明力" in query.query for query in plan.aspects[0].search_queries)
-    assert any("10个工作日" in query.query for query in plan.aspects[1].search_queries)
-    assert any("每年" in query.query and "留档备查" in query.query for query in plan.aspects[2].search_queries)
-
-
-def test_data_and_capital_trigger_question_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("对照两个触发口径：重要数据事件何时属于重大事件；资本工具何时触发持续经营事件、二级资本在何种顺序下吸收损失。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "important_data_major_event",
-        "going_concern_trigger_threshold",
-        "tier2_loss_absorption_order",
-    ]
-    assert any("重大数据安全事件" in query.query for query in plan.aspects[0].search_queries)
-    assert any("5.125%" in query.query for query in plan.aspects[1].search_queries)
-    assert any("全部吸收损失" in query.query for query in plan.aspects[2].search_queries)
-
-
-def test_cross_document_source_question_uses_natural_wording_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("请逐项给出来源：专利权质押登记线上全覆盖目标；重大数据事件的条件；数字化回函效力和合规询证函回复时限。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "digital_confirmation_effectiveness",
-        "confirmation_response_deadline",
-        "important_data_major_event",
-        "patent_pledge_registration_online_coverage",
-    ]
-    assert any("同等法律效力和证明力" in query.query for query in plan.aspects[0].search_queries)
-    assert any("10个工作日" in query.query for query in plan.aspects[1].search_queries)
-    assert any("省级区域经济" in query.query for query in plan.aspects[2].search_queries)
-    assert any("全流程无纸化线上办理" in query.query for query in plan.aspects[3].search_queries)
-
-
-def test_trading_book_and_pillar3_judgment_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("判断并纠正：交易账簿头寸原则上只需每月做一次公允价值计量，且商业银行第三支柱信息一律按单体口径披露。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "trading_book_purpose_and_fair_value",
-        "pillar3_disclosure_scope",
-    ]
-    assert any("自营业务" in query.query and "每日进行公允价值计量" in query.query for query in plan.aspects[0].search_queries)
-    assert any("监管并表范围" in query.query for query in plan.aspects[1].search_queries)
-
-
-def test_finance_insurance_confirmation_summary_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("形成一段跨制度工作摘要：概括2027年知识产权金融生态目标、列入名单保险集团的报告义务，以及银行函证事项应通过哪些公开渠道公示。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "intellectual_property_finance_target",
-        "insurance_group_report_obligation",
-        "bank_confirmation_public_channels",
-    ]
-    assert any("知识产权金融生态综合试验区" in query.query for query in plan.aspects[0].search_queries)
-    assert any("应当编报保险集团偿付能力报告的公司名单" in query.query for query in plan.aspects[1].search_queries)
-    assert any("微信公众号" in query.query for query in plan.aspects[2].search_queries)
-
-
-def test_three_control_requirements_summary_uses_deterministic_domain_plan(monkeypatch) -> None:
-    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "unused-key")
-
-    plan = plan_query("汇总三项控制要求：注册会计师对询证函的过程控制、二级资本启动吸收损失的先后条件、第三支柱表格的两种类型。")
-
-    assert plan.planner == "deterministic-domain"
-    assert [aspect.aspect_id for aspect in plan.aspects] == [
-        "tier2_loss_absorption_order",
-        "auditor_confirmation_process_control",
-        "pillar3_table_types",
-    ]
-    assert any("全过程保持控制" in query.query for query in plan.aspects[1].search_queries)
-    assert any("固定表格和可变表格" in query.query for query in plan.aspects[2].search_queries)
 
 
 def test_insurance_reconciliation_minus_expression_plans_three_operand_calculation(monkeypatch) -> None:

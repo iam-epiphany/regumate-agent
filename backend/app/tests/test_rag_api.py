@@ -1733,15 +1733,14 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
     assert [
         aspect["aspect_id"]
         for aspect in body["retrieval_summary"]["query_plan"]["aspects"]
-    ] == ["asset_total_difference_check", "foreign_currency_evidence"]
+    ] == ["aspect_1", "aspect_2"]
     assert body["retrieval_summary"]["fusion_method"] == "aspect_query_rrf_then_bge_rerank"
     query_plan_aspects = body["retrieval_summary"]["query_plan"]["aspects"]
     assert query_plan_aspects[0]["search_queries"][0]["query_type"] == "semantic_question"
-    assert query_plan_aspects[0]["search_queries"][1]["query_type"] == "document_style_statement"
-    assert query_plan_aspects[0]["search_queries"][2]["query_type"] == "keyword_anchor"
-    assert "资产合计与分项合计存在差异时应优先检查哪些原因" in retrieval_calls
-    assert "外币折算导致资产合计差异时需要保留哪些支持材料" in retrieval_calls
-    assert len(retrieval_calls) == 6
+    assert query_plan_aspects[0]["search_queries"][1]["query_type"] == "keyword_anchor"
+    assert any("资产合计差异" in query and "排查" in query for query in retrieval_calls)
+    assert any("外币折算" in query and "依据" in query for query in retrieval_calls)
+    assert len(retrieval_calls) >= 4
     assert all(
         aspect["covered"]
         for aspect in body["retrieval_summary"]["aspect_retrievals"]
@@ -1876,7 +1875,10 @@ def test_qa_retrieve_marks_missing_context_aspect(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["retrieval_summary"]["has_sufficient_context"] is False
-    assert "未召回外币折算差异需要保留的依据" in body["retrieval_summary"]["missing_aspects"]
+    assert body["retrieval_summary"]["missing_aspects"] == [
+        "未召回：资产合计差异应该优先排查哪些问题",
+        "未召回：差异来自外币折算，需要保留什么依据",
+    ]
 
 
 def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
@@ -2739,23 +2741,31 @@ def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
     assert all(match.metadata["fusion_method"] == "mcq_exact_support_early_stop" for match in matches)
 
 
-def test_mcq_seed_title_terms_cover_operational_and_disclosure_topics() -> None:
+def test_mcq_explicit_material_skips_full_corpus_seed_scan(monkeypatch) -> None:
+    """A named source must scope exact support before any corpus-wide fallback."""
+
     from backend.app.services import rag_service
 
-    terms = rag_service._mcq_seed_document_title_terms(
-        [
-            "重要实体 承载 本机构核心业务条线和关键功能",
-            "处置工具 包括 机构自救 股东注资 引入战略投资者",
-            "一份询证函 只列示 一个函证基准日",
-            "商业银行 应按照 监管并表范围 披露相关信息",
-        ]
+    aspect = QueryAspect(
+        aspect_id="multiple_choice_evidence",
+        question="根据《示例管理办法》，下列哪项正确？",
+        search_queries=(
+            QuerySearchQuery("示例管理办法", "keyword_anchor", ""),
+            QuerySearchQuery("示例事项应当公开", "document_style_statement", ""),
+        ),
+        evidence_need="direct",
+        keywords=("示例管理办法",),
     )
+    monkeypatch.setattr(rag_service, "_document_ids_for_title_terms", lambda _db, _terms: {"DOC-TARGET"})
+    monkeypatch.setattr(
+        rag_service,
+        "_mcq_seed_document_ids",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("full-corpus seed must not run")),
+    )
+    monkeypatch.setattr(rag_service, "_chunks_by_document", lambda *_args, **_kwargs: {"DOC-TARGET": []})
 
-    assert "商业银行业务连续性监管指引" in terms
-    assert "银行保险机构恢复和处置计划实施暂行办法" in terms
-    assert "银行函证工作操作指引" in terms
-    assert "商业银行信息披露内容和要求" in terms
-    assert "第三支柱信息披露" in terms
+    with SessionLocal() as db:
+        assert rag_service._mcq_exact_support_matches(db, aspect, []) == []
 
 
 def test_mcq_exact_support_requires_all_requested_topic_groups() -> None:
@@ -3767,4 +3777,3 @@ def test_mixed_table_refusal_still_allows_text_fallback() -> None:
         aspect,
         {"match_status": "indicator_not_found", "refusal_reason": "指定指标不存在。"},
     ) is False
-

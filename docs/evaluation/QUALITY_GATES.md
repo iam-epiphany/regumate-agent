@@ -18,10 +18,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\evaluation\run_qua
 
 ### B. 官方300题
 
-- 使用真实API、SQLite、Qdrant和500文档；
+- 使用真实API、SQLite、Qdrant和500文档完成的、运行身份锁定的 acceptance 原始结果；
 - 结果必须300/300；
 - 结果文件存在且可解析；
 - 不接受手写摘要代替原始结果。
+- Full 门禁可复核既有 acceptance，而不是在生产问答链路、模型配置、索引和运行环境均未变化时无理由重跑。复核必须交叉校验原始结果、checkpoint 和 run identity，验证 QA 哈希、300 条结果、300 正确、零 runtime error、CUDA/GPU 记录、代码/配置哈希和三份产物一致性；任一项缺失或不一致即失败。
 
 ### C. 反硬编码审计
 
@@ -51,6 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\evaluation\run_qua
 - 校验questions、gold哈希、scorer哈希、corpus快照和首跑结果；
 - 已冻结文件变化时非零退出；
 - 不自动“修复”哈希。
+- 对协议建立前的历史遗留缺失产物，仅可读取 Git 版本管理的 `docs/evaluation/legacy_exceptions/` 中的版本化、精确例外。例外必须同时匹配 lock 路径、产物类型和原 SHA-256，并显式标记证据链不完整和原件不可恢复；不得用于 `generalization_100`、Round 1—3 或任何未来冻结题集。除该精确例外外，任何缺失 build-audit、gold、lock、scorer 或首跑产物仍然失败。
 
 ### F. `.env` 和秘密
 
@@ -81,7 +83,7 @@ Pop-Location
 
 ```text
 -Mode Quick   # 静态审计 + 关键测试，不跑完整300题
--Mode Full    # 包含真实官方300题，提交和进入下一轮时使用
+-Mode Full    # 严格验证已保存的真实官方300题 acceptance，提交和进入下一轮时使用
 ```
 
 `Full`任何一项失败都返回非零退出码。
@@ -110,3 +112,14 @@ outputs/evaluation/quality_gate/<timestamp>/report.md
 - 覆盖历史报告；
 - 遇到失败时自动更新基线哈希；
 - 把评分器修改视为普通代码修改而继续使用原冻结轮次。
+
+## 5. Phase 1 实现
+
+- 入口：`scripts/evaluation/run_quality_gate.ps1`；
+- 编排与报告：`scripts/evaluation/run_quality_gate.py`；
+- 基线身份：`scripts/evaluation/capture_baseline_identity.py`；
+- 反硬编码：`scripts/evaluation/audit_no_hardcoding.py`；
+- 冻结校验：`scripts/evaluation/verify_frozen_artifacts.py`；
+- 评测隔离和秘密扫描复用并增强 `scripts/audit_evaluation_isolation.py`、`scripts/scan_secrets.py`。
+
+Full 模式默认验证 Phase 1 已保存的 GPU acceptance 原始结果；这避免在未触碰生产链路、CUDA、SQLite、Qdrant、模型和索引时重复调用 DeepSeek。若上述任一项发生变化，必须先从 Q001 运行新的真实 GPU acceptance，再执行 Full 门禁。宿主机动态端口仅用于宿主健康检查，不传入 app 容器。

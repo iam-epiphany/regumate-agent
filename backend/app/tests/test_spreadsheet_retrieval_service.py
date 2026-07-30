@@ -197,6 +197,39 @@ def test_spreadsheet_compare_prefers_question_specific_column_over_generic_total
     }
 
 
+def test_spreadsheet_calculation_keeps_all_selector_operand_columns(db_session) -> None:
+    """Calculation operands must be selected before any single-column recovery."""
+
+    for value, coordinate, column_label in (
+        (100.0, "C5", "metrics / total"),
+        (30.0, "D5", "metrics / category"),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-CALC-CHUNK-{coordinate}",
+            row_label="region total",
+            value=value,
+            coordinate=coordinate,
+            column_label=column_label,
+        )
+    aspect = _aspect(
+        "What is the change from total to category for the region total?",
+        table_task="calculate",
+        operation="difference",
+        table_filters={"row_label": "region total", "column_label": "category"},
+        selectors=(
+            {"row_label": "region total", "column_label": "total"},
+            {"row_label": "region total", "column_label": "category"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(-70.0)
+    assert [cell["cell"] for cell in matches[0].citation.metadata["calculation_cells"]] == ["C5", "D5"]
+
+
 def test_question_specific_column_recovery_respects_selector_source_scope() -> None:
     document = SimpleNamespace(
         document_id="DOC-TABLE",

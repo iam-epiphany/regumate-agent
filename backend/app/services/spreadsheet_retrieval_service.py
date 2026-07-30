@@ -169,7 +169,16 @@ def _indexed_spreadsheet_matches(
             label_filters.pop("row_label", None)
         if normalize_table_text(label_filters.get("column_label")) in selector_labels:
             label_filters.pop("column_label", None)
-        if question_column_target and _is_generic_column_target(label_filters.get("column_label")):
+        # A calculation's selectors define separate operands.  Applying a
+        # single column inferred from the question here would discard the
+        # other operand before selector resolution (for example, a change
+        # from one column to another).  Column recovery remains useful for a
+        # comparison, where every selected row shares one metric column.
+        if (
+            table_task != "calculate"
+            and question_column_target
+            and _is_generic_column_target(label_filters.get("column_label"))
+        ):
             label_filters["column_label"] = question_column_target
         label_filters.pop("indicator", None)
         label_filters.pop("metric", None)
@@ -217,6 +226,7 @@ def _indexed_spreadsheet_matches(
                 selectors,
                 question=question,
                 question_column_target=question_column_target,
+                preserve_explicit_generic_columns=True,
             )
             if selectors
             else _unique_numeric_candidates(candidates)[:2]
@@ -430,6 +440,7 @@ def _cells_for_selectors(
     *,
     question: str = "",
     question_column_target: str | None = None,
+    preserve_explicit_generic_columns: bool = False,
 ) -> list[SpreadsheetCandidate]:
     selected: list[SpreadsheetCandidate] = []
     if question_column_target is None:
@@ -438,7 +449,11 @@ def _cells_for_selectors(
         label = normalize_table_text(selector.get("label") or selector.get("row_or_indicator"))
         row_target = normalize_table_text(selector.get("row_label"))
         column_target = normalize_table_text(selector.get("column_label"))
-        if question_column_target and _is_generic_column_target(column_target):
+        if (
+            question_column_target
+            and _is_generic_column_target(column_target)
+            and not (preserve_explicit_generic_columns and column_target)
+        ):
             column_target = question_column_target
         quarter_mode = None
         if column_target == "年季度":

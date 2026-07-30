@@ -4,12 +4,12 @@ import hashlib
 from typing import Any
 
 from backend.app.core import config
-from backend.app.core.config import INDEX_VERSION, RERANK_TOP_K
+from backend.app.core.config import INDEX_VERSION, RERANK_INFERENCE_BATCH_LIMIT, RERANK_TOP_K
 from backend.app.core.performance_profile import resolve_performance_profile
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_reranker_model_path
 from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
-from backend.app.services.performance_metrics import ByteLRUCache, measure
+from backend.app.services.performance_metrics import ByteLRUCache, check_request_budget, measure
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -123,6 +123,17 @@ def _fallback_reranker_to_cpu(exc: BaseException) -> None:
 
 def _compute_scores(pairs: list[list[str]]) -> list[float]:
     profile = resolve_performance_profile(selected_model_device())
+    # Each batch releases the shared model lock. This is a cooperative budget
+    # boundary and prevents one broad retrieval from starving later requests.
+    batch_size = max(1, min(profile.rerank_batch_size, RERANK_INFERENCE_BATCH_LIMIT))
+    scores: list[float] = []
+    for offset in range(0, len(pairs), batch_size):
+        check_request_budget("rerank")
+        scores.extend(_compute_score_batch(pairs[offset: offset + batch_size], profile))
+    return scores
+
+
+def _compute_score_batch(pairs: list[list[str]], profile: Any) -> list[float]:
     try:
         with MODEL_INFERENCE_LOCK:
             reranker = _get_reranker()
@@ -131,7 +142,7 @@ def _compute_scores(pairs: list[list[str]]) -> list[float]:
                     pairs,
                     normalize=True,
                     max_length=profile.rerank_max_length,
-                    batch_size=profile.rerank_batch_size,
+                    batch_size=min(profile.rerank_batch_size, RERANK_INFERENCE_BATCH_LIMIT),
                 )
     except TypeError:
         with MODEL_INFERENCE_LOCK:
@@ -145,7 +156,7 @@ def _compute_scores(pairs: list[list[str]]) -> list[float]:
     except Exception as exc:
         if selected_model_device() == "cuda" and is_cuda_failure(exc):
             _fallback_reranker_to_cpu(exc)
-            return _compute_scores(pairs)
+            return _compute_score_batch(pairs, profile)
         raise RerankServiceError("BGE reranker 评分失败") from exc
     if isinstance(raw_scores, (float, int)):
         return [float(raw_scores)]

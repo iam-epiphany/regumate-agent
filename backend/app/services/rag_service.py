@@ -1376,7 +1376,7 @@ def _retrieve_aspect_matches_legacy_hook(
         match.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
         match.metadata["aspect_search_query_hits"] = fusion_query_hits.get(chunk_id, [])
         match.metadata["aspect_query_fusion_score"] = round(fusion_scores.get(chunk_id, 0.0), 6)
-        match.metadata["fusion_method"] = "legacy_query_hook_rrf"
+        match.metadata["fusion_method"] = "query_plan_rrf"
         match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
         match.metadata["evidence_need"] = aspect.evidence_need
 
@@ -2031,7 +2031,7 @@ def _bounded_lexical_phrases(aspect: QueryAspect) -> list[str]:
             if 6 <= len(_normalize_exact_support_text(tail)) <= 40:
                 phrases.append(tail)
         # Threshold questions often express the unknown as ``X 相对 Y 的门槛``
-        # while the source uses a definition such as ``X 是指……超过 Y 2.5%``.
+        # while the source uses a definition such as ``X 是指……超过 Y Z%``.
         # Preserve both relation anchors, plus bounded suffixes of a long left
         # noun phrase, so an already-resolved sibling document can recover the
         # defining clause without knowing the missing numeric answer.
@@ -2205,17 +2205,22 @@ def _mcq_exact_support_matches(
     anchors_by_document: dict[str, RetrievalMatch] = {}
     for match in matches:
         anchors_by_document.setdefault(match.citation.document_id, match)
-    seed_document_ids = _mcq_seed_document_ids(db, statements)
     if material_terms:
-        if material_document_ids:
-            seed_document_ids = (seed_document_ids & material_document_ids) or material_document_ids
+        # An explicit source title is an authoritative scope constraint.  Do
+        # not first run the fallback lexical seed across every indexed chunk
+        # and then intersect it with this known document set: that turns a
+        # small document-local MCQ check into an unbounded corpus scan.
+        if not material_document_ids:
+            seed_document_ids = set()
+        else:
+            seed_document_ids = set(material_document_ids)
             anchors_by_document = {
                 document_id: anchor
                 for document_id, anchor in anchors_by_document.items()
                 if document_id in material_document_ids
             }
-        else:
-            seed_document_ids = set()
+    else:
+        seed_document_ids = _mcq_seed_document_ids(db, statements)
     seed_chunks_by_document = _chunks_by_document(
         db,
         seed_document_ids - set(anchors_by_document),
@@ -2796,33 +2801,10 @@ def _mcq_seed_document_ids(db: Session, statements: list[str]) -> set[str]:
 
 
 def _mcq_seed_document_title_terms(statements: list[str]) -> list[str]:
-    compact = re.sub(r"\s+", "", "\n".join(str(statement or "") for statement in statements))
     terms: list[str] = []
-    if (
-        "中资商业银行" in compact
-        or ("申请材料" in compact and "2023年版" in compact)
-        or ("申请书" in compact and "2023年版" in compact)
-    ):
-        terms.extend(("中资商业银行行政许可事项申请材料", "中资商业银行行政许可事项"))
-    if "折现率曲线" in compact or ("基础利率" in compact and "综合溢价" in compact):
-        terms.extend(("寿险合同负债评估的折现率曲线", "寿险合同负债评估"))
-    if "知识产权质押" in compact or "创新积分贷款" in compact:
-        terms.extend(("知识产权金融生态综合试点工作方案", "知识产权金融生态综合试点"))
-    if "较大数据安全事件" in compact or ("敏感级" in compact and "难以消除" in compact):
-        terms.extend(("数据安全事件分级", "银行保险机构数据安全管理办法"))
-    if "重要实体" in compact or "核心业务条线" in compact:
-        terms.extend(("商业银行业务连续性监管指引", "银行保险机构恢复和处置计划实施暂行办法"))
-    if "处置工具" in compact or "过桥机构" in compact or "破产清算" in compact:
-        terms.extend(("银行保险机构恢复和处置计划实施暂行办法", "恢复和处置计划"))
-    if "不正当手段进行催收" in compact or "无关第三人" in compact:
-        terms.extend(("消费金融公司管理办法", "消费金融公司"))
-    if "询证函" in compact or "函证基准日" in compact or "办理函证" in compact:
-        terms.extend(("银行函证工作操作指引", "银行函证"))
-    if "交易账簿" in compact or "以交易目的持有的头寸" in compact:
-        terms.extend(("商业银行账簿划分和名词解释", "账簿划分和名词解释"))
-    if "第三支柱" in compact or "监管并表范围" in compact:
-        terms.extend(("商业银行信息披露内容和要求", "商业银行资本管理办法", "第三支柱信息披露"))
-    return list(dict.fromkeys(terms))
+    for statement in statements:
+        terms.extend(re.findall(r"《([^》]{4,80})》", str(statement or "")))
+    return list(dict.fromkeys(term for term in terms if term))
 
 
 def _mcq_seed_document_ids_from_chunks(db: Session, statements: list[str]) -> set[str]:
@@ -2839,7 +2821,6 @@ def _mcq_seed_document_ids_from_chunks(db: Session, statements: list[str]) -> se
                 "任何一般",
                 "必须影响",
                 "未规定",
-                "2022年版",
             )
         ):
             continue
@@ -3941,7 +3922,7 @@ def _mark_chunk_for_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> None:
 
 
 def _chunk_matches_query_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> bool:
-    if chunk.metadata.get("fusion_method") == "legacy_query_hook_rrf" and not re.search(r"[\u4e00-\u9fff]", aspect.question):
+    if chunk.metadata.get("fusion_method") == "query_plan_rrf" and not re.search(r"[\u4e00-\u9fff]", aspect.question):
         return True
     if chunk.metadata.get("evidence_role") in {
         "exact_anchor_support",

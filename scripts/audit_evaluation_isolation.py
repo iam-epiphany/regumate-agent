@@ -19,11 +19,17 @@ from backend.app.models.document import Document
 
 
 QA_NAME_MARKERS = ("qa", "答案", "标准答案", "challenge", "gold")
+FORBIDDEN_RUNTIME_NAMES = ("gold.jsonl", "questions.jsonl", "QA数据.xlsx")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument(
+        "--private-root",
+        type=Path,
+        default=PROJECT_ROOT.parent / "ReguMate-Eval-Private",
+    )
     args = parser.parse_args()
     evaluation_files = discover_evaluation_files(Path("data"))
     evaluation_hashes = {
@@ -47,12 +53,33 @@ def main() -> int:
         for document in documents
         if document.file_sha256 in evaluation_hashes
     ]
+    production_files = [
+        path
+        for path in (PROJECT_ROOT / "backend" / "app").rglob("*.py")
+        if "tests" not in path.parts and "__pycache__" not in path.parts
+    ]
+    runtime_dependencies = [
+        {
+            "path": path.relative_to(PROJECT_ROOT).as_posix(),
+            "artifact": artifact,
+        }
+        for path in production_files
+        for artifact in FORBIDDEN_RUNTIME_NAMES
+        if artifact.casefold() in path.read_text(encoding="utf-8").casefold()
+    ]
+    private_isolation = (
+        "process_isolation_only_private_root_readable"
+        if args.private_root.exists()
+        else "strong_private_root_not_present"
+    )
     report = {
-        "passed": not filename_leaks and not hash_leaks,
+        "passed": not filename_leaks and not hash_leaks and not runtime_dependencies,
         "document_count": len(documents),
         "evaluation_file_count": len(evaluation_files),
         "filename_leaks": filename_leaks,
         "hash_leaks": hash_leaks,
+        "runtime_dependencies": runtime_dependencies,
+        "private_isolation": private_isolation,
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

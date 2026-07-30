@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "policy": "strict-single-historical-frozen-artifact-exception",
+  "exceptions": [
+    {
+      "id": "legacy-hard50-round1-missing-build-audit-v1",
+      "lock_path": "data/evaluation/hard_challenge_50/round_1/lock.json",
+      "artifact_type": "build_audit",
+      "expected_sha256": "95367c97f59830748e63ea13869b55578ab7a336e691c1e43b49cc2fc46ea217",
+      "historical_round": "hard_challenge_50/round_1",
+      "pre_protocol": true,
+      "protocol_version_at_creation": "not_established",
+      "artifact_irrecoverable": true,
+      "evidence_chain_complete": false,
+      "scope": "single_missing_historical_artifact",
+      "rationale": "The 2026-07-22 historical lock predates protocol 1.0. Its build-audit bytes are absent from the frozen directory, reachable Git history, remote branch references, and visible project archives. The lock, expected hash, and all other artifacts remain immutable."
+    }
+  ]
+}

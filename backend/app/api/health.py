@@ -21,6 +21,7 @@ from backend.app.services.rerank_service import (
 from backend.app.core.performance_profile import resolve_performance_profile
 from backend.app.services.model_warmup_service import warmup_models_once, warmup_status
 from backend.app.services.performance_metrics import (
+    inflight_request_snapshot,
     resource_metrics_snapshot,
     timing_metrics_snapshot,
     trace_history_snapshot,
@@ -123,6 +124,7 @@ def _rag_health() -> RagHealthResponse:
             "timings": timing_metrics_snapshot(),
             "resources": resource_metrics_snapshot(),
             "recent_traces": trace_history_snapshot(),
+            "inflight_requests": inflight_request_snapshot(),
         },
     )
 

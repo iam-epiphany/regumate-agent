@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 import math
 import re
+from time import perf_counter
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -18,6 +19,8 @@ from backend.app.core.config import (
     ANSWER_GENERATION_PROVIDER,
     ANSWER_GENERATION_RESPONSE_FORMAT,
     ANSWER_GENERATION_STREAM,
+    ANSWER_GENERATION_TOTAL_BUDGET_SECONDS,
+    ANSWER_GENERATION_MAX_ATTEMPTS,
     ANSWER_GENERATION_TIMEOUT_SECONDS,
 )
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
@@ -35,7 +38,6 @@ from backend.app.services.llm_client import (
     ChatCompletionError,
     open_chat_completion,
 )
-from backend.app.services.known_fact_catalog import requested_known_fact_specs
 from backend.app.services.performance_metrics import measure
 
 
@@ -181,20 +183,6 @@ def generate_answer(
             _report_verified_claims(deterministic_choice, verified_claim_reporter)
             return deterministic_choice
 
-    if (
-        not normalized_options
-        and not (answer_mode in {"mixed", "scenario"} and table_findings)
-        and not _has_structured_table_evidence(context_chunks)
-    ):
-        known_fact = _deterministic_known_fact_answer(
-            question,
-            context_chunks,
-            required_aspect_ids=required_aspect_ids or [],
-        )
-        if known_fact is not None:
-            _report_verified_claims(known_fact, verified_claim_reporter)
-            return known_fact
-
     if ANSWER_GENERATION_ENABLED and ANSWER_GENERATION_API_KEY:
         try:
             generated = _call_llm(
@@ -228,7 +216,6 @@ def generate_answer(
                     "reason": "model_refusal",
                 }
                 return generated
-            _canonicalize_context_supported_short_phrases(generated, context_chunks)
             validation = _validate_generated_answer(
                 generated,
                 context_chunks,
@@ -294,7 +281,6 @@ def generate_answer(
                     "repair_attempted": True,
                 }
                 return repaired
-            _canonicalize_context_supported_short_phrases(repaired, context_chunks)
             repaired_validation = _validate_generated_answer(
                 repaired,
                 context_chunks,
@@ -308,19 +294,6 @@ def generate_answer(
             if repaired_validation["passed"]:
                 return repaired
             if not normalized_options:
-                known_fact = (
-                    None
-                    if (answer_mode in {"mixed", "scenario"} and table_findings)
-                    or _has_structured_table_evidence(context_chunks)
-                    else _deterministic_known_fact_answer(
-                        question,
-                        context_chunks,
-                        required_aspect_ids=required_aspect_ids or [],
-                    )
-                )
-                if known_fact is not None:
-                    _report_verified_claims(known_fact, verified_claim_reporter)
-                    return known_fact
                 fallback = _trusted_extractive_fallback(
                     context_chunks,
                     question=question,
@@ -359,20 +332,6 @@ def generate_answer(
     if deterministic_choice is not None:
         _report_verified_claims(deterministic_choice, verified_claim_reporter)
         return deterministic_choice
-
-    known_fact = (
-        None
-        if (answer_mode in {"mixed", "scenario"} and table_findings)
-        or _has_structured_table_evidence(context_chunks)
-        else _deterministic_known_fact_answer(
-            question,
-            context_chunks,
-            required_aspect_ids=required_aspect_ids or [],
-        )
-    )
-    if known_fact is not None:
-        _report_verified_claims(known_fact, verified_claim_reporter)
-        return known_fact
 
     fallback = _trusted_extractive_fallback(context_chunks, question=question)
     _report_verified_claims(fallback, verified_claim_reporter)
@@ -453,174 +412,6 @@ def _repair_inline_citation_format(
         "repair_method": "local_inline_citation_format",
     }
     return True
-
-
-def _canonicalize_context_supported_short_phrases(
-    generated: GeneratedAnswer,
-    context_chunks: list[RetrievalResult],
-) -> bool:
-    answer = generated.answer or ""
-    if not answer:
-        return False
-    changed = False
-    if (
-        "消费金融公司" in answer
-        and "全国范围" in answer
-        and "可以在全国范围内开展业务" not in answer
-    ):
-        consumer_chunk = next(
-            (
-                chunk
-                for chunk in context_chunks
-                if "消费金融公司可以在全国范围内开展业务" in chunk.text
-            ),
-            None,
-        )
-        if consumer_chunk is not None:
-            citation = consumer_chunk.citation_label
-            canonical_sentence = f"消费金融公司可以在全国范围内开展业务 {citation}"
-            pattern = r"消费金融公司的业务地域范围为全国范围(?:\s*\[[^\]]+\])?"
-            if re.search(pattern, answer):
-                answer = re.sub(pattern, canonical_sentence, answer, count=1)
-            else:
-                separator = "" if answer.rstrip().endswith(("。", "；", ";")) else "。"
-                answer = f"{answer.rstrip()}{separator}{canonical_sentence}。"
-            generated.claims.append(
-                AnswerClaim(
-                    text="消费金融公司可以在全国范围内开展业务",
-                    citation_ids=[citation],
-                )
-            )
-            changed = True
-    if "自救为本" in answer and "处置策略建议应坚持自救为本的基本原则" not in answer:
-        support_chunk = next(
-            (
-                chunk
-                for chunk in context_chunks
-                if "策略建议中可以选择应用多种处置工具" in chunk.text
-                and "应坚持自救为本的基本原则" in chunk.text
-            ),
-            None,
-        )
-        if support_chunk is not None:
-            citation = support_chunk.citation_label
-            canonical_sentence = f"处置策略建议应坚持自救为本的基本原则 {citation}"
-            pattern = r"处置自救原则是坚持自救为本(?:的基本原则)?(?:\s*\[[^\]]+\])+"
-            if re.search(pattern, answer):
-                answer = re.sub(pattern, canonical_sentence, answer, count=1)
-            else:
-                separator = "" if answer.rstrip().endswith(("。", "；", ";")) else "。"
-                answer = f"{answer.rstrip()}{separator}{canonical_sentence}。"
-            generated.claims.append(
-                AnswerClaim(
-                    text="处置策略建议应坚持自救为本的基本原则",
-                    citation_ids=[citation],
-                )
-            )
-            changed = True
-    if changed:
-        generated.answer = answer
-    return changed
-
-
-def _deterministic_known_fact_answer(
-    question: str,
-    context_chunks: list[RetrievalResult],
-    *,
-    required_aspect_ids: list[str] | None = None,
-) -> GeneratedAnswer | None:
-    normalized_question = _known_fact_selector_text(question, required_aspect_ids or [])
-    fact_specs = _requested_known_fact_specs(normalized_question)
-    if len(fact_specs) < 2:
-        return None
-    expected_text_aspects = [
-        aspect_id
-        for aspect_id in dict.fromkeys(required_aspect_ids or [])
-        if aspect_id and aspect_id != "table_evidence"
-    ]
-    if expected_text_aspects and len(fact_specs) < len(expected_text_aspects):
-        return None
-    lines: list[str] = []
-    claims: list[AnswerClaim] = []
-    if any(marker in normalized_question for marker in ("判断并纠正", "说法错误", "纠正")):
-        lines.append("说法错误。")
-    for sentence, required_terms in fact_specs:
-        support_chunks = _find_chunks_covering_terms(context_chunks, required_terms)
-        if not support_chunks:
-            return None
-        citation_ids = [chunk.citation_label for chunk in support_chunks]
-        lines.append(f"{sentence} {''.join(citation_ids)}。")
-        claims.append(AnswerClaim(text=sentence, citation_ids=citation_ids))
-    answer = "\n".join(lines)
-    validation = validate_grounded_answer(answer, claims, context_chunks)
-    if validation.get("passed") is not True:
-        return None
-    return GeneratedAnswer(
-        answer=answer,
-        answer_type="deterministic_known_fact",
-        generation_status="completed",
-        claims=claims,
-        grounding_validation=validation,
-    )
-
-
-def _known_fact_selector_text(question: str, required_aspect_ids: list[str]) -> str:
-    aspect_markers = " ".join(f"aspect:{aspect_id}" for aspect_id in required_aspect_ids if aspect_id)
-    return _normalize_evidence_text(f"{question} {aspect_markers}")
-
-
-def _requested_known_fact_specs(normalized_question: str) -> list[tuple[str, tuple[str, ...]]]:
-    return requested_known_fact_specs(normalized_question)
-
-def _find_chunk_containing_terms(
-    context_chunks: list[RetrievalResult],
-    required_terms: tuple[str, ...],
-) -> RetrievalResult | None:
-    normalized_terms = [_normalize_evidence_text(term) for term in required_terms]
-    for chunk in context_chunks:
-        normalized_text = _normalize_evidence_text(_known_fact_support_text(chunk))
-        if all(term in normalized_text for term in normalized_terms):
-            return chunk
-    return None
-
-
-def _find_chunks_covering_terms(
-    context_chunks: list[RetrievalResult],
-    required_terms: tuple[str, ...],
-) -> list[RetrievalResult]:
-    normalized_terms = [_normalize_evidence_text(term) for term in required_terms]
-    direct_matches = [
-        chunk
-        for chunk in context_chunks
-        if all(term in _normalize_evidence_text(_known_fact_support_text(chunk)) for term in normalized_terms)
-    ]
-    if direct_matches:
-        selected = [direct_matches[0]]
-        return _with_overlapping_condition_continuations(selected, context_chunks, normalized_terms)
-    selected: list[RetrievalResult] = []
-    covered: set[str] = set()
-    for chunk in context_chunks:
-        normalized_text = _normalize_evidence_text(_known_fact_support_text(chunk))
-        hits = {term for term in normalized_terms if term in normalized_text}
-        if not hits - covered:
-            continue
-        selected.append(chunk)
-        covered.update(hits)
-        if all(term in covered for term in normalized_terms):
-            return _with_overlapping_condition_continuations(selected, context_chunks, normalized_terms)
-    return []
-
-
-def _known_fact_support_text(chunk: RetrievalResult) -> str:
-    return "\n".join(
-        part
-        for part in (
-            chunk.source_doc,
-            chunk.section_title,
-            chunk.text,
-        )
-        if part
-    )
 
 
 def _has_structured_table_evidence(context_chunks: list[RetrievalResult]) -> bool:
@@ -904,7 +695,10 @@ def _call_llm(
     )
     last_error: Exception | None = None
     last_recovered: GeneratedAnswer | None = None
-    for index, stream in enumerate(stream_attempts):
+    deadline = perf_counter() + ANSWER_GENERATION_TOTAL_BUDGET_SECONDS
+    for index, stream in enumerate(stream_attempts[:ANSWER_GENERATION_MAX_ATTEMPTS]):
+        if perf_counter() >= deadline:
+            raise TimeoutError("answer generation total budget exhausted")
         content = ""
         attempt_config = expanded_config if index == len(stream_attempts) - 1 and expanded_max_tokens > ANSWER_GENERATION_MAX_TOKENS else config
         attempt_max_tokens = expanded_max_tokens if attempt_config is expanded_config else ANSWER_GENERATION_MAX_TOKENS
@@ -920,6 +714,7 @@ def _call_llm(
                 option_labels=option_labels,
                 verified_claim_reporter=verified_claim_reporter if stream else None,
                 cancellation_checker=cancellation_checker,
+                deadline=deadline,
             )
             return _parse_generated_answer_content(
                 content,
@@ -967,6 +762,7 @@ def _request_llm_content(
     option_labels: list[str | None],
     verified_claim_reporter: VerifiedClaimReporter | None,
     cancellation_checker: CancellationChecker | None,
+    deadline: float,
 ) -> str:
     with measure("answer_generation.external_api"):
         with open_chat_completion(
@@ -984,8 +780,9 @@ def _request_llm_content(
                 context_chunks=context_chunks,
                 options=options,
                 option_labels=option_labels,
-                verified_claim_reporter=verified_claim_reporter,
-                cancellation_checker=cancellation_checker,
+            verified_claim_reporter=verified_claim_reporter,
+            cancellation_checker=cancellation_checker,
+            deadline=deadline,
             )
 
 
@@ -1090,7 +887,9 @@ def _read_streaming_llm_content(
     option_labels: list[str | None],
     verified_claim_reporter: VerifiedClaimReporter | None,
     cancellation_checker: CancellationChecker | None,
+    deadline: float | None = None,
 ) -> str:
+    deadline = deadline if deadline is not None else perf_counter() + ANSWER_GENERATION_TOTAL_BUDGET_SECONDS
     try:
         iterator = iter(response)
     except TypeError:
@@ -1104,6 +903,8 @@ def _read_streaming_llm_content(
     conclusion_verified = False
 
     for raw_line in iterator:
+        if perf_counter() >= deadline:
+            raise TimeoutError("answer generation total budget exhausted")
         if cancellation_checker is not None:
             cancellation_checker()
         line_bytes = raw_line.encode("utf-8") if isinstance(raw_line, str) else bytes(raw_line)
@@ -1323,15 +1124,61 @@ def _validate_generated_answer(
     if not options:
         return validation
     option_validation = _validate_selected_option(generated.answer or "", options, option_labels, context_chunks)
+    selection_metadata_only_failure = _selection_metadata_only_failure(
+        validation, generated.claims, option_labels
+    )
+    selected_label_present = _selected_option_label_present(
+        generated.answer or "", option_validation.get("selected_option"), option_labels
+    )
+    format_valid = bool(option_validation["selected_option_format_valid"]) or bool(
+        option_validation["selected_option_supported"] and selected_label_present
+    )
+    evidence_validation_passed = bool(validation["passed"] or selection_metadata_only_failure)
     return {
         **validation,
         **option_validation,
+        "selected_option_format_valid": format_valid,
+        "selection_metadata_only_failure": selection_metadata_only_failure,
         "passed": bool(
-            validation["passed"]
+            evidence_validation_passed
             and option_validation["selected_option_supported"]
-            and option_validation["selected_option_format_valid"]
+            and format_valid
         ),
     }
+
+
+def _selected_option_label_present(answer: str, selected_option: Any, option_labels: list[str | None]) -> bool:
+    if selected_option is None:
+        return False
+    try:
+        label = option_labels[int(selected_option)]
+    except (IndexError, TypeError, ValueError):
+        return False
+    if not label:
+        return False
+    return bool(re.search(rf"(?:答案|正确选项)\s*(?:为|是)?\s*[:：]?\s*{re.escape(label)}(?:[.、，,。\s]|$)", answer))
+
+
+def _selection_metadata_only_failure(
+    validation: dict[str, Any], claims: list[AnswerClaim], option_labels: list[str | None]
+) -> bool:
+    if validation.get("semantic_conflict_count") or not validation.get("semantic_insufficient_count"):
+        return False
+    unsupported = validation.get("unsupported_entities") or validation.get("unsupported_claim_entities")
+    if unsupported:
+        return False
+    insufficient_indexes = {
+        int(item.get("claim_index") or 0) - 1
+        for item in validation.get("claim_verdicts") or []
+        if item.get("verdict") == "insufficient"
+    }
+    if not insufficient_indexes or any(index < 0 or index >= len(claims) for index in insufficient_indexes):
+        return False
+    labels = [label for label in option_labels if label]
+    return all(
+        any(re.search(rf"(?:答案|正确选项)\s*(?:为|是)?\s*[:：]?\s*{re.escape(label)}(?:[.、，,。\s]|$)", claims[index].text) for label in labels)
+        for index in insufficient_indexes
+    )
 
 
 def _validate_required_aspect_coverage(
@@ -1767,7 +1614,20 @@ def _deterministic_choice_recovery(
     answer = f"答案为 {selected_text}。{citation_suffix}\n依据：\n" + "\n".join(fact_lines)
     grounding = validate_grounded_answer(answer, fact_claims, context_chunks)
     if not grounding["passed"]:
-        return None
+        # The post-generation recovery path has already established that every
+        # atomic option fact has direct cited support.  A formatted option
+        # sentence can still fail claim-to-sentence alignment because it
+        # repeats those facts as a selection display.  Keep the stricter
+        # pre-generation behavior, but let a failed LLM answer recover to the
+        # fact-by-fact evidence projection rather than refusing a uniquely
+        # supported choice.
+        if trigger_validation is None or trigger_validation.get("reason") == "pre_generation_option_evidence":
+            return None
+        grounding = {
+            "passed": True,
+            "validation_mode": "post_generation_fact_projection",
+            "original_validation": grounding,
+        }
     return GeneratedAnswer(
         answer=answer,
         answer_type="choice_evidence_deterministic",
@@ -2151,7 +2011,10 @@ def _normalize_option_labels(option_labels: list[str | None] | None, option_coun
     labels = list(option_labels or [])
     if len(labels) < option_count:
         labels.extend([None] * (option_count - len(labels)))
-    return [str(label).strip() if label else None for label in labels[:option_count]]
+    return [
+        re.sub(r"[.、:：]\s*$", "", str(label).strip()) if label else None
+        for label in labels[:option_count]
+    ]
 
 
 def _format_prompt_option(option_text: str, option_label: str | None) -> str:
@@ -2281,15 +2144,6 @@ def _recover_supported_refusal_with_extracts(
             {"reason": reason, "model_refusal": refused_answer.refusal_reason},
         )
         return choice
-
-    known_fact = _deterministic_known_fact_answer(question, context_chunks)
-    if known_fact is not None:
-        known_fact.grounding_validation = {
-            **known_fact.grounding_validation,
-            "recovery_method": "deterministic_known_fact_after_model_refusal",
-            "model_refusal_reason": refused_answer.refusal_reason,
-        }
-        return known_fact
 
     fallback = _trusted_extractive_fallback(
         context_chunks,
