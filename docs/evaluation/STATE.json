@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "protocol_version": "1.0",
+  "project": "ReguMate",
+  "phase": "phase_01_baseline_and_no_hardcode",
+  "status": "not_started",
+  "current_round": 0,
+  "branch": null,
+  "baseline_commit": null,
+  "current_commit": null,
+  "official_300": {
+    "required_correct": 300,
+    "total": 300,
+    "baseline_correct": null,
+    "current_correct": null,
+    "last_result_path": null,
+    "last_run_at": null
+  },
+  "corpus": {
+    "expected_document_count": 500,
+    "snapshot_path": null,
+    "qa_sha256": null
+  },
+  "hardcoding_audit": {
+    "status": "not_started",
+    "report_path": null,
+    "last_run_at": null
+  },
+  "quality_gate": {
+    "status": "not_implemented",
+    "last_report_path": null,
+    "last_run_at": null
+  },
+  "evaluation_pipeline": {
+    "status": "not_started",
+    "public_root": "data/evaluation/generalization_100",
+    "private_root": "../ReguMate-Eval-Private/generalization_100",
+    "isolation_level": null,
+    "scorer_version": null
+  },
+  "rounds": {
+    "round_01": {
+      "status": "not_started",
+      "first_run_report": null,
+      "handoff": null
+    },
+    "round_02": {
+      "status": "not_started",
+      "first_run_report": null,
+      "handoff": null
+    },
+    "round_03": {
+      "status": "not_started",
+      "first_run_report": null,
+      "handoff": null
+    }
+  },
+  "deepseek_env_fingerprint": {
+    "status": "not_captured",
+    "baseline_hash": null,
+    "current_hash": null
+  },
+  "last_handoff": null,
+  "next_action": "Run docs/evaluation/prompts/01_baseline_and_no_hardcode.md",
+  "updated_at": null,
+  "notes": []
+}
