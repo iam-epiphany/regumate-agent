@@ -46,7 +46,6 @@
     "status": "completed",
     "public_root": "data/evaluation/generalization_100",
     "private_root": "../ReguMate-Eval-Private/generalization_100",
-    "isolation_level": "public_private_separated",
     "scorer_version": "generalization-scorer-v1",
     "scorer_path": "scripts/evaluation/generalization_pipeline.py",
     "synthetic_validation": "data/evaluation/generalization_100/pipeline_validation/safe_diagnostic.json",
