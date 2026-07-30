@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "scorer_version": "generalization-scorer-v1",
+  "scorer_sha256": "3c7c963c6425a813e18d4edcba9ebd77bb4aa5ee94de4447eeac9c894e71e4dd",
+  "total": 2,
+  "passed": 2,
+  "pass_rate": 1.0,
+  "diagnostic": [
+    {
+      "id": "SYN-001",
+      "question": "合成验证：若制度未给出统计期间，能否得出唯一报送数值？",
+      "passed": true,
+      "failure_category": null,
+      "latency_ms": null,
+      "golden_evidence_retrieved": false,
+      "expected_source_count": 0,
+      "matched_aspect_count": 0
+    },
+    {
+      "id": "SYN-002",
+      "question": "合成验证：示例制度的生效日期是什么？",
+      "passed": true,
+      "failure_category": null,
+      "latency_ms": null,
+      "golden_evidence_retrieved": true,
+      "expected_source_count": 1,
+      "matched_aspect_count": 0
+    }
+  ]
+}

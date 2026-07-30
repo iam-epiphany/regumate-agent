@@ -2,12 +2,12 @@
   "schema_version": 1,
   "protocol_version": "1.0",
   "project": "ReguMate",
-  "phase": "phase_01_baseline_and_no_hardcode",
+  "phase": "phase_02_evaluation_pipeline",
   "status": "completed",
   "current_round": 0,
   "branch": "codex/generalization-no-hardcode-3round",
   "baseline_commit": "3bca427d447cb5406f35ebab9c63e066c1404426",
-  "current_commit": "89c04c61a155a40e1e2d577dc82f6b74e1a1a708",
+  "current_commit": "PENDING_PHASE_02_COMMIT",
   "official_300": {
     "required_correct": 300,
     "total": 300,
@@ -43,11 +43,14 @@
     "last_run_at": "2026-07-31T01:18:09+08:00"
   },
   "evaluation_pipeline": {
-    "status": "ready_for_phase_02",
+    "status": "completed",
     "public_root": "data/evaluation/generalization_100",
     "private_root": "../ReguMate-Eval-Private/generalization_100",
     "isolation_level": "public_private_separated",
-    "scorer_version": "phase1-official-exact-v1"
+    "scorer_version": "generalization-scorer-v1",
+    "scorer_path": "scripts/evaluation/generalization_pipeline.py",
+    "synthetic_validation": "data/evaluation/generalization_100/pipeline_validation/safe_diagnostic.json",
+    "isolation_level": "process_isolation_only_private_root_readable"
   },
   "rounds": {
     "round_01": {
@@ -71,8 +74,8 @@
     "baseline_hash": "5620cbafa77a200880d047baf32a19492b7317dafe7de363406b7501595cad78",
     "current_hash": "5620cbafa77a200880d047baf32a19492b7317dafe7de363406b7501595cad78"
   },
-  "last_handoff": "docs/evaluation/handoffs/phase_01_20260731_0120_completed.md",
-  "next_action": "开始Phase 2评测基础设施建设。不得在开始前生成新100题；保持官方GPU acceptance、冻结证据和质量门禁可复核。",
+  "last_handoff": "docs/evaluation/handoffs/phase_02_20260731_completed.md",
+  "next_action": "Round 1: generate and independently audit a new frozen 100-case set before its first blind run.",
   "updated_at": "2026-07-31T01:20:00+08:00",
   "notes": [
     "The first attempted baseline used a stale container image and is retained only as invalid diagnostic evidence at data/evaluation/phase_01/baseline_20260730_1824/.",

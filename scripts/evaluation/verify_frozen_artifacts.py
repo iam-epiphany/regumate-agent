@@ -34,6 +34,11 @@ def artifact_entries(lock: dict[str, Any]) -> list[tuple[str, str]]:
         digest = lock.get(f"{prefix}_sha256")
         if path and digest:
             entries.append((str(path), str(digest)))
+    # Generalization locks keep gold outside the repository.  Their public
+    # artifacts are verified here; the private-side verifier checks gold using
+    # the same hash without ever copying it into the production workspace.
+    if isinstance(lock.get("private_artifacts"), list):
+        return entries
     hashes = lock.get("hashes")
     if isinstance(hashes, dict):
         for filename, key in (
