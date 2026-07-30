@@ -1,5 +1,6 @@
 # Phase 2 completed — evaluation pipeline
 
+- Phase 2 implementation commit: `17e24e3455cc6b4d7ac658ca15f47fa757189c5c`.
 - Scope: evaluation-only tooling; production QA, model configuration, SQLite, Qdrant, CUDA, official QA and frozen Phase 1 artifacts were not changed.
 - Public root: `data/evaluation/generalization_100/`; private root: sibling `../ReguMate-Eval-Private/generalization_100/`.
 - Isolation: process isolation only. The private root is physically outside the repository but remains readable by this local account; this is explicitly not represented as strong permission isolation.
