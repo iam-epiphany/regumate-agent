@@ -319,7 +319,7 @@ def main() -> int:
     official_path: Path | None = None
     official_details: dict[str, Any] = {}
     if args.mode == "Full":
-        official_path = args.official_result
+        official_path = args.official_result.resolve()
         official_check, official_correct, official_total, official_details = official_result_gate(official_path)
         checks.append(official_check)
 

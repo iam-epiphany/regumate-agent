@@ -40,7 +40,12 @@ from backend.app.services.answer_generation_service import generate_answer, is_o
 from backend.app.services.document_identity_query_service import answer_document_identity_question
 from backend.app.services.prompt_builder import RAGPromptBuilder
 from backend.app.services.question_preprocessing_service import preprocess_qa_request
-from backend.app.services.query_planner_service import QueryAspect, QueryPlan, plan_query
+from backend.app.services.query_planner_service import (
+    QueryAspect,
+    QueryPlan,
+    QuerySearchQuery,
+    plan_query,
+)
 from backend.app.services.retrieval_metadata_filter_service import (
     build_retrieval_metadata_filter,
 )
@@ -886,13 +891,26 @@ def _retrieve_aspect_matches(
             }
             return exact_matches, table_diagnostics + [diagnostic]
 
-    search_queries = [search_query.query for search_query in aspect.search_queries]
+    usable_search_queries = [
+        search_query for search_query in aspect.search_queries if search_query.query.strip()
+    ]
+    if not usable_search_queries and aspect.question.strip():
+        # Remote planner output is advisory. A malformed empty query must not
+        # turn a valid request into an empty embedding batch.
+        usable_search_queries = [
+            QuerySearchQuery(
+                query=aspect.question.strip(),
+                query_type="fallback",
+                rationale="empty planner query fallback",
+            )
+        ]
+    search_queries = [search_query.query for search_query in usable_search_queries]
     query_metadata = [
         {
             "query_type": search_query.query_type,
             "rationale": search_query.rationale,
         }
-        for search_query in aspect.search_queries
+        for search_query in usable_search_queries
     ]
     try:
         collect_kwargs: dict[str, Any] = {
