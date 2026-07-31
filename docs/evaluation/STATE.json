@@ -2,12 +2,12 @@
   "schema_version": 1,
   "protocol_version": "1.0",
   "project": "ReguMate",
-  "phase": "phase_02_evaluation_pipeline",
-  "status": "completed",
-  "current_round": 0,
+  "phase": "round_01",
+  "status": "first_blind_run_failed_replacement_required",
+  "current_round": 1,
   "branch": "codex/generalization-no-hardcode-3round",
   "baseline_commit": "3bca427d447cb5406f35ebab9c63e066c1404426",
-  "current_commit": "17e24e3455cc6b4d7ac658ca15f47fa757189c5c",
+  "current_commit": "0cfd90b8ce32d854bde44ab7118617ddaaae343b",
   "official_300": {
     "required_correct": 300,
     "total": 300,
@@ -53,9 +53,9 @@
   },
   "rounds": {
     "round_01": {
-      "status": "not_started",
-      "first_run_report": null,
-      "handoff": null
+      "status": "first_blind_run_failed_invalid_cases_preserved",
+      "first_run_report": "data/evaluation/generalization_100/round_01/first_blind_safe_diagnostic.json",
+      "handoff": "docs/evaluation/handoffs/round_01_20260731_first_blind_failed.md"
     },
     "round_02": {
       "status": "not_started",
@@ -73,9 +73,9 @@
     "baseline_hash": "5620cbafa77a200880d047baf32a19492b7317dafe7de363406b7501595cad78",
     "current_hash": "5620cbafa77a200880d047baf32a19492b7317dafe7de363406b7501595cad78"
   },
-  "last_handoff": "docs/evaluation/handoffs/phase_02_20260731_completed.md",
-  "next_action": "Round 1: generate and independently audit a new frozen 100-case set before its first blind run.",
-  "updated_at": "2026-07-31T01:20:00+08:00",
+  "last_handoff": "docs/evaluation/handoffs/round_01_20260731_first_blind_failed.md",
+  "next_action": "Preserve the failed Round 1 first run; generate, independently audit, freeze and first-run replacement cases after the generic spreadsheet-authoring and refusal-contract repairs are separately validated.",
+  "updated_at": "2026-07-31T10:05:00+08:00",
   "notes": [
     "The first attempted baseline used a stale container image and is retained only as invalid diagnostic evidence at data/evaluation/phase_01/baseline_20260730_1824/.",
     "The rebuilt-image baseline was stopped at 117/300 after 85 correct and 11 runtime errors made 300/300 mathematically impossible; this is an incomplete checkpoint, not an official score.",
@@ -91,5 +91,6 @@
     ,"Fresh GPU acceptance at data/evaluation/phase_01/acceptance_gpu_full_20260731_0200/ completed all 300 official cases under one identity with 300 correct and 0 runtime errors. It followed a 29-case general-regression pass; no checkpoint was combined."
     ,"The 20260731_005844 Full quality gate passed baseline identity, no-hardcoding audit, secret scan, evaluation isolation, 438 backend tests, and frontend lint/test/build. It failed only because hard_challenge_50/round_1/lock.json references a build_audit_sha256 for which no artifact exists in that frozen directory. The lock and all frozen artifacts were not modified. Phase 1 therefore remains blocked and no valid completion commit was created."
     ,"A versioned, Git-tracked legacy exception now accepts only the exact pre-protocol hard_challenge_50/round_1 missing build_audit hash while preserving its incomplete-evidence status. It cannot apply to generalization_100, Round 1-3, or any other artifact. The Full quality gate at outputs/evaluation/quality_gate/20260731_011721/report.json passed by strictly verifying the existing 300/300 GPU acceptance artifact, checkpoint, and run identity without rerunning DeepSeek."
+    ,"Round 1 created and independently structurally audited 100 cases, then froze and integrity-verified them. The immutable first blind run at data/evaluation/generalization_100/round_01/first_blind_outputs.jsonl was scored only through its safe diagnostic package and passed 0/100. The safe diagnostic exposed a general authoring defect: blank spreadsheet labels were converted to the literal text nan, yielding invalid public questions and failed retrieval. The first run, both locks, output and diagnostic are retained; a generic blank-cell normalization repair was made, but no same-round score is represented as a first blind run."
   ]
 }
