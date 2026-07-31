@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_ROOT = ROOT.parent / "ReguMate-Eval-Private" / "generalization_100"
 SCORER_VERSION = "generalization-scorer-v1"
@@ -111,6 +113,19 @@ def audit_gold(rows: list[dict[str, Any]], corpus: Path) -> list[dict[str, Any]]
                 rel = source.get("relative_path") if isinstance(source, dict) else None
                 if not rel or not (corpus / rel).is_file():
                     errors.append("source_not_in_corpus")
+                # A table key must be independently reproducible from the
+                # original workbook, not merely point at an existing file.
+                elif all(key in source for key in ("sheet", "row", "column")):
+                    try:
+                        actual = pd.read_excel(corpus / rel, sheet_name=source.get("sheet_raw", source["sheet"]), header=None, dtype=object).iat[int(source["row"]) - 1, int(source["column"]) - 1]
+                        try:
+                            equal = Decimal(str(actual)) == Decimal(str(item.get("canonical_answer", "")))
+                        except InvalidOperation:
+                            equal = normalise(str(actual)) == normalise(str(item.get("canonical_answer", "")))
+                        if not equal:
+                            errors.append("table_cell_value_mismatch")
+                    except Exception:
+                        errors.append("table_cell_unreadable")
         elif not item.get("expected_refusal_code") or not item.get("refusal_rationale"):
             errors.append("invalid_refusal_gold")
         calc = item.get("calculation")
@@ -186,7 +201,9 @@ def runner(public_questions: Path, out: Path, base_url: str) -> None:
         started = datetime.now().timestamp()
         with urllib.request.urlopen(request, timeout=180) as response:
             payload = json.loads(response.read().decode())
-        rows.append({"id": q["id"], "answer": payload.get("answer", ""), "citations": payload.get("citations", []), "latency_ms": round((datetime.now().timestamp()-started)*1000, 2)})
+        rows.append({"id": q["id"], "answer": payload.get("answer", ""), "citations": payload.get("citations", []),
+                     "refused": bool(payload.get("refused", False)), "refusal_code": payload.get("refusal_code"),
+                     "latency_ms": round((datetime.now().timestamp()-started)*1000, 2)})
     if out.exists(): raise FileExistsError("runner output already exists; first-run outputs are immutable")
     write_jsonl(out, rows)
 
