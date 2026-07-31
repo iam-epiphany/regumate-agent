@@ -36,11 +36,3 @@ def test_public_lock_does_not_expose_private_gold_path(tmp_path: Path):
     pipeline.write_jsonl(private/"gold.jsonl",[row]); pipeline.write_jsonl(public/"public"/"questions.jsonl",[pipeline.public_projection(row)])
     lock=pipeline.freeze("synthetic",public,private,corpus)
     assert str(private) not in lock.read_text(encoding="utf-8")
-
-
-def test_round_author_normalizes_blank_spreadsheet_labels():
-    author_path = Path(__file__).resolve().parents[3] / "scripts" / "evaluation" / "author_round_01.py"
-    author_spec = importlib.util.spec_from_file_location("round_author", author_path)
-    author = importlib.util.module_from_spec(author_spec); assert author_spec.loader; author_spec.loader.exec_module(author)
-    assert author.clean(float("nan")) == ""
-    assert author.clean(None) == ""

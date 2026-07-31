@@ -17,7 +17,7 @@ This is a failed first blind run, not a successful Round 1 result and not a regr
 
 The safe diagnostic shows that many answerable public questions contain the literal `nan` as a row or column label and that their expected evidence was not retrieved. This is a general spreadsheet-authoring bug: empty pandas cells were converted with `str(value)` before candidate selection. It is not a production RAG issue and is not tied to any case, title, answer or document identifier.
 
-The authoring tool now normalizes empty/NaN/NaT values to an empty string before label selection. The first run remains unchanged. Refusal-code compatibility also requires a generic contract test; the safe package is intentionally insufficient to infer expected private codes.
+The discarded prototype authoring tool is no longer part of the repository. The first run remains unchanged. Future question authoring and audit will be performed by GPT from the official corpus, with independent evidence checks before freezing. Refusal-code compatibility still requires a generic contract test; the safe package is intentionally insufficient to infer expected private codes.
 
 The safe evidence supports a narrower classification than the initial continuation note: 70 answerable questions contain `nan` and are candidate invalid cases; only those may eventually be replaced after case-level confirmation. The other 10 answerable questions contain usable labels but were all refused without citations, so they are real Round 1 system failures and must remain in the regression set. The 20 refusal cases also remain; their failures cannot yet be attributed to the system or to the evaluator contract without private-key-independent contract testing.
 
