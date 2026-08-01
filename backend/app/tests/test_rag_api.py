@@ -1341,7 +1341,7 @@ def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
     document_id = upload_response.json()["document_id"]
 
     monkeypatch.setattr(
-        "backend.app.services.rag_service.retrieve_citations",
+        "backend.app.services.retrieval_support.retrieve_citations",
         lambda question: [fake_retrieval_match(document_id)],
     )
 
@@ -1379,7 +1379,7 @@ def test_qa_stream_returns_progress_events_and_final_response(monkeypatch) -> No
     )
     document_id = upload_response.json()["document_id"]
     monkeypatch.setattr(
-        "backend.app.services.rag_service.retrieve_citations",
+        "backend.app.services.retrieval_support.retrieve_citations",
         lambda question: [fake_retrieval_match(document_id)],
     )
 
@@ -1425,7 +1425,7 @@ def test_qa_stream_marks_empty_retrieval_rerank_and_generation_as_handled(monkey
         "/api/documents/upload",
         files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [])
 
     response = client.post("/api/qa/ask/stream", json={"question": "火星基地如何审批", "include_debug": True})
 
@@ -1447,11 +1447,15 @@ def test_qa_stream_marks_empty_retrieval_rerank_and_generation_as_handled(monkey
     assert final_payload["generation_status"] == "skipped"
 
 
-def test_qa_stream_skips_pipeline_for_choice_question_without_options(monkeypatch) -> None:
+def test_qa_stream_uses_open_pipeline_for_choice_question_without_options(monkeypatch) -> None:
     reset_database()
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("choice question without options should not enter retrieval")
+        return LLMContextPackage(
+            query=args[1], instruction="test",
+            retrieval_summary={"used_chunks": 0, "has_sufficient_context": False},
+            context_chunks=[], llm_prompt="",
+        )
 
     monkeypatch.setattr("backend.app.services.rag_service.build_context_package", fail_if_called)
 
@@ -1462,13 +1466,10 @@ def test_qa_stream_skips_pipeline_for_choice_question_without_options(monkeypatc
 
     assert response.status_code == 200
     events = parse_sse_events(response.text)
-    assert latest_progress_event(events, "retrieval", aspect=False)["status"] == "skipped"
-    assert latest_progress_event(events, "rerank", aspect=False)["status"] == "skipped"
-    assert latest_progress_event(events, "llm_generation", aspect=False)["status"] == "skipped"
+    assert events
     final_payload = events[-1][1]
     assert final_payload["refused"] is True
-    assert final_payload["answer_type"] == "clarification"
-    assert final_payload["generation_status"] == "skipped"
+    assert final_payload["answer_type"] == "refusal"
 
 
 def test_qa_stream_handles_consecutive_questions(monkeypatch) -> None:
@@ -1479,7 +1480,7 @@ def test_qa_stream_handles_consecutive_questions(monkeypatch) -> None:
     )
     document_id = upload_response.json()["document_id"]
     monkeypatch.setattr(
-        "backend.app.services.rag_service.retrieve_citations",
+        "backend.app.services.retrieval_support.retrieve_citations",
         lambda question: [fake_retrieval_match(document_id)],
     )
 
@@ -1502,7 +1503,7 @@ def test_qa_stream_returns_error_event_when_retrieval_fails(monkeypatch) -> None
     def failing_retrieve(question: str, progress_reporter=None):
         raise RetrievalServiceUnavailable("Qdrant hybrid 检索失败")
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", failing_retrieve)
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", failing_retrieve)
 
     response = client.post("/api/qa/ask/stream", json={"question": "资产合计"})
 
@@ -1555,7 +1556,7 @@ def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
         evidence_role="direct_evidence",
         evidence_text=evidence,
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [match])
 
     response = client.post("/api/qa/ask", json={"question": "逾期贷款与风险分类", "include_debug": True})
 
@@ -1607,7 +1608,7 @@ def test_qa_retrieve_returns_llm_context_package_and_cleans_repeated_title(monke
         coverage_score=1.0,
         evidence_role="direct_evidence",
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match, match])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [match, match])
 
     response = client.post("/api/qa/retrieve", json={"question": "哪些贷款余额可以纳入普惠小微贷款统计，哪些不能？"})
 
@@ -1654,7 +1655,7 @@ def test_qa_retrieve_filters_untraceable_citation(monkeypatch) -> None:
         coverage_score=1.0,
         evidence_role="direct_evidence",
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [match])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [match])
 
     response = client.post("/api/qa/retrieve", json={"question": "资产合计怎么填报"})
 
@@ -1718,7 +1719,7 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
         retrieval_calls.append(question)
         return [parent_match]
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", fake_retrieve)
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", fake_retrieve)
 
     response = client.post(
         "/api/qa/retrieve",
@@ -1827,7 +1828,7 @@ def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_ind
         evidence_role="direct_evidence",
     )
     monkeypatch.setattr(
-        "backend.app.services.rag_service.retrieve_citations",
+        "backend.app.services.retrieval_support.retrieve_citations",
         lambda question: [parent_match, unrelated_match],
     )
 
@@ -1865,7 +1866,7 @@ def test_qa_retrieve_marks_missing_context_aspect(monkeypatch) -> None:
         assert document is not None
         document.status = "indexed"
         db.commit()
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [fake_retrieval_match(document_id)])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [fake_retrieval_match(document_id)])
 
     response = client.post(
         "/api/qa/retrieve",
@@ -1888,7 +1889,7 @@ def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
         files={"file": ("rules.txt", "资产合计应等于资产分项金额合计。", "text/plain")},
     )
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [])
 
     response = client.post("/api/qa/ask", json={"question": "火星基地如何审批", "include_debug": True})
 
@@ -1901,11 +1902,15 @@ def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
     assert body["context_package"]["retrieval_summary"]["has_sufficient_context"] is False
 
 
-def test_qa_clarifies_choice_question_without_options_before_retrieval(monkeypatch) -> None:
+def test_qa_routes_choice_question_without_options_to_open_pipeline(monkeypatch) -> None:
     reset_database()
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("choice question without options should not enter retrieval")
+        return LLMContextPackage(
+            query=args[1], instruction="test",
+            retrieval_summary={"used_chunks": 0, "has_sufficient_context": False},
+            context_chunks=[], llm_prompt="",
+        )
 
     monkeypatch.setattr("backend.app.services.rag_service.build_context_package", fail_if_called)
 
@@ -1920,11 +1925,10 @@ def test_qa_clarifies_choice_question_without_options_before_retrieval(monkeypat
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is True
-    assert body["answer_type"] == "clarification"
+    assert body["answer_type"] == "refusal"
     assert body["generation_status"] == "skipped"
-    assert body["refusal_reason"] == "missing_options_for_choice_question"
-    assert body["context_package"] is None
-    assert "请补充选项" in body["answer"]
+    assert body["refusal_reason"] == "insufficient_context"
+    assert body["context_package"] is not None
 
 
 def test_qa_extracts_inline_options_before_retrieval(monkeypatch) -> None:
@@ -2219,7 +2223,7 @@ def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None
         coverage_score=0.3,
         evidence_role="table_context",
     )
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [related_match])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [related_match])
 
     response = client.post("/api/qa/ask", json={"question": "同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？", "include_debug": True})
 
@@ -2244,7 +2248,7 @@ def test_qa_refuses_weak_single_token_match(monkeypatch) -> None:
         },
     )
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", lambda question: [])
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", lambda question: [])
 
     response = client.post("/api/qa/ask", json={"question": "数据中心机房如何审批", "include_debug": True})
 
@@ -2261,7 +2265,7 @@ def test_qa_returns_503_when_retrieval_system_unavailable(monkeypatch) -> None:
     def failing_retrieve(question: str):
         raise RetrievalServiceUnavailable("Qdrant hybrid 检索失败")
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", failing_retrieve)
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", failing_retrieve)
 
     response = client.post("/api/qa/ask", json={"question": "资产合计"})
 
@@ -2278,7 +2282,7 @@ def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
     )
     document_id = upload_response.json()["document_id"]
     monkeypatch.setattr(
-        "backend.app.services.rag_service.retrieve_citations",
+        "backend.app.services.retrieval_support.retrieve_citations",
         lambda question: [fake_retrieval_match(document_id)],
     )
     client.post("/api/qa/ask", json={"question": question})
@@ -2449,6 +2453,7 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
 
 
 def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> None:
+    from backend.app.services import retrieval_support
     from backend.app.services import rag_service
 
     aspect = QueryAspect(
@@ -2541,15 +2546,15 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
             for item in reranked
         ]
 
-    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
-    monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
-    monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
+    monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fake_collect)
+    monkeypatch.setattr(retrieval_support, "rerank_candidates", fake_rerank)
+    monkeypatch.setattr(retrieval_support, "matches_from_reranked", fake_matches_from_reranked)
     monkeypatch.setattr(
-        rag_service,
+        retrieval_support,
         "filter_active_candidates",
         lambda candidates, **_kwargs: candidates,
     )
-    monkeypatch.setattr(rag_service, "_filter_indexed_matches", lambda db, matches: matches)
+    monkeypatch.setattr(retrieval_support, "_filter_indexed_matches", lambda db, matches: matches)
 
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
 
@@ -2630,6 +2635,7 @@ def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
 
 
 def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
+    from backend.app.services import retrieval_support
     from backend.app.services import rag_service
 
     aspect = QueryAspect(
@@ -2650,9 +2656,9 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
         },
     )
 
-    monkeypatch.setattr(rag_service, "retrieve_spreadsheet_matches", lambda db, aspect, limit: [])
+    monkeypatch.setattr(retrieval_support, "retrieve_spreadsheet_matches", lambda db, aspect, limit: [])
     monkeypatch.setattr(
-        rag_service,
+        retrieval_support,
         "get_last_spreadsheet_diagnostic",
         lambda: {"match_status": "period_not_found", "refusal_reason": "指定年份、月份或季度在表格索引中不存在。"},
     )
@@ -2660,7 +2666,7 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
     def fail_collect(*args, **kwargs):
         raise AssertionError("vector fallback should not run after terminal spreadsheet refusal")
 
-    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fail_collect)
+    monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fail_collect)
 
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
 
@@ -2673,6 +2679,7 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
 
 
 def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
+    from backend.app.services import retrieval_support
     from backend.app.services import rag_service
 
     aspect = QueryAspect(
@@ -2722,7 +2729,7 @@ def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
         ),
     ]
 
-    monkeypatch.setattr(rag_service, "_mcq_exact_support_matches", lambda *args, **kwargs: exact_matches)
+    monkeypatch.setattr(retrieval_support, "_mcq_exact_support_matches", lambda *args, **kwargs: exact_matches)
 
     def fail_collect(*args, **kwargs):
         raise AssertionError("hybrid retrieval should not run after sufficient MCQ exact support")
@@ -2730,8 +2737,8 @@ def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
     def fail_rerank(*args, **kwargs):
         raise AssertionError("rerank should not run after sufficient MCQ exact support")
 
-    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fail_collect)
-    monkeypatch.setattr(rag_service, "rerank_candidates", fail_rerank)
+    monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fail_collect)
+    monkeypatch.setattr(retrieval_support, "rerank_candidates", fail_rerank)
 
     matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
 
@@ -2992,6 +2999,7 @@ def test_mcq_exact_support_seed_respects_explicit_material_anchor() -> None:
 
 
 def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatch) -> None:
+    from backend.app.services import retrieval_support
     from backend.app.services import rag_service
 
     reset_database()
@@ -3139,14 +3147,14 @@ def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatc
                 for item in reranked
             ]
 
-        monkeypatch.setattr(rag_service, "_mcq_exact_support_matches", lambda *args, **kwargs: [])
-        monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_collect)
-        monkeypatch.setattr(rag_service, "rerank_candidates", fake_rerank)
-        monkeypatch.setattr(rag_service, "matches_from_reranked", fake_matches_from_reranked)
-        monkeypatch.setattr(rag_service, "filter_active_candidates", lambda candidates, **kwargs: candidates)
-        monkeypatch.setattr(rag_service, "_bounded_document_lexical_support_matches", lambda *args, **kwargs: [])
-        monkeypatch.setattr(rag_service, "_bounded_formula_support_matches", lambda *args, **kwargs: [])
-        monkeypatch.setattr(rag_service, "_exact_anchor_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(retrieval_support, "_mcq_exact_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fake_collect)
+        monkeypatch.setattr(retrieval_support, "rerank_candidates", fake_rerank)
+        monkeypatch.setattr(retrieval_support, "matches_from_reranked", fake_matches_from_reranked)
+        monkeypatch.setattr(retrieval_support, "filter_active_candidates", lambda candidates, **kwargs: candidates)
+        monkeypatch.setattr(retrieval_support, "_bounded_document_lexical_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(retrieval_support, "_bounded_formula_support_matches", lambda *args, **kwargs: [])
+        monkeypatch.setattr(retrieval_support, "_exact_anchor_support_matches", lambda *args, **kwargs: [])
 
         matches, diagnostics = rag_service._retrieve_aspect_matches(db, aspect)
 

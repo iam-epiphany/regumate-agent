@@ -10,6 +10,7 @@ import urllib.request
 from typing import Any, Callable
 
 from backend.app.core.config import (
+    ASPECT_GATE_PRE_GENERATION,
     ANSWER_GENERATION_API_KEY,
     ANSWER_GENERATION_BASE_URL,
     ANSWER_GENERATION_ENABLED,
@@ -101,20 +102,6 @@ def generate_answer(
 ) -> GeneratedAnswer:
     normalized_options = [option for option in options or [] if str(option or "").strip()]
     normalized_labels = _normalize_option_labels(option_labels, len(normalized_options))
-    if is_option_selection_question(question) and not normalized_options:
-        return GeneratedAnswer(
-            answer=(
-                "这个问题写法属于选择题，但没有提供 A-D 选项，因此无法判断“哪一组选项”正确。"
-                "请补充选项，或改成普通问法，例如“请概述《账簿划分和名词解释》的主要内容”"
-                "或“交易账簿和银行账簿如何划分？”。"
-            ),
-            answer_type="clarification",
-            generation_status="skipped",
-            refused=True,
-            refusal_reason="missing_options_for_choice_question",
-            grounding_validation={"passed": True, "reason": "missing_options_for_choice_question"},
-        )
-
     if not context_chunks or not has_sufficient_context:
         return GeneratedAnswer(
             answer="当前知识库中未找到足够依据，无法给出确定答案。",
@@ -134,6 +121,26 @@ def generate_answer(
             refusal_reason="related_context_only",
             grounding_validation={"passed": True, "reason": "related_context_only"},
         )
+
+    if ASPECT_GATE_PRE_GENERATION and required_aspect_ids and not normalized_options:
+        # Evidence-side pre-gate: if the selected context does not cover every
+        # required aspect, refuse before spending LLM calls on a generation
+        # that the post-generation coverage check would reject anyway.  The
+        # same coverage rule is used by _validate_required_aspect_coverage.
+        missing = _missing_aspects_in_context(context_chunks, required_aspect_ids)
+        if missing:
+            return GeneratedAnswer(
+                answer="当前证据未覆盖所需方面：" + "、".join(missing) + "，无法给出确定答案。",
+                answer_type="refusal",
+                generation_status="skipped",
+                refused=True,
+                refusal_reason="missing_required_aspect",
+                grounding_validation={
+                    "passed": True,
+                    "reason": "missing_required_aspect",
+                    "missing_required_aspect_ids": missing,
+                },
+            )
 
     table_findings = _table_findings(context_chunks)
     if answer_mode in {"mixed", "scenario"}:
@@ -248,6 +255,12 @@ def generate_answer(
                     }
                     _report_verified_claims(deterministic_mixed, verified_claim_reporter)
                     return deterministic_mixed
+            if _is_aspect_only_failure(validation, context_chunks, required_aspect_ids):
+                # Aspect-coverage failures without retrieval-side evidence
+                # cannot be repaired by another LLM round (the missing
+                # evidence is not in the prompt); refuse deterministically
+                # and name the missing aspects.
+                return _deterministic_aspect_refusal(validation)
             repaired = _call_llm(
                 question,
                 context_chunks,
@@ -336,6 +349,125 @@ def generate_answer(
     fallback = _trusted_extractive_fallback(context_chunks, question=question)
     _report_verified_claims(fallback, verified_claim_reporter)
     return fallback
+
+
+def _covered_aspects_by_context(context_chunks: list[RetrievalResult]) -> set[str]:
+    """Aspects covered by evidence-side metadata on the selected chunks.
+
+    Uses the same chunk-side signals as ``_validate_required_aspect_coverage``
+    (``prompt_matched_aspects`` plus ``aspect_id``) so the pre-generation gate
+    and the post-generation check share one coverage rule.
+    """
+
+    covered: set[str] = set()
+    for chunk in context_chunks:
+        metadata = chunk.metadata or {}
+        for aspect_id in metadata.get("prompt_matched_aspects") or []:
+            if aspect_id:
+                covered.add(str(aspect_id))
+        aspect_id = metadata.get("aspect_id")
+        if aspect_id:
+            covered.add(str(aspect_id))
+    return covered
+
+
+def _missing_aspects_in_context(
+    context_chunks: list[RetrievalResult],
+    required_aspect_ids: list[str] | None,
+) -> list[str]:
+    """Required aspects absent from the selected context evidence.
+
+    ``multiple_choice_evidence`` is exempt: it is the option-evidence
+    synthesis aspect of choice questions, not an atomic open-question aspect,
+    and the official choice set must keep its existing behaviour.
+    """
+
+    if not required_aspect_ids:
+        return []
+    eligible = [
+        aspect_id
+        for aspect_id in required_aspect_ids
+        if aspect_id and aspect_id != "multiple_choice_evidence"
+    ]
+    if not eligible:
+        return []
+    covered = _covered_aspects_by_context(context_chunks)
+    return [aspect_id for aspect_id in eligible if aspect_id not in covered]
+
+
+def _is_aspect_only_failure(
+    validation: dict[str, Any],
+    context_chunks: list[RetrievalResult],
+    required_aspect_ids: list[str] | None,
+) -> bool:
+    """True when the validation failures are only aspect-coverage failures.
+
+    Content-level failures (unsupported entities, citation problems, semantic
+    conflicts/insufficiency, missing claims) still deserve an LLM repair round.
+    Aspect-coverage failures are only repaired deterministically when the
+    *retrieval* side also lacks the evidence (the pre-generation gate already
+    refused in that case, so this is a belt-and-braces path).  When the
+    retrieved context covers every required aspect, a missing claim aspect is
+    an LLM labelling problem that the repair round can fix, so it must not be
+    short-circuited into a refusal.
+    """
+
+    if bool(validation.get("passed")):
+        return False
+    if not _missing_aspects_in_context(context_chunks, required_aspect_ids):
+        # Evidence covers all aspects: the failure is claim labelling, not
+        # missing evidence — let the LLM repair round try again.
+        return False
+    content_failures = [
+        validation.get("unsupported_entities") or [],
+        validation.get("unsupported_claim_entities") or [],
+        validation.get("invalid_citation_ids") or [],
+        validation.get("invalid_answer_citation_ids") or [],
+        validation.get("missing_inline_citation_ids") or [],
+        validation.get("missing_claim_citations") or [],
+    ]
+    if any(content_failures):
+        return False
+    if int(validation.get("semantic_conflict_count") or 0) > 0:
+        return False
+    if int(validation.get("semantic_insufficient_count") or 0) > 0:
+        return False
+    if bool(validation.get("missing_claims")):
+        return False
+    return bool(
+        validation.get("missing_required_aspect_ids")
+        or int(validation.get("false_insufficient_aspect_count") or 0) > 0
+    )
+
+
+def _deterministic_aspect_refusal(
+    validation: dict[str, Any],
+) -> GeneratedAnswer:
+    """Structured refusal for aspect-only validation failures.
+
+    Deterministic and honest: it names the missing aspects instead of spending
+    an LLM repair round that the post-repair coverage check would reject again.
+    """
+
+    missing = list(validation.get("missing_required_aspect_ids") or [])
+    if missing:
+        reason = f"当前答案未完整覆盖所需方面：{'、'.join(missing)}，缺少相应制度依据，无法给出确定结论。"
+    else:
+        reason = "当前答案对已覆盖方面作出了依据不足的表述，无法给出确定结论。"
+    return GeneratedAnswer(
+        answer=reason,
+        answer_type="refusal",
+        generation_status="validation_failed",
+        refused=True,
+        refusal_reason="missing_required_aspect",
+        grounding_validation={
+            **validation,
+            "passed": True,
+            "reason": "missing_required_aspect",
+            "recovery_method": "deterministic_aspect_refusal",
+        },
+        degraded=True,
+    )
 
 
 def is_option_selection_question(question: str) -> bool:
@@ -493,7 +625,10 @@ def _deterministic_table_answer(
         raw_value = metadata.get("value")
     label = metadata.get("row_label") or metadata.get("column_label")
     option_label, option_text = _match_option(raw_value, label, options, option_labels)
-    value_text = _format_value(raw_value)
+    value_text = _format_value(
+        raw_value,
+        decimal_places=metadata.get("display_decimal_places"),
+    )
     output_unit = _deterministic_table_output_unit(metadata)
     value_with_unit = f"{value_text} {output_unit}" if output_unit else value_text
     citation_label = chunk.citation_label
@@ -684,6 +819,12 @@ def _call_llm(
     expanded_max_tokens = max(ANSWER_GENERATION_MAX_TOKENS * 2, 1800)
     if expanded_max_tokens > ANSWER_GENERATION_MAX_TOKENS:
         stream_attempts.append(False)
+    # The provider intermittently returns an empty stream or an empty
+    # non-streaming body for long prompts; alternate stream/non-stream
+    # attempts so a transient empty reply is retried instead of degrading.
+    if len(stream_attempts) < ANSWER_GENERATION_MAX_ATTEMPTS:
+        alternates = [True, False, True, False, True, False][: ANSWER_GENERATION_MAX_ATTEMPTS - len(stream_attempts)]
+        stream_attempts.extend(alternates)
     expanded_config = ChatCompletionConfig(
         provider=ANSWER_GENERATION_PROVIDER,
         api_key=ANSWER_GENERATION_API_KEY,
@@ -1416,6 +1557,7 @@ def _calculation_trace_valid(metadata: dict[str, Any]) -> bool:
         if values[right] == 0:
             return False
         recomputed = values[left] / values[right]
+        recomputed *= float(metadata.get("result_scale") or 1)
     elif operation == "difference" and len(values) >= 2:
         if "-" not in formula_compact:
             return False
@@ -2098,14 +2240,20 @@ def _extractive_fallback(
     for chunk in selected_chunks:
         aspect_question = _fallback_effective_excerpt_question(chunk, question)
         excerpt = _relevant_extractive_excerpt(chunk.text, aspect_question)
-        claims.append(
-            AnswerClaim(
-                text=excerpt,
-                citation_ids=[chunk.citation_label],
-                aspect_ids=sorted(_fallback_chunk_aspect_ids(chunk)),
+        units = [
+            unit.strip()
+            for unit in re.split(r"(?<=[。！？!?])\s*", excerpt)
+            if unit.strip()
+        ] or [excerpt]
+        for unit in units:
+            claims.append(
+                AnswerClaim(
+                    text=unit,
+                    citation_ids=[chunk.citation_label],
+                    aspect_ids=sorted(_fallback_chunk_aspect_ids(chunk)),
+                )
             )
-        )
-        lines.append(f"- {excerpt} {chunk.citation_label}")
+            lines.append(f"- {unit} {chunk.citation_label}")
     if reason == "grounding_validation_failed":
         prefix = "已检索到相关依据，但生成答案未通过事实校验。为避免不可靠表述，先返回可核验摘录："
         generation_status = "validation_degraded"
@@ -2195,8 +2343,23 @@ def _fallback_chunks_by_aspect(
         if not candidates:
             continue
         aspect_question = next(
-            (str(chunk.metadata.get("aspect_question")) for chunk in candidates if chunk.metadata.get("aspect_question")),
-            question,
+            (
+                str(aspect_questions[aspect_id])
+                for chunk in candidates
+                if isinstance(
+                    aspect_questions := chunk.metadata.get("prompt_aspect_questions"),
+                    dict,
+                )
+                and aspect_questions.get(aspect_id)
+            ),
+            next(
+                (
+                    str(chunk.metadata.get("aspect_question"))
+                    for chunk in candidates
+                    if chunk.metadata.get("aspect_question")
+                ),
+                question,
+            ),
         )
         selected_document_ids = {
             str(chunk.metadata.get("document_id") or "")
@@ -2328,6 +2491,14 @@ def _fallback_anchor_hit_sort_key(chunk: RetrievalResult, anchors: list[str]) ->
 
 
 def _fallback_effective_excerpt_question(chunk: RetrievalResult, default_question: str) -> str:
+    aspect_id = str(
+        chunk.metadata.get("retrieval_aspect_id")
+        or chunk.metadata.get("aspect_id")
+        or ""
+    )
+    aspect_questions = chunk.metadata.get("prompt_aspect_questions")
+    if isinstance(aspect_questions, dict) and aspect_id and aspect_questions.get(aspect_id):
+        return str(aspect_questions[aspect_id])
     default_anchors = [
         anchor
         for anchor in _fallback_anchor_fragments(default_question)
@@ -2335,7 +2506,7 @@ def _fallback_effective_excerpt_question(chunk: RetrievalResult, default_questio
     ]
     if default_anchors and _fallback_chunk_anchor_hits(chunk, default_anchors):
         return default_question
-    return str(chunk.metadata.get("aspect_question") or default_question)
+    return default_question
 
 
 def _fallback_companion_repeats_selected_anchor_coverage(
@@ -2487,7 +2658,17 @@ def _fallback_condition_marker_score(text: str) -> float:
 
 
 def _fallback_chunk_relevance(chunk: RetrievalResult, question: str) -> tuple[float, float, float, float]:
-    normalized_text = _normalize_evidence_text(chunk.text)
+    normalized_text = _normalize_evidence_text(
+        "\n".join(
+            part
+            for part in (
+                chunk.section_title or "",
+                chunk.text,
+                " ".join(chunk.section_path),
+            )
+            if part
+        )
+    )
     normalized_question = _normalize_evidence_text(question)
     anchors = _fallback_anchor_fragments(question)
     anchor_score = sum(
@@ -2508,7 +2689,7 @@ def _fallback_chunk_relevance(chunk: RetrievalResult, question: str) -> tuple[fl
     evidence_role = str(chunk.metadata.get("evidence_role") or "")
     prompt_selection_reason = str(chunk.metadata.get("prompt_selection_reason") or "")
     exact_bonus = (
-        25.0
+        40.0
         if evidence_role in {"exact_anchor_support", "bounded_lexical_support", "mcq_exact_support"}
         else 0.0
     )
@@ -2611,7 +2792,7 @@ def _fallback_anchor_fragment_variants(value: str) -> list[str]:
         variants.append(normalized_raw)
     parts = [
         part.strip()
-        for part in re.split(r"[、，,；;。]|以及|并且|同时|和|与", raw)
+        for part in re.split(r"[、，,；;。]|以及|并且|同时|否则|和|与", raw)
         if part.strip()
     ]
     for part in parts:
@@ -2664,10 +2845,8 @@ def _fallback_definition_bonus(normalized_text: str, anchors: list[str]) -> floa
     return 0.0
 
 
-def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 420) -> str:
+def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 650) -> str:
     source = str(text or "").strip()
-    if len(source) <= max_chars:
-        return source
     segments = [
         item.strip()
         for item in re.split(r"(?<=[。！？；])\s*|\n{2,}", source)
@@ -2676,7 +2855,15 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 4
     if not segments:
         return source[:max_chars].rstrip() + "…"
     normalized_question = _normalize_evidence_text(question)
-    anchors = _fallback_anchor_fragments(question)
+    raw_anchors = _fallback_anchor_fragments(question)
+    anchors = [
+        anchor
+        for anchor in raw_anchors
+        if not (
+            len(anchor) <= 6
+            and any(anchor != other and anchor in other for other in raw_anchors)
+        )
+    ]
     question_bigrams = {
         normalized_question[index : index + 2]
         for index in range(max(len(normalized_question) - 1, 0))
@@ -2709,15 +2896,93 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 4
         return anchor_score + semantic_score + overlap * 5.0, -len(segment)
 
     ranked = sorted(enumerate(segments), key=lambda item: score(item[1]), reverse=True)
+    anchored_indexes = {
+        index
+        for index, segment in enumerate(segments)
+        if any(
+            anchor and anchor in _normalize_evidence_text(segment)
+            for anchor in anchors
+        )
+    }
+    if anchors:
+        for anchor in anchors:
+            if any(
+                anchor and anchor in _normalize_evidence_text(segment)
+                for segment in segments
+            ):
+                continue
+            windows: list[tuple[int, int]] = []
+            for start in range(len(segments)):
+                for width in (2, 3):
+                    stop = start + width
+                    if stop > len(segments):
+                        continue
+                    combined = "".join(
+                        _normalize_evidence_text(segment)
+                        for segment in segments[start:stop]
+                    )
+                    if anchor and anchor in combined:
+                        windows.append((width, start))
+                        break
+            if not windows:
+                continue
+            minimum_width = min(width for width, _ in windows)
+            for width, start in windows:
+                if width != minimum_width:
+                    continue
+                stop = start + width
+                anchored_indexes.update(range(start, stop))
+
+    def trim_leading_unrelated_clause(segment: str) -> str:
+        anchor_positions: list[tuple[int, int]] = []
+        for anchor in sorted(anchors, key=len, reverse=True):
+            if not anchor:
+                continue
+            pattern = r"\s*".join(re.escape(character) for character in anchor)
+            match = re.search(pattern, segment)
+            if match:
+                anchor_positions.append((match.start(), len(anchor)))
+        if not anchor_positions:
+            return segment
+        anchor_start = min(anchor_positions, key=lambda item: (item[0], -item[1]))[0]
+        prefix = segment[:anchor_start]
+        boundaries = [match.end() for match in re.finditer(r"[。！？；\n]", prefix)]
+        if not boundaries:
+            return segment
+        return segment[max(boundaries) :].lstrip()
+
+    if anchored_indexes:
+        segments = [
+            trim_leading_unrelated_clause(segment) if index in anchored_indexes else segment
+            for index, segment in enumerate(segments)
+        ]
+        ranked = sorted(enumerate(segments), key=lambda item: score(item[1]), reverse=True)
     chosen_indexes: list[int] = []
     used = 0
     for index, segment in ranked:
+        if anchored_indexes and index not in anchored_indexes:
+            continue
         if chosen_indexes and used + len(segment) > max_chars:
             continue
         chosen_indexes.append(index)
         used += len(segment)
         if len(chosen_indexes) >= 3 or used >= max_chars * 0.75:
             break
+    if anchored_indexes:
+        for index in sorted(tuple(chosen_indexes)):
+            if index + 1 >= len(segments) or index + 1 in chosen_indexes:
+                continue
+            normalized = _normalize_evidence_text(segments[index])
+            continuation = segments[index + 1]
+            if not (
+                normalized.endswith(("包括", "如下", "下列", "分别为"))
+                or re.search(r"[：:]$", segments[index])
+                or re.match(r"^[（(]?[一二三四五六七八九十0-9]+[）)、.]", continuation)
+            ):
+                continue
+            if used + len(continuation) <= max_chars:
+                chosen_indexes.append(index + 1)
+                used += len(continuation)
     if segments:
         leading = segments[0]
         normalized_leading = _normalize_evidence_text(leading)
@@ -3000,10 +3265,12 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
-def _format_value(value: Any) -> str:
+def _format_value(value: Any, *, decimal_places: int | None = None) -> str:
     numeric = _float_or_none(value)
     if numeric is None:
         return str(value or "")
+    if isinstance(decimal_places, int) and 0 <= decimal_places <= 10:
+        return f"{numeric:.{decimal_places}f}"
     return f"{numeric:.10f}".rstrip("0").rstrip(".")
 
 

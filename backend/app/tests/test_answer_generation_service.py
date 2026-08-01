@@ -74,6 +74,44 @@ def test_fallback_chunks_by_aspect_prefers_new_document_for_next_aspect() -> Non
     assert [chunk.chunk_id for chunk in selected[:2]] == ["A1", "B1"]
 
 
+def test_fallback_prefers_exact_definition_over_generic_core_chunk() -> None:
+    question = "“流动性资产储备”的完整定义是什么？"
+    generic = _chunk(
+        chunk_id="GENERIC",
+        text="流动性资产储备包括固定收益类资产和权益类资产。",
+        metadata={
+            "aspect_id": "definition",
+            "prompt_matched_aspects": ["definition"],
+            "aspect_question": question,
+            "prompt_selection_reason": "core",
+            "evidence_role": "direct_evidence",
+        },
+    )
+    exact = _chunk(
+        chunk_id="EXACT",
+        text=(
+            "流动性资产储备，是指具备易于交易、易于变现及无变现障碍等特征，"
+            "能够以合理成本快速变现并提供流动性的资产。"
+        ),
+        metadata={
+            "aspect_id": "definition",
+            "prompt_matched_aspects": ["definition"],
+            "aspect_question": question,
+            "prompt_selection_reason": "generic",
+            "evidence_role": "bounded_lexical_support",
+            "lexical_support_phrase": "流动性资产储备",
+        },
+    )
+
+    selected = answer_generation_service._fallback_chunks_by_aspect(
+        [generic, exact],
+        question=question,
+        limit=2,
+    )
+
+    assert selected[0].chunk_id == "EXACT"
+
+
 def test_option_evidence_matrix_penalizes_unsupported_exclusive_and_negative_relations() -> None:
     chunks = [
         _chunk(
@@ -218,6 +256,25 @@ def test_calculation_trace_accepts_three_operand_reconciliation() -> None:
     }
 
     assert answer_generation_service._calculation_trace_valid(metadata) is True
+
+
+def test_calculation_trace_accepts_scaled_percentage_ratio() -> None:
+    metadata = {
+        "operation": "ratio",
+        "calculation_formula": "Sheet1!C5 / Sheet1!D5 * 100",
+        "calculation_result": 25.0,
+        "result_scale": 100,
+        "calculation_cells": [
+            {"sheet_name": "Sheet1", "cell": "C5", "normalized_value": 25.0},
+            {"sheet_name": "Sheet1", "cell": "D5", "normalized_value": 100.0},
+        ],
+    }
+
+    assert answer_generation_service._calculation_trace_valid(metadata) is True
+
+
+def test_table_value_formatter_honors_requested_decimal_places() -> None:
+    assert answer_generation_service._format_value(17.8159210005, decimal_places=2) == "17.82"
 
 
 def test_word_pdf_formula_answer_calculates_when_variables_are_complete() -> None:
@@ -1039,17 +1096,18 @@ def test_generation_refuses_without_context() -> None:
     assert result.refusal_reason == "insufficient_context"
 
 
-def test_choice_question_without_options_returns_clarification() -> None:
+def test_choice_question_without_options_uses_open_answer_path() -> None:
     result = generate_answer(
         "关于《账簿划分和名词解释》，下列哪一组选项中的两项表述均属于该材料内容？",
         [_chunk(text="交易账簿包括为交易目的而持有的金融工具。")],
         has_sufficient_context=True,
     )
 
-    assert result.refused is True
-    assert result.answer_type == "clarification"
-    assert result.generation_status == "skipped"
-    assert result.refusal_reason == "missing_options_for_choice_question"
+    assert result.refused is False
+    assert result.answer_type == "extractive_fallback"
+    assert result.generation_status != "skipped"
+    assert result.refusal_reason is None
+    return
     assert "请补充选项" in result.answer
 
 
@@ -1120,6 +1178,126 @@ def test_extractive_fallback_selects_query_relevant_sentence_not_chunk_prefix(mo
 
     assert result.refused is False
     assert "每年对划分政策和程序开展内部审计" in result.answer
+
+
+def test_relevant_excerpt_removes_unrelated_negative_clause_from_short_chunk() -> None:
+    text = (
+        "第八条 服务机构不能以任何方式干预客户选择。"
+        "第九条 服务机构发现重大违规行为时，应当及时向监督部门报告。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "根据规定，说明“发现重大违规行为时，应当及时向监督部门报告”的要求。",
+    )
+
+    assert "应当及时向监督部门报告" in excerpt
+    assert "不能以任何方式干预" not in excerpt
+
+
+def test_relevant_excerpt_keeps_list_continuation_after_anchored_heading() -> None:
+    text = (
+        "上一项指标不得连续小于零。"
+        "三、报送要求："
+        "（一）机构应当报送基础信息表；（二）机构应当报送风险明细表。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "“报送要求”包括哪些报表？",
+    )
+
+    assert "基础信息表" in excerpt
+    assert "风险明细表" in excerpt
+    assert "不得连续小于零" not in excerpt
+
+
+def test_relevant_excerpt_trims_negative_clause_before_anchor_in_same_segment() -> None:
+    text = (
+        "指标不得连续低于零。\n\n"
+        "四、报送要求\n\n"
+        "机构应当报送基础信息表和风险明细表。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "说明与“四、报送要求机构”对应的规定。",
+    )
+
+    assert "应当报送基础信息表" in excerpt
+    assert "不得连续低于零" not in excerpt
+
+
+def test_extractive_fallback_creates_atomic_claims_for_multi_sentence_excerpt(monkeypatch) -> None:
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", None)
+    result = answer_generation_service._extractive_fallback(
+        [
+            _chunk(
+                text=(
+                    "机构应至少每半年披露一次关键指标。"
+                    "机构应通过官方网站公开披露，披露前应报送监督部门。"
+                ),
+                citation_label="[1]",
+            )
+        ],
+        question="机构应如何披露关键指标？",
+    )
+
+    assert len(result.claims) == 2
+    assert all(claim.citation_ids == ["[1]"] for claim in result.claims)
+    assert result.grounding_validation["passed"] is True
+
+
+def test_fallback_relevance_uses_section_heading_with_clause_prefix() -> None:
+    aspect_question = "根据《附件甲》，说明与“二、披露要求 （一）机构应”对应的规定。"
+    weak = _chunk(
+        text="机构应遵循一般管理要求。",
+        metadata={"evidence_role": "bounded_lexical_support"},
+        chunk_id="weak",
+    )
+    strong = _chunk(
+        text="（一）机构应至少每半年披露一次关键指标。",
+        metadata={"evidence_role": "expanded_context"},
+        chunk_id="strong",
+    )
+    strong.section_title = "二、披露要求"
+
+    assert answer_generation_service._fallback_chunk_relevance(
+        strong,
+        aspect_question,
+    ) > answer_generation_service._fallback_chunk_relevance(weak, aspect_question)
+
+
+def test_excerpt_question_prefers_chunk_specific_aspect_over_generic_global_anchor() -> None:
+    chunk = _chunk(
+        text="机构不得变更计算方法。",
+        metadata={
+            "aspect_id": "method_change",
+            "retrieval_aspect_id": "method_change",
+            "aspect_question": "说明“机构不得变更计算方法”的要求。",
+            "prompt_aspect_questions": {
+                "method_change": "说明“机构不得变更计算方法”的要求。",
+            },
+        },
+    )
+
+    assert answer_generation_service._fallback_effective_excerpt_question(
+        chunk,
+        "分别说明“商业银行不得变更方法”和“商业银行应披露报告”的要求。",
+    ) == "说明“机构不得变更计算方法”的要求。"
+
+
+def test_relevant_excerpt_ignores_generic_anchor_contained_in_specific_anchor() -> None:
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        (
+            "机构应按一般规则计算风险暴露。"
+            "未经监督部门认可，机构不得变更计算方法。"
+        ),
+        "说明“未经监督部门认可，机构”的明确要求。",
+    )
+
+    assert "不得变更计算方法" in excerpt
+    assert "一般规则计算风险暴露" not in excerpt
 
 
 def test_grounding_uses_cited_document_metadata_for_scope_entities() -> None:
@@ -1959,6 +2137,160 @@ def test_generated_answer_fails_validation_when_a_required_aspect_is_omitted() -
     assert validation["passed"] is False
     assert validation["missing_required_aspect_ids"] == ["requirement_two"]
     assert validation["required_aspect_failure_reason"] == "missing_required_aspects"
+
+
+def test_pre_generation_gate_refuses_when_context_misses_required_aspect(monkeypatch) -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+    ]
+    llm_calls = []
+
+    def fail_llm(*args, **kwargs):
+        llm_calls.append(args)
+        raise AssertionError("LLM must not run when the pre-gate refuses")
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", fail_llm)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+
+    generated = generate_answer(
+        "两个事项如何处理",
+        chunks,
+        has_sufficient_context=True,
+        answer_mode="text",
+        required_aspect_ids=["requirement_one", "requirement_two"],
+    )
+
+    assert generated.refused is True
+    assert generated.refusal_reason == "missing_required_aspect"
+    assert generated.generation_status == "skipped"
+    assert generated.grounding_validation["missing_required_aspect_ids"] == ["requirement_two"]
+    assert not llm_calls
+
+
+def test_pre_generation_gate_exempts_multiple_choice_evidence_aspect() -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="选项证据材料。",
+            metadata={"aspect_id": "multiple_choice_evidence", "prompt_matched_aspects": ["multiple_choice_evidence"]},
+        ),
+    ]
+
+    missing = answer_generation_service._missing_aspects_in_context(
+        chunks, ["multiple_choice_evidence", "option_evidence"]
+    )
+
+    # multiple_choice_evidence is exempt; only option_evidence is checked.
+    assert missing == ["option_evidence"]
+
+
+def test_aspect_only_failure_triage_depends_on_retrieval_coverage() -> None:
+    missing_validation = {
+        "passed": False,
+        "missing_required_aspect_ids": ["requirement_two"],
+        "required_aspect_failure_reason": "missing_required_aspects",
+    }
+    content_validation = {
+        "passed": False,
+        "unsupported_entities": ["2025年12月31日"],
+        "missing_required_aspect_ids": ["requirement_two"],
+    }
+    covered_chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+        _chunk(
+            chunk_id="C2",
+            citation_label="[2]",
+            text="事项二明确禁止涉及无关第三人。",
+            metadata={"aspect_id": "requirement_two", "prompt_matched_aspects": ["requirement_two"]},
+        ),
+    ]
+    missing_chunks = covered_chunks[:1]
+
+    # Retrieval lacks the aspect: aspect-only failure → deterministic refusal.
+    assert answer_generation_service._is_aspect_only_failure(
+        missing_validation, missing_chunks, ["requirement_one", "requirement_two"]
+    ) is True
+    # Retrieval covers everything: missing claim aspect is a labelling problem
+    # → LLM repair round, not a refusal.
+    assert answer_generation_service._is_aspect_only_failure(
+        missing_validation, covered_chunks, ["requirement_one", "requirement_two"]
+    ) is False
+    # Content failures always deserve the repair round.
+    assert answer_generation_service._is_aspect_only_failure(
+        content_validation, missing_chunks, ["requirement_one", "requirement_two"]
+    ) is False
+
+
+def test_content_failure_still_runs_llm_repair(monkeypatch) -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+        _chunk(
+            chunk_id="C2",
+            citation_label="[2]",
+            text="事项二明确禁止涉及无关第三人。",
+            metadata={"aspect_id": "requirement_two", "prompt_matched_aspects": ["requirement_two"]},
+        ),
+    ]
+    llm_calls = []
+
+    def counting_llm(question, context_chunks, normalized_options, normalized_labels, **kwargs):
+        llm_calls.append(kwargs.get("correction"))
+        return answer_generation_service.GeneratedAnswer(
+            answer="事项一明确要求保留三年。[1]",
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[
+                AnswerClaim(
+                    text="事项一明确要求保留三年。[1]",
+                    citation_ids=["[1]"],
+                    role="conclusion",
+                    aspect_ids=["requirement_one"],
+                )
+            ],
+            refused=False,
+        )
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", counting_llm)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_choice_recovery", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_mixed_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_repair_inline_citation_format", lambda *a, **k: False)
+    monkeypatch.setattr(
+        answer_generation_service,
+        "_validate_generated_answer",
+        lambda *a, **k: {
+            "passed": False,
+            "unsupported_entities": ["2025年12月31日"],
+            "missing_required_aspect_ids": ["requirement_two"],
+        },
+    )
+
+    generated = generate_answer(
+        "事项一如何处理",
+        chunks,
+        has_sufficient_context=True,
+        answer_mode="text",
+        required_aspect_ids=["requirement_one", "requirement_two"],
+    )
+
+    # Content failures (unsupported entities) keep the LLM repair round.
+    assert len(llm_calls) == 2
 
 
 def test_required_aspect_validation_does_not_count_chunk_aspect_for_tagged_claim() -> None:

@@ -13,6 +13,18 @@ class PreprocessedQuestion:
     option_labels: list[str | None] | None = None
 
 
+@dataclass(frozen=True)
+class QuestionTask:
+    """Normalized request contract shared by routing, retrieval, and generation."""
+
+    question: str
+    options: list[str]
+    option_labels: list[str | None]
+    mode: str
+    extracted_options: bool = False
+    option_source: str | None = None
+
+
 _CIRCLED_LABELS = "①②③④⑤⑥⑦⑧"
 _CHINESE_LABELS = "一二三四五六七八"
 _LABEL_PREFIX = (
@@ -49,6 +61,21 @@ def preprocess_qa_request(question: str, options: list[str] | None = None) -> Pr
         )
 
     return PreprocessedQuestion(question=cleaned_question, options=[], option_labels=[])
+
+
+def build_question_task(question: str, options: list[str] | None = None) -> QuestionTask:
+    """Create the stable task contract without inferring a choice mode from wording."""
+
+    preprocessed = preprocess_qa_request(question, options)
+    normalized_options = preprocessed.options
+    return QuestionTask(
+        question=preprocessed.question,
+        options=normalized_options,
+        option_labels=preprocessed.option_labels or [None] * len(normalized_options),
+        mode="choice" if normalized_options else "open",
+        extracted_options=preprocessed.extracted_options,
+        option_source=preprocessed.option_source,
+    )
 
 
 def extract_inline_options(question: str) -> tuple[str, list[str], str, list[str | None]] | None:

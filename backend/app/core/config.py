@@ -92,7 +92,10 @@ MODEL_WARMUP_POLICY = _env_choice(
     {"background", "lazy"},
 )
 RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
-RERANK_INFERENCE_BATCH_LIMIT = _env_int("RERANK_INFERENCE_BATCH_LIMIT", 4, minimum=1)
+# Per-inference batch cap for the cross-encoder.  CPU profiles already pick
+# 4/2 so raising this only widens the GPU path (GPU profile default is 24).
+# Verified against an 8 GiB GPU: peak CUDA allocation stays far below the cap.
+RERANK_INFERENCE_BATCH_LIMIT = _env_int("RERANK_INFERENCE_BATCH_LIMIT", 8, minimum=1)
 RERANK_MAX_LENGTH = _env_int("RERANK_MAX_LENGTH", 1024, minimum=1)
 RERANK_INPUT_MODE = _env_choice(
     "RERANK_INPUT_MODE",
@@ -198,15 +201,23 @@ ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_UR
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
 ANSWER_GENERATION_TOTAL_BUDGET_SECONDS = _env_float(
-    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 60.0, minimum=1.0
+    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 90.0, minimum=1.0
 )
-ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 2, minimum=1)
+# Provider intermittently returns empty streams/bodies for long prompts;
+# 4 alternating attempts keep the answer pipeline resilient without
+# exceeding the generation total budget.
+ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 4, minimum=1)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
 MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 30.0, minimum=0.1)
-ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 900, minimum=1)
+# deepseek-v4-flash emits reasoning_content for long prompts and consumes the
+# token budget before any answer content; 3000 leaves room for both the
+# reasoning tail and the structured JSON answer.
+ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 3000, minimum=1)
 ANSWER_GENERATION_INCLUDE_THINKING = _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
 ANSWER_GENERATION_RESPONSE_FORMAT = os.getenv("ANSWER_GENERATION_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 ANSWER_GENERATION_STREAM = _env_bool("ANSWER_GENERATION_STREAM", LLM_STREAM)
+ASPECT_GATE_PRE_GENERATION = _env_bool("ASPECT_GATE_PRE_GENERATION", True)
+
 SEMANTIC_GROUNDING_MODE = _env_choice(
     "SEMANTIC_GROUNDING_MODE",
     "risk_based",

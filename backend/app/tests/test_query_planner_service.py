@@ -1,7 +1,149 @@
 import json
+import re
 
 from backend.app.services import query_planner_service, rag_service
-from backend.app.services.query_planner_service import plan_query
+from backend.app.schemas.qa import Citation, RetrievalResult
+from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery, plan_query
+
+
+def test_query_planner_keeps_user_stated_table_locator_when_llm_guesses_period() -> None:
+    """Explicit table metadata is authoritative over a probabilistic plan."""
+
+    question = (
+        "根据监管统计表《2023年3季度保险业资金运用情况表》的工作表"
+        "“2023年3季度保险资金运用情况表”，请给出“资金运用余额”在“账面余额”列的数值。"
+    )
+    aspects = query_planner_service._aspects_from_payload(
+        question,
+        {
+            "aspects": [
+                {
+                    "aspect_id": "table_evidence",
+                    "question": question,
+                    "evidence_need": "table cell",
+                    "search_queries": [question],
+                    "keywords": ["资金运用余额"],
+                    "modality": "table",
+                    "table_task": "lookup",
+                    "table_filters": {
+                        "source_title": "2023年3季度保险业资金运用情况表",
+                        "year": 2023,
+                        "month": 3,
+                        "quarter": 1,
+                    },
+                }
+            ]
+        },
+    )
+
+    filters = aspects[0].table_filters
+    assert filters["source_title"] == "2023年3季度保险业资金运用情况表"
+    assert filters["year"] == 2023
+    assert filters["quarter"] == 3
+    assert "month" not in filters
+
+
+def test_query_planner_parses_explicit_sheet_row_and_column_lookup() -> None:
+    question = (
+        "根据监管统计表《148_2023年3季度保险业资金运用情况表》的工作表"
+        "“2023年3季度保险资金运用情况表”，请给出“资金运用余额”在“账面余额”列的数值。"
+    )
+
+    aspect = query_planner_service._fallback_aspects(question, None)[0]
+
+    assert aspect.table_filters["sheet"] == "2023年3季度保险资金运用情况表"
+    assert aspect.table_filters["row_label"] == "资金运用余额"
+    assert aspect.table_filters["column_label"] == "账面余额"
+    assert list(aspect.selectors) == [{"row_or_indicator": "资金运用余额", "column_label": "账面余额"}]
+
+
+def test_refusal_code_contract_classifies_explicit_request_limits() -> None:
+    assert rag_service._refusal_code_for_request("请预测未来十二个月的监管数据。") == "unsupported_prediction"
+    assert rag_service._refusal_code_for_request("没有给出余额和期限时，请计算利息。") == "missing_calculation_operands"
+    assert rag_service._refusal_code_for_request("请提供资料库之外的实时汇率。") == "out_of_scope_or_realtime"
+    assert rag_service._explicit_request_boundary_code("请概述资本充足率的监管口径。") is None
+
+
+def test_prompt_aspect_marking_preserves_retrieval_origin() -> None:
+    first = QueryAspect(
+        aspect_id="document_a",
+        question="根据《附件甲》说明甲条款。",
+        evidence_need="甲条款",
+        search_queries=(QuerySearchQuery("甲条款", "keyword_anchor", ""),),
+        keywords=("甲条款",),
+    )
+    second = QueryAspect(
+        aspect_id="document_b",
+        question="根据《附件乙》说明乙条款。",
+        evidence_need="乙条款",
+        search_queries=(QuerySearchQuery("乙条款", "keyword_anchor", ""),),
+        keywords=("乙条款",),
+    )
+    chunk = RetrievalResult(
+        chunk_id="D-A-C1",
+        document_id="D-A",
+        text="甲条款规定商业银行应当落实甲事项。",
+        score=1.0,
+        rank=1,
+        source_doc="附件甲",
+        citation_label="[1]",
+        citation=Citation(
+            chunk_id="D-A-C1",
+            document_id="D-A",
+            filename="附件甲.docx",
+            excerpt="甲条款规定商业银行应当落实甲事项。",
+        ),
+        metadata={"aspect_id": "document_a", "evidence_role": "bounded_lexical_support"},
+    )
+
+    rag_service._mark_chunk_for_aspect(chunk, first)
+    rag_service._mark_chunk_for_aspect(chunk, second)
+
+    assert chunk.metadata["retrieval_aspect_id"] == "document_a"
+    assert chunk.metadata["aspect_id"] == "document_a"
+    assert chunk.metadata["prompt_aspect_questions"] == {
+        "document_a": first.question,
+        "document_b": second.question,
+    }
+    assert rag_service._chunk_matches_query_aspect(chunk, first) is True
+    assert rag_service._chunk_matches_query_aspect(chunk, second) is False
+    assert rag_service._prompt_chunk_covers_aspect(chunk, second) is False
+    assert rag_service._best_shared_candidate([chunk], [chunk], second) is None
+
+
+def test_exact_support_is_isolated_by_explicit_source_title() -> None:
+    first = QueryAspect(
+        aspect_id="document_a",
+        question="根据《附件甲》说明共同条款。",
+        evidence_need="共同条款",
+        search_queries=(QuerySearchQuery("共同条款", "keyword_anchor", ""),),
+        keywords=("共同条款",),
+        table_filters={"source_title": "附件甲"},
+    )
+    second = QueryAspect(
+        aspect_id="document_b",
+        question="根据《附件乙》说明共同条款。",
+        evidence_need="共同条款",
+        search_queries=(QuerySearchQuery("共同条款", "keyword_anchor", ""),),
+        keywords=("共同条款",),
+        table_filters={"source_title": "附件乙"},
+    )
+    chunk = RetrievalResult(
+        chunk_id="D-A-C1",
+        rank=1,
+        score=1.0,
+        source_doc="附件甲.docx",
+        text="共同条款规定机构应当完成甲事项。",
+        citation_label="[1]",
+        metadata={
+            "retrieval_aspect_id": "document_b",
+            "evidence_role": "exact_anchor_support",
+            "source_title": "附件甲",
+        },
+    )
+
+    assert rag_service._chunk_matches_query_aspect(chunk, first) is True
+    assert rag_service._chunk_matches_query_aspect(chunk, second) is False
 
 
 def test_query_planner_fallback_recognizes_excel_lookup_question(monkeypatch) -> None:
@@ -904,3 +1046,297 @@ def test_execution_constraint_is_not_converted_to_retrieval_aspect() -> None:
     )
 
     assert [aspect.aspect_id for aspect in aspects] == ["formula"]
+
+
+def test_explicit_sheet_row_and_column_are_kept_in_distinct_table_fields(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《示例月报》工作表“各地区数据（月度）”，"
+        "行项目“全国合计”在列“保费收入 / 合计”的值是多少？"
+    )
+
+    aspect = plan.aspects[0]
+    assert aspect.table_task == "lookup"
+    assert aspect.table_filters["source_title"] == "示例月报"
+    assert aspect.table_filters["sheet"] == "各地区数据（月度）"
+    assert aspect.table_filters["row_label"] == "全国合计"
+    assert aspect.table_filters["column_label"] == "保费收入 / 合计"
+    assert aspect.table_filters.get("indicator") != "各地区数据（月度）"
+    assert list(aspect.selectors) == [
+        {"row_label": "全国合计", "column_label": "保费收入 / 合计"}
+    ]
+
+
+def test_difference_selectors_ignore_quoted_sheet_and_preserve_operand_order(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《示例季报》工作表“资产负债季度”，计算行项目“同比增长率”"
+        "在列“2023年 / 一季度”与列“2023年 / 四季度”之间的差额"
+        "（后者减前者）。"
+    )
+
+    aspect = plan.aspects[0]
+    assert aspect.table_task == "calculate"
+    assert aspect.operation == "difference"
+    assert list(aspect.selectors) == [
+        {"row_label": "同比增长率", "column_label": "2023年 / 一季度"},
+        {"row_label": "同比增长率", "column_label": "2023年 / 四季度"},
+    ]
+    assert "quarter" not in aspect.table_filters
+    assert aspect.table_filters.get("indicator") != "资产负债季度"
+
+
+def test_percentage_wording_builds_ordered_ratio_operands(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《示例月报》工作表“地区数据”，计算行项目“全国合计”的"
+        "“健康险”数值占“合计”数值的百分比。"
+    )
+
+    aspect = plan.aspects[0]
+    assert aspect.table_task == "calculate"
+    assert aspect.operation == "ratio"
+    assert list(aspect.selectors) == [
+        {"row_label": "全国合计", "column_label": "健康险"},
+        {"row_label": "全国合计", "column_label": "合计"},
+    ]
+
+
+def test_joint_policy_report_uses_separate_explicit_document_titles(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "制度—报表联合核验：先依据《资本工具标准》相关条款说明监管要求，"
+        "再从《资产负债季报》工作表“资产负债季度”提取行项目“同比增长率”"
+        "在列“2023年 / 一季度”的值。请分别引用制度和报表来源。"
+    )
+
+    table_aspect = plan.aspects[0]
+    assert table_aspect.modality == "table"
+    assert table_aspect.table_filters["source_title"] == "资产负债季报"
+    assert "quarter" not in table_aspect.table_filters
+    regulation_aspects = [aspect for aspect in plan.aspects[1:] if aspect.modality == "text"]
+    assert regulation_aspects
+    assert all(
+        aspect.table_filters.get("source_title") == "资本工具标准"
+        for aspect in regulation_aspects
+    )
+    assert all("资产负债季度" not in aspect.question for aspect in regulation_aspects)
+
+
+def test_explicit_missing_operands_and_subjective_decision_boundaries_are_general() -> None:
+    assert (
+        rag_service._explicit_request_boundary_code(
+            "请比较两家机构的不良率差异，但未给出机构、期间和对应数值。"
+        )
+        == "missing_calculation_operands"
+    )
+    assert (
+        rag_service._explicit_request_boundary_code(
+            "请换算监管报表金额，但没有给出原币金额、币种或汇率。"
+        )
+        == "missing_calculation_operands"
+    )
+    assert (
+        rag_service._explicit_request_boundary_code(
+            "请根据监管材料替我决定明年的产品投放方向。"
+        )
+        == "subjective_business_advice"
+    )
+
+
+def test_refusal_boundaries_cover_common_missing_context_phrasings() -> None:
+    assert rag_service._explicit_request_boundary_code(
+        "请算出两个未提供数值的报告期资本充足率差异。"
+    ) == "missing_calculation_operands"
+    assert rag_service._explicit_request_boundary_code(
+        "请把一笔外币负债折算成人民币，但没有金额、币种或汇率。"
+    ) == "missing_calculation_operands"
+    assert rag_service._explicit_request_boundary_code(
+        "请从Excel取数，但没有文件名、工作表、行和列定位信息。"
+    ) == "missing_required_context"
+    assert rag_service._explicit_request_boundary_code(
+        "请查询尚未入库的今日监管处罚清单。"
+    ) == "out_of_scope_or_realtime"
+    assert rag_service._explicit_request_boundary_code(
+        "请断言下一版监管规则必然会降低某项比例要求。"
+    ) == "unsupported_prediction"
+    assert rag_service._explicit_request_boundary_code(
+        "请依据监管文件设计保证盈利的营销方案。"
+    ) == "subjective_business_advice"
+
+
+def test_quoted_sum_word_in_row_label_does_not_turn_lookup_into_calculation() -> None:
+    question = (
+        "根据《2012年机构范围和指标解释》工作表“机构范围解释和指标解释”，"
+        "行项目“不良贷款余额 / 次级类、可疑类和损失类贷款之和”"
+        "在列“基本指标解释 / 序号”的值是多少？"
+    )
+
+    aspect = query_planner_service._fallback_aspects(question, None)[0]
+
+    assert aspect.table_task == "lookup"
+    assert aspect.operation == "none"
+    assert list(aspect.selectors) == [
+        {
+            "row_label": "不良贷款余额 / 次级类、可疑类和损失类贷款之和",
+            "column_label": "基本指标解释 / 序号",
+        }
+    ]
+    assert aspect.table_filters["year"] == 2012
+
+
+def test_multi_document_subquestions_keep_their_own_explicit_source_titles() -> None:
+    question = (
+        "请分别依据《规则甲》第六条和《规则乙》第六条，"
+        "列出两份文件各自的核心监管要求并区分来源。"
+    )
+    aspects = query_planner_service._aspects_from_payload(
+        question,
+        {
+            "aspects": [
+                {
+                    "aspect_id": "rule_a",
+                    "question": "《规则甲》第六条的核心监管要求是什么？",
+                    "search_queries": ["规则甲 第六条"],
+                    "modality": "text",
+                },
+                {
+                    "aspect_id": "rule_b",
+                    "question": "《规则乙》第六条的核心监管要求是什么？",
+                    "search_queries": ["规则乙 第六条"],
+                    "modality": "text",
+                },
+            ]
+        },
+    )
+
+    assert [aspect.table_filters["source_title"] for aspect in aspects] == ["规则甲", "规则乙"]
+
+
+def test_merged_two_document_aspect_is_split_with_independent_source_filters() -> None:
+    aspect = query_planner_service.QueryAspect(
+        aspect_id="two_rules",
+        question=(
+            "请分别依据《规则甲》相关条款和《规则乙》相关条款，"
+            "列出两份文件各自的核心监管要求，并明确区分来源。"
+        ),
+        search_queries=(
+            query_planner_service.QuerySearchQuery("规则甲 核心要求", "semantic_question", ""),
+            query_planner_service.QuerySearchQuery("规则乙 核心要求", "semantic_question", ""),
+        ),
+        evidence_need="两份制度的核心要求",
+        keywords=("规则甲", "规则乙"),
+        modality="text",
+        table_filters={"source_title": "规则甲"},
+        explicit_filter_keys=("source_title",),
+    )
+    budget = query_planner_service.QueryBudget(
+        detected_items=("规则甲", "规则乙"),
+        max_aspects=2,
+        system_max_aspects=8,
+        capacity_limited=False,
+    )
+
+    split = query_planner_service._split_merged_llm_aspects([aspect], budget)
+
+    assert len(split) == 2
+    assert [item.table_filters["source_title"] for item in split] == ["规则甲", "规则乙"]
+    assert all(len(re.findall(r"《[^》]+》", item.question)) == 1 for item in split)
+
+
+def test_fallback_planner_splits_explicit_cross_document_request(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "请分别依据《规则甲》相关条款和《规则乙》相关条款，"
+        "列出两份文件各自的核心监管要求，并明确区分来源。"
+    )
+
+    assert len(plan.aspects) == 2
+    assert [aspect.table_filters["source_title"] for aspect in plan.aspects] == ["规则甲", "规则乙"]
+
+
+def test_quoted_regulatory_decision_and_estimate_are_not_request_boundaries() -> None:
+    decision_question = (
+        "请分别依据《规则甲》中“监管机构决定调整计量范围”相关条款，"
+        "以及《规则乙》中“机构应当报告”的条款，列出各自要求。"
+    )
+    estimate_question = (
+        "制度—报表联合核验：依据《规则甲》中“会计政策和会计估计”说明要求；"
+        "再读取《行业报表》工作表“数据”的指定值，不要据此直接认定合规。"
+    )
+
+    assert rag_service._explicit_request_boundary_code(decision_question) is None
+    assert rag_service._explicit_request_boundary_code(estimate_question) is None
+
+
+def test_explicit_document_anchor_pairs_are_isolated_before_generic_splitting() -> None:
+    question = (
+        "请分别依据《规则甲》中“一、总体要求，机构应当完整验证”相关条款，"
+        "以及《规则乙》中“监管机构决定调整计量范围”相关条款，"
+        "列出两份文件各自的监管要求并明确区分来源。"
+    )
+
+    plan = plan_query(question)
+
+    assert len(plan.aspects) == 2
+    assert [aspect.table_filters["source_title"] for aspect in plan.aspects] == [
+        "规则甲",
+        "规则乙",
+    ]
+    assert [aspect.table_filters["indicator"] for aspect in plan.aspects] == [
+        "一、总体要求，机构应当完整验证",
+        "监管机构决定调整计量范围",
+    ]
+
+
+def test_hierarchical_row_period_is_not_a_global_lookup_filter() -> None:
+    question = (
+        "根据《2024年商业银行主要指标分机构类情况表》"
+        "工作表“商业银行分机构类情况表”，"
+        "行项目“一季度 / 不良贷款率”在列“大型商业银行”的值是多少？"
+    )
+
+    aspect = plan_query(question).aspects[0]
+
+    assert aspect.table_task == "lookup"
+    assert aspect.table_filters["row_label"] == "一季度 / 不良贷款率"
+    assert aspect.table_filters["column_label"] == "大型商业银行"
+    assert "quarter" not in aspect.table_filters
+
+
+def test_quoted_share_column_is_lookup_not_ratio_calculation() -> None:
+    question = (
+        "根据《2025年四季度保险公司资金运用情况表》工作表“Sheet1”，"
+        "行项目“保险公司 / 资金运用余额”在列“截至当期 / 占比”的值是多少？"
+    )
+
+    aspect = plan_query(question).aspects[0]
+
+    assert aspect.table_task == "lookup"
+    assert aspect.operation == "none"
+    assert aspect.selectors == (
+        {
+            "row_label": "保险公司 / 资金运用余额",
+            "column_label": "截至当期 / 占比",
+        },
+    )
+
+
+def test_explicit_definition_anchor_uses_definition_style_search() -> None:
+    plan = plan_query(
+        "根据《市场风险内部模型法监管要求》相关条款，“交易台”的完整定义是什么？"
+    )
+
+    aspect = plan.aspects[0]
+
+    assert plan.planner == "deterministic-document-anchor"
+    assert "完整定义" in aspect.question
+    assert any(
+        "是指" in search.query and "定义" in search.query
+        for search in aspect.search_queries
+    )

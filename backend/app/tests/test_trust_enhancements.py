@@ -944,6 +944,21 @@ def test_evaluator_accepts_explicit_judgment_alias_and_contextual_subject_elisio
     assert not _fact_match("商业银行每年披露一次信息。", "商业银行应每年开展内部审计并留档备查")["matched"]
 
 
+def test_fullwidth_ordinal_number_is_not_a_factual_entity() -> None:
+    from backend.app.services.grounding_validation_service import (
+        _extract_entities,
+        _strip_presentation_markers,
+    )
+
+    claim_text = "表述（1）说法正确。材料规定授信额度最高不得超过人民币20万元。"
+
+    stripped = _strip_presentation_markers(claim_text)
+    entities = _extract_entities(stripped)
+
+    assert "1" not in entities
+    assert "20" in entities
+
+
 def test_evaluator_does_not_count_cited_extra_number_as_entity_error() -> None:
     case = {"canonical_answer": "应在10个工作日内完成。"}
     citations = [{"excerpt": "2025年底前，特殊情形可延长至14个工作日。"}]

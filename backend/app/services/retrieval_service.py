@@ -366,6 +366,9 @@ def collect_candidates_with_query_hits(
     query_metadata: list[dict[str, Any]] | None = None,
     diagnostics: RetrievalDiagnostics | None = None,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
+    query_embeddings: list[Any] | None = None,
+    raw_results_by_query: list[list[VectorSearchResult]] | None = None,
 ) -> tuple[list[VectorSearchResult], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -378,18 +381,21 @@ def collect_candidates_with_query_hits(
     query_hits_by_chunk_id: dict[str, list[dict[str, Any]]] = {}
     per_query_diagnostics: list[dict[str, Any]] = []
 
-    embedding_started_at = perf_counter()
-    query_embeddings = _embed_search_queries(queries)
-    diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
+    if query_embeddings is None or raw_results_by_query is None:
+        # Standalone collection: embed and search this batch here.
+        embedding_started_at = perf_counter()
+        query_embeddings = _embed_search_queries(queries)
+        diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
-    qdrant_started_at = perf_counter()
-    diagnostics.metadata_filter = dict(metadata_filter or {})
-    raw_results_by_query = _hybrid_search_many(
-        query_embeddings,
-        limit=RETRIEVAL_TOP_K,
-        metadata_filter=metadata_filter,
-    )
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+        qdrant_started_at = perf_counter()
+        diagnostics.metadata_filter = dict(metadata_filter or {})
+        raw_results_by_query = _hybrid_search_many(
+            query_embeddings,
+            limit=RETRIEVAL_TOP_K,
+            metadata_filter=metadata_filter,
+            metadata_filters=metadata_filters,
+        )
+        diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
     merge_started_at = perf_counter()
     for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
         for candidate in raw_results:
@@ -445,6 +451,7 @@ def _hybrid_search_many(
     *,
     limit: int,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
 ) -> list[list[VectorSearchResult]]:
     # A patched single-search hook is intentionally honored for deterministic tests.
     if hybrid_search is not _DEFAULT_HYBRID_SEARCH:
@@ -453,6 +460,7 @@ def _hybrid_search_many(
         query_embeddings,
         limit=limit,
         metadata_filter=metadata_filter,
+        metadata_filters=metadata_filters,
     )
 
 

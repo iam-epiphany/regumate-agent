@@ -94,6 +94,65 @@ def rerank_candidates(
     return reranked[:limit]
 
 
+def rerank_candidate_groups(
+    *,
+    questions: list[str],
+    candidate_groups: list[list[VectorSearchResult]],
+    limits: list[int],
+) -> list[list[RerankedChunk]]:
+    """Rerank several (question, candidate-group) pairs in one inference batch.
+
+    Each group keeps its own question (cross-encoder pairs differ per group)
+    and its own score-cache key, so group boundaries never cross.  Missing
+    pairs across all groups are computed in a single batched pass and split
+    back per group, which shares one model call where per-group calls would
+    each pay batch overhead.  Group-level limits mirror ``rerank_candidates``.
+    """
+
+    if not questions or len(questions) != len(candidate_groups) or len(questions) != len(limits):
+        raise RerankServiceError("questions, candidate_groups and limits must be equally sized")
+    cache = _rerank_score_cache()
+    scored: list[list[tuple[float, VectorSearchResult]]] = []
+    missing_pairs: list[list[str]] = []
+    missing_keys: list[str] = []
+    missing_placements: list[tuple[int, int]] = []
+    for group_index, (question, candidates) in enumerate(zip(questions, candidate_groups, strict=True)):
+        limit = max(0, int(limits[group_index]))
+        limited = candidates[: max(limit * 2, limit)]
+        texts = [_rerank_text(candidate) for candidate in limited]
+        group_scored: list[tuple[float, VectorSearchResult]] = []
+        for position, (candidate, text) in enumerate(zip(limited, texts, strict=True)):
+            key = _rerank_cache_key(question, candidate.chunk_id, text)
+            cached = cache.get(key)
+            if cached is None:
+                missing_pairs.append([question, text])
+                missing_keys.append(key)
+                missing_placements.append((group_index, position))
+                group_scored.append((0.0, candidate))
+            else:
+                group_scored.append((cached, candidate))
+        scored.append(group_scored)
+
+    if missing_pairs:
+        computed = _compute_scores(missing_pairs)
+        for (group_index, position), key, value in zip(
+            missing_placements, missing_keys, computed, strict=True
+        ):
+            cache.put(key, value)
+            scored[group_index][position] = (value, scored[group_index][position][1])
+
+    reranked_groups: list[list[RerankedChunk]] = []
+    for group_index, (question, limit) in enumerate(zip(questions, limits, strict=True)):
+        group = [
+            RerankedChunk(candidate=candidate, rerank_score=float(score))
+            for score, candidate in scored[group_index]
+        ]
+        group.sort(key=lambda item: item.rerank_score, reverse=True)
+        reranked_groups.append(group[:max(0, int(limit))])
+    _RERANKER_WARMED = True
+    return reranked_groups
+
+
 def reranker_runtime_status() -> dict[str, Any]:
     return {
         "loaded": _get_reranker.cache_info().currsize > 0,

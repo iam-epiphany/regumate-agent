@@ -158,7 +158,13 @@ def validate_regulatory_semantics(
                 }
             )
     verdicts.sort(key=lambda item: int(item.get("claim_index") or 0))
-    passed = all(item.get("verdict") == "supported" for item in verdicts)
+    # Only a verified contradiction blocks the answer.  "insufficient" means
+    # the verifier could not confirm the claim against the excerpted
+    # evidence, not that the claim is wrong; the deterministic base checks
+    # (citations, entities, required-aspect coverage) already passed, so an
+    # uncertain verdict must not turn a well-grounded answer into a degraded
+    # extract.  Insufficient verdicts stay visible in claim_verdicts.
+    passed = all(item.get("verdict") != "contradicted" for item in verdicts)
     return {
         "semantic_passed": passed,
         "semantic_mode": selected_mode,
