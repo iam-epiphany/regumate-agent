@@ -144,8 +144,8 @@ def test_existing_gpu_acceptance_artifact_is_verified_without_rerun() -> None:
         PROJECT_ROOT
         / "data"
         / "evaluation"
-        / "phase_01"
-        / "acceptance_gpu_full_20260731_0200"
+        / "independent_100_20260731"
+        / "official_acceptance_20260731_104202"
         / "official_300_results.json"
     )
 

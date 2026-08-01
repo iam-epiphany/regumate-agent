@@ -24,8 +24,8 @@ DEFAULT_OFFICIAL_ACCEPTANCE = (
     PROJECT_ROOT
     / "data"
     / "evaluation"
-    / "phase_01"
-    / "acceptance_gpu_full_20260731_0200"
+    / "independent_100_20260731"
+    / "official_acceptance_20260731_104202"
     / "official_300_results.json"
 )
 
