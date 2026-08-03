@@ -69,7 +69,6 @@ LABEL org.opencontainers.image.title="ReguMate Agent" \
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
-COPY data/regulations/ ./data/regulations/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/data/documents/originals /app/data/qdrant /app/data/model_cache
