@@ -34,7 +34,8 @@ from backend.app.services.formula_parser_service import (
     calculate_formula_answer,
     formula_refusal_grounding,
 )
-from backend.app.services.prompt_builder import RAGPromptBuilder
+from backend.app.services.json_utils import extract_json as _extract_json
+from backend.app.services.prompt_builder import RAGPromptBuilder, format_prompt_option
 from backend.app.services.llm_client import (
     ChatCompletionConfig,
     ChatCompletionError,
@@ -623,40 +624,6 @@ def _has_structured_table_evidence(context_chunks: list[RetrievalResult]) -> boo
         if metadata.get("cell") or metadata.get("cell_refs") or metadata.get("row_label") or metadata.get("column_label"):
             return True
     return False
-
-
-def _with_overlapping_condition_continuations(
-    selected: list[RetrievalResult],
-    context_chunks: list[RetrievalResult],
-    normalized_terms: list[str],
-) -> list[RetrievalResult]:
-    selected_ids = {chunk.chunk_id for chunk in selected}
-    expanded = list(selected)
-    for selected_chunk in selected:
-        selected_text = _normalize_evidence_text(selected_chunk.text)
-        selected_hits = {term for term in normalized_terms if term in selected_text}
-        if not selected_hits:
-            continue
-        selected_preamble = str(selected_chunk.metadata.get("condition_preamble_chunk_id") or "")
-        for chunk in context_chunks:
-            if chunk.chunk_id in selected_ids:
-                continue
-            same_condition_chain = selected_preamble and (
-                str(chunk.metadata.get("condition_preamble_chunk_id") or "") == selected_preamble
-            )
-            adjacent_overlap = (
-                str(selected_chunk.metadata.get("next_chunk_id") or "") == chunk.chunk_id
-                or str(chunk.metadata.get("previous_chunk_id") or "") == selected_chunk.chunk_id
-            )
-            if not (same_condition_chain or adjacent_overlap):
-                continue
-            chunk_text = _normalize_evidence_text(chunk.text)
-            if not selected_hits.issubset({term for term in normalized_terms if term in chunk_text}):
-                continue
-            expanded.append(chunk)
-            selected_ids.add(chunk.chunk_id)
-            break
-    return expanded
 
 
 def _deterministic_table_answer(
@@ -2168,10 +2135,6 @@ def _build_option_evidence_matrix(
     return matrix
 
 
-def _fact_entities_are_grounded(fact: str, chunk: RetrievalResult) -> bool:
-    return _fact_entities_are_grounded_by_chunks(fact, chunk.text, [chunk])
-
-
 def _fact_entities_are_grounded_by_chunks(
     fact: str,
     evidence: str,
@@ -2383,12 +2346,9 @@ def _normalize_option_labels(option_labels: list[str | None] | None, option_coun
     ]
 
 
-def _format_prompt_option(option_text: str, option_label: str | None) -> str:
-    return _format_selected_option(option_text, option_label) if option_label else str(option_text)
-
-
-def _format_selected_option(option_text: str, option_label: str | None) -> str:
-    return f"{option_label}、{option_text}" if option_label else str(option_text)
+# Shared with the prompt builder so answer formatting never diverges from
+# prompt formatting.
+_format_selected_option = format_prompt_option
 
 
 def _strip_sentence_end(value: str) -> str:
@@ -3555,13 +3515,3 @@ def _requires_evidence_boundary(question: str) -> bool:
         )
         or re.search(r"不得作.{0,8}机构合规推断", normalized)
     )
-
-
-def _extract_json(content: str) -> str:
-    stripped = content.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        return stripped
-    match = re.search(r"\{.*\}", stripped, re.S)
-    if not match:
-        raise ValueError("missing JSON response")
-    return match.group(0)

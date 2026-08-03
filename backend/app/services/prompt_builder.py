@@ -116,4 +116,11 @@ class RAGPromptBuilder:
         )
 
     def _format_prompt_option(self, option_text: str, option_label: str | None) -> str:
-        return f"{option_label}、{option_text}" if option_label else str(option_text)
+        return format_prompt_option(option_text, option_label)
+
+
+def format_prompt_option(option_text: str, option_label: str | None) -> str:
+    """Render an option with its label; canonical implementation shared with
+    answer generation so prompt and answer formatting never diverge."""
+
+    return f"{option_label}、{option_text}" if option_label else str(option_text)

@@ -941,26 +941,6 @@ def test_cross_period_regional_health_selectors_keep_period_and_metric(monkeypat
     assert all(selector["column_label"] == "健康险" for selector in aspect.selectors)
 
 
-def test_text_lexical_seed_terms_keep_distinctive_roots() -> None:
-    aspect = query_planner_service.QueryAspect(
-        aspect_id="regulatory_basis",
-        question="说明数字化银行回函的效力、催收禁限和定价原则。",
-        search_queries=(
-            query_planner_service.QuerySearchQuery("数字化银行回函效力", "keyword_anchor", ""),
-            query_planner_service.QuerySearchQuery("催收禁限定价原则", "document_style_statement", ""),
-        ),
-        evidence_need="制度原文",
-        keywords=("数字化银行回函效力", "催收禁限", "定价原则"),
-        modality="text",
-    )
-
-    terms = rag_service._text_lexical_seed_terms(aspect)
-
-    assert "数字化回函" in terms
-    assert "催收" in terms
-    assert "定价" in terms
-
-
 def test_bounded_lexical_phrases_split_document_style_support_anchors() -> None:
     aspect = query_planner_service.QueryAspect(
         aspect_id="regulatory_basis",

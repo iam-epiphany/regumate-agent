@@ -7,6 +7,10 @@ import re
 from typing import Any, Protocol
 
 from backend.app.core.config import DOCUMENT_LOADER_ORDER
+from backend.app.services.chunk_service import (
+    _is_table_separator_line,
+    _looks_like_table_line,
+)
 from backend.app.services.document_types import LoaderResult, PARSER_VERSION, ParsedBlock, ParsedDocument
 from backend.app.services.formula_parser_service import (
     annotate_blocks_with_pdf_formulas,
@@ -880,7 +884,7 @@ def _markdown_to_blocks(text: str, page_number: int | None = None) -> list[Parse
             )
             continue
 
-        if _looks_like_markdown_table_line(stripped):
+        if _looks_like_table_line(stripped):
             flush_paragraph()
             table_lines.append(line)
             continue
@@ -909,13 +913,6 @@ def _markdown_heading_level(stripped_line: str) -> int | None:
     return len(marker)
 
 
-def _looks_like_markdown_table_line(stripped_line: str) -> bool:
-    if "|" not in stripped_line:
-        return False
-    cells = [cell.strip() for cell in stripped_line.strip("|").split("|")]
-    return len(cells) >= 2
-
-
 def _table_metadata(table_text: str, table_index: int | None = None) -> dict[str, object]:
     rows = _parse_markdown_table(table_text)
     metadata: dict[str, object] = {}
@@ -941,7 +938,7 @@ def _parse_markdown_table(table_text: str) -> list[list[str]]:
     rows: list[list[str]] = []
     for line in table_text.splitlines():
         stripped = line.strip()
-        if not _looks_like_markdown_table_line(stripped) or _is_markdown_separator_line(stripped):
+        if not _looks_like_table_line(stripped) or _is_table_separator_line(stripped):
             continue
         rows.append(_markdown_table_cells(stripped))
     return rows
@@ -949,11 +946,6 @@ def _parse_markdown_table(table_text: str) -> list[list[str]]:
 
 def _markdown_table_cells(line: str) -> list[str]:
     return [_normalize_text(cell.replace("\\|", "|")) for cell in line.strip("|").split("|")]
-
-
-def _is_markdown_separator_line(line: str) -> bool:
-    cells = [cell.strip() for cell in line.strip("|").split("|")]
-    return bool(cells) and all(cell and set(cell) <= {"-", ":"} for cell in cells)
 
 
 def _normalize_header(header: str, index: int) -> str:

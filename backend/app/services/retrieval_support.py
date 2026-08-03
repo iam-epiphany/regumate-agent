@@ -38,8 +38,10 @@ from backend.app.services.retrieval_service import (
     RetrievalMatch,
     RetrievalServiceUnavailable,
     ProgressReporter,
+    _elapsed_ms,
     _embed_search_queries,
     _hybrid_search_many,
+    _score_range,
     collect_candidates_with_query_hits,
     evidence_coverage,
     filter_active_candidates,
@@ -115,9 +117,6 @@ class _PreparedAspect:
     diagnostics: RetrievalDiagnostics
     total_started_at: float
     mcq_material_document_ids: set[str]
-
-
-@dataclass
 
 
 @dataclass
@@ -510,7 +509,7 @@ def _finish_aspect_matches(
         reranked.sort(key=lambda item: item.rerank_score, reverse=True)
         reranked = reranked[:RERANK_TOP_K]
     diagnostics.reranked_count = len(reranked)
-    diagnostics.score_range = _score_range_for_candidates(candidates, reranked)
+    diagnostics.score_range = _score_range(candidates, reranked)
     if aspect.aspect_id == "multiple_choice_evidence":
         matches = _mcq_matches_from_reranked(aspect, reranked, diagnostics)
     else:
@@ -2130,123 +2129,6 @@ def _mcq_matches_from_reranked(
     return matches
 
 
-def _corpus_lexical_support_matches(
-    db: Session,
-    aspect: QueryAspect,
-    *,
-    document_ids: set[str],
-    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
-) -> list[RetrievalMatch]:
-    """Add a bounded literal retrieval lane for high-information user terms.
-
-    Hybrid top-k can be crowded out by a very large attachment before the
-    cross-encoder sees a short governing clause.  This lane searches only
-    terms derived from the public question/planner (never gold answers), caps
-    every SQL contains query, and still validates exact term occurrence.
-    """
-
-    if not hasattr(db, "scalars"):
-        return []
-    terms = _text_lexical_seed_terms(aspect)
-    if not terms:
-        return []
-    rows_by_id: dict[str, DocumentChunk] = {}
-    for term in terms[:12]:
-        statement = select(DocumentChunk).where(
-            DocumentChunk.index_status == "indexed",
-            or_(DocumentChunk.text.contains(term), DocumentChunk.embedding_text.contains(term)),
-        )
-        if document_ids:
-            statement = statement.where(DocumentChunk.document_id.in_(document_ids))
-        for chunk in db.scalars(statement.limit(48)).all():
-            rows_by_id.setdefault(chunk.chunk_id, chunk)
-        if len(rows_by_id) >= 320:
-            break
-    if not rows_by_id:
-        return []
-    phrases = [aspect.question, *[item.query for item in aspect.search_queries]]
-    ranked: list[tuple[float, int, DocumentChunk, str]] = []
-    for chunk in rows_by_id.values():
-        searchable = "\n".join(
-            part for part in (chunk.section_title or "", chunk.embedding_text or "", chunk.text or "") if part
-        )
-        normalized_searchable = _normalize_exact_support_text(searchable)
-        hit_terms = [term for term in terms if _normalize_exact_support_text(term) in normalized_searchable]
-        if not hit_terms:
-            continue
-        longest = max(hit_terms, key=lambda value: len(_normalize_exact_support_text(value)))
-        recall = max((_exact_support_recall(phrase, searchable) for phrase in phrases), default=0.0)
-        longest_length = len(_normalize_exact_support_text(longest))
-        # One distinctive four-character term is enough; shorter roots require
-        # modal/quantitative evidence so generic words cannot seed arbitrary prose.
-        short_modal = longest_length >= 2 and any(token in searchable for token in ("应当", "不得", "禁止", "不低于", "不超过", "%"))
-        if longest_length < 4 and len(hit_terms) < 2 and not short_modal:
-            continue
-        score = recall + min(len(hit_terms), 4) * 0.18 + min(longest_length, 12) * 0.015
-        ranked.append((score, longest_length, chunk, longest))
-    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    selected = ranked[:6]
-    if not selected:
-        return []
-    chunks_by_document = _chunks_by_document(
-        db,
-        {item[2].document_id for item in selected},
-        document_chunk_cache=document_chunk_cache,
-    )
-    matches: list[RetrievalMatch] = []
-    for score, _, chunk, anchor in selected:
-        document_chunks = chunks_by_document.get(chunk.document_id, [])
-        snapshot = next((item for item in document_chunks if item.chunk_id == chunk.chunk_id), None)
-        if snapshot is None:
-            continue
-        match = _direct_exact_support_match(
-            snapshot,
-            document_chunks,
-            aspect,
-            anchor,
-            score,
-        )
-        match.citation.evidence_role = "corpus_lexical_support"
-        match.evidence_role = "corpus_lexical_support"
-        match.metadata["evidence_role"] = "corpus_lexical_support"
-        match.metadata["fusion_method"] = "bounded_corpus_lexical_support"
-        match.metadata["lexical_seed_terms"] = [term for term in terms if term in (snapshot.text or "")]
-        matches.append(match)
-    return matches
-
-
-def _text_lexical_seed_terms(aspect: QueryAspect) -> list[str]:
-    generic = {
-        "说明", "概括", "回答", "给出", "列出", "核验", "要求", "规定",
-        "条件", "原则", "定义", "范围", "内容", "信息", "相关", "是什么",
-    }
-    category_suffixes = (
-        "影响条件", "回函时限", "回复时限", "报告义务", "定价原则", "自救原则",
-        "吸收顺序", "触发阈值", "审计频率", "留档要求", "厘定要求", "禁限", "递延",
-        "条件", "要求", "原则", "效力", "时限", "频率", "义务", "门槛", "顺序", "定义", "范围", "目标",
-    )
-    values = [*aspect.keywords]
-    values.extend(
-        query.query
-        for query in aspect.search_queries
-        if query.query_type in {"keyword_anchor", "document_style_statement"}
-    )
-    values.append(aspect.question)
-    terms: list[str] = []
-    for value in values:
-        cleaned = re.sub(r"^(?:请|分别|逐项|说明|概括|回答|给出|列出|核验)+", "", str(value or "").strip())
-        cleaned = cleaned.replace("数字化银行回函", "数字化回函")
-        for run in re.findall(r"[\u4e00-\u9fffA-Za-z0-9%]{2,24}", cleaned):
-            if run not in generic:
-                terms.append(run)
-            for suffix in category_suffixes:
-                if run.endswith(suffix) and len(run) > len(suffix) + 1:
-                    root = run[: -len(suffix)]
-                    if root not in generic:
-                        terms.append(root)
-    return list(dict.fromkeys(term for term in terms if 2 <= len(term) <= 24))[:12]
-
-
 def _mcq_seed_document_ids(db: Session, statements: list[str]) -> set[str]:
     """Seed MCQ support from document-level anchors only.
 
@@ -2837,17 +2719,6 @@ def _table_refusal_reasons(aspect_retrievals: list[AspectRetrieval]) -> list[str
     return list(dict.fromkeys(reasons))
 
 
-def _score_range_for_candidates(candidates: list[Any], reranked: list[Any]) -> dict[str, float | None]:
-    vector_scores = [float(candidate.score) for candidate in candidates]
-    rerank_scores = [float(item.rerank_score) for item in reranked]
-    return {
-        "vector_min": round(min(vector_scores), 4) if vector_scores else None,
-        "vector_max": round(max(vector_scores), 4) if vector_scores else None,
-        "rerank_min": round(min(rerank_scores), 4) if rerank_scores else None,
-        "rerank_max": round(max(rerank_scores), 4) if rerank_scores else None,
-    }
-
-
 def _score_range_for_matches(matches: list[RetrievalMatch]) -> dict[str, float | None]:
     scores = [float(match.score) for match in matches]
     rerank_scores = [float(match.rerank_score) for match in matches]
@@ -2897,10 +2768,6 @@ def _missing_aspect_note(aspect: QueryAspect) -> str:
     if aspect.aspect_id == "asset_total_difference_check":
         return "未召回资产合计差异排查依据"
     return f"未召回：{aspect.question}"
-
-
-def _elapsed_ms(started_at: float) -> float:
-    return round((perf_counter() - started_at) * 1000, 2)
 
 
 def _filter_indexed_matches(db: Session, matches: list[RetrievalMatch]) -> list[RetrievalMatch]:

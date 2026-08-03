@@ -341,18 +341,6 @@ def _explicit_requested_items(question: str) -> list[str]:
     return _dedupe(parts)[:expected_count] if len(parts) >= expected_count else []
 
 
-def _requested_items_overlap(left: str, right: str) -> bool:
-    def normalize(value: str) -> str:
-        text = re.sub(r"[\s，,。；;：:、？?]+", "", str(value or ""))
-        for noise in ("是否可以", "是否", "可以", "直接", "生成", "正式", "违规", "报告"):
-            text = text.replace(noise, "")
-        return text
-
-    left_norm = normalize(left)
-    right_norm = normalize(right)
-    return bool(left_norm and right_norm and (left_norm in right_norm or right_norm in left_norm))
-
-
 def _explicit_requested_aspect_count(question: str) -> int:
     """Estimate only an upper budget for visibly enumerated user requests."""
 
@@ -727,11 +715,6 @@ def _aspects_from_payload(
         keywords = _clean_string_list(raw_aspect.get("keywords"))
         if not search_queries:
             search_queries = [QuerySearchQuery(query=sub_question, query_type="fallback", rationale="LLM 未返回检索查询")]
-        search_queries = _prioritize_local_document_style_aliases(
-            sub_question=sub_question,
-            evidence_need=evidence_need,
-            search_queries=search_queries,
-        )
         if not keywords:
             keywords = _keywords_from_text(" ".join([sub_question, *[query.query for query in search_queries]]))
         planner_filters = _clean_table_filters(raw_aspect.get("table_filters"))
@@ -810,34 +793,6 @@ def _aspects_from_payload(
     if not aspects:
         raise QueryPlannerError("LLM query planner 未产生有效 aspect")
     return _expand_explicit_anchor_aspects(aspects, max_aspects=limit)
-
-
-def _prioritize_local_document_style_aliases(
-    *,
-    sub_question: str,
-    evidence_need: str,
-    search_queries: list[QuerySearchQuery],
-) -> list[QuerySearchQuery]:
-    del sub_question, evidence_need
-    return search_queries
-
-
-def _local_document_style_aliases(sub_question: str, evidence_need: str) -> list[str]:
-    context = " ".join(part for part in [sub_question, evidence_need] if part)
-    candidates: list[str] = []
-    for text in (sub_question, evidence_need):
-        cleaned = _clean_text(text)
-        if not cleaned:
-            continue
-        candidates.append(cleaned)
-        candidates.extend(_coordinated_aspect_questions(cleaned))
-
-    aliases: list[str] = []
-    for candidate in _dedupe(candidates):
-        alias = _mixed_regulation_document_style_alias(context, candidate)
-        if alias and alias != candidate:
-            aliases.append(alias)
-    return _dedupe(aliases)
 
 
 def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[QueryAspect]:
@@ -1066,12 +1021,6 @@ def _mcq_option_evidence_statements(options: list[str]) -> list[str]:
 
 
 
-def _asks_insufficient_evidence_safety_boundary(normalized_question: str) -> bool:
-    if not any(term in normalized_question for term in ("违规", "监管报告", "正式监管报告", "直接判断", "直接生成")):
-        return False
-    return any(term in normalized_question for term in ("依据不足", "证据不足", "无依据", "没有依据"))
-
-
 def _split_question_parts(question: str) -> list[str]:
     question = re.sub(
         r"请完整给出材料明确写明的条件[、，,]范围[、，,]期限或例外[。.]?",
@@ -1083,17 +1032,6 @@ def _split_question_parts(question: str) -> list[str]:
         for part in re.split(r"[？?。；;]|如果|若|以及|并且|同时|，且", question)
         if part.strip()
     ]
-
-
-def _dedupe_aspects(aspects: list[QueryAspect]) -> list[QueryAspect]:
-    deduped: list[QueryAspect] = []
-    seen: set[str] = set()
-    for aspect in aspects:
-        if aspect.aspect_id in seen:
-            continue
-        seen.add(aspect.aspect_id)
-        deduped.append(aspect)
-    return deduped
 
 
 def _extract_json_object(content: str) -> str:

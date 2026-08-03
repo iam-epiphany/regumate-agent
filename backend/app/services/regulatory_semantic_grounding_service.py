@@ -20,6 +20,7 @@ from backend.app.core.config import (
     SEMANTIC_GROUNDING_TIMEOUT_SECONDS,
 )
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
+from backend.app.services.json_utils import extract_json as _extract_json
 from backend.app.services.llm_client import (
     ChatCompletionConfig,
     ChatCompletionError,
@@ -408,13 +409,6 @@ def _sentences_with_markers(text: str, markers: tuple[str, ...]) -> tuple[str, .
 
 def _without_text(item: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in item.items() if key not in {"claim", "evidence", "risk_codes"}}
-
-
-def _extract_json(content: str) -> str:
-    start, end = content.find("{"), content.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("semantic verifier did not return JSON")
-    return content[start : end + 1]
 
 
 _VERIFIER_CACHE: dict[str, list[dict[str, Any]]] = {}

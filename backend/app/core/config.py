@@ -130,8 +130,6 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     ".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx",
     ".csv", ".jsonl", ".html", ".htm",
 }
-CHUNK_SIZE = 700
-CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
 CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 80

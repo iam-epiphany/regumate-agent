@@ -538,13 +538,6 @@ def _row_text(
     return f"表格行证据：在《{table_title}》工作表“{sheet_name}”中，行标签为“{row_label}”。{unit_text}{cells}。"
 
 
-def _preview_rows(rows: list[list[SpreadsheetCell]], limit: int = 6) -> str:
-    lines = []
-    for row in rows[:limit]:
-        lines.append(" | ".join(cell.display_value for cell in row if cell.display_value))
-    return "\n".join(line for line in lines if line)
-
-
 def _display_value(value: Any) -> str:
     if value is None:
         return ""
