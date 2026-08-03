@@ -117,3 +117,40 @@
 | 6 | 其中：财产险公司 / 资金运用余额 | 24155.58512172 |
 | 7 | 其中：财产险公司 / 其中：银行存款 | 3887.796020349 |
 | 12 | 人身险公司 / 资金运用余额 | 346645.0491367 |
+
+---
+
+## 8. 补充：根因一修复（表格行定位机构类别维度，2026-08-03 完成）
+
+### 8.1 修复内容（通用能力改进，零题目特定逻辑）
+
+针对 §7.2 根因一（表格单元格行定位丢失机构类别维度），实施两个提交：
+
+| 提交 | 内容 |
+|---|---|
+| `2e075ce` 机构维度修复 | 规划器 `_extract_table_filters`：修复 column_scope 正则吞词 bug（ASCII 单引号不在排除字符类）；新增通用机构词提取 `_institution_row_terms`（`X公司/X银行` 模式 + 保险业合计/全国合计，去除表标题/工作表片段，须与指标同 clause 邻近），机构词并入 row_label（`"财产险公司 资金运用余额"`）；检索层 `spreadsheet_retrieval_service`：row_label 词级 AND 匹配（`_row_label_terms`/`_required_label_terms`/`_indexed_cell_score`/`_row_target_matches`/`_candidate_score`），机构词成为硬约束 |
+| `27a6c5a` 差值方向修复 | `_calculation_match_from_selected` 的 `ordered_transition` 从 `bool(selectors)`（恒 True）改为仅显式标记的跨期（period_selectors）/反向操作数（"A比B多" diff_match 逆序）/从A到B（quoted≥3）按 second-first；普通"X与Y的差值"按选择器顺序 first-second（修复 TC2 方向） |
+
+设计原则：机构词提取为通用模式（正则 + 同 clause 邻近过滤），非题目/文件名/题号硬编码；无机构词时行为与历史完全一致（单次词退化为子串语义）；反硬编码审计 0 发现。
+
+### 8.2 验证结果
+
+**单元测试**：全量 545 passed（新增 12 个：规划器机构词提取 5 个 + 检索词级 AND 5 个 + 差值方向断言更新），反硬编码审计 0 findings、评测隔离审计 passed。
+
+**官方 300 硬门槛**：`data/evaluation/官方300选择题-回归机构维度修复v3/` = **300/300**、0 运行错误（run identity 5ac24611…，在 ordered_transition 修复后重新验证；v2 300/300 为方向修复前）。
+
+**workbench 100**（同容器 GPU，同一服务状态下新旧代码各两次）：
+
+| 运行 | 总分 | table_lookup | table_calculation |
+|---|---|---|---|
+| 基线代码+旧服务（baseline_now / now2，归档） | 76 / 72 | 7/10 | 1/10 |
+| **修复后 v3 / v3b（27a6c5a 容器）** | **77 / 74** | **8/10 两次** | **2/10 两次** |
+
+- **确定性修复（两轮均 PASS，历史所有运行均 FAIL）**：BW-TBL6（24155.58512 财产险行，修复前返回合计 384799.2195）、BW-TC2（+20267.7891013733 = 24155.58512 − 3887.79602，修复前方向反）。单题 API 复测与 workbench 批量结果一致。
+- **其余波动题（D03/R13/T13 等 5 题 v3 失败、D12/L01/T06/X04 等 10 题 v3 改善）不可归因于代码**：经对照实验，开放问答走 LLM 规划分支（`QUERY_PLANNER_ENABLED=True` + API key → `_plan_with_llm`），**同一代码同一环境连续 3 次 `plan_query` 输出 3 组不同检索词**（planner=openai_compatible:deepseek-v4-flash），叠加 LLM 生成随机性与服务漂移，单次/两次运行的题级差异均在波动区间内；且这些题均为纯文本链路（modality=text，不经过本次修改的表格检索），与修改范围无交集。
+
+### 8.3 结论与残留
+
+1. 表格行定位根因（§7.2，恒定 ~12 题的最大单项）已确定性修复：TBL6/TC2 两轮稳定 PASS，table_lookup 7/10→8/10、table_calculation 1/10→2/10。
+2. 官方 300 在全部 5 次回归（A/B/C 批 + 机构维度 v2/v3）中保持 300/300。
+3. 残留：根因二（LLM 服务漂移 → 结构化拒答）与根因三（回答内容与金标对齐偏差）不在本次修复范围；开放问答的 LLM 规划非确定性使 workbench 单题级对比无法严格归因，建议服务状态稳定后在确定性链路（表格类）之外不做题级比较。
