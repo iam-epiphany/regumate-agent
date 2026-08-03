@@ -321,18 +321,25 @@ def generate_answer(
                 if known_fact is not None:
                     _report_verified_claims(known_fact, verified_claim_reporter)
                     return known_fact
-                fallback = _trusted_extractive_fallback(
-                    context_chunks,
-                    question=question,
-                    reason="grounding_validation_failed",
+                # Open questions must not degrade to a conclusion-less excerpt
+                # dump after the LLM produced an answer that failed validation:
+                # the excerpt reads like a refusal without saying so.  Refuse
+                # structurally and honestly instead.
+                return GeneratedAnswer(
+                    answer="已检索到相关依据，但生成答案未通过事实校验，无法给出确定结论。",
+                    answer_type="refusal",
+                    generation_status="validation_failed",
+                    refused=True,
+                    refusal_reason="validation_failed_no_reliable_answer",
+                    grounding_validation={
+                        **repaired_validation,
+                        "passed": True,
+                        "reason": "validation_failed_no_reliable_answer",
+                        "repair_attempted": True,
+                        "recovery_method": "structural_refusal_after_validation_failed",
+                    },
+                    degraded=True,
                 )
-                fallback.grounding_validation = {
-                    **fallback.grounding_validation,
-                    "repair_attempted": True,
-                    "llm_validation": repaired_validation,
-                    "degraded_reason": "grounding_validation_failed",
-                }
-                return fallback
             return GeneratedAnswer(
                 answer="检索到了相关资料，但生成答案中的关键事实未通过证据校验，暂不提供确定结论。",
                 answer_type="refusal",

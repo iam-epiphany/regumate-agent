@@ -60,7 +60,36 @@ COMMON_TABLE_INDICATORS = [
     "绿色信贷余额",
     "原保险保费收入",
     "资本充足率",
+    # Insurance-fund asset classes and income/expense lines (composite row
+    # labels like "财产险公司/银行存款" need the asset term itself).
+    "银行存款",
+    "债券",
+    "股票",
+    "证券投资基金",
+    "长期股权投资",
+    "保户投资款新增交费",
+    "投连险独立账户新增交费",
+    "赔付支出",
+    "总资产",
+    "净资产",
+    "净利润",
 ]
+
+# Terms that describe a table's measurement scope rather than a queried row.
+TABLE_SCOPE_TERMS = {
+    "截至当期",
+    "本年累计",
+    "账面余额",
+    "规模占比",
+    "同比增长",
+    "月末",
+    "期末",
+    "期初",
+    "当月",
+    "累计",
+    "本月",
+    "本期",
+}
 
 
 @dataclass(frozen=True)
@@ -1814,6 +1843,10 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         if re.sub(r"\s+", "", str(filters.get("column_label") or "")) in selector_labels:
             filters.pop("column_label", None)
         filters.pop("metric", None)
+    if table_task == "calculate" and selectors:
+        # Calculation operands carry their own columns; a global column filter
+        # would discard all but one operand before the executor can calculate.
+        filters.pop("column_label", None)
     if table_task in {"compare", "calculate"} and len(_period_selectors(table_question)) >= 2:
         # Multiple explicitly requested periods are operands, not a single
         # global hard filter.  Keep them on the ordered selectors.
@@ -2340,12 +2373,22 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         filters["quarter"] = {"一": 1, "二": 2, "三": 3, "四": 4}.get(value, int(value) if value.isdigit() else None)
     quoted_terms = _quoted_terms(question)
     if quoted_terms:
-        filters["indicator"] = quoted_terms[0]
-        if len(quoted_terms) > 1:
-            filters["column_label"] = quoted_terms[-1]
+        non_scope_terms = [
+            term
+            for term in quoted_terms
+            if not any(scope in term for scope in TABLE_SCOPE_TERMS)
+        ]
+        if non_scope_terms:
+            filters["indicator"] = non_scope_terms[0]
+            if len(non_scope_terms) > 1:
+                filters["column_label"] = non_scope_terms[-1]
     indicators = _mentioned_table_indicators(question)
     if indicators and "indicator" not in filters:
         filters["indicator"] = indicators[0]
+        # The row label stays the bare indicator: composite corpus rows carry
+        # the institution as a separate segment ("其中：财产险公司 / 其中：
+        # 银行存款"), which is not a contiguous substring, and the institution
+        # qualifier is already rewarded by the token-overlap scoring.
         filters["row_label"] = indicators[0]
     scope_text = re.split(r"(?:请比较|请对比|比较|对比)", question, maxsplit=1)[0]
     scope_text = re.sub(r"《[^》]+》", "", scope_text)

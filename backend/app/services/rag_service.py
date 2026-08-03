@@ -76,6 +76,66 @@ CONTEXT_INSTRUCTION = (
     "请严格根据检索到的知识片段回答用户问题。不得编造知识库中不存在的制度依据。"
     "若依据不足，请明确说明无法根据当前知识库判断。"
 )
+
+# Explicit request-boundary markers.  These are generic refusal triggers for
+# question forms that a regulatory corpus cannot answer, independent of what
+# the retrieval happens to find: forward-looking predictions, subjective
+# business decisions about a specific institution, and requests for data that
+# lives outside the corpus (specific banks' own reports, real-time market
+# rates).  The system refuses up front instead of answering with adjacent
+# excerpts.
+_PREDICTION_MARKERS = (
+    "请预测", "预测未来", "未来一年", "下季度", "下一年度", "明年", "走势预测",
+    "将如何变化", "变化比例", "影响幅度",
+)
+# "预计" alone would also catch the balance-sheet term "预计负债" (expected
+# liabilities), which is a perfectly answerable regulatory concept, so it is
+# handled separately with accounting-term guards below.
+_PREDICTION_MARKERS_EXPECTED = ("预计",)
+_PREDICTION_ACCOUNTING_TERMS = ("预计负债", "预计净残值", "预计使用寿命")
+_SUBJECTIVE_DECISION_MARKERS = (
+    "应否", "是否应当", "是否应该", "要不要", "应不应该", "是否应上调", "是否应下调",
+    "是否应增加", "是否应新设", "是否应收购", "请建议", "建议是否", "评估其可行性",
+)
+_OUT_OF_CORPUS_MARKERS = (
+    "某银行年报", "某银行内部", "内部信贷审批", "内部资料", "最新LPR", "LPR报价",
+    "定期存款利率", "当前存款利率", "实时", "他行数据", "上市银行年报",
+)
+# A named bank alone is not out of scope: the corpus itself cites specific
+# institutions ("对应的编报主体为中国建设银行股份有限公司…").  Refusal
+# requires the bank name to co-occur with a data-report request.
+_OUT_OF_CORPUS_BANK_NAMES = (
+    "中国工商银行", "工商银行", "招商银行", "建设银行", "农业银行", "中国银行",
+)
+_OUT_OF_CORPUS_DATA_REQUESTS = (
+    "年报", "年度报告", "财务数据", "不良贷款率", "净利润", "对比数据", "报告中的",
+    "存款利率", "具体数据", "定期报告", "经营数据", "季度报告", "业绩", "财报", "指标",
+)
+
+
+def _explicit_request_boundary_code(question: str) -> str | None:
+    """Recognise requests that are outside the regulatory corpus scope.
+
+    Returns a refusal code, or None when the question is answerable in
+    principle.  Checks are deliberately conservative: only explicit
+    prediction/decision/out-of-corpus phrasings trigger, so ordinary
+    regulatory questions are unaffected.
+    """
+
+    normalized = re.sub(r"\s+", "", str(question or ""))
+    if any(marker in normalized for marker in _PREDICTION_MARKERS):
+        return "prediction_request"
+    if any(marker in normalized for marker in _PREDICTION_MARKERS_EXPECTED):
+        if not any(term in normalized for term in _PREDICTION_ACCOUNTING_TERMS):
+            return "prediction_request"
+    if any(marker in normalized for marker in _SUBJECTIVE_DECISION_MARKERS):
+        return "subjective_business_judgment"
+    if any(marker in normalized for marker in _OUT_OF_CORPUS_MARKERS):
+        return "out_of_corpus_scope"
+    if any(bank in normalized for bank in _OUT_OF_CORPUS_BANK_NAMES):
+        if any(request in normalized for request in _OUT_OF_CORPUS_DATA_REQUESTS):
+            return "out_of_corpus_scope"
+    return None
 CONTEXT_CHUNK_CHAR_LIMIT = 1200
 EMPTY_ANSWER_LOG_TEXT = "[RAG_CONTEXT_PACKAGE_ONLY] 当前阶段未接入 LLM，接口仅返回检索上下文包。"
 ASPECT_QUERY_FUSION_METHOD = "aspect_query_rrf_then_bge_rerank"
@@ -161,6 +221,25 @@ def answer_question(
         _save_qa_log(db, original_question, identity_response)
         _log_qa_audit(db, "qa_identity_answered", original_question, identity_response)
         return identity_response
+    boundary_code = _explicit_request_boundary_code(cleaned_question)
+    if boundary_code:
+        response = QAResponse(
+            answer="该请求超出监管知识库可验证回答的范围，系统需要补充可核验依据或改为资料库可支持的问题。",
+            citations=[],
+            confidence=0.0,
+            refused=True,
+            context_package=None,
+            answer_type="refusal",
+            generation_status="skipped",
+            claims=[],
+            grounding_validation={"passed": True, "reason": "explicit_request_boundary"},
+            refusal_reason="explicit_request_boundary",
+            refusal_code=boundary_code,
+            degraded=False,
+        )
+        _save_qa_log(db, original_question, response)
+        _log_qa_audit(db, "qa_refused_explicit_boundary", original_question, response)
+        return response
     preprocessed = preprocess_qa_request(cleaned_question, options)
     cleaned_question = preprocessed.question
     normalized_options = preprocessed.options

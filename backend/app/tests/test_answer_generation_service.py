@@ -2622,12 +2622,13 @@ def test_open_question_uses_extractive_fallback_when_generation_validation_fails
         has_sufficient_context=True,
     )
 
-    assert result.refused is False
+    # Open questions refuse structurally after validation failure instead of
+    # degrading to a conclusion-less excerpt dump.
+    assert result.refused is True
     assert result.degraded is True
-    assert result.answer_type == "extractive_fallback"
-    assert result.generation_status == "validation_degraded"
-    assert "交易账簿包括为交易目的而持有的金融工具" in result.answer
-    assert result.grounding_validation["degraded_reason"] == "grounding_validation_failed"
+    assert result.answer_type == "refusal"
+    assert result.refusal_reason == "validation_failed_no_reliable_answer"
+    assert result.grounding_validation["recovery_method"] == "structural_refusal_after_validation_failed"
     assert result.grounding_validation["passed"] is True
 
 

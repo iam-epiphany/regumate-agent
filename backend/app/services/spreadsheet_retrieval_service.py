@@ -169,7 +169,11 @@ def _indexed_spreadsheet_matches(
             label_filters.pop("row_label", None)
         if normalize_table_text(label_filters.get("column_label")) in selector_labels:
             label_filters.pop("column_label", None)
-        if question_column_target and _is_generic_column_target(label_filters.get("column_label")):
+        if (
+            table_task != "calculate"
+            and question_column_target
+            and _is_generic_column_target(label_filters.get("column_label"))
+        ):
             label_filters["column_label"] = question_column_target
         label_filters.pop("indicator", None)
         label_filters.pop("metric", None)
@@ -438,7 +442,11 @@ def _cells_for_selectors(
         label = normalize_table_text(selector.get("label") or selector.get("row_or_indicator"))
         row_target = normalize_table_text(selector.get("row_label"))
         column_target = normalize_table_text(selector.get("column_label"))
-        if question_column_target and _is_generic_column_target(column_target):
+        # An explicit selector column always wins; the question-derived target
+        # only fills in an absent selector column.  A bare "合计" operand in
+        # "从'合计'到'健康险'" must not be overwritten by another column name
+        # found in the question.
+        if question_column_target and not column_target:
             column_target = question_column_target
         quarter_mode = None
         if column_target == "年季度":

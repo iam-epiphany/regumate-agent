@@ -1369,3 +1369,49 @@ def test_execution_constraint_is_not_converted_to_retrieval_aspect() -> None:
     )
 
     assert [aspect.aspect_id for aspect in aspects] == ["formula"]
+
+
+# ---------------------------------------------------------------------------
+# composite row label table positioning (insurance fund asset classes)
+# ---------------------------------------------------------------------------
+
+
+def test_table_filters_quoted_scope_term_is_not_indicator_or_column(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    # "本年累计" / "截至当期" describe the measurement scope, not a queried
+    # row; the quoted indicator must come out as "银行存款".
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，“银行存款”在“本年累计/截至当期”口径下的数值是多少？")
+
+    assert plan.fallback_used is True
+    table = plan.aspects[0]
+    assert table.modality == "table"
+    assert table.table_filters["indicator"] == "银行存款"
+    # The scope phrase survives as a column constraint, not an indicator.
+    assert table.table_filters["column_label"] == "本年累计/截至当期"
+
+
+def test_table_filters_recognises_insurance_asset_class_indicators(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，财产险公司债券在“截至当期-账面余额”口径下的数值是多少？")
+
+    table = plan.aspects[0]
+    assert table.modality == "table"
+    assert table.table_filters["indicator"] == "债券"
+    assert table.table_filters["row_label"] == "债券"
+
+
+def test_fallback_calculate_drops_global_column_filter_for_operands(monkeypatch) -> None:
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    # Calculation operands carry their own columns; a global column filter
+    # would discard all but one operand before the executor can calculate.
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，财产险公司资金运用余额与银行存款的差值是多少？")
+
+    table = plan.aspects[0]
+    assert table.modality == "table"
+    assert table.table_task == "calculate"
+    assert table.operation == "difference"
+    assert "column_label" not in table.table_filters
+    assert table.table_filters.get("indicator") == "资金运用余额"

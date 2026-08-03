@@ -3768,3 +3768,75 @@ def test_mixed_table_refusal_still_allows_text_fallback() -> None:
         {"match_status": "indicator_not_found", "refusal_reason": "指定指标不存在。"},
     ) is False
 
+
+
+# ---------------------------------------------------------------------------
+# explicit request boundary refusal
+# ---------------------------------------------------------------------------
+
+
+def test_boundary_code_prediction_request() -> None:
+    from backend.app.services.rag_service import _explicit_request_boundary_code
+
+    assert _explicit_request_boundary_code("请预测2026年一季度保险业原保险保费收入增速。") == "prediction_request"
+    assert _explicit_request_boundary_code("请预计某银行明年净利润规模。") == "prediction_request"
+    assert _explicit_request_boundary_code("请根据资料库预测未来十二个月银行业总资产的具体数值。") == "prediction_request"
+
+
+def test_boundary_code_accounting_expected_is_not_prediction() -> None:
+    from backend.app.services.rag_service import _explicit_request_boundary_code
+
+    # "预计" must not refuse balance-sheet concepts such as 预计负债.
+    assert _explicit_request_boundary_code("预计负债的确认条件是什么？") is None
+    assert _explicit_request_boundary_code("固定资产预计净残值如何确定？") is None
+
+
+def test_boundary_code_subjective_business_judgment() -> None:
+    from backend.app.services.rag_service import _explicit_request_boundary_code
+
+    assert _explicit_request_boundary_code("请判断某银行是否应当新设一家县域支行。") == "subjective_business_judgment"
+    assert _explicit_request_boundary_code("请建议某银行是否应上调消费贷款产品定价。") == "subjective_business_judgment"
+    assert _explicit_request_boundary_code("请建议某银行是否应增加二级资本工具发行规模。") == "subjective_business_judgment"
+
+
+def test_boundary_code_bank_name_requires_data_request_context() -> None:
+    from backend.app.services.rag_service import _explicit_request_boundary_code
+
+    # A named bank plus a data-report request is outside the corpus scope.
+    assert (
+        _explicit_request_boundary_code("请提供中国工商银行2025年年度报告中的净利润数据。")
+        == "out_of_corpus_scope"
+    )
+    assert (
+        _explicit_request_boundary_code("请提供招商银行与建设银行2025年不良贷款率的对比数据。")
+        == "out_of_corpus_scope"
+    )
+    assert _explicit_request_boundary_code("请提供当前最新的一年期LPR报价。") == "out_of_corpus_scope"
+    # A corpus list question that merely cites a bank must not be refused.
+    assert (
+        _explicit_request_boundary_code(
+            "根据《应当编报保险集团偿付能力报告的公司名单》，判断以下表述是否符合该材料内容，并给出制度依据："
+            "“建信人寿保险股份有限公司和建信财产保险有限公司对应的编报主体为中国建设银行股份有限公司或其指定的成员公司。”"
+        )
+        is None
+    )
+
+
+def test_qa_refuses_prediction_request_before_retrieval(monkeypatch) -> None:
+    reset_database()
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("prediction request should be refused before retrieval")
+
+    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", fail_if_called)
+
+    response = client.post("/api/qa/ask", json={"question": "请预测2026年一季度保险业原保险保费收入增速。"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["refused"] is True
+    assert body["answer_type"] == "refusal"
+    assert body["generation_status"] == "skipped"
+    assert body["refusal_reason"] == "explicit_request_boundary"
+    assert body["refusal_code"] == "prediction_request"
+    assert body["context_package"] is None
