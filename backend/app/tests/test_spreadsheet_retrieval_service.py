@@ -625,3 +625,134 @@ def test_three_operand_reconciliation_uses_first_minus_remaining_operands() -> N
     assert match.metadata["calculation_result"] == pytest.approx(-0.18)
     assert match.metadata["calculation_display_formula"] == "21745 - 16590.18 - 5155 = -0.18"
     assert len(match.metadata["calculation_cells"]) == 3
+
+
+def _add_fund_table_rows(db_session) -> None:
+    """资金运用情况表三行：保险公司合计 / 其中：财产险公司 / 人身险公司。"""
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-0001",
+        row_label="保险公司 / 资金运用余额",
+        value=384799.2195,
+        coordinate="C5",
+        column_label="截至当期 / 账面余额",
+    )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-0002",
+        row_label="其中：财产险公司 / 资金运用余额",
+        value=24155.58512,
+        coordinate="C6",
+        column_label="截至当期 / 账面余额",
+    )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-0003",
+        row_label="人身险公司 / 资金运用余额",
+        value=346645.0491,
+        coordinate="C7",
+        column_label="截至当期 / 账面余额",
+    )
+
+
+def test_lookup_prefers_institution_specific_row_over_aggregate(db_session) -> None:
+    """机构类别行定位词必须选中财产险子行，而不是只匹配指标的合计行。"""
+    _add_fund_table_rows(db_session)
+    aspect = _aspect(
+        "财产险公司资金运用余额是多少？",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2024年一季度全国各地区原保险保费收入情况表",
+            "year": 2024,
+            "quarter": 1,
+            "row_label": "财产险公司 资金运用余额",
+            "indicator": "资金运用余额",
+            "column_label": "截至当期 / 账面余额",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert "财产险公司" in matches[0].citation.metadata["row_label"]
+    assert matches[0].citation.metadata["value"] == "24155.58512"
+
+
+def test_lookup_aggregate_row_with_institution_word(db_session) -> None:
+    """问'保险公司'（合计行定位词）时仍应选中保险公司合计行。"""
+    _add_fund_table_rows(db_session)
+    aspect = _aspect(
+        "保险公司资金运用余额是多少？",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2024年一季度全国各地区原保险保费收入情况表",
+            "year": 2024,
+            "quarter": 1,
+            "row_label": "保险公司 资金运用余额",
+            "indicator": "资金运用余额",
+            "column_label": "截至当期 / 账面余额",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert "保险公司" in matches[0].citation.metadata["row_label"]
+    assert "财产险" not in matches[0].citation.metadata["row_label"]
+    assert matches[0].citation.metadata["value"] == "384799.2195"
+
+
+def test_lookup_bare_indicator_refuses_ambiguous_rows(db_session) -> None:
+    """单词 row_label（无机构类别）命中多行时按可信原则歧义拒绝，而非任取一行。"""
+    _add_fund_table_rows(db_session)
+    aspect = _aspect(
+        "资金运用余额是多少？",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2024年一季度全国各地区原保险保费收入情况表",
+            "year": 2024,
+            "quarter": 1,
+            "row_label": "资金运用余额",
+            "indicator": "资金运用余额",
+            "column_label": "截至当期 / 账面余额",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert matches == []
+    assert get_last_spreadsheet_diagnostic().get("match_status") == "ambiguous_candidates"
+
+
+def test_indexed_cell_score_requires_all_row_label_words() -> None:
+    from types import SimpleNamespace
+
+    property_row = SimpleNamespace(
+        row_label_norm="其中:财产险公司资金运用余额",
+        column_label_norm="截至当期账面余额",
+        column_label="截至当期 / 账面余额",
+        numeric_value=24155.58512,
+    )
+    aggregate_row = SimpleNamespace(
+        row_label_norm="保险公司资金运用余额",
+        column_label_norm="截至当期账面余额",
+        column_label="截至当期 / 账面余额",
+        numeric_value=384799.2195,
+    )
+    filters = {
+        "row_label": "财产险公司 资金运用余额",
+        "indicator": "资金运用余额",
+    }
+
+    property_score = _indexed_cell_score(property_row, "财产险公司资金运用余额", filters)
+    aggregate_score = _indexed_cell_score(aggregate_row, "财产险公司资金运用余额", filters)
+
+    # 多词 row_label 必须全部覆盖：财产险行 +5，合计行（缺财产险公司）不得分。
+    assert property_score > aggregate_score
+
+
+def test_row_target_matches_requires_all_words() -> None:
+    assert _row_target_matches("财产险公司 资金运用余额", "其中:财产险公司资金运用余额")
+    assert not _row_target_matches("财产险公司 资金运用余额", "保险公司资金运用余额")
+    assert _row_target_matches("资金运用余额", "其中:财产险公司资金运用余额")
+    assert _row_target_matches("全国", "全国合计")

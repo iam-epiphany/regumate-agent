@@ -342,17 +342,25 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
     for key, weight in (("row_label", 5.0), ("column_label", 5.0), ("indicator", 4.0), ("metric", 4.0), ("scope", 3.0)):
         target = normalize_table_text(filters.get(key))
         if key == "row_label":
-            structural_text = row
+            # Multi-word row labels ("财产险公司 资金运用余额") must ALL be
+            # covered by the row, otherwise an aggregate row that only matches
+            # the indicator would tie with (or beat) the institution-specific
+            # sub-row.  Single-word labels keep the historical substring test.
+            if not _row_label_terms_covered(row, _row_label_terms(filters.get(key))):
+                continue
+            score += weight
         elif key == "column_label":
             # A row such as “全国合计” must not make every numeric cell look
             # like the requested “合计” column.  Compare column constraints
             # only with the terminal header, excluding the repeated table
             # title prefix and the row label.
             structural_text = column_leaf
+            if target and target in structural_text:
+                score += weight
         else:
             structural_text = combined
-        if target and target in structural_text:
-            score += weight
+            if target and target in structural_text:
+                score += weight
     score += _token_overlap(question, combined)
     return score
 
@@ -394,7 +402,16 @@ def _required_label_terms(filters: dict[str, Any], selectors: tuple[dict[str, An
     for key in ("indicator", "row_label", "column_label", "metric"):
         value = normalize_table_text(filters.get(key))
         if value and not _is_generic_table_scope(value):
-            terms.append(value)
+            if key == "row_label":
+                # A composite row label ("财产险公司 资金运用余额") makes every
+                # word a hard constraint: rows missing the institution category
+                # are excluded instead of tying on the bare indicator.
+                for term in _row_label_terms(filters.get(key)):
+                    normalized = normalize_table_text(term)
+                    if normalized and not _is_generic_table_scope(normalized):
+                        terms.append(normalized)
+            else:
+                terms.append(value)
     for selector in selectors:
         if not isinstance(selector, dict):
             continue
@@ -407,6 +424,33 @@ def _required_label_terms(filters: dict[str, Any], selectors: tuple[dict[str, An
 
 def _is_generic_table_scope(value: str) -> bool:
     return value in {"本年累计", "截至当期", "本年累计截至当期", "年季度", "季度", "月度", "年月度"}
+
+
+def _row_label_terms(value: Any) -> list[str]:
+    """Split a row_label filter into required row-location words.
+
+    The planner may join an institution category with the indicator
+    ("财产险公司 资金运用余额"); every word must then be covered by the
+    candidate row's label (AND semantics), so a category term excludes
+    aggregate rows that only match the indicator.  A single word keeps the
+    historical substring semantics.
+    """
+
+    return [
+        term
+        for term in re.split(r"[\s、，,]+", str(value or "").strip())
+        if term
+    ]
+
+
+def _row_label_terms_covered(row_text: str, terms: list[str]) -> bool:
+    """True when every normalized row-label word is a substring of the row."""
+
+    if not terms:
+        return True
+    return all(
+        bool(term) and normalize_table_text(term) in row_text for term in terms
+    )
 
 
 def _has_explicit_label_filters(filters: dict[str, Any]) -> bool:
@@ -476,7 +520,9 @@ def _cells_for_selectors(
         question_column_target = _specific_column_target_from_question(question, candidates)
     for selector in selectors:
         label = normalize_table_text(selector.get("label") or selector.get("row_or_indicator"))
-        row_target = normalize_table_text(selector.get("row_label"))
+        # Keep the raw selector row_label: _row_target_matches splits it into
+        # words itself (normalize_table_text would collapse the spaces).
+        row_target = str(selector.get("row_label") or "").strip()
         column_target = normalize_table_text(selector.get("column_label"))
         # An explicit selector column always wins; the question-derived target
         # only fills in an absent selector column.  A bare "合计" operand in
@@ -654,10 +700,15 @@ def _table_label_match_specificity(requested: str, row: str, column_label: str) 
 def _row_target_matches(requested: str, row: str) -> bool:
     if not requested:
         return True
-    if requested in row:
+    terms = _row_label_terms(requested)
+    if _row_label_terms_covered(row, terms):
         return True
     nationwide_aliases = {"全国", "全国合计"}
-    return requested in nationwide_aliases and row in nationwide_aliases
+    return (
+        len(terms) == 1
+        and normalize_table_text(terms[0]) in nationwide_aliases
+        and row in nationwide_aliases
+    )
 
 
 def _unique_numeric_candidates(candidates: list[SpreadsheetCandidate]) -> list[SpreadsheetCandidate]:
@@ -965,7 +1016,13 @@ def _candidate_score(
             score += 4.0
     for key, weight in [("sheet", 3.0), ("row_label", 3.0), ("indicator", 2.0), ("column_label", 2.0), ("metric", 2.0)]:
         value = str(filters.get(key) or "").strip()
-        if value and _normalize(value) in haystack:
+        if key == "row_label":
+            # Multi-word row labels must all be covered (AND semantics), the
+            # same rule as the indexed path.
+            if not _row_label_terms_covered(haystack, _row_label_terms(value)):
+                continue
+            score += weight
+        elif value and _normalize(value) in haystack:
             score += weight
     if _period_matches(filters, metadata, document.filename):
         score += 3.0

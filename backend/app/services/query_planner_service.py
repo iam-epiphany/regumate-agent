@@ -1912,20 +1912,37 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     scope_text = re.split(r"(?:请比较|请对比|比较|对比)", question, maxsplit=1)[0]
     scope_text = re.sub(r"《[^》]+》", "", scope_text)
     if explicit_row is None:
+        matched_label = False
         for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
             if label.replace(" ", "") in re.sub(r"\s+", "", scope_text):
                 filters["row_label"] = label
+                matched_label = True
                 break
+        if not matched_label:
+            # Generic institution row-locator words (X公司/X银行 forms such as
+            # 财产险公司/人身险公司/保险公司, plus named aggregate rows).  The
+            # term must co-occur with the indicator in the same clause so a
+            # title-embedded institution word ("…保险公司资金运用情况表中…")
+            # is never mistaken for a row locator.  Words are joined with a
+            # space; the spreadsheet matcher requires every word to be covered
+            # by the candidate row's label (AND semantics).
+            institution_terms = _institution_row_terms(
+                scope_text,
+                str(filters.get("indicator") or ""),
+            )
+            if institution_terms:
+                current_row_label = str(filters.get("row_label") or "").strip()
+                filters["row_label"] = f"{institution_terms[0]} {current_row_label}".strip()
     row_scoped_phrase = False
-    focused_scope = re.search(r"》的?([^，。；：:]{2,24})口径下", question)
+    focused_scope = re.search(r"》的?([^，。；：:'‘’“”\"]{2,24})口径下", question)
     if focused_scope is None:
-        focused_scope = re.search(r"表的?([^，。；：:]{2,24})口径下", question)
+        focused_scope = re.search(r"表的?([^，。；：:'‘’“”\"]{2,24})口径下", question)
     if focused_scope:
         value = focused_scope.group(1).strip("的在按以")
         row_scoped_phrase = value == str(filters.get("row_label") or "").strip()
         if value and not row_scoped_phrase and "表" not in value:
             filters["column_label"] = value
-    column_scope = re.search(r"[‘“\"]?([^，。；：:‘“’”\"]{2,24})[’”\"]?(?:列|口径)下?(?:中|比较|取数|查询|读取)?", question)
+    column_scope = re.search(r"[‘“\"]?([^，。；：:‘“’”\"']{2,24})[’”\"]?(?:列|口径)下?(?:中|比较|取数|查询|读取)?", question)
     if column_scope and "column_label" not in filters and not row_scoped_phrase:
         value = column_scope.group(1).split("》")[-1].strip("的在按以")
         if (
@@ -2149,6 +2166,59 @@ def _mentioned_table_indicators(question: str) -> list[str]:
     matches = [indicator for indicator in COMMON_TABLE_INDICATORS if indicator in normalized]
     matches.sort(key=lambda item: normalized.find(item))
     return _dedupe(matches)
+
+
+def _institution_row_terms(text: str, indicator: str) -> list[str]:
+    """Extract generic institution/category terms usable as row-location words.
+
+    Matches 公司/银行-suffixed institution names (财产险公司/人身险公司/
+    保险公司/大型商业银行…) and the corpus's named aggregate rows
+    (保险业合计/全国合计).  ``text`` must already have book titles removed;
+    additionally, when an indicator is present the term must co-occur with it
+    in the same clause, so a title-embedded institution word inside a natural
+    title ("…保险公司资金运用情况表中…") is never treated as a row locator.
+    """
+
+    compact = re.sub(r"\s+", "", str(text or ""))
+    # Drop natural-title fragments ("…保险公司资金运用情况表中…") so their
+    # institution words are never treated as row locators; 中/里/内/下 are the
+    # position words that follow a title ("…情况表中").
+    compact = re.sub(
+        r"[\u4e00-\u9fff]{0,12}?(?:情况表|统计表|经营表)(?:中|里|内|下)?",
+        "",
+        compact,
+    )
+    candidates: list[str] = []
+    for match in re.finditer(r"(?:其中：)?[\u4e00-\u9fff]{2,6}?(?:公司|银行)", compact):
+        word = match.group(0).lstrip("其中：")
+        if re.search(r"[年季月表]", word):
+            # Title/time粘连（如 "…年四季度保险公司…"）: 贪婪匹配把前导
+            # 时间/位置词一起吞了，剥掉通用时间与位置前缀后保留机构名。
+            word = re.sub(
+                r"^(?:[\d一二三四五六七八九十]{1,2}|年|月|季度|上|下|当|本|今|去|各|全|其|中|里|内|于|的|在|情况|统计|经营)+",
+                "",
+                word,
+            )
+        if word and word not in candidates:
+            candidates.append(word)
+    for label in ("保险业合计", "全国合计"):
+        if label in compact and label not in candidates:
+            candidates.append(label)
+    if not indicator:
+        return candidates[:1]
+    # 机构词必须与指标词同分句且紧邻（其后 12 字符内出现指标词），
+    # 否则标题粘连的机构词（"…保险公司资金运用情况表中…"）会被误当行定位词。
+    segments = re.split(r"[，。；;、？?]", compact)
+    same_clause: list[str] = []
+    for term in candidates:
+        for segment in segments:
+            if indicator in segment and term in segment:
+                position = segment.find(term)
+                after = segment[position + len(term):]
+                if indicator in after[:12]:
+                    same_clause.append(term)
+                break
+    return same_clause[:1] if same_clause else []
 
 
 def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:

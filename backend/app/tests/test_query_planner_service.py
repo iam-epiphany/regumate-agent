@@ -1056,7 +1056,8 @@ def test_table_filters_recognises_insurance_asset_class_indicators(monkeypatch) 
     table = plan.aspects[0]
     assert table.modality == "table"
     assert table.table_filters["indicator"] == "债券"
-    assert table.table_filters["row_label"] == "债券"
+    # 机构类别词并入行定位词（通用能力：让财产险公司行优先于保险公司合计行）。
+    assert table.table_filters["row_label"] == "财产险公司 债券"
 
 
 def test_fallback_calculate_drops_global_column_filter_for_operands(monkeypatch) -> None:
@@ -1366,3 +1367,51 @@ def test_explicit_definition_anchor_uses_definition_style_search() -> None:
         "是指" in search.query and "定义" in search.query
         for search in aspect.search_queries
     )
+
+
+def test_table_filters_keep_institution_category_in_row_label(monkeypatch) -> None:
+    """机构类别词（财产险公司/人身险公司）必须并入行定位词。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，财产险公司资金运用余额在'截至当期-账面余额'口径下的数值是多少？")
+    table = plan.aspects[0]
+    assert table.table_filters["indicator"] == "资金运用余额"
+    assert table.table_filters["row_label"] == "财产险公司 资金运用余额"
+    # ASCII 单引号列口径不得污染 column_label（原 column_scope 正则 bug）。
+    assert "财产险公司" not in str(table.table_filters.get("column_label") or "")
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，人身险公司资金运用余额在'截至当期-账面余额'口径下的数值是多少？")
+    assert plan.aspects[0].table_filters["row_label"] == "人身险公司 资金运用余额"
+
+
+def test_table_filters_keep_aggregate_institution_row_label(monkeypatch) -> None:
+    """问合计行（保险公司）时机构词为'保险公司'，要求行标签含该词。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("《2025年四季度保险公司资金运用情况表》中保险公司资金运用余额是多少？")
+    assert plan.aspects[0].table_filters["row_label"] == "保险公司 资金运用余额"
+
+
+def test_table_filters_without_institution_word_unchanged(monkeypatch) -> None:
+    """无机构类别词时 row_label 保持裸指标（历史行为）。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，银行存款在'截至当期-账面余额'口径下的数值是多少？")
+    table = plan.aspects[0]
+    assert table.table_filters["row_label"] == "银行存款"
+    assert "财产险" not in str(table.table_filters.get("row_label") or "")
+
+
+def test_institution_row_terms_ignores_title_embedded_words() -> None:
+    """无书名号自然标题中的机构词（'…保险公司资金运用情况表中…'）不得成为行定位词。"""
+    terms = query_planner_service._institution_row_terms(
+        "2025年四季度保险公司资金运用情况表中财产险公司资金运用余额",
+        "资金运用余额",
+    )
+    assert terms == ["财产险公司"]
+
+    terms = query_planner_service._institution_row_terms(
+        "根据，财产险公司资金运用余额在'截至当期-账面余额'口径下的数值是多少？",
+        "资金运用余额",
+    )
+    assert terms == ["财产险公司"]
