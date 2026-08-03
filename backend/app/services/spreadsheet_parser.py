@@ -38,10 +38,10 @@ def load_xlsx_workbook(file_path: Path, *, loader_name: str = "spreadsheet-xlsx"
 
     try:
         value_workbook = load_workbook(str(file_path), data_only=True, read_only=False)
-        formula_workbook = load_workbook(str(file_path), data_only=False, read_only=False)
     except Exception as exc:
         raise DocumentParseError("xlsx 表格解析失败") from exc
 
+    formula_workbook = None
     try:
         logical_cells = sum(
             max_row * max_col
@@ -53,6 +53,10 @@ def load_xlsx_workbook(file_path: Path, *, loader_name: str = "spreadsheet-xlsx"
                 "Excel 逻辑单元格数量超过处理上限"
                 f"（{logical_cells} > {MAX_SPREADSHEET_LOGICAL_CELLS}）"
             )
+        # The formula pass is only needed for sheets that survive the
+        # logical-cell cap, so load it after the cap check instead of parsing
+        # every workbook into memory twice.
+        formula_workbook = load_workbook(str(file_path), data_only=False, read_only=False)
         blocks: list[ParsedBlock] = []
         workbook_metadata = _workbook_metadata(file_path)
         for sheet_index, value_sheet in enumerate(value_workbook.worksheets, start=1):
@@ -61,7 +65,8 @@ def load_xlsx_workbook(file_path: Path, *, loader_name: str = "spreadsheet-xlsx"
         return LoaderResult(blocks=blocks, loader_name=loader_name, metadata=workbook_metadata)
     finally:
         value_workbook.close()
-        formula_workbook.close()
+        if formula_workbook is not None:
+            formula_workbook.close()
 
 
 def load_xls_workbook(file_path: Path) -> LoaderResult:
@@ -244,14 +249,11 @@ def _blocks_from_cell_rows(
         **workbook_metadata,
         "spreadsheet_table": True,
         "sheet_name": sheet_name,
-        "sheet_index": sheet_index,
-        "sheet_state": sheet_state,
         "table_id": table_id,
         "table_title": table_title,
         "unit": unit,
         "period": period,
         "table_headers": headers,
-        "row_header_columns": row_header_columns,
     }
     summary_text = _summary_text(table_title, sheet_name, unit, period, headers, len(data_rows))
     blocks = [
@@ -264,7 +266,6 @@ def _blocks_from_cell_rows(
                 **common_metadata,
                 "table_chunk_role": "summary",
                 "row_index": None,
-                "raw_table_preview": _preview_rows(rows),
             },
         )
     ]
@@ -300,7 +301,6 @@ def _blocks_from_cell_rows(
                     "row_label": row_label,
                     "row_cells": row_cells,
                     "cells": cell_records,
-                    "raw_table_preview": row_text[:500],
                 },
             )
         )

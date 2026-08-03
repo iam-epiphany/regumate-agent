@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
 import math
@@ -44,6 +45,30 @@ from backend.app.services.performance_metrics import measure
 
 VerifiedClaimReporter = Callable[[AnswerClaim], None]
 CancellationChecker = Callable[[], None]
+
+
+class _OptionMatrixCache:
+    """Mutable per-request holder for the option evidence matrix.
+
+    The matrix is a pure function of (options, labels, context chunks) but is
+    rebuilt by every consumer in one request (prompt build, streaming claim
+    verification, post-generation validation, deterministic choice recovery),
+    each build re-running dozens of full grounded-answer validations.  The
+    holder is installed by ``generate_answer`` for its call tree only; a stale
+    holder left on a reused worker thread can never produce a wrong hit
+    because the key compares object identity.
+    """
+
+    __slots__ = ("key", "matrix")
+
+    def __init__(self, key: tuple[int, int, int]) -> None:
+        self.key = key
+        self.matrix: list[dict[str, Any]] | None = None
+
+
+_OPTION_MATRIX_CACHE: ContextVar[_OptionMatrixCache | None] = ContextVar(
+    "option_matrix_cache", default=None
+)
 
 
 @dataclass
@@ -102,6 +127,41 @@ def generate_answer(
 ) -> GeneratedAnswer:
     normalized_options = [option for option in options or [] if str(option or "").strip()]
     normalized_labels = _normalize_option_labels(option_labels, len(normalized_options))
+    # Request-scoped memoization of the option evidence matrix: every consumer
+    # in this call tree (prompt build, streaming claim verification, validation,
+    # deterministic choice recovery) recomputed it independently.  Install the
+    # holder for the whole request; keyed by object identity, so a stale holder
+    # on a reused worker thread can never serve a wrong matrix.
+    _OPTION_MATRIX_CACHE.set(
+        _OptionMatrixCache((id(normalized_options), id(normalized_labels), id(context_chunks)))
+    )
+    return _generate_answer_impl(
+        question,
+        context_chunks,
+        normalized_options,
+        normalized_labels,
+        llm_prompt=llm_prompt,
+        has_sufficient_context=has_sufficient_context,
+        verified_claim_reporter=verified_claim_reporter,
+        cancellation_checker=cancellation_checker,
+        answer_mode=answer_mode,
+        required_aspect_ids=required_aspect_ids,
+    )
+
+
+def _generate_answer_impl(
+    question: str,
+    context_chunks: list[RetrievalResult],
+    normalized_options: list[str],
+    normalized_labels: list[str | None],
+    *,
+    llm_prompt: str | None,
+    has_sufficient_context: bool,
+    verified_claim_reporter: VerifiedClaimReporter | None,
+    cancellation_checker: CancellationChecker | None,
+    answer_mode: str,
+    required_aspect_ids: list[str] | None,
+) -> GeneratedAnswer:
     if not context_chunks or not has_sufficient_context:
         return GeneratedAnswer(
             answer="当前知识库中未找到足够依据，无法给出确定答案。",
@@ -1049,6 +1109,7 @@ def _read_streaming_llm_content(
     saw_sse = False
     reported: set[tuple[str, tuple[str, ...]]] = set()
     conclusion_verified = False
+    extractor = _StreamingClaimExtractor()
 
     for raw_line in iterator:
         if perf_counter() >= deadline:
@@ -1075,9 +1136,14 @@ def _read_streaming_llm_content(
         if not isinstance(piece, str) or not piece:
             continue
         content += piece
-        if verified_claim_reporter is None or _partial_refused(content) is not False:
+        if verified_claim_reporter is None:
             continue
-        for role, claim in _extract_partial_claims(content):
+        completed_claims = extractor.append(piece)
+        # Previews only flow once the model has explicitly emitted
+        # ``"refused": false``; before that the extractor has not seen the key.
+        if extractor.refused is not False:
+            continue
+        for role, claim in completed_claims:
             key = (claim.text, tuple(claim.citation_ids))
             if key in reported:
                 continue
@@ -1165,6 +1231,105 @@ def _extract_partial_claims(content: str) -> list[tuple[str, AnswerClaim]]:
         if char == "]" and depth == 0:
             break
     return claims
+
+
+# A refusal key or the claims-array header can straddle an SSE chunk boundary,
+# so incremental discovery scans the previous chunk's tail plus the new slice.
+_JSON_KEY_BOUNDARY_WINDOW = 32
+
+
+class _StreamingClaimExtractor:
+    """Incremental equivalent of ``_extract_partial_claims`` + ``_partial_refused``.
+
+    The full-content re-scan on every SSE chunk was quadratic in the stream
+    length; this state machine scans each new slice exactly once and carries
+    the string/object depth across chunk boundaries.  ``_extract_partial_claims``
+    and ``_partial_refused`` remain as the reference implementations and must
+    produce identical output for any chunked stream (covered by property tests).
+    """
+
+    __slots__ = ("_content", "refused", "_scan_pos", "_scan_finished", "_depth", "_in_string", "_escaped", "_object_start")
+
+    def __init__(self) -> None:
+        self._content = ""
+        # None = key not seen yet; True/False = latched first value.  A valid
+        # JSON payload emits "refused" exactly once, so the first match wins,
+        # matching the reference ``re.search`` over the full content.
+        self.refused: bool | None = None
+        self._scan_pos: int | None = None
+        self._scan_finished = False
+        self._depth = 0
+        self._in_string = False
+        self._escaped = False
+        self._object_start: int | None = None
+
+    def append(self, content: str) -> list[tuple[str, AnswerClaim]]:
+        """Append streamed content and return claims completed by this slice."""
+
+        old_len = len(self._content)
+        self._content += content
+        if not content:
+            return []
+        claims: list[tuple[str, AnswerClaim]] = []
+
+        if self.refused is None:
+            window = self._content[max(0, old_len - _JSON_KEY_BOUNDARY_WINDOW):]
+            value = _partial_refused(window)
+            if value is not None:
+                self.refused = value
+
+        if self._scan_pos is None:
+            window = self._content[max(0, old_len - _JSON_KEY_BOUNDARY_WINDOW):]
+            match = re.search(r'"claims"\s*:\s*\[', window)
+            if not match:
+                return claims
+            self._scan_pos = len(self._content) - len(window) + match.end()
+        elif self._scan_finished:
+            return claims
+
+        for index in range(self._scan_pos, len(self._content)):
+            char = self._content[index]
+            if self._in_string:
+                if self._escaped:
+                    self._escaped = False
+                elif char == "\\":
+                    self._escaped = True
+                elif char == '"':
+                    self._in_string = False
+                continue
+            if char == '"':
+                self._in_string = True
+                continue
+            if char == "{":
+                if self._depth == 0:
+                    self._object_start = index
+                self._depth += 1
+                continue
+            if char == "}" and self._depth:
+                self._depth -= 1
+                if self._depth == 0 and self._object_start is not None:
+                    try:
+                        item = json.loads(self._content[self._object_start:index + 1])
+                    except json.JSONDecodeError:
+                        self._object_start = None
+                        continue
+                    text = str(item.get("text") or "").strip()
+                    if text:
+                        claims.append((
+                            str(item.get("role") or "").strip().lower(),
+                            AnswerClaim(
+                                text=text,
+                                citation_ids=[str(value) for value in item.get("citation_ids") or []],
+                                role=_claim_role(item.get("role")),
+                                aspect_ids=[str(value) for value in item.get("aspect_ids") or []],
+                            ),
+                        ))
+                    self._object_start = None
+            if char == "]" and self._depth == 0:
+                self._scan_finished = True
+                break
+        self._scan_pos = len(self._content)
+        return claims
 
 
 def _claim_is_verified(
@@ -1874,6 +2039,24 @@ def _option_fact_evidence_excerpt(fact: str, evidence: str, *, max_chars: int = 
 
 
 def _option_evidence_matrix(
+    options: list[str],
+    option_labels: list[str | None],
+    context_chunks: list[RetrievalResult],
+) -> list[dict[str, Any]]:
+    holder = _OPTION_MATRIX_CACHE.get()
+    if (
+        holder is not None
+        and holder.key == (id(options), id(option_labels), id(context_chunks))
+        and holder.matrix is not None
+    ):
+        return holder.matrix
+    matrix = _build_option_evidence_matrix(options, option_labels, context_chunks)
+    if holder is not None and holder.key == (id(options), id(option_labels), id(context_chunks)):
+        holder.matrix = matrix
+    return matrix
+
+
+def _build_option_evidence_matrix(
     options: list[str],
     option_labels: list[str | None],
     context_chunks: list[RetrievalResult],

@@ -155,7 +155,6 @@ def upsert_chunk_embeddings(
                     "table_headers": chunk_metadata.get("table_headers") or chunk_metadata.get("headers"),
                     "row_index": chunk_metadata.get("row_index"),
                     "row_cells": chunk_metadata.get("row_cells"),
-                    "raw_table_preview": chunk_metadata.get("raw_table_preview"),
                     "index_version": INDEX_VERSION,
                 },
             )

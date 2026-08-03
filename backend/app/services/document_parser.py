@@ -593,12 +593,9 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
         "source_format": "csv",
         "spreadsheet_table": True,
         "sheet_name": "CSV",
-        "sheet_index": 1,
-        "sheet_state": "visible",
         "table_id": f"{source_title}-CSV-01",
         "table_title": source_title,
         "table_headers": headers,
-        "row_header_columns": [1],
         "unit": None,
         "period": dict(table_period),
     }
@@ -608,7 +605,7 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
             block_type="table",
             order_index=1,
             section_title=source_title,
-            metadata={**common, "table_chunk_role": "summary", "raw_table_preview": "\n".join(",".join(row) for row in rows[:5])[:500]},
+            metadata={**common, "table_chunk_role": "summary"},
         )
     ]
     for row_index, raw_row in enumerate(rows[1:], start=2):
@@ -657,7 +654,6 @@ def _csv_blocks(file_path: Path, raw_rows: list[list[str]]) -> tuple[list[Parsed
                     "row_label": row_label,
                     "row_cells": row_cells,
                     "cells": cells,
-                    "raw_table_preview": text[:500],
                 },
             )
         )
@@ -922,9 +918,7 @@ def _looks_like_markdown_table_line(stripped_line: str) -> bool:
 
 def _table_metadata(table_text: str, table_index: int | None = None) -> dict[str, object]:
     rows = _parse_markdown_table(table_text)
-    metadata: dict[str, object] = {
-        "raw_table_text": table_text,
-    }
+    metadata: dict[str, object] = {}
     if table_index is not None:
         metadata["table_index"] = table_index
     if not rows:

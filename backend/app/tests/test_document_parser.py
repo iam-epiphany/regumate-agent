@@ -168,7 +168,9 @@ def test_markdown_table_block_carries_structured_metadata(tmp_path) -> None:
     assert table_block.metadata["headers"] == ["字段", "口径"]
     assert table_block.metadata["rows"][0]["row_index"] == 1
     assert table_block.metadata["rows"][0]["cells"] == {"字段": "资产合计", "口径": "资产分项合计"}
-    assert "| 字段 | 口径 |" in table_block.metadata["raw_table_text"]
+    # raw_table_text is write-only payload bloat and must not be persisted.
+    assert "raw_table_text" not in table_block.metadata
+    assert "raw_table_preview" not in table_block.metadata
 
 
 def test_chunks_inherit_section_from_structured_blocks(tmp_path) -> None:

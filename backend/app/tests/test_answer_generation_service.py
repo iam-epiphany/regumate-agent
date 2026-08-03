@@ -2980,3 +2980,120 @@ def test_deterministic_choice_recovery_accepts_cited_three_fact_option_with_mode
     assert result is not None
     assert "答案为 B" in result.answer
     assert result.grounding_validation["selected_option"] == "1"
+
+
+def _assert_streaming_extractor_equals_reference(payload: str, split_count: int, seed: int) -> None:
+    """Chunked feeding must reproduce the full-content scan at every step."""
+
+    import random
+
+    from backend.app.services.answer_generation_service import (
+        _StreamingClaimExtractor,
+        _extract_partial_claims,
+        _partial_refused,
+    )
+
+    rng = random.Random(seed)
+    for _ in range(20):
+        positions = sorted(
+            rng.sample(range(1, len(payload)), min(split_count - 1, len(payload) - 1))
+        )
+        chunks: list[str] = []
+        previous = 0
+        for position in positions:
+            chunks.append(payload[previous:position])
+            previous = position
+        chunks.append(payload[previous:])
+
+        extractor = _StreamingClaimExtractor()
+        cumulative: list[tuple[str, str, tuple[str, ...]]] = []
+        for step, chunk in enumerate(chunks):
+            cumulative.extend(
+                (role, claim.text, tuple(claim.citation_ids))
+                for role, claim in extractor.append(chunk)
+            )
+            reference = [
+                (role, claim.text, tuple(claim.citation_ids))
+                for role, claim in _extract_partial_claims("".join(chunks[: step + 1]))
+            ]
+            assert cumulative == reference, (payload, chunks[: step + 1])
+        assert extractor.refused == _partial_refused(payload), payload
+
+
+def test_streaming_extractor_matches_full_scan_for_all_split_points() -> None:
+    payloads = [
+        # Normal answer stream with a conclusion and an explanation.
+        (
+            '{"refused": false, "claims": ['
+            '{"role": "conclusion", "text": "监管报送期限为2025年12月31日。", "citation_ids": ["1"], "aspect_ids": ["aspect_1"]},'
+            '{"role": "explanation", "text": "依据报送规定执行。", "citation_ids": ["1"], "aspect_ids": ["aspect_1"]}'
+            "]}"
+        ),
+        # Refusal stream.
+        (
+            '{"refused": true, "claims": ['
+            '{"role": "conclusion", "text": "依据不足，无法判断。", "citation_ids": [], "aspect_ids": []}'
+            "]}"
+        ),
+        # Escaped quotes and braces inside claim text must not confuse the scanner.
+        (
+            '{"refused": false, "claims": ['
+            '{"role": "explanation", "text": "含\\"引号{和}花括号\\"的文本。", "citation_ids": ["2"]},'
+            '{"role": "conclusion", "text": "结论句。", "citation_ids": ["1"]}'
+            "]}"
+        ),
+        # A malformed claim object is skipped while later claims still parse.
+        (
+            '{"refused": false, "claims": ['
+            '{"role": "conclusion", "text": "第一条结论。", "citation_ids": ["1"]},'
+            '{"role": "explanation", "text": "残缺对象", "citation_ids": ['
+            '{"role": "conclusion", "text": "第二条结论。", "citation_ids": ["2"]}'
+            "]}"
+        ),
+        # Empty-text claims are dropped like the reference implementation.
+        (
+            '{"refused": false, "claims": ['
+            '{"role": "conclusion", "text": "有效结论。", "citation_ids": ["1"]},'
+            '{"role": "explanation", "text": "", "citation_ids": ["1"]}'
+            "]}"
+        ),
+    ]
+    for payload in payloads:
+        for split_count in (2, 3, 4):
+            for seed in range(6):
+                _assert_streaming_extractor_equals_reference(payload, split_count, seed)
+
+
+def test_streaming_extractor_key_discovery_across_chunk_boundary() -> None:
+    """The claims header and the refusal key may straddle an SSE chunk boundary."""
+
+    from backend.app.services.answer_generation_service import _StreamingClaimExtractor
+
+    # "claims": is split mid-key: '...clai' + 'ms": [...]'
+    extractor = _StreamingClaimExtractor()
+    claims = extractor.append('{"refused": false, "clai')
+    assert claims == []
+    assert extractor.refused is False
+    claims = extractor.append('ms": [{"role": "conclusion", "text": "跨块结论。", "citation_ids": ["1"]}]}')
+    assert [(role, claim.text) for role, claim in claims] == [("conclusion", "跨块结论。")]
+
+    # The refusal key itself is split across the boundary.
+    extractor = _StreamingClaimExtractor()
+    assert extractor.append('{"refus') == []
+    assert extractor.refused is None
+    assert [(role, claim.text) for role, claim in extractor.append('ed": false, "claims": [{"role": "conclusion", "text": "结论。", "citation_ids": ["1"]}]}')] == [("conclusion", "结论。")]
+    assert extractor.refused is False
+
+
+def test_streaming_extractor_claim_object_spans_chunk_boundary() -> None:
+    """A claim object completing across chunks is emitted exactly once."""
+
+    from backend.app.services.answer_generation_service import _StreamingClaimExtractor
+
+    extractor = _StreamingClaimExtractor()
+    first = extractor.append('{"refused": false, "claims": [{"role": "conclusion", "text": "跨块')
+    assert first == []
+    second = extractor.append('结论。", "citation_ids": ["1"]}]}')
+    assert [(role, claim.text) for role, claim in second] == [("conclusion", "跨块结论。")]
+    # A further append after the array closed emits nothing more.
+    assert extractor.append("trailing") == []

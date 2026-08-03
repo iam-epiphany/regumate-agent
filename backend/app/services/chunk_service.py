@@ -348,24 +348,30 @@ def _split_by_semantic_breaks(paragraphs: list[str]) -> list[str]:
         vectors = []
     pieces: list[str] = []
     buffer: list[str] = []
+    # Paragraphs are joined with a "\n\n" separator, which never merges an
+    # ASCII run across the join, so the growing buffer count stays exact with
+    # an incremental counter.
+    buffer_count = _IncrementalTokenCount()
 
     for index, paragraph in enumerate(paragraphs):
         if not buffer:
             buffer.append(paragraph)
+            buffer_count.append(paragraph)
             continue
 
-        current_text = "\n\n".join(buffer)
         similarity = cosine_similarity(vectors[index - 1], vectors[index]) if index < len(vectors) else 1.0
         should_break = (
-            count_tokens(current_text) >= CHUNK_TARGET_TOKENS
+            buffer_count.count >= CHUNK_TARGET_TOKENS
             or similarity < SEMANTIC_BREAK_THRESHOLD
-            or count_tokens(f"{current_text}\n\n{paragraph}") > CHUNK_MAX_TOKENS
+            or buffer_count.candidate_count(paragraph) > CHUNK_MAX_TOKENS
         )
         if should_break:
-            pieces.append(current_text.strip())
+            pieces.append("\n\n".join(buffer).strip())
             buffer = [paragraph]
+            buffer_count = _IncrementalTokenCount(paragraph)
         else:
             buffer.append(paragraph)
+            buffer_count.append(f"\n\n{paragraph}")
 
     if buffer:
         pieces.append("\n\n".join(buffer).strip())
@@ -381,22 +387,30 @@ def _split_by_token_limit(text: str) -> list[str]:
 
     pieces: list[str] = []
     buffer = ""
+    buffer_count = _IncrementalTokenCount()
     for unit in _semantic_units(cleaned):
         if count_tokens(unit) > CHUNK_MAX_TOKENS:
             if buffer.strip():
                 pieces.append(buffer.strip())
                 buffer = ""
+                buffer_count = _IncrementalTokenCount()
             pieces.extend(_hard_split_token_units(unit))
             continue
 
         candidate = f"{buffer}{unit}" if buffer else unit.lstrip()
-        if count_tokens(candidate) <= CHUNK_MAX_TOKENS:
+        if buffer_count.candidate_count(unit) <= CHUNK_MAX_TOKENS:
             buffer = candidate
+            # ``buffer`` is never empty here: either it was already non-empty,
+            # or it was just assigned ``unit.lstrip()`` which is non-empty.
+            # ``count_tokens`` skips leading whitespace, so appending the raw
+            # unit keeps the counter aligned with the stripped buffer text.
+            buffer_count.append(unit)
             continue
 
         if buffer.strip():
             pieces.append(buffer.strip())
         buffer = unit.lstrip()
+        buffer_count = _IncrementalTokenCount(buffer)
 
     if buffer.strip():
         pieces.append(buffer.strip())
@@ -423,6 +437,76 @@ def count_tokens(text: str) -> int:
 
 def _token_units(text: str) -> list[str]:
     return re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9_]+|[^\s]", text)
+
+
+def _is_ascii_run_char(char: str | None) -> bool:
+    if char is None:
+        return False
+    return (
+        "a" <= char <= "z"
+        or "A" <= char <= "Z"
+        or "0" <= char <= "9"
+        or char == "_"
+    )
+
+
+class _IncrementalTokenCount:
+    """Exact ``count_tokens`` equivalent for a text accumulated in pieces.
+
+    ``_token_units`` only ever merges tokens across a join point when an
+    ASCII run on one side touches an ASCII run on the other without a
+    separator, so the total is the sum of the parts minus one for each such
+    touching pair.  Tracking just the head/tail characters keeps every
+    append/prepend O(len(new piece)) instead of re-tokenizing the whole
+    accumulated text (which made long-document splitting near-quadratic).
+    """
+
+    __slots__ = ("count", "_head", "_tail")
+
+    def __init__(self, text: str = "") -> None:
+        self.count = count_tokens(text)
+        self._head = text[0] if text else None
+        self._tail = text[-1] if text else None
+
+    def candidate_count(self, text: str) -> int:
+        """Exact token count of ``current_text + text`` (append at the end)."""
+
+        if not text:
+            return self.count
+        merged = (
+            1
+            if _is_ascii_run_char(self._tail) and _is_ascii_run_char(text[0])
+            else 0
+        )
+        return self.count + count_tokens(text) - merged
+
+    def append(self, text: str) -> None:
+        if not text:
+            return
+        self.count = self.candidate_count(text)
+        self._tail = text[-1]
+        if self._head is None:
+            self._head = text[0]
+
+    def prepend_candidate_count(self, text: str) -> int:
+        """Exact token count of ``text + current_text`` (prepend at the front)."""
+
+        if not text:
+            return self.count
+        merged = (
+            1
+            if _is_ascii_run_char(text[-1]) and _is_ascii_run_char(self._head)
+            else 0
+        )
+        return self.count + count_tokens(text) - merged
+
+    def prepend(self, text: str) -> None:
+        if not text:
+            return
+        self.count = self.prepend_candidate_count(text)
+        self._head = text[0]
+        if self._tail is None:
+            self._tail = text[-1]
 
 
 def _join_token_units(tokens: list[str]) -> str:
@@ -555,7 +639,6 @@ def _split_table_text(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPie
     context = _table_context_text(prefix_lines)
     base_metadata = _base_table_metadata(group, document_id)
     base_metadata["table_headers"] = header_cells
-    base_metadata["raw_table_preview"] = "\n".join(table_lines[: min(len(table_lines), 6)])
     data_rows = [row for row in rows if not _is_table_separator_line(row)]
 
     if data_rows:
@@ -636,13 +719,16 @@ def _base_table_metadata(group: _ChunkGroup, document_id: str) -> dict[str, Any]
     table_index = int(source.get("table_index") or 1)
     table_id = source.get("table_id") or f"{document_id}-TABLE-{table_index:04d}"
     table_title = _metadata_text(source.get("table_title")) or _metadata_text(group.section_title) or "未命名表格"
-    raw_table_text = _metadata_text(source.get("raw_table_text")) or group.text
+    # raw_table_text / raw_table_preview / sheet_index / sheet_state /
+    # row_header_columns are write-only payload bloat: no query-time reader
+    # consumes them, so they are dropped here instead of being persisted into
+    # every row chunk's SQLite metadata and Qdrant payload.
+    for _write_only_key in ("raw_table_text", "raw_table_preview", "sheet_index", "sheet_state", "row_header_columns"):
+        source.pop(_write_only_key, None)
     return {
         **source,
         "table_id": table_id,
         "table_title": table_title,
-        "raw_table_text": raw_table_text,
-        "raw_table_preview": raw_table_text[:500],
     }
 
 
@@ -707,6 +793,9 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+_HARD_SPLIT_PREFIX_TOKENS = count_tokens("（承接上文）")
+
+
 def _hard_split_token_units(text: str) -> list[str]:
     tokens = _token_units(text)
     pieces: list[str] = []
@@ -714,7 +803,7 @@ def _hard_split_token_units(text: str) -> list[str]:
     step = max(CHUNK_MAX_TOKENS - CHUNK_OVERLAP_TOKENS, 1)
     while start < len(tokens):
         prefix = "" if start == 0 else "（承接上文）"
-        limit = CHUNK_MAX_TOKENS - count_tokens(prefix)
+        limit = CHUNK_MAX_TOKENS if start == 0 else CHUNK_MAX_TOKENS - _HARD_SPLIT_PREFIX_TOKENS
         piece = f"{prefix}{_join_token_units(tokens[start : start + limit])}".strip()
         pieces.append(piece)
         start += step
@@ -727,11 +816,14 @@ def _semantic_overlap_tail(text: str) -> str:
         return ""
 
     selected: list[str] = []
+    # Sentences are prepended to the accumulated tail, so the incremental
+    # counter tracks the head character for exact ASCII-run boundary counts.
+    tail_count = _IncrementalTokenCount()
     for sentence in reversed(sentences):
-        candidate = "".join([sentence, *selected])
-        if count_tokens(candidate) > CHUNK_OVERLAP_TOKENS:
+        if tail_count.prepend_candidate_count(sentence) > CHUNK_OVERLAP_TOKENS:
             break
         selected.insert(0, sentence)
+        tail_count.prepend(sentence)
     return "".join(selected).strip()
 
 

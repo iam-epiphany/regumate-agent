@@ -95,7 +95,7 @@ RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
 # Per-inference batch cap for the cross-encoder.  CPU profiles already pick
 # 4/2 so raising this only widens the GPU path (GPU profile default is 24).
 # Verified against an 8 GiB GPU: peak CUDA allocation stays far below the cap.
-RERANK_INFERENCE_BATCH_LIMIT = _env_int("RERANK_INFERENCE_BATCH_LIMIT", 8, minimum=1)
+RERANK_INFERENCE_BATCH_LIMIT = _env_int("RERANK_INFERENCE_BATCH_LIMIT", 24, minimum=1)
 RERANK_MAX_LENGTH = _env_int("RERANK_MAX_LENGTH", 1024, minimum=1)
 RERANK_INPUT_MODE = _env_choice(
     "RERANK_INPUT_MODE",
@@ -149,7 +149,7 @@ RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3"
 EMBEDDING_DIMENSION = 1024
 EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8, minimum=1)
 EMBEDDING_MAX_BATCH_SIZE = _env_int("EMBEDDING_MAX_BATCH_SIZE", 16, minimum=1)
-QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 1, minimum=1)
+QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 4, minimum=1)
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24
