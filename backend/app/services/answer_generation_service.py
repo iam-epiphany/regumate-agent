@@ -730,6 +730,14 @@ def _deterministic_table_answer(
     # source chunk; it is grounded by the recorded operands and formula.
     if metadata.get("calculation_result") is not None:
         trace_valid = _calculation_trace_valid(metadata)
+        # Entity checks would fail as false negatives for computed values, so
+        # they are waived explicitly and recorded instead of being silently
+        # dropped; the citation checks are never waived.
+        validation["waived_checks"] = {
+            "reason": "deterministic_calculation_result",
+            "unsupported_entities": validation.get("unsupported_entities") or [],
+            "unsupported_claim_entities": validation.get("unsupported_claim_entities") or [],
+        }
         validation["unsupported_entities"] = []
         validation["unsupported_claim_entities"] = []
         validation["calculation_trace_valid"] = trace_valid
@@ -797,6 +805,15 @@ def _deterministic_formula_answer(
                 or validation.get("invalid_answer_citation_ids")
                 or validation.get("missing_inline_citation_ids")
             ),
+            # The computed result is not verbatim in a source chunk, so the
+            # entity/semantic checks are explicit waivers, not silent drops.
+            "waived_checks": {
+                "reason": "deterministic_formula_result",
+                "unsupported_entities": validation.get("unsupported_entities") or [],
+                "unsupported_claim_entities": validation.get("unsupported_claim_entities") or [],
+                "semantic_conflict_count": validation.get("semantic_conflict_count") or 0,
+                "semantic_insufficient_count": validation.get("semantic_insufficient_count") or 0,
+            },
             "formula_calculation": {
                 "formula": calculation.formula,
                 "expression": calculation.expression,
@@ -1015,15 +1032,21 @@ def _parse_generated_answer_content(
         for item in parsed.get("claims") or []
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     ]
-    if not refused and claims and _claim_is_verified(question, claims[0], context_chunks, options, option_labels):
+    if not refused and claims:
         # Keep the final body on the same trust boundary as the preview: the
         # conclusion is mandatory, while an invalid explanation can be omitted
-        # without hiding an already verified conclusion.
-        claims = [claims[0], *[
-            claim
-            for claim in claims[1:]
-            if _claim_is_verified(question, claim, context_chunks, options, option_labels)
-        ]]
+        # without hiding an already verified conclusion.  When the conclusion
+        # itself fails verification, every claim is dropped so the repair
+        # ladder decides between a corrected generation and a structural
+        # refusal — unverified claims must never reach the user silently.
+        if _claim_is_verified(question, claims[0], context_chunks, options, option_labels):
+            claims = [claims[0], *[
+                claim
+                for claim in claims[1:]
+                if _claim_is_verified(question, claim, context_chunks, options, option_labels)
+            ]]
+        else:
+            claims = []
     composed_answer = "\n\n".join(claim.text for claim in claims if claim.text).strip()
     return GeneratedAnswer(
         answer=composed_answer or str(parsed.get("answer") or "").strip() or None,
@@ -1719,11 +1742,9 @@ def _calculation_trace_valid(metadata: dict[str, Any]) -> bool:
             # The same sheet/cell coordinate can legitimately occur in two
             # monthly workbooks.  Their document IDs disambiguate the ordered
             # operands even though the human-readable formula repeats C5.
-            left, right = (
-                (1, 0)
-                if operation == "difference" and metadata.get("ordered_transition")
-                else (0, 1)
-            )
+            # This branch is only reachable with operation == "ratio", so the
+            # first operand is always the left one.
+            left, right = (0, 1)
         else:
             left, right = (0, 1) if positions[0] < positions[1] else (1, 0)
         if values[right] == 0:
@@ -1833,7 +1854,14 @@ def _validate_selected_option(
     else:
         minimum_gap = best["minimum_fact_coverage"] - selected_row["minimum_fact_coverage"]
         average_gap = best["average_fact_coverage"] - selected_row["average_fact_coverage"]
-        supported = minimum_gap <= 0.08 and average_gap <= 0.12
+        # An absolute coverage floor mirrors the deterministic choice-recovery
+        # gate (0.30): separation from the best option alone must not bless an
+        # option whose own facts are essentially unsupported by the evidence.
+        supported = (
+            selected_row["minimum_fact_coverage"] >= 0.30
+            and minimum_gap <= 0.08
+            and average_gap <= 0.12
+        )
     format_validation = _validate_selected_option_format(answer, selected_row, option_labels)
     return {
         "selected_option": selected,
@@ -1940,6 +1968,12 @@ def _deterministic_choice_recovery(
         grounding = {
             "passed": True,
             "validation_mode": "post_generation_fact_projection",
+            # Explicit waiver: every atomic option fact passed the per-fact
+            # evidence gate above; only the assembled selection sentence fails
+            # claim-to-sentence alignment.  The original failed validation is
+            # preserved for the audit trail.
+            "deterministic_override": True,
+            "override_reason": "post_generation_fact_projection",
             "original_validation": grounding,
         }
     return GeneratedAnswer(
@@ -3399,6 +3433,13 @@ def _deterministic_mixed_table_answer(
         # The added conclusion is a conservative evidence-scope limitation,
         # not a new regulatory fact. Both underlying evidence types are cited;
         # deterministic values and excerpts have already been validated above.
+        # Entity checks are waived explicitly (and recorded) rather than being
+        # silently dropped; the citation checks are never waived.
+        validation["waived_checks"] = {
+            "reason": "evidence_boundary_conclusion",
+            "unsupported_entities": validation.get("unsupported_entities") or [],
+            "unsupported_claim_entities": validation.get("unsupported_claim_entities") or [],
+        }
         validation["unsupported_entities"] = []
         validation["unsupported_claim_entities"] = []
         validation["evidence_boundary_applied"] = True
@@ -3408,6 +3449,11 @@ def _deterministic_mixed_table_answer(
             or validation["missing_inline_citation_ids"]
         )
     if metadata.get("calculation_result") is not None:
+        validation["waived_checks"] = {
+            "reason": "deterministic_calculation_result",
+            "unsupported_entities": validation.get("unsupported_entities") or [],
+            "unsupported_claim_entities": validation.get("unsupported_claim_entities") or [],
+        }
         validation["unsupported_entities"] = []
         validation["unsupported_claim_entities"] = []
         validation["calculation_trace_valid"] = True

@@ -399,20 +399,28 @@ def collect_candidates_with_query_hits(
     merge_started_at = perf_counter()
     for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
         for candidate in raw_results:
-            candidate.score += _query_anchor_boost(query, candidate)
-        raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
+            # Anchor rewards are capped per candidate (never accumulated
+            # across queries) and never mutate the raw vector score: gates and
+            # diagnostics read ``score``, ranking uses ``score + anchor_boost``.
+            candidate.anchor_boost = max(candidate.anchor_boost, _query_anchor_boost(query, candidate))
+        raw_results.sort(
+            key=lambda candidate: candidate.score + candidate.anchor_boost,
+            reverse=True,
+        )
         seen_for_query: set[str] = set()
         for rank, candidate in enumerate(raw_results, start=1):
             diagnostics.raw_candidate_count += 1
             seen_for_query.add(candidate.chunk_id)
             existing = candidates_by_chunk_id.get(candidate.chunk_id)
-            if existing is None or candidate.score > existing.score:
+            candidate_rank_score = candidate.score + candidate.anchor_boost
+            if existing is None or candidate_rank_score > existing.score + existing.anchor_boost:
                 candidates_by_chunk_id[candidate.chunk_id] = candidate
             query_hits_by_chunk_id.setdefault(candidate.chunk_id, []).append(
                 {
                     "query": query,
                     "rank": rank,
                     "vector_score": candidate.score,
+                    "anchor_boost": candidate.anchor_boost,
                     **metadata,
                 }
             )
@@ -559,20 +567,27 @@ class _AnnotatedChunk:
 def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     if not item.candidate.chunk_id or not item.candidate.text.strip():
         return False
+    # MCQ aspects blend a lexical coverage term into ``rerank_score`` for
+    # ordering; the reliability gates must evaluate the raw cross-encoder
+    # score, otherwise a strong model match can be filtered by a weak
+    # lexical term (or a weak match pushed through by a high coverage term).
+    rerank_score = (
+        item.raw_rerank_score if item.raw_rerank_score is not None else item.rerank_score
+    )
     coverage = evidence_coverage(terms, _candidate_evidence_text(item.candidate))
     strong_exact_match = (
         coverage >= DIRECT_EVIDENCE_COVERAGE
         and item.candidate.score >= 0.60
-        and item.rerank_score >= 0.0
+        and rerank_score >= 0.0
     )
-    if item.rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
+    if rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
         return False
     # The previous universal lexical-coverage gate discarded 28 official
     # Word/PDF cases even after BGE reranker had placed the expected document at
     # the top. Chinese regulatory questions and source clauses frequently use
     # paraphrases, so a strong cross-encoder match is valid semantic evidence.
     strong_semantic_match = (
-        item.rerank_score >= 0.55
+        rerank_score >= 0.55
         and item.candidate.score >= 0.05
         and coverage > 0.0
     )

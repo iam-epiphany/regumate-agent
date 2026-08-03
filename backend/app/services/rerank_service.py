@@ -25,6 +25,10 @@ _RERANK_INPUT_VERSION = "rerank-input-v2"
 class RerankedChunk:
     candidate: VectorSearchResult
     rerank_score: float
+    # Original cross-encoder score before any aspect-level blending (set by the
+    # MCQ path, which mixes a lexical coverage term into ``rerank_score`` for
+    # ordering only; reliability gates must see the raw model score).
+    raw_rerank_score: float | None = None
 
 
 @lru_cache(maxsize=1)

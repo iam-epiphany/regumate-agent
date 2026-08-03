@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 import json
@@ -25,11 +26,17 @@ class SpreadsheetCandidate:
     selected_cell: dict[str, Any] | None = None
 
 
-_LAST_DIAGNOSTIC: dict[str, Any] = {}
+# Per-request diagnostic slot (ContextVar, like retrieval_service's
+# diagnostics): a module-level dict would race between concurrent requests.
+_SPREADSHEET_DIAGNOSTIC: ContextVar[dict[str, Any] | None] = ContextVar(
+    "regumate_last_spreadsheet_diagnostic",
+    default=None,
+)
 
 
 def get_last_spreadsheet_diagnostic() -> dict[str, Any]:
-    return dict(_LAST_DIAGNOSTIC)
+    current = _SPREADSHEET_DIAGNOSTIC.get()
+    return dict(current or {})
 
 
 def retrieve_spreadsheet_matches(db: Session, aspect: Any, *, limit: int = 5) -> list[RetrievalMatch]:
@@ -1232,8 +1239,12 @@ def _cell_metadata(candidate: SpreadsheetCandidate) -> dict[str, Any]:
 
 
 def _set_last_diagnostic(**values: Any) -> None:
-    _LAST_DIAGNOSTIC.clear()
-    _LAST_DIAGNOSTIC.update(values)
+    current = _SPREADSHEET_DIAGNOSTIC.get()
+    if current is None:
+        current = {}
+        _SPREADSHEET_DIAGNOSTIC.set(current)
+    current.clear()
+    current.update(values)
 
 
 def _set_valid_diagnostic(matches: list[RetrievalMatch]) -> None:

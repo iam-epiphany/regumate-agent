@@ -446,7 +446,7 @@ def _finish_aspect_matches(
             inferred_filter_scores.get(candidate.chunk_id, 0.0),
             document_style_scores.get(candidate.chunk_id, 0.0),
             fusion_scores.get(candidate.chunk_id, 0.0),
-            candidate.score,
+            candidate.score + candidate.anchor_boost,
         ),
         reverse=True,
     )
@@ -502,6 +502,10 @@ def _finish_aspect_matches(
     if aspect.aspect_id == "multiple_choice_evidence":
         for item in reranked:
             direct_score = document_style_scores.get(item.candidate.chunk_id, 0.0)
+            # The blended score orders MCQ candidates; the raw cross-encoder
+            # score is preserved for the reliability gates in _is_reliable so a
+            # strong model match is never filtered by a weak lexical term.
+            item.raw_rerank_score = float(item.rerank_score)
             item.rerank_score = 0.35 * float(item.rerank_score) + 0.65 * direct_score
         reranked.sort(key=lambda item: item.rerank_score, reverse=True)
         reranked = reranked[:RERANK_TOP_K]
@@ -528,6 +532,10 @@ def _finish_aspect_matches(
         match.metadata["expected_evidence_type"] = aspect.expected_evidence_type
         match.metadata["evidence_need"] = aspect.evidence_need
 
+    # Real candidates' fusion scores, captured before any supplement injection:
+    # later passes must not chain off previously injected synthetic scores.
+    real_fusion_best = max(fusion_scores.values(), default=0.0)
+
     exact_anchor_matches = _exact_anchor_support_matches(
         db,
         aspect,
@@ -536,9 +544,12 @@ def _finish_aspect_matches(
         document_chunk_cache=document_chunk_cache,
     )
     if exact_anchor_matches:
-        best_fusion = max(fusion_scores.values(), default=0.0)
+        # Supplements outrank the aspect's real matches so an anchored clause
+        # is not drowned out by rerank noise, but their internal order follows
+        # the real support score instead of insertion order.
+        exact_anchor_matches.sort(key=lambda match: match.rerank_score, reverse=True)
         for offset, supplement in enumerate(exact_anchor_matches, start=1):
-            fusion_scores[supplement.citation.chunk_id] = best_fusion + 0.015 - offset * 0.0001
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.015, 0.99) - offset * 0.0001
         existing_chunk_ids = {match.citation.chunk_id for match in exact_anchor_matches}
         matches = exact_anchor_matches + [
             match for match in matches if match.citation.chunk_id not in existing_chunk_ids
@@ -568,9 +579,9 @@ def _finish_aspect_matches(
         document_chunk_cache=document_chunk_cache,
     )
     if lexical_support_matches:
-        best_fusion = max(fusion_scores.values(), default=0.0)
+        lexical_support_matches.sort(key=lambda match: match.rerank_score, reverse=True)
         for offset, supplement in enumerate(lexical_support_matches, start=1):
-            fusion_scores[supplement.citation.chunk_id] = best_fusion + 0.01 - offset * 0.0001
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.01, 0.99) - offset * 0.0001
         existing_chunk_ids = {match.citation.chunk_id for match in lexical_support_matches}
         matches = lexical_support_matches + [
             match for match in matches if match.citation.chunk_id not in existing_chunk_ids
@@ -583,9 +594,9 @@ def _finish_aspect_matches(
         document_chunk_cache=document_chunk_cache,
     )
     if formula_support_matches:
-        best_fusion = max(fusion_scores.values(), default=0.0)
+        formula_support_matches.sort(key=lambda match: match.rerank_score, reverse=True)
         for offset, supplement in enumerate(formula_support_matches, start=1):
-            fusion_scores[supplement.citation.chunk_id] = best_fusion + 0.01 - offset * 0.0001
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.01, 0.99) - offset * 0.0001
         existing_chunk_ids = {match.citation.chunk_id for match in formula_support_matches}
         matches = formula_support_matches + [
             match for match in matches if match.citation.chunk_id not in existing_chunk_ids
@@ -599,10 +610,10 @@ def _finish_aspect_matches(
             document_chunk_cache=document_chunk_cache,
         )
         if supplements:
-            best_fusion = max(fusion_scores.values(), default=0.0)
+            supplements.sort(key=lambda match: match.rerank_score, reverse=True)
             for offset, supplement in enumerate(supplements, start=1):
                 chunk_id = supplement.citation.chunk_id
-                fusion_scores[chunk_id] = best_fusion + 0.01 - offset * 0.0001
+                fusion_scores[chunk_id] = min(real_fusion_best + 0.01, 0.99) - offset * 0.0001
                 supplement.metadata["aspect_id"] = aspect.aspect_id
                 supplement.metadata["aspect_question"] = aspect.question
                 supplement.metadata["fusion_method"] = "mcq_exact_support"

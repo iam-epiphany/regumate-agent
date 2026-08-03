@@ -38,6 +38,11 @@ class VectorSearchResult:
     embedding_text: str
     token_count: int
     score: float
+    # Ordering-only reward for exact auditable anchors (《标题》/文号 in the
+    # query matching this candidate's source).  Kept separate from ``score``
+    # so reliability gates and diagnostics always see the raw vector score;
+    # ``score + anchor_boost`` is used only for ranking and tie-breaks.
+    anchor_boost: float = 0.0
     chunk_type: str = "paragraph"
     section_path: list[str] | None = None
     section_number: str | None = None
