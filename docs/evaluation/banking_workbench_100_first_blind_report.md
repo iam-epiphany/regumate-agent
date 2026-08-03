@@ -57,10 +57,10 @@
 
 | 资产 | 位置 |
 |---|---|
-| 工具链 5 脚本 + 16 单测 | scripts/evaluation/banking_workbench/ |
-| 私有金标 100 题 | ReguMate-Eval-Private/banking_workbench_100/accepted/gold.jsonl |
-| 公开题面 + lock.json + 首跑输出 + 评分 + 复核 | data/evaluation/banking_workbench_100/ |
-| 审计/校验/冻结报告 | data/evaluation/banking_workbench/ |
+| 工具链 5 脚本 + 16 单测 | scripts/evaluation/去锚100题-语料/ |
+| 私有金标 100 题 | ReguMate-Eval-Private/去锚100题/accepted/gold.jsonl |
+| 公开题面 + lock.json + 首跑输出 + 评分 + 复核 | data/evaluation/去锚100题/ |
+| 审计/校验/冻结报告 | data/evaluation/去锚100题-语料/ |
 
 隔离保证:生产代码零改动(工具链全部在 scripts/evaluation/);金标只在项目外私有目录;盲测只发送公开题面。
 

@@ -74,3 +74,6 @@ hf_cache/
 
 # External contest briefs and raw binary source material
 /docs/*.docx
+
+# 私有金标(不提交)
+ReguMate-Eval-Private/

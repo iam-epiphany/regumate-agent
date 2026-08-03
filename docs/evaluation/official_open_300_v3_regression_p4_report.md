@@ -1,9 +1,9 @@
 # 官方 300 题开放式问答 v3 回归报告(优化后,配对比较)
 
 **日期:** 2026-08-01
-**基线:** `official_open_300_v3_baseline_report.md`(首跑冻结)
-**回归产物:** `data/evaluation/official_open_300_v3/regression_p4_all.json`(系统回答)、`regression_p4_semantic_score.json`(judge 评分)、`regression_p4_failure_analysis.json`(过程分析)
-**官方 300 回归(选择题):** `data/evaluation/official_300_regression_p4/official_300_results.json` — **300/300 正确,0 错误,avg 1.35s**(AGENTS.md 硬性门禁通过)
+**基线:** `官方300开放问答_baseline_report.md`(首跑冻结)
+**回归产物:** `data/evaluation/官方300开放问答/regression_p4_all.json`(系统回答)、`regression_p4_semantic_score.json`(judge 评分)、`regression_p4_failure_analysis.json`(过程分析)
+**官方 300 回归(选择题):** `data/evaluation/官方300选择题-验收基线/official_300_results.json` — **300/300 正确,0 错误,avg 1.35s**(AGENTS.md 硬性门禁通过)
 
 ## 1. 本回归包含的生产改动(全部通用能力改进)
 

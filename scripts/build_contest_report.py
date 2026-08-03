@@ -21,7 +21,7 @@ def main() -> int:
     parser.add_argument(
         "--evaluation-dir",
         type=Path,
-        default=ROOT / "data" / "evaluation" / "official_300_regression_merged_v2",
+        default=ROOT / "data" / "evaluation" / "官方300选择题-最新回归",
     )
     parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evaluation" / "final_contest_report.md")
     parser.add_argument("--all-results", type=Path, help="Canonical 300-question result JSON.")

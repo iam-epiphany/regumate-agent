@@ -16,7 +16,7 @@
 
 ## 3. 冻结产物与校验
 
-- 题集:`data/evaluation/official_open_300_v3/`
+- 题集:`data/evaluation/官方300开放问答/`
   - `open_questions.jsonl`(300 条,仅题面与元数据,无答案)
   - `open_reference_answers.jsonl`(300 条金标,独立于生产代码)
   - `open_v3_gold.json`(33 道比较题金标数值,33/33 成功,赢家指标与官方答案全部一致)

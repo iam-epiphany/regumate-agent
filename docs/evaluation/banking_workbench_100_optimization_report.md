@@ -71,8 +71,8 @@
 | 资产 | 位置 |
 |---|---|
 | 修复提交 | 5a098f7(修复)、b0f70bd(合并 codex)、20e58a9(边界修正)、8e85b64(Dockerfile) |
-| 回归输出+评分 | data/evaluation/banking_workbench_100/regression_merged_v2/(gitignored) |
-| 官方 300 回归 | data/evaluation/official_300_regression_merged_v2/(gitignored) |
+| 回归输出+评分 | data/evaluation/去锚100题/regression_merged_v2/(gitignored) |
+| 官方 300 回归 | data/evaluation/官方300选择题-最新回归/(gitignored) |
 | 单元测试 | 529 passed,含新增拒答边界 5 测 + 表格复合 3 测 |
 
 ## 6. 后续建议

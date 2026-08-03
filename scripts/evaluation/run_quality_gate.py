@@ -24,7 +24,7 @@ DEFAULT_OFFICIAL_ACCEPTANCE = (
     PROJECT_ROOT
     / "data"
     / "evaluation"
-    / "official_300_regression_p9_split"
+    / "官方300选择题-验收基线"
     / "official_300_results.json"
 )
 

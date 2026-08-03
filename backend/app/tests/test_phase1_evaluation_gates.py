@@ -144,7 +144,7 @@ def test_existing_gpu_acceptance_artifact_is_verified_without_rerun() -> None:
         PROJECT_ROOT
         / "data"
         / "evaluation"
-        / "official_300_regression_p9_split"
+        / "官方300选择题-验收基线"
         / "official_300_results.json"
     )
 
