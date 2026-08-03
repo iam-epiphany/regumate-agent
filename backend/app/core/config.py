@@ -149,7 +149,11 @@ RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3"
 EMBEDDING_DIMENSION = 1024
 EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8, minimum=1)
 EMBEDDING_MAX_BATCH_SIZE = _env_int("EMBEDDING_MAX_BATCH_SIZE", 16, minimum=1)
-QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 4, minimum=1)
+# Query embedding batch size.  Batching changes the fp16 forward-pass numerics
+# slightly (measured max dense delta ~2.5e-7 vs batch=1), which is enough to
+# flip a borderline retrieval ranking; the default therefore stays at 1 for
+# bit-stable retrieval, and operators can raise it for throughput.
+QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 1, minimum=1)
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24

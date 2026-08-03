@@ -147,8 +147,8 @@ def embed_queries(texts: list[str]) -> list[TextEmbedding]:
         # Query plans can contain option statements with very different token
         # lengths. Keep each forward pass bounded and independently observable
         # so one pathological query cannot retain the shared model lock for an
-        # entire multi-query retrieval plan.  The default groups a few queries
-        # per pass; QUERY_EMBEDDING_BATCH_SIZE=1 restores per-query isolation.
+        # entire multi-query retrieval plan.  QUERY_EMBEDDING_BATCH_SIZE>1
+        # trades that isolation for throughput.
         query_batch_size = min(profile.embedding_batch_size, QUERY_EMBEDDING_BATCH_SIZE)
         embedded: list[TextEmbedding] = []
         for offset in range(0, len(missing_texts), max(1, query_batch_size)):
