@@ -109,7 +109,7 @@ CONTEXT_INSTRUCTION = (
 # "会计政策与会计估计", "预期未来现金流入") would be wrongly refused.
 _PREDICTION_MARKERS = (
     "请预测", "预测未来", "未来一年", "下季度", "下一年度", "明年", "走势预测",
-    "将如何变化", "变化比例", "影响幅度",
+    "将如何变化", "变化比例", "影响幅度", "下一版", "必然会",
 )
 # "预计" alone would also catch the balance-sheet term "预计负债" (expected
 # liabilities), which is a perfectly answerable regulatory concept, so it is
@@ -136,6 +136,16 @@ _OUT_OF_CORPUS_BANK_NAMES = (
 _OUT_OF_CORPUS_DATA_REQUESTS = (
     "年报", "年度报告", "财务数据", "不良贷款率", "净利润", "对比数据", "报告中的",
     "存款利率", "具体数据", "定期报告", "经营数据", "季度报告", "业绩", "财报", "指标",
+)
+_CALCULATION_WITHOUT_OPERAND_TERMS = (
+    "计算", "算出", "核算", "比较", "排名", "换算", "折算", "占比", "比例", "差额", "差异",
+)
+_MISSING_DATA_PHRASES = (
+    "未给出", "没有给出", "未提供", "没有提供", "未指明", "没有任何", "缺少", "但没有",
+)
+_MISSING_CONTEXT_PHRASES = (
+    "未提供", "没有提供", "未给出", "未具名", "未说明", "未指明",
+    "没有文件名", "没有指标口径", "只给出", "模糊描述", "没有任何定位信息",
 )
 CONTEXT_CHUNK_CHAR_LIMIT = 1200
 EMPTY_ANSWER_LOG_TEXT = "[RAG_CONTEXT_PACKAGE_ONLY] 当前阶段未接入 LLM，接口仅返回检索上下文包。"
@@ -406,13 +416,25 @@ def _explicit_request_boundary_code(question: str) -> str | None:
     if any(bank in compact for bank in _OUT_OF_CORPUS_BANK_NAMES):
         if any(request in compact for request in _OUT_OF_CORPUS_DATA_REQUESTS):
             return "out_of_scope_or_realtime"
+    if any(marker in intent_text for marker in _SUBJECTIVE_DECISION_MARKERS):
+        return "subjective_business_advice"
     if any(marker in intent_text for marker in _PREDICTION_MARKERS):
         return "unsupported_prediction"
     if any(marker in intent_text for marker in _PREDICTION_MARKERS_EXPECTED):
         if not any(term in intent_text for term in _PREDICTION_ACCOUNTING_TERMS):
             return "unsupported_prediction"
-    if any(marker in intent_text for marker in _SUBJECTIVE_DECISION_MARKERS):
-        return "subjective_business_advice"
+    # Inline option lists (A. B. C. D.) belong to the question text in legacy
+    # projections; phrases such as "未说明" inside an option must not be read
+    # as the user's own request boundary.
+    has_inline_options = bool(re.search(r"[A-D][.、．]", intent_text))
+    if not has_inline_options:
+        if (
+            any(term in intent_text for term in _CALCULATION_WITHOUT_OPERAND_TERMS)
+            and any(term in intent_text for term in _MISSING_DATA_PHRASES)
+        ):
+            return "missing_calculation_operands"
+        if any(term in intent_text for term in _MISSING_CONTEXT_PHRASES):
+            return "missing_required_context"
     return None
 
 

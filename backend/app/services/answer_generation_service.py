@@ -307,19 +307,6 @@ def generate_answer(
             if repaired_validation["passed"]:
                 return repaired
             if not normalized_options:
-                known_fact = (
-                    None
-                    if (answer_mode in {"mixed", "scenario"} and table_findings)
-                    or _has_structured_table_evidence(context_chunks)
-                    else _deterministic_known_fact_answer(
-                        question,
-                        context_chunks,
-                        required_aspect_ids=required_aspect_ids or [],
-                    )
-                )
-                if known_fact is not None:
-                    _report_verified_claims(known_fact, verified_claim_reporter)
-                    return known_fact
                 # Open questions must not degrade to a conclusion-less excerpt
                 # dump after the LLM produced an answer that failed validation:
                 # the excerpt reads like a refusal without saying so.  Refuse
