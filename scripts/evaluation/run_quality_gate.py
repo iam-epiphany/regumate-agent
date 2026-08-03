@@ -24,8 +24,7 @@ DEFAULT_OFFICIAL_ACCEPTANCE = (
     PROJECT_ROOT
     / "data"
     / "evaluation"
-    / "independent_100_20260731"
-    / "official_acceptance_20260731_104202"
+    / "official_300_regression_p9_split"
     / "official_300_results.json"
 )
 

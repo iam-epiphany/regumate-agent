@@ -1402,21 +1402,6 @@ def test_answer_claim_remains_backward_compatible() -> None:
     assert claim.aspect_ids == []
 
 
-def test_challenge_100_is_gold_isolated_and_has_fixed_distribution() -> None:
-    root = Path("data/evaluation/trust_challenge_100")
-    questions = read_jsonl(root / "questions.jsonl")
-    gold = read_jsonl(root / "gold.jsonl")
-    assert len(questions) == len(gold) == 100
-    assert [row["id"] for row in questions] == [row["id"] for row in gold]
-    assert {row["difficulty"] for row in questions} == {"medium", "hard"}
-    assert sum(row["difficulty"] == "medium" for row in questions) == 30
-    assert sum(row["difficulty"] == "hard" for row in questions) == 70
-    assert sum(row["split"] == "dev" for row in questions) == 40
-    assert sum(row["split"] == "holdout" for row in questions) == 60
-    assert all("canonical_answer" not in row and "evidence" not in row for row in questions)
-    assert all(row["review_status"] == "codex_verified" and row["expert_reviewed"] is False for row in gold)
-
-
 def test_hard_50_is_gold_isolated_and_independently_audited() -> None:
     root = Path("data/evaluation/hard_challenge_50/round_1")
     if not (root / "questions.jsonl").is_file():

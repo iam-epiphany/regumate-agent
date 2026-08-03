@@ -87,7 +87,7 @@ Invoke-Stage "contest_metric_gate" {
     $script:ContestResultPath = $ContestResult.FullName
     $script:OodResultPath = Join-Path $ContestResult.Directory.FullName "ood\contest_qa_ood_results.json"
     if (-not (Test-Path -LiteralPath $script:OodResultPath)) { throw "No OOD result was produced: $script:OodResultPath" }
-    $BaselineResult = "data\evaluation\contest_qa_test\20260718_025139\contest_qa_all_results.json"
+    $BaselineResult = "data\evaluation\official_300_regression_p9_split\official_300_results.json"
     if (-not (Test-Path -LiteralPath $BaselineResult)) { throw "Frozen GPU baseline is missing: $BaselineResult" }
     python scripts\verify_release_metrics.py `
         --result $script:ContestResultPath `
