@@ -242,7 +242,13 @@ def _indexed_spreadsheet_matches(
             selected,
             aspect,
             operation,
-            ordered_transition=bool(selectors),
+            # Only cross-period or reversed-operand ("A比B多") selectors mark
+            # themselves as ordered transitions (second - first); ordinary
+            # "X与Y的差值" keeps the selector order (first - second).
+            ordered_transition=any(
+                isinstance(selector, dict) and selector.get("ordered_transition")
+                for selector in selectors
+            ),
         )
         if calculation:
             _attach_sum_comparison_target(calculation, candidates, selected, filters, operation)

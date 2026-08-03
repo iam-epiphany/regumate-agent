@@ -218,7 +218,7 @@ def test_spreadsheet_calculation_keeps_all_selector_operand_columns(db_session) 
         operation="difference",
         table_filters={"row_label": "region total", "column_label": "category"},
         selectors=(
-            {"row_label": "region total", "column_label": "total"},
+            {"row_label": "region total", "column_label": "total", "ordered_transition": True},
             {"row_label": "region total", "column_label": "category"},
         ),
     )
@@ -282,7 +282,7 @@ def test_spreadsheet_difference_preserves_source_operand_precision(db_session) -
         table_task="calculate",
         operation="difference",
         selectors=(
-            {"row_label": "同比增长率", "column_label": "一季度"},
+            {"row_label": "同比增长率", "column_label": "一季度", "ordered_transition": True},
             {"row_label": "同比增长率", "column_label": "四季度"},
         ),
     )

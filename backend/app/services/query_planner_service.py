@@ -1549,11 +1549,13 @@ def _extract_table_selectors(
     if selectors:
         pass
     elif len(period_selectors) >= 2:
-        selectors = period_selectors
+        # Cross-period differences are "later minus earlier"; the period
+        # selectors are ordered by time, so mark them as an ordered transition.
+        selectors = [{**selector, "ordered_transition": True} for selector in period_selectors]
     elif table_task == "calculate" and len(quoted) >= 3:
         # “row”从“column A”到“column B” means B - A.
         selectors = [
-            {"row_label": quoted[0], "column_label": quoted[1]},
+            {"row_label": quoted[0], "column_label": quoted[1], "ordered_transition": True},
             {"row_label": quoted[0], "column_label": quoted[2]},
         ]
     elif table_task == "calculate":
@@ -1561,8 +1563,13 @@ def _extract_table_selectors(
         indicators = _mentioned_table_indicators(question)
         diff_match = re.search(r"(.+?)比(.+?)(?:多|少)", normalized)
         if diff_match and len(indicators) >= 2:
-            # ordered_transition calculations use second - first.
-            selectors = [{"row_or_indicator": indicators[1]}, {"row_or_indicator": indicators[0]}]
+            # "A比B多" means A - B.  The selectors are deliberately reversed
+            # (B first) and marked as an ordered transition, so the calculator
+            # evaluates second - first.
+            selectors = [
+                {"row_or_indicator": indicators[1], "ordered_transition": True},
+                {"row_or_indicator": indicators[0]},
+            ]
         elif any(term in normalized for term in ["分项之和", "分项合计", "四个分项"]):
             component_order = ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
             selectors = [{"row_or_indicator": item} for item in component_order]

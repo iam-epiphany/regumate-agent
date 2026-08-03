@@ -207,7 +207,12 @@ def test_query_planner_recognizes_monthly_report_lookup_and_difference(monkeypat
     difference = difference_plan.aspects[0]
     assert difference.table_task == "calculate"
     assert difference.operation == "difference"
-    assert list(difference.selectors) == [{"row_or_indicator": "证券投资"}, {"row_or_indicator": "贷款余额"}]
+    # "贷款余额比证券投资多" → 证券投资在前(逆序)并标记 ordered_transition,
+    # 计算时按 second - first = 贷款余额 - 证券投资。
+    assert list(difference.selectors) == [
+        {"row_or_indicator": "证券投资", "ordered_transition": True},
+        {"row_or_indicator": "贷款余额"},
+    ]
 
     table, regulation = sum_plan.aspects
     assert table.modality == "table"
