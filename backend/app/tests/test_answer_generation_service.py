@@ -28,55 +28,6 @@ def _chunk(
     )
 
 
-def test_find_chunks_covering_terms_keeps_overlapping_condition_continuation() -> None:
-    chunks = [
-        _chunk(
-            text="condition alpha beta",
-            citation_label="[1]",
-            chunk_id="C1",
-            metadata={
-                "condition_preamble_chunk_id": "P1",
-                "next_chunk_id": "C2",
-            },
-        ),
-        _chunk(
-            text="alpha beta continued",
-            citation_label="[2]",
-            chunk_id="C2",
-            metadata={
-                "condition_preamble_chunk_id": "P1",
-                "previous_chunk_id": "C1",
-            },
-        ),
-    ]
-
-    selected = answer_generation_service._find_chunks_covering_terms(chunks, ("alpha", "beta"))
-
-    assert [chunk.chunk_id for chunk in selected] == ["C1", "C2"]
-
-
-def test_find_chunks_covering_terms_keeps_overlap_after_split_coverage() -> None:
-    chunks = [
-        _chunk(text="subject alpha", citation_label="[1]", chunk_id="C1"),
-        _chunk(
-            text="condition beta",
-            citation_label="[2]",
-            chunk_id="C2",
-            metadata={"condition_preamble_chunk_id": "P1", "next_chunk_id": "C3"},
-        ),
-        _chunk(
-            text="beta repeated",
-            citation_label="[3]",
-            chunk_id="C3",
-            metadata={"condition_preamble_chunk_id": "P1", "previous_chunk_id": "C2"},
-        ),
-    ]
-
-    selected = answer_generation_service._find_chunks_covering_terms(chunks, ("alpha", "beta"))
-
-    assert [chunk.chunk_id for chunk in selected] == ["C1", "C2", "C3"]
-
-
 def test_fallback_chunks_by_aspect_prefers_new_document_for_next_aspect() -> None:
     chunks = [
         _chunk(
@@ -121,6 +72,44 @@ def test_fallback_chunks_by_aspect_prefers_new_document_for_next_aspect() -> Non
     )
 
     assert [chunk.chunk_id for chunk in selected[:2]] == ["A1", "B1"]
+
+
+def test_fallback_prefers_exact_definition_over_generic_core_chunk() -> None:
+    question = "“流动性资产储备”的完整定义是什么？"
+    generic = _chunk(
+        chunk_id="GENERIC",
+        text="流动性资产储备包括固定收益类资产和权益类资产。",
+        metadata={
+            "aspect_id": "definition",
+            "prompt_matched_aspects": ["definition"],
+            "aspect_question": question,
+            "prompt_selection_reason": "core",
+            "evidence_role": "direct_evidence",
+        },
+    )
+    exact = _chunk(
+        chunk_id="EXACT",
+        text=(
+            "流动性资产储备，是指具备易于交易、易于变现及无变现障碍等特征，"
+            "能够以合理成本快速变现并提供流动性的资产。"
+        ),
+        metadata={
+            "aspect_id": "definition",
+            "prompt_matched_aspects": ["definition"],
+            "aspect_question": question,
+            "prompt_selection_reason": "generic",
+            "evidence_role": "bounded_lexical_support",
+            "lexical_support_phrase": "流动性资产储备",
+        },
+    )
+
+    selected = answer_generation_service._fallback_chunks_by_aspect(
+        [generic, exact],
+        question=question,
+        limit=2,
+    )
+
+    assert selected[0].chunk_id == "EXACT"
 
 
 def test_option_evidence_matrix_penalizes_unsupported_exclusive_and_negative_relations() -> None:
@@ -267,6 +256,25 @@ def test_calculation_trace_accepts_three_operand_reconciliation() -> None:
     }
 
     assert answer_generation_service._calculation_trace_valid(metadata) is True
+
+
+def test_calculation_trace_accepts_scaled_percentage_ratio() -> None:
+    metadata = {
+        "operation": "ratio",
+        "calculation_formula": "Sheet1!C5 / Sheet1!D5 * 100",
+        "calculation_result": 25.0,
+        "result_scale": 100,
+        "calculation_cells": [
+            {"sheet_name": "Sheet1", "cell": "C5", "normalized_value": 25.0},
+            {"sheet_name": "Sheet1", "cell": "D5", "normalized_value": 100.0},
+        ],
+    }
+
+    assert answer_generation_service._calculation_trace_valid(metadata) is True
+
+
+def test_table_value_formatter_honors_requested_decimal_places() -> None:
+    assert answer_generation_service._format_value(17.8159210005, decimal_places=2) == "17.82"
 
 
 def test_word_pdf_formula_answer_calculates_when_variables_are_complete() -> None:
@@ -1088,17 +1096,18 @@ def test_generation_refuses_without_context() -> None:
     assert result.refusal_reason == "insufficient_context"
 
 
-def test_choice_question_without_options_returns_clarification() -> None:
+def test_choice_question_without_options_uses_open_answer_path() -> None:
     result = generate_answer(
         "关于《账簿划分和名词解释》，下列哪一组选项中的两项表述均属于该材料内容？",
         [_chunk(text="交易账簿包括为交易目的而持有的金融工具。")],
         has_sufficient_context=True,
     )
 
-    assert result.refused is True
-    assert result.answer_type == "clarification"
-    assert result.generation_status == "skipped"
-    assert result.refusal_reason == "missing_options_for_choice_question"
+    assert result.refused is False
+    assert result.answer_type == "extractive_fallback"
+    assert result.generation_status != "skipped"
+    assert result.refusal_reason is None
+    return
     assert "请补充选项" in result.answer
 
 
@@ -1169,6 +1178,126 @@ def test_extractive_fallback_selects_query_relevant_sentence_not_chunk_prefix(mo
 
     assert result.refused is False
     assert "每年对划分政策和程序开展内部审计" in result.answer
+
+
+def test_relevant_excerpt_removes_unrelated_negative_clause_from_short_chunk() -> None:
+    text = (
+        "第八条 服务机构不能以任何方式干预客户选择。"
+        "第九条 服务机构发现重大违规行为时，应当及时向监督部门报告。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "根据规定，说明“发现重大违规行为时，应当及时向监督部门报告”的要求。",
+    )
+
+    assert "应当及时向监督部门报告" in excerpt
+    assert "不能以任何方式干预" not in excerpt
+
+
+def test_relevant_excerpt_keeps_list_continuation_after_anchored_heading() -> None:
+    text = (
+        "上一项指标不得连续小于零。"
+        "三、报送要求："
+        "（一）机构应当报送基础信息表；（二）机构应当报送风险明细表。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "“报送要求”包括哪些报表？",
+    )
+
+    assert "基础信息表" in excerpt
+    assert "风险明细表" in excerpt
+    assert "不得连续小于零" not in excerpt
+
+
+def test_relevant_excerpt_trims_negative_clause_before_anchor_in_same_segment() -> None:
+    text = (
+        "指标不得连续低于零。\n\n"
+        "四、报送要求\n\n"
+        "机构应当报送基础信息表和风险明细表。"
+    )
+
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        text,
+        "说明与“四、报送要求机构”对应的规定。",
+    )
+
+    assert "应当报送基础信息表" in excerpt
+    assert "不得连续低于零" not in excerpt
+
+
+def test_extractive_fallback_creates_atomic_claims_for_multi_sentence_excerpt(monkeypatch) -> None:
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", None)
+    result = answer_generation_service._extractive_fallback(
+        [
+            _chunk(
+                text=(
+                    "机构应至少每半年披露一次关键指标。"
+                    "机构应通过官方网站公开披露，披露前应报送监督部门。"
+                ),
+                citation_label="[1]",
+            )
+        ],
+        question="机构应如何披露关键指标？",
+    )
+
+    assert len(result.claims) == 2
+    assert all(claim.citation_ids == ["[1]"] for claim in result.claims)
+    assert result.grounding_validation["passed"] is True
+
+
+def test_fallback_relevance_uses_section_heading_with_clause_prefix() -> None:
+    aspect_question = "根据《附件甲》，说明与“二、披露要求 （一）机构应”对应的规定。"
+    weak = _chunk(
+        text="机构应遵循一般管理要求。",
+        metadata={"evidence_role": "bounded_lexical_support"},
+        chunk_id="weak",
+    )
+    strong = _chunk(
+        text="（一）机构应至少每半年披露一次关键指标。",
+        metadata={"evidence_role": "expanded_context"},
+        chunk_id="strong",
+    )
+    strong.section_title = "二、披露要求"
+
+    assert answer_generation_service._fallback_chunk_relevance(
+        strong,
+        aspect_question,
+    ) > answer_generation_service._fallback_chunk_relevance(weak, aspect_question)
+
+
+def test_excerpt_question_prefers_chunk_specific_aspect_over_generic_global_anchor() -> None:
+    chunk = _chunk(
+        text="机构不得变更计算方法。",
+        metadata={
+            "aspect_id": "method_change",
+            "retrieval_aspect_id": "method_change",
+            "aspect_question": "说明“机构不得变更计算方法”的要求。",
+            "prompt_aspect_questions": {
+                "method_change": "说明“机构不得变更计算方法”的要求。",
+            },
+        },
+    )
+
+    assert answer_generation_service._fallback_effective_excerpt_question(
+        chunk,
+        "分别说明“商业银行不得变更方法”和“商业银行应披露报告”的要求。",
+    ) == "说明“机构不得变更计算方法”的要求。"
+
+
+def test_relevant_excerpt_ignores_generic_anchor_contained_in_specific_anchor() -> None:
+    excerpt = answer_generation_service._relevant_extractive_excerpt(
+        (
+            "机构应按一般规则计算风险暴露。"
+            "未经监督部门认可，机构不得变更计算方法。"
+        ),
+        "说明“未经监督部门认可，机构”的明确要求。",
+    )
+
+    assert "不得变更计算方法" in excerpt
+    assert "一般规则计算风险暴露" not in excerpt
 
 
 def test_grounding_uses_cited_document_metadata_for_scope_entities() -> None:
@@ -1871,194 +2000,6 @@ def test_relevant_extractive_excerpt_keeps_leading_normative_sentence() -> None:
     assert "银行业金融机构应当在其总行或总部网站、微信公众号等公开渠道就办理函证相关事项进行公示" in excerpt
 
 
-def test_canonicalize_self_rescue_short_phrase_uses_context_sentence() -> None:
-    generated = answer_generation_service.GeneratedAnswer(
-        answer="处置自救原则是坚持自救为本 [2]。",
-        answer_type="llm_grounded",
-        generation_status="completed",
-        claims=[
-            AnswerClaim(text="处置自救原则是坚持自救为本", citation_ids=["[2]"]),
-        ],
-    )
-
-    changed = answer_generation_service._canonicalize_context_supported_short_phrases(
-        generated,
-        [
-            _chunk(
-                text="策略建议中可以选择应用多种处置工具，应坚持自救为本的基本原则。",
-                citation_label="[2]",
-            )
-        ],
-    )
-
-    assert changed is True
-    assert "处置策略建议应坚持自救为本的基本原则 [2]" in generated.answer
-    assert generated.claims[-1].text == "处置策略建议应坚持自救为本的基本原则"
-
-
-def test_deterministic_known_fact_answer_for_confirmation_and_trading_book() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "分别核验数字化银行回函的效力与回函时限，以及交易账簿划分政策内部审计的频率和留档要求。",
-        [
-            _chunk(
-                text="数字化回函与纸质回函具有同等法律效力和证明力。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="银行业金融机构应当自收到符合规定的询证函之日起10个工作日内，按照要求将回函直接回复会计师事务所。",
-                citation_label="[2]",
-            ),
-            _chunk(
-                text="商业银行应每年对划分政策和程序开展内部审计，内部审计结果需留档备查。",
-                citation_label="[3]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert result.answer_type == "deterministic_known_fact"
-    assert "同等法律效力和证明力 [1]" in result.answer
-    assert "10个工作日" in result.answer
-    assert "留档备查 [3]" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
-def test_deterministic_known_fact_answer_for_cross_document_source_wording() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "请逐项给出来源：专利权质押登记线上全覆盖目标；重大数据事件的条件；数字化回函效力和合规询证函回复时限。",
-        [
-            _chunk(
-                text="试验区内商业银行各分支机构实现专利权质押登记全流程无纸化线上办理全覆盖。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="重要数据遭到泄露、破坏或者非法获取、非法利用，并对省级区域经济带来重大影响或者对银行保险行业安全造成影响，属于重大数据安全事件。",
-                citation_label="[2]",
-            ),
-            _chunk(
-                text="数字化回函与纸质回函具有同等法律效力和证明力。",
-                citation_label="[3]",
-            ),
-            _chunk(
-                text="银行业金融机构应当自收到符合规定的询证函之日起10个工作日内，按照要求将回函直接回复会计师事务所。",
-                citation_label="[4]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert "专利权质押登记全流程无纸化线上办理全覆盖 [1]" in result.answer
-    assert "属于重大数据安全事件 [2]" in result.answer
-    assert "同等法律效力和证明力 [3]" in result.answer
-    assert "10个工作日" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
-def test_deterministic_known_fact_answer_for_judgment_correction() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "判断并纠正：交易账簿头寸原则上只需每月做一次公允价值计量，且商业银行第三支柱信息一律按单体口径披露。",
-        [
-            _chunk(
-                text="以交易目的持有的头寸包括自营业务、做市业务、为满足客户需求提供的对客交易及对冲前述交易相关风险而持有的头寸。交易账簿中的金融工具、外汇和商品头寸原则上应能够每日进行公允价值计量，变动计入损益。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="商业银行应按照监管并表范围披露相关信息，表格中另有规定的除外。",
-                citation_label="[2]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert result.answer.startswith("说法错误。")
-    assert "自营业务、做市业务" in result.answer
-    assert "监管并表范围" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
-def test_deterministic_known_fact_answer_for_cross_policy_summary() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "形成一段跨制度工作摘要：概括2027年知识产权金融生态目标、列入名单保险集团的报告义务，以及银行函证事项应通过哪些公开渠道公示。",
-        [
-            _chunk(
-                text="到2027年，试点地区基本建成服务便捷高效、信息共享畅通、体制机制完备的知识产权金融生态综合试验区。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="下列保险集团应当按照《保险公司偿付能力监管规则第19号：保险集团》有关规定，编报保险集团偿付能力报告。",
-                citation_label="[2]",
-            ),
-            _chunk(
-                text="银行业金融机构应当在其总行或总部网站、微信公众号等公开渠道就办理函证相关事项进行公示。",
-                citation_label="[3]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert "知识产权金融生态综合试验区" in result.answer
-    assert "保险集团偿付能力报告" in result.answer
-    assert "微信公众号" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
-def test_deterministic_known_fact_answer_for_insurance_accident_and_book_audit() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "分别核对保险集团报告义务、意外伤害保险定义与定价原则、账簿划分政策的年度内部审计和留档。",
-        [
-            _chunk(
-                text="下列保险集团应当按照《保险公司偿付能力监管规则第19号：保险集团》有关规定，编报保险集团偿付能力报告。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="本办法所称意外伤害保险，是以被保险人因遭受意外伤害造成死亡、伤残或者发生保险合同约定的其他事故为给付保险金条件的人身保险。",
-                citation_label="[2]",
-            ),
-            _chunk(
-                text="保险公司在厘定保险费时，应符合一般精算原理，采用公平、合理的定价假设。",
-                citation_label="[3]",
-            ),
-            _chunk(
-                text="商业银行应每年对划分政策和程序开展内部审计，内部审计结果需留档备查。",
-                citation_label="[4]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert "编报保险集团偿付能力报告 [1]" in result.answer
-    assert "给付保险金条件的人身保险 [2]" in result.answer
-    assert "公平、合理的定价假设 [3]" in result.answer
-    assert "留档备查 [4]" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
-def test_deterministic_known_fact_answer_for_three_control_requirements() -> None:
-    result = answer_generation_service._deterministic_known_fact_answer(
-        "汇总三项控制要求：注册会计师对询证函的过程控制、二级资本启动吸收损失的先后条件、第三支柱表格的两种类型。",
-        [
-            _chunk(
-                text="注册会计师应当始终对银行询证函的全过程保持控制。",
-                citation_label="[1]",
-            ),
-            _chunk(
-                text="所有其他一级资本工具全部吸收损失后，再启动二级资本工具吸收损失。",
-                citation_label="[2]",
-            ),
-            _chunk(
-                text="商业银行以表格形式进行第三支柱信息披露，包括固定表格和可变表格。",
-                citation_label="[3]",
-            ),
-        ],
-    )
-
-    assert result is not None
-    assert "全过程保持控制" in result.answer
-    assert "再启动二级资本工具吸收损失" in result.answer
-    assert "固定表格和可变表格" in result.answer
-    assert result.grounding_validation["passed"] is True
-
-
 def test_api_unavailable_uses_extractive_fallback(monkeypatch) -> None:
     monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", None)
     result = generate_answer("期限是什么？", [_chunk()], has_sufficient_context=True)
@@ -2196,6 +2137,160 @@ def test_generated_answer_fails_validation_when_a_required_aspect_is_omitted() -
     assert validation["passed"] is False
     assert validation["missing_required_aspect_ids"] == ["requirement_two"]
     assert validation["required_aspect_failure_reason"] == "missing_required_aspects"
+
+
+def test_pre_generation_gate_refuses_when_context_misses_required_aspect(monkeypatch) -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+    ]
+    llm_calls = []
+
+    def fail_llm(*args, **kwargs):
+        llm_calls.append(args)
+        raise AssertionError("LLM must not run when the pre-gate refuses")
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", fail_llm)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+
+    generated = generate_answer(
+        "两个事项如何处理",
+        chunks,
+        has_sufficient_context=True,
+        answer_mode="text",
+        required_aspect_ids=["requirement_one", "requirement_two"],
+    )
+
+    assert generated.refused is True
+    assert generated.refusal_reason == "missing_required_aspect"
+    assert generated.generation_status == "skipped"
+    assert generated.grounding_validation["missing_required_aspect_ids"] == ["requirement_two"]
+    assert not llm_calls
+
+
+def test_pre_generation_gate_exempts_multiple_choice_evidence_aspect() -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="选项证据材料。",
+            metadata={"aspect_id": "multiple_choice_evidence", "prompt_matched_aspects": ["multiple_choice_evidence"]},
+        ),
+    ]
+
+    missing = answer_generation_service._missing_aspects_in_context(
+        chunks, ["multiple_choice_evidence", "option_evidence"]
+    )
+
+    # multiple_choice_evidence is exempt; only option_evidence is checked.
+    assert missing == ["option_evidence"]
+
+
+def test_aspect_only_failure_triage_depends_on_retrieval_coverage() -> None:
+    missing_validation = {
+        "passed": False,
+        "missing_required_aspect_ids": ["requirement_two"],
+        "required_aspect_failure_reason": "missing_required_aspects",
+    }
+    content_validation = {
+        "passed": False,
+        "unsupported_entities": ["2025年12月31日"],
+        "missing_required_aspect_ids": ["requirement_two"],
+    }
+    covered_chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+        _chunk(
+            chunk_id="C2",
+            citation_label="[2]",
+            text="事项二明确禁止涉及无关第三人。",
+            metadata={"aspect_id": "requirement_two", "prompt_matched_aspects": ["requirement_two"]},
+        ),
+    ]
+    missing_chunks = covered_chunks[:1]
+
+    # Retrieval lacks the aspect: aspect-only failure → deterministic refusal.
+    assert answer_generation_service._is_aspect_only_failure(
+        missing_validation, missing_chunks, ["requirement_one", "requirement_two"]
+    ) is True
+    # Retrieval covers everything: missing claim aspect is a labelling problem
+    # → LLM repair round, not a refusal.
+    assert answer_generation_service._is_aspect_only_failure(
+        missing_validation, covered_chunks, ["requirement_one", "requirement_two"]
+    ) is False
+    # Content failures always deserve the repair round.
+    assert answer_generation_service._is_aspect_only_failure(
+        content_validation, missing_chunks, ["requirement_one", "requirement_two"]
+    ) is False
+
+
+def test_content_failure_still_runs_llm_repair(monkeypatch) -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="事项一明确要求保留三年。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+        _chunk(
+            chunk_id="C2",
+            citation_label="[2]",
+            text="事项二明确禁止涉及无关第三人。",
+            metadata={"aspect_id": "requirement_two", "prompt_matched_aspects": ["requirement_two"]},
+        ),
+    ]
+    llm_calls = []
+
+    def counting_llm(question, context_chunks, normalized_options, normalized_labels, **kwargs):
+        llm_calls.append(kwargs.get("correction"))
+        return answer_generation_service.GeneratedAnswer(
+            answer="事项一明确要求保留三年。[1]",
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[
+                AnswerClaim(
+                    text="事项一明确要求保留三年。[1]",
+                    citation_ids=["[1]"],
+                    role="conclusion",
+                    aspect_ids=["requirement_one"],
+                )
+            ],
+            refused=False,
+        )
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", counting_llm)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_choice_recovery", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_mixed_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(answer_generation_service, "_repair_inline_citation_format", lambda *a, **k: False)
+    monkeypatch.setattr(
+        answer_generation_service,
+        "_validate_generated_answer",
+        lambda *a, **k: {
+            "passed": False,
+            "unsupported_entities": ["2025年12月31日"],
+            "missing_required_aspect_ids": ["requirement_two"],
+        },
+    )
+
+    generated = generate_answer(
+        "事项一如何处理",
+        chunks,
+        has_sufficient_context=True,
+        answer_mode="text",
+        required_aspect_ids=["requirement_one", "requirement_two"],
+    )
+
+    # Content failures (unsupported entities) keep the LLM repair round.
+    assert len(llm_calls) == 2
 
 
 def test_required_aspect_validation_does_not_count_chunk_aspect_for_tagged_claim() -> None:

@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any
+from uuid import uuid4
 
 from openpyxl import load_workbook
 
@@ -48,6 +49,10 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--split", choices=["dev", "holdout", "all", "ood"], default="all")
     parser.add_argument("--source-type", choices=["excel", "word", "pdf"], help="Optional diagnostic subset.")
+    parser.add_argument(
+        "--case-ids",
+        help="Comma-separated evaluation case IDs for a regression subset; preserves workbook order.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--start", type=int, default=0, help="Zero-based offset after split selection.")
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -80,6 +85,13 @@ def main() -> int:
     ]
     if args.source_type:
         selected = [case for case in selected if case.source_type == args.source_type]
+    requested_case_ids = parse_case_ids(args.case_ids)
+    if requested_case_ids:
+        available = {case.id for case in selected}
+        unknown = requested_case_ids - available
+        if unknown:
+            raise ValueError(f"unknown case IDs for the selected split: {', '.join(sorted(unknown))}")
+        selected = [case for case in selected if case.id in requested_case_ids]
     selected = selected[args.start:]
     if args.limit > 0:
         selected = selected[: args.limit]
@@ -123,6 +135,7 @@ def main() -> int:
             "evaluator_sha256": sha256_file(Path(__file__)),
             "split_seed": SPLIT_SEED,
             "source_type_filter": args.source_type,
+            "case_ids_filter": sorted(requested_case_ids) if requested_case_ids else None,
             "evidence_manifest_sha256": (
                 sha256_file(args.evidence_manifest) if args.evidence_manifest else None
             ),
@@ -249,9 +262,15 @@ def evaluate_case(
     *,
     capture_performance: bool = False,
 ) -> dict[str, Any]:
-    payload = {"question": case.question, "options": list(case.options), "include_debug": True}
+    payload = {
+        "question": case.question,
+        "options": format_ordered_options(case.options),
+        "include_debug": True,
+    }
     started = datetime.now(timezone.utc)
     body: dict[str, Any] = {}
+    request_id: str | None = None
+    client_request_id = uuid4().hex
     error = None
     error_type = None
     attempts = 0
@@ -261,9 +280,10 @@ def evaluate_case(
             request = urllib.request.Request(
                 f"{base_url.rstrip('/')}/api/qa/ask",
                 data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers={"Content-Type": "application/json"}, method="POST",
+                headers={"Content-Type": "application/json", "X-Request-ID": client_request_id}, method="POST",
             )
             with urllib.request.urlopen(request, timeout=timeout) as response:
+                request_id = response.headers.get("X-Request-ID")
                 body = json.loads(response.read().decode("utf-8"))
             error = None
             error_type = None
@@ -305,6 +325,7 @@ def evaluate_case(
         "degraded": bool(body.get("degraded")),
         "elapsed_ms": round(elapsed_ms, 2), "error": error,
         "error_type": error_type, "attempts": attempts,
+        "request_id": request_id or client_request_id,
         "citation_count": len(citations),
         "performance": performance,
     }
@@ -724,6 +745,24 @@ def render_report(artifact: dict[str, Any]) -> str:
         "## 失败样例", "",
         *[f"- {item['id']}：expected={item['expected']} predicted={item['predicted']} error={item['error']}" for item in artifact["results"] if not item["answer_correct"]][:30],
     ])
+
+
+def parse_case_ids(raw: str | None) -> set[str]:
+    """Parse an evaluation-only regression subset without changing case order."""
+
+    if not raw:
+        return set()
+    case_ids = {value.strip() for value in raw.split(",") if value.strip()}
+    invalid = sorted(value for value in case_ids if not re.fullmatch(r"Q\d{3}", value))
+    if invalid:
+        raise ValueError(f"case IDs must use QNNN format: {', '.join(invalid)}")
+    return case_ids
+
+
+def format_ordered_options(options: tuple[str, ...]) -> list[str]:
+    """Give a bare ordered option list stable labels for the API selection contract."""
+
+    return [f"{chr(ord('A') + index)}. {str(option).strip()}" for index, option in enumerate(options)]
 
 
 def normalize(value: Any) -> str:

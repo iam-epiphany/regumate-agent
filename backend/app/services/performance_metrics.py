@@ -31,8 +31,11 @@ class _Metric:
 _METRICS: dict[str, _Metric] = {}
 _METRICS_LOCK = RLock()
 _CURRENT_TRACE: ContextVar[dict[str, Any] | None] = ContextVar("regumate_performance_trace", default=None)
+_CURRENT_REQUEST_ID: ContextVar[str | None] = ContextVar("regumate_request_id", default=None)
+_CURRENT_REQUEST_DEADLINE: ContextVar[float | None] = ContextVar("regumate_request_deadline", default=None)
 _TRACE_HISTORY: list[dict[str, Any]] = []
 _TRACE_HISTORY_LIMIT = 50
+_INFLIGHT_REQUESTS: dict[str, dict[str, Any]] = {}
 _RESOURCE_LOCK = RLock()
 _RESOURCE_STOP = Event()
 _RESOURCE_THREAD: Thread | None = None
@@ -90,6 +93,7 @@ def trace_operation(kind: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             trace: dict[str, Any] = {
                 "trace_id": uuid4().hex,
+                "request_id": _CURRENT_REQUEST_ID.get(),
                 "kind": kind,
                 "started_at": datetime.now(timezone.utc).isoformat(),
                 "stages": {},
@@ -122,6 +126,101 @@ def trace_operation(kind: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
         return wrapper
 
     return decorator
+
+
+@contextmanager
+def request_trace_context(request_id: str) -> Iterator[None]:
+    """Attach an externally visible request ID to the current synchronous trace."""
+
+    token = _CURRENT_REQUEST_ID.set(request_id)
+    started_at = datetime.now(timezone.utc).isoformat()
+    with _METRICS_LOCK:
+        _INFLIGHT_REQUESTS[request_id] = {
+            "request_id": request_id,
+            "started_at": started_at,
+            "last_stage": "request_received",
+            "last_status": "started",
+        }
+    try:
+        yield
+    finally:
+        with _METRICS_LOCK:
+            _INFLIGHT_REQUESTS.pop(request_id, None)
+        _CURRENT_REQUEST_ID.reset(token)
+
+
+class RequestBudgetExceeded(TimeoutError):
+    """Raised at cooperative boundaries before a request can become unbounded."""
+
+
+@contextmanager
+def request_budget_context(total_seconds: float) -> Iterator[None]:
+    token = _CURRENT_REQUEST_DEADLINE.set(perf_counter() + max(0.001, total_seconds))
+    try:
+        yield
+    finally:
+        _CURRENT_REQUEST_DEADLINE.reset(token)
+
+
+def remaining_request_budget_seconds() -> float | None:
+    deadline = _CURRENT_REQUEST_DEADLINE.get()
+    return None if deadline is None else max(0.0, deadline - perf_counter())
+
+
+def check_request_budget(stage: str) -> None:
+    remaining = remaining_request_budget_seconds()
+    if remaining is not None and remaining <= 0:
+        record_trace_event(stage, "timeout", {"reason": "request_budget_exhausted"})
+        raise RequestBudgetExceeded(f"QA request budget exhausted during {stage}")
+
+
+def record_trace_event(stage: str, status: str, summary: dict[str, Any] | None = None) -> None:
+    """Record safe, size-only progress metadata without retaining prompts or secrets."""
+
+    trace = _CURRENT_TRACE.get()
+    if trace is None:
+        return
+    events = trace.setdefault("events", [])
+    safe_summary = {
+        str(key): value
+        for key, value in (summary or {}).items()
+        if isinstance(value, (str, int, float, bool, type(None)))
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "stage": stage,
+        "status": status,
+        "at": now,
+        "summary": safe_summary,
+    }
+    spans = trace.setdefault("stage_spans", {})
+    if status in {"started", "running"}:
+        previous = spans.get(stage)
+        if not isinstance(previous, dict) or previous.get("end_at"):
+            spans[stage] = {"start_at": now, "end_at": None, "elapsed_ms": None, "status": status}
+    elif status in {"completed", "failed", "timeout", "cancelled", "skipped"}:
+        span = spans.setdefault(stage, {"start_at": now, "end_at": None, "elapsed_ms": None})
+        span["end_at"] = now
+        span["status"] = status
+        try:
+            start = datetime.fromisoformat(str(span["start_at"]))
+            span["elapsed_ms"] = round((datetime.fromisoformat(now) - start).total_seconds() * 1000, 3)
+        except (TypeError, ValueError):
+            span["elapsed_ms"] = None
+    events.append(event)
+    request_id = _CURRENT_REQUEST_ID.get()
+    if request_id:
+        with _METRICS_LOCK:
+            inflight = _INFLIGHT_REQUESTS.get(request_id)
+            if inflight is not None:
+                inflight.update({"last_stage": stage, "last_status": status, "last_event_at": now})
+
+
+def inflight_request_snapshot() -> list[dict[str, Any]]:
+    """Return safe live request state for diagnosing a stalled service."""
+
+    with _METRICS_LOCK:
+        return [dict(value) for value in _INFLIGHT_REQUESTS.values()]
 
 
 def timing_metrics_snapshot() -> dict[str, dict[str, float | int]]:

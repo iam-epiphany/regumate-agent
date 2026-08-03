@@ -197,6 +197,105 @@ def test_spreadsheet_compare_prefers_question_specific_column_over_generic_total
     }
 
 
+def test_spreadsheet_calculation_keeps_all_selector_operand_columns(db_session) -> None:
+    """Calculation operands must be selected before any single-column recovery."""
+
+    for value, coordinate, column_label in (
+        (100.0, "C5", "metrics / total"),
+        (30.0, "D5", "metrics / category"),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-CALC-CHUNK-{coordinate}",
+            row_label="region total",
+            value=value,
+            coordinate=coordinate,
+            column_label=column_label,
+        )
+    aspect = _aspect(
+        "What is the change from total to category for the region total?",
+        table_task="calculate",
+        operation="difference",
+        table_filters={"row_label": "region total", "column_label": "category"},
+        selectors=(
+            {"row_label": "region total", "column_label": "total"},
+            {"row_label": "region total", "column_label": "category"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(-70.0)
+    assert [cell["cell"] for cell in matches[0].citation.metadata["calculation_cells"]] == ["C5", "D5"]
+
+
+def test_spreadsheet_ratio_returns_percentage_with_auditable_scale(db_session) -> None:
+    for value, coordinate, column_label in (
+        (25.0, "C5", "健康险"),
+        (100.0, "D5", "合计"),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-RATIO-CHUNK-{coordinate}",
+            row_label="全国合计",
+            value=value,
+            coordinate=coordinate,
+            column_label=column_label,
+        )
+    aspect = _aspect(
+        "健康险数值占合计数值的百分比是多少？结果保留两位小数。",
+        table_task="calculate",
+        operation="ratio",
+        selectors=(
+            {"row_label": "全国合计", "column_label": "健康险"},
+            {"row_label": "全国合计", "column_label": "合计"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    metadata = matches[0].citation.metadata
+    assert metadata["calculation_result"] == pytest.approx(25.0)
+    assert metadata["unit"] == "%"
+    assert metadata["result_scale"] == 100
+    assert metadata["display_decimal_places"] == 2
+    assert metadata["calculation_display_formula"] == "25 / 100 × 100 = 25.00"
+
+
+def test_spreadsheet_difference_preserves_source_operand_precision(db_session) -> None:
+    for value, coordinate, column_label in (
+        (0.109398205216, "C5", "一季度"),
+        (0.09928, "D5", "四季度"),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-PRECISE-CHUNK-{coordinate}",
+            row_label="同比增长率",
+            value=value,
+            coordinate=coordinate,
+            column_label=column_label,
+        )
+    aspect = _aspect(
+        "计算同比增长率四季度比一季度的差额，并列出原始值。",
+        table_task="calculate",
+        operation="difference",
+        selectors=(
+            {"row_label": "同比增长率", "column_label": "一季度"},
+            {"row_label": "同比增长率", "column_label": "四季度"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert (
+        matches[0].citation.metadata["calculation_display_formula"]
+        == "0.09928 - 0.109398205216 = -0.010118205216"
+    )
+
+
 def test_question_specific_column_recovery_respects_selector_source_scope() -> None:
     document = SimpleNamespace(
         document_id="DOC-TABLE",
@@ -272,6 +371,14 @@ def test_source_title_match_accepts_insurance_alias_and_zero_padded_month() -> N
     assert _source_title_matches(
         "2025年3月财产保险公司经营情况表",
         "2025年03月财产险公司经营情况表",
+    )
+    assert _source_title_matches(
+        "148_2023年3季度保险业资金运用情况表",
+        "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+    )
+    assert _source_title_matches(
+        "2022年商业银行主要指标分机构类情况表(法人)",
+        "商业银行主要指标分机构类情况表(法人)",
     )
 
 

@@ -133,11 +133,11 @@ foreach ($internalDoc in $internalDocs) {
     }
 }
 foreach ($report in @(
-    'docs\evaluation\final_contest_report.md',
-    'docs\evaluation\final_contest_report.json',
-    'docs\evaluation\performance_baseline_20260718.md',
-    'docs\evaluation\performance_experiments\phase1-engineering.md',
-    'docs\evaluation\performance_experiments\indexing-baseline.md'
+    'docs\evaluation\archive\reports\final_contest_report.md',
+    'docs\evaluation\archive\reports\final_contest_report.json',
+    'docs\evaluation\archive\reports\performance_baseline_20260718.md',
+    'docs\evaluation\archive\reports\performance_experiments\phase1-engineering.md',
+    'docs\evaluation\archive\reports\performance_experiments\indexing-baseline.md'
 )) {
     if (Test-Path -LiteralPath (Join-Path $ProjectRoot $report)) {
         Copy-FileToPackage $report

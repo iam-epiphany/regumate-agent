@@ -4,7 +4,7 @@ from threading import Thread
 from time import monotonic, sleep
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -25,24 +25,38 @@ from backend.app.services.qa_task_service import (
 )
 from backend.app.services.rag_service import answer_question, retrieve_context_package
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
+from backend.app.core.config import QA_REQUEST_TOTAL_BUDGET_SECONDS
+from backend.app.services.performance_metrics import RequestBudgetExceeded, record_trace_event, request_budget_context, request_trace_context
+from uuid import uuid4
 
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
 
 @router.post("/ask", response_model=QAResponse)
-def ask_question(payload: QARequest, db: Session = Depends(get_db)) -> QAResponse:
+def ask_question(payload: QARequest, response: Response, db: Session = Depends(get_db), x_request_id: str | None = Header(default=None)) -> QAResponse:
     """Return a deterministic table answer or a generated, grounded text answer."""
 
-    try:
-        return answer_question(
-            db,
-            payload.question,
-            options=payload.options,
-            include_debug=payload.include_debug,
+    request_id = x_request_id if x_request_id and len(x_request_id) <= 128 else uuid4().hex
+    response.headers["X-Request-ID"] = request_id
+    def progress(event: dict[str, Any]) -> None:
+        record_trace_event(
+            str(event.get("stage") or "unknown"), str(event.get("status") or "unknown"),
+            event.get("summary") if isinstance(event.get("summary"), dict) else None,
         )
+    try:
+        with request_trace_context(request_id), request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
+            record_trace_event("request_received", "started", {"question_length": len(payload.question), "option_count": len(payload.options or [])})
+            result = answer_question(
+                db, payload.question, options=payload.options,
+                include_debug=payload.include_debug, progress_reporter=progress,
+            )
+            record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
+            return result
     except RetrievalServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RequestBudgetExceeded as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
 
 
 @router.post("/tasks", response_model=QATaskCreateResponse)

@@ -292,19 +292,31 @@ def hybrid_search_batch(
     *,
     limit: int,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
 ) -> list[list[VectorSearchResult]]:
+    """Hybrid search for many queries in one Qdrant batch call.
+
+    ``metadata_filters``, when provided and equal in length to
+    ``query_embeddings``, applies a distinct filter per query (Qdrant supports
+    per-request prefetch filters).  ``metadata_filter`` remains the shared
+    filter applied to every query, preserving the previous behaviour.
+    """
+
     if not query_embeddings:
         return []
+    per_query_filters = _per_query_filters(query_embeddings, metadata_filter, metadata_filters)
     ensure_vector_collection()
     client, models = _qdrant()
     if not hasattr(client, "query_batch_points"):
         return [
-            hybrid_search(embedding, limit=limit, metadata_filter=metadata_filter)
-            for embedding in query_embeddings
+            hybrid_search(embedding, limit=limit, metadata_filter=per_query_filters[index])
+            for index, embedding in enumerate(query_embeddings)
         ]
     requests = [
-        models.QueryRequest(**_hybrid_query_kwargs(embedding, limit, models, metadata_filter))
-        for embedding in query_embeddings
+        models.QueryRequest(
+            **_hybrid_query_kwargs(embedding, limit, models, per_query_filters[index])
+        )
+        for index, embedding in enumerate(query_embeddings)
     ]
     try:
         with measure("qdrant.hybrid_search_batch"):
@@ -318,6 +330,18 @@ def hybrid_search_batch(
         [_to_search_result(point) for point in getattr(response, "points", response)]
         for response in responses
     ]
+
+
+def _per_query_filters(
+    query_embeddings: list[TextEmbedding],
+    metadata_filter: dict[str, Any] | None,
+    metadata_filters: list[dict[str, Any] | None] | None,
+) -> list[dict[str, Any] | None]:
+    """Resolve per-query filters, falling back to the shared filter."""
+
+    if metadata_filters is not None and len(metadata_filters) == len(query_embeddings):
+        return list(metadata_filters)
+    return [metadata_filter] * len(query_embeddings)
 
 
 def _hybrid_query_kwargs(

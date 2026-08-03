@@ -136,10 +136,13 @@ def _strip_presentation_markers(value: str) -> str:
     """Remove list ordinals that carry layout, not regulatory facts.
 
     Numeric validation must still inspect numbers inside a sentence.  Only a
-    marker at the beginning of a rendered line is ignored, so ``1. 摘录`` is
-    not treated as a factual claim while ``期限为1年`` remains validated.
+    marker at the beginning of a rendered line, or a full-width bracketed
+    ordinal such as ``（1）`` (a list index like ``表述（1）说法正确``), is
+    ignored, so ``（1）`` is not treated as a factual claim while ``期限为1年``
+    and ``20万元`` remain validated.
     """
 
+    value = re.sub(r"（\d+）", "", value)
     return re.sub(
         r"(?m)^\s*(?:(?:\d+|[一二三四五六七八九十]+)[.、)]|[-*•])\s+",
         "",

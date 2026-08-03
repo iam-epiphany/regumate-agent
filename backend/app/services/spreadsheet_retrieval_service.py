@@ -169,6 +169,11 @@ def _indexed_spreadsheet_matches(
             label_filters.pop("row_label", None)
         if normalize_table_text(label_filters.get("column_label")) in selector_labels:
             label_filters.pop("column_label", None)
+        # A calculation's selectors define separate operands.  Applying a
+        # single column inferred from the question here would discard the
+        # other operand before selector resolution (for example, a change
+        # from one column to another).  Column recovery remains useful for a
+        # comparison, where every selected row shares one metric column.
         if (
             table_task != "calculate"
             and question_column_target
@@ -221,6 +226,7 @@ def _indexed_spreadsheet_matches(
                 selectors,
                 question=question,
                 question_column_target=question_column_target,
+                preserve_explicit_generic_columns=True,
             )
             if selectors
             else _unique_numeric_candidates(candidates)[:2]
@@ -404,6 +410,28 @@ def _source_title_variants(source: str) -> set[str]:
     """Return conservative aliases for a user-written spreadsheet title."""
 
     variants = {source}
+    # Corpus exports often prefix attachment titles with an ordinal such as
+    # ``148_``.  The runtime index deliberately stores the document title
+    # without that catalogue-only prefix, so use the title both with and
+    # without it.  This is identifier normalization, not a document map.
+    # ``normalize_table_text`` removes the separator before this helper is
+    # called, hence also accept a short digit run immediately before a dated
+    # title (``1482023年…``).
+    stripped_prefix = re.sub(r"^\d{1,4}(?:\s*[_\-－—]\s*|(?=20\d{2}年))", "", source)
+    if stripped_prefix:
+        variants.add(stripped_prefix)
+    # A user-facing title often combines a reporting period from the landing
+    # page with the shorter attachment title stored in SpreadsheetCell.  The
+    # period remains a separate hard filter, while this alias resolves the
+    # attachment name without requiring a corpus-specific filename map.
+    for value in list(variants):
+        without_period = re.sub(
+            r"^20\d{2}年(?:\d{1,2}月|第?[一二三四1-4]季度|[一二三四1-4]季度)?",
+            "",
+            value,
+        )
+        if without_period:
+            variants.add(without_period)
     for value in list(variants):
         variants.add(value.replace("财产险", "财产保险"))
         variants.add(value.replace("人身险", "人身保险"))
@@ -434,6 +462,7 @@ def _cells_for_selectors(
     *,
     question: str = "",
     question_column_target: str | None = None,
+    preserve_explicit_generic_columns: bool = False,
 ) -> list[SpreadsheetCandidate]:
     selected: list[SpreadsheetCandidate] = []
     if question_column_target is None:
@@ -447,6 +476,12 @@ def _cells_for_selectors(
         # "从'合计'到'健康险'" must not be overwritten by another column name
         # found in the question.
         if question_column_target and not column_target:
+            column_target = question_column_target
+        elif (
+            question_column_target
+            and _is_generic_column_target(column_target)
+            and not (preserve_explicit_generic_columns and column_target)
+        ):
             column_target = question_column_target
         quarter_mode = None
         if column_target == "年季度":
@@ -690,11 +725,17 @@ def _calculation_match_from_selected(
     elif operation == "ratio":
         if decimal_values[1] == 0:
             return None
-        decimal_result = decimal_values[0] / decimal_values[1]
-        formula = f"{_cell_ref(candidates[0])} / {_cell_ref(candidates[1])}"
+        decimal_result = decimal_values[0] / decimal_values[1] * Decimal("100")
+        formula = f"{_cell_ref(candidates[0])} / {_cell_ref(candidates[1])} * 100"
     else:
         return None
     result = float(decimal_result)
+    display_decimal_places = _requested_decimal_places(str(getattr(aspect, "question", "") or ""))
+    display_result = (
+        f"{decimal_result:.{display_decimal_places}f}"
+        if display_decimal_places is not None
+        else format(decimal_result, "f")
+    )
     anchor = candidates[0]
     metadata = {
         **anchor.metadata,
@@ -705,9 +746,19 @@ def _calculation_match_from_selected(
         "match_status": "valid_calculation",
         "refusal_reason": None,
         "calculation_formula": formula,
-        "calculation_display_formula": _display_calculation_formula(candidates, operation, result, ordered_transition=ordered_transition),
+        "calculation_display_formula": _display_calculation_formula(
+            candidates,
+            operation,
+            result,
+            ordered_transition=ordered_transition,
+            decimal_places=display_decimal_places,
+            result_text=display_result,
+        ),
         "calculation_result": result,
+        "calculation_result_text": display_result,
         "calculation_cells": [_cell_metadata(candidate) for candidate in candidates],
+        **({"result_scale": 100, "unit": "%"} if operation == "ratio" else {}),
+        **({"display_decimal_places": display_decimal_places} if display_decimal_places is not None else {}),
         "evidence_id": f"{anchor.chunk.chunk_id}::CALC::{operation}",
         "aspect_id": getattr(aspect, "aspect_id", None),
         "aspect_question": getattr(aspect, "question", None),
@@ -794,9 +845,14 @@ def _display_calculation_formula(
     result: float,
     *,
     ordered_transition: bool,
+    decimal_places: int | None = None,
+    result_text: str | None = None,
 ) -> str:
-    values = [_format_number_for_formula(float((candidate.selected_cell or {})["normalized_value"])) for candidate in candidates]
-    result_text = _format_number_for_formula(result)
+    values = [_source_number_for_formula(candidate) for candidate in candidates]
+    result_text = result_text or _format_number_for_formula(
+        result,
+        decimal_places=decimal_places,
+    )
     if operation == "difference":
         if ordered_transition and len(values) == 2:
             return f"{values[1]} - {values[0]} = {result_text}"
@@ -804,12 +860,51 @@ def _display_calculation_formula(
     if operation == "sum":
         return f"{' + '.join(values)} = {result_text}"
     if operation == "ratio" and len(values) >= 2:
-        return f"{values[0]} / {values[1]} = {result_text}"
+        return f"{values[0]} / {values[1]} × 100 = {result_text}"
     return result_text
 
 
-def _format_number_for_formula(value: float) -> str:
+def _source_number_for_formula(candidate: SpreadsheetCandidate) -> str:
+    cell = candidate.selected_cell or {}
+    raw_value = str(cell.get("value") or "").strip()
+    if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?", raw_value):
+        decimal_value = Decimal(raw_value)
+        if decimal_value == decimal_value.to_integral_value():
+            return str(int(decimal_value))
+        return raw_value
+    return _format_number_for_formula(float(cell["normalized_value"]))
+
+
+def _format_number_for_formula(value: float, *, decimal_places: int | None = None) -> str:
+    if decimal_places is not None:
+        return f"{value:.{decimal_places}f}"
     return str(int(value)) if float(value).is_integer() else f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+def _requested_decimal_places(question: str) -> int | None:
+    match = re.search(r"保留([零〇一二两三四五六七八九十\d]+)位小数", question)
+    if not match:
+        return None
+    value = match.group(1)
+    if value.isdigit():
+        places = int(value)
+    else:
+        places = {
+            "零": 0,
+            "〇": 0,
+            "一": 1,
+            "二": 2,
+            "两": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+            "十": 10,
+        }.get(value)
+    return places if places is not None and 0 <= places <= 10 else None
 
 
 def _spreadsheet_candidates(db: Session, question: str, filters: dict[str, Any]) -> list[SpreadsheetCandidate]:
@@ -946,8 +1041,8 @@ def _calculation_match(candidates: list[SpreadsheetCandidate], aspect: Any, oper
     elif operation == "ratio":
         if values[1] == 0:
             return None
-        result = values[0] / values[1]
-        formula = f"{_cell_ref(numeric[0])} / {_cell_ref(numeric[1])}"
+        result = values[0] / values[1] * 100
+        formula = f"{_cell_ref(numeric[0])} / {_cell_ref(numeric[1])} * 100"
     else:
         return None
 
@@ -962,6 +1057,7 @@ def _calculation_match(candidates: list[SpreadsheetCandidate], aspect: Any, oper
         "calculation_formula": formula,
         "calculation_result": result,
         "calculation_cells": [_cell_metadata(candidate) for candidate in numeric],
+        **({"result_scale": 100, "unit": "%"} if operation == "ratio" else {}),
         "evidence_id": f"{anchor.chunk.chunk_id}::CALC::{operation}",
         "aspect_id": getattr(aspect, "aspect_id", None),
     }

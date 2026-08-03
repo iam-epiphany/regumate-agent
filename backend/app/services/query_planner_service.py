@@ -151,6 +151,7 @@ class QueryPlan:
     fallback_used: bool = False
     error: str | None = None
     budget: dict[str, Any] | None = None
+    question_mode: str = "open"
 
     def to_debug_dict(self) -> dict[str, Any]:
         return {
@@ -159,6 +160,7 @@ class QueryPlan:
             "fallback_used": self.fallback_used,
             "error": self.error,
             "budget": self.budget or {},
+            "question_mode": self.question_mode,
             "aspects": [aspect.to_debug_dict() for aspect in self.aspects],
         }
 
@@ -185,8 +187,9 @@ class QueryBudget:
 @timed("query_planner.total")
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     cleaned_question = question.strip()
+    question_mode = "choice" if any(str(option or "").strip() for option in options or []) else "open"
     if not cleaned_question:
-        return QueryPlan(original_question="", aspects=(), planner="empty", fallback_used=True)
+        return QueryPlan(original_question="", aspects=(), planner="empty", fallback_used=True, question_mode=question_mode)
 
     budget = plan_query_budget(cleaned_question)
 
@@ -213,6 +216,7 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
             planner="deterministic-table",
             fallback_used=True,
             budget=budget.to_debug_dict(),
+            question_mode=question_mode,
         )
 
     # Multiple-choice contest questions normally name the target material in
@@ -229,16 +233,21 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
             planner="deterministic-mcq",
             fallback_used=True,
             budget=budget.to_debug_dict(),
+            question_mode=question_mode,
         )
 
-    heuristic_aspects = _domain_heuristic_aspects(cleaned_question, max_aspects=budget.max_aspects)
-    if heuristic_aspects and _should_use_domain_heuristic_plan(cleaned_question, heuristic_aspects):
+    anchored_aspects = _explicit_document_anchor_aspects(
+        cleaned_question,
+        max_aspects=budget.system_max_aspects,
+    )
+    if anchored_aspects:
         return QueryPlan(
             original_question=cleaned_question,
-            aspects=tuple(heuristic_aspects),
-            planner="deterministic-domain",
+            aspects=anchored_aspects,
+            planner="deterministic-document-anchor",
             fallback_used=True,
             budget=budget.to_debug_dict(),
+            question_mode=question_mode,
         )
 
     if QUERY_PLANNER_ENABLED and QUERY_PLANNER_API_KEY:
@@ -252,7 +261,8 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
                         aspects=tuple(aspects),
                         planner=f"{QUERY_PLANNER_PROVIDER}:{QUERY_PLANNER_MODEL}",
                     fallback_used=False,
-                    budget=budget.to_debug_dict(),
+                        budget=budget.to_debug_dict(),
+                        question_mode=question_mode,
                 )
         except QueryPlannerError as exc:
             fallback = _fallback_aspects(cleaned_question, budget)
@@ -263,6 +273,7 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
                 fallback_used=True,
                 error=str(exc),
                 budget=budget.to_debug_dict(),
+                question_mode=question_mode,
             )
 
     return QueryPlan(
@@ -271,23 +282,13 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
         planner="fallback",
         fallback_used=True,
         budget=budget.to_debug_dict(),
+        question_mode=question_mode,
     )
 
 
 def plan_query_budget(question: str) -> QueryBudget:
     explicit_items = _explicit_requested_items(question)
-    detected_items = tuple(
-        _dedupe(
-            [
-                *explicit_items,
-                *[
-                    item
-                    for item in _detect_requested_items(question)
-                    if not any(_requested_items_overlap(item, explicit) for explicit in explicit_items)
-                ],
-            ]
-        )
-    )
+    detected_items = tuple(_dedupe(explicit_items))
     question_parts = _split_question_parts(question)
     nested_coordinated_count = sum(
         max(1, len(_coordinated_aspect_questions(part)))
@@ -389,6 +390,33 @@ def _split_merged_llm_aspects(
     result: list[QueryAspect] = []
     for aspect in aspects:
         remaining_capacity = split_limit - len(result)
+        document_titles = _dedupe(re.findall(r"《([^》]{2,120})》", aspect.question))
+        if (
+            len(document_titles) >= 2
+            and remaining_capacity >= len(document_titles)
+            and any(marker in aspect.question for marker in ("分别依据", "分别根据", "各自", "两份文件"))
+        ):
+            for index, title in enumerate(document_titles, start=1):
+                split_question = f"请依据《{title}》相关条款，列出该文件的核心监管要求并明确来源。"
+                split_filters = {
+                    **aspect.table_filters,
+                    "source_title": title,
+                }
+                result.append(
+                    replace(
+                        aspect,
+                        aspect_id=f"{aspect.aspect_id}_document_{index}",
+                        question=split_question,
+                        search_queries=_fallback_search_queries(split_question),
+                        evidence_need=f"《{title}》中可直接支持核心监管要求的原文",
+                        keywords=tuple(_keywords_from_text(split_question)),
+                        table_filters=split_filters,
+                        explicit_filter_keys=tuple(
+                            _dedupe([*aspect.explicit_filter_keys, "source_title"])
+                        ),
+                    )
+                )
+            continue
         split_questions = _coordinated_aspect_questions(aspect.question)
         if len(split_questions) <= 1 or remaining_capacity < len(split_questions):
             result.append(aspect)
@@ -708,9 +736,28 @@ def _aspects_from_payload(
             keywords = _keywords_from_text(" ".join([sub_question, *[query.query for query in search_queries]]))
         planner_filters = _clean_table_filters(raw_aspect.get("table_filters"))
         explicit_filters = extract_explicit_metadata_filters(sub_question)
-        for key, value in question_explicit_filters.items():
-            if key in planner_filters and str(planner_filters[key]) == str(value):
-                explicit_filters[key] = value
+        # A table title, sheet and period stated in the user's question are
+        # hard locators.  They must win over an LLM plan even when the plan
+        # guessed a different period (for example confusing "3季度" with a
+        # monthly report).  Keeping a guessed value would turn a valid lookup
+        # into a false "period not found" refusal.
+        # The original user question is more authoritative than an LLM's
+        # decomposed sub-question, which may itself have introduced a period
+        # or title not present in the request.
+        explicit_filters = {**explicit_filters, **question_explicit_filters}
+        original_titles = _dedupe(re.findall(r"《([^》]{2,120})》", question))
+        sub_question_titles = _dedupe(re.findall(r"《([^》]{2,120})》", sub_question))
+        if len(original_titles) >= 2 and len(sub_question_titles) == 1:
+            sub_title = sub_question_titles[0]
+            if sub_title in original_titles:
+                # A decomposed cross-document aspect is narrower than the
+                # original multi-title question.  Preserve that explicit title
+                # instead of applying the first title globally to every aspect.
+                explicit_filters["source_title"] = sub_title
+        if "quarter" in explicit_filters and "month" not in explicit_filters:
+            planner_filters.pop("month", None)
+        if "month" in explicit_filters and "quarter" not in explicit_filters:
+            planner_filters.pop("quarter", None)
         merged_filters = {**planner_filters, **explicit_filters}
         modality = _clean_modality(raw_aspect.get("modality"))
         table_task = _clean_table_task(raw_aspect.get("table_task"))
@@ -771,29 +818,8 @@ def _prioritize_local_document_style_aliases(
     evidence_need: str,
     search_queries: list[QuerySearchQuery],
 ) -> list[QuerySearchQuery]:
-    """Ensure LLM-planned text aspects keep deterministic regulation anchors.
-
-    The remote planner is useful for splitting a complex question, but it can
-    phrase a search query in business shorthand ("报告义务", "定价原则") instead
-    of wording likely to appear in the document.  Fallback planning already
-    adds these local document-style aliases; LLM planning should not lose them.
-    """
-
-    aliases = _local_document_style_aliases(sub_question, evidence_need)
-    if not aliases:
-        return search_queries
-
-    semantic_queries = [query for query in search_queries if query.query_type == "semantic_question"]
-    other_queries = [query for query in search_queries if query.query_type != "semantic_question"]
-    local_queries = [
-        QuerySearchQuery(
-            query=alias,
-            query_type="document_style_statement",
-            rationale="本地将用户概念转换为制度原文常见表达",
-        )
-        for alias in aliases
-    ]
-    return _dedupe_search_queries([*semantic_queries[:1], *local_queries, *other_queries, *semantic_queries[1:]])
+    del sub_question, evidence_need
+    return search_queries
 
 
 def _local_document_style_aliases(sub_question: str, evidence_need: str) -> list[str]:
@@ -820,10 +846,6 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
     if table_aspect is not None:
         return [table_aspect]
 
-    heuristic_aspects = _domain_heuristic_aspects(question, max_aspects=budget.max_aspects)
-    if heuristic_aspects:
-        return heuristic_aspects
-
     parts = _split_question_parts(question)
     if not parts:
         parts = [question]
@@ -843,9 +865,124 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
                 explicit_filter_keys=tuple(explicit_filters),
             )
         )
-    return _expand_explicit_anchor_aspects(
+    expanded = _expand_explicit_anchor_aspects(
         aspects,
         max_aspects=max(budget.max_aspects, budget.system_max_aspects),
+    )
+    return _split_merged_llm_aspects(expanded, budget)
+
+
+def _explicit_document_anchor_aspects(
+    question: str,
+    *,
+    max_aspects: int,
+) -> tuple[QueryAspect, ...]:
+    """Build one source-isolated aspect per explicit document/quoted anchor."""
+
+    text = str(question or "")
+    title_matches = list(re.finditer(r"《([^》]+)》", text))
+    matches: list[tuple[str, str]] = []
+    for title_index, title_match in enumerate(title_matches):
+        end = title_matches[title_index + 1].start() if title_index + 1 < len(title_matches) else len(text)
+        segment = text[title_match.end() : end]
+        for anchor_match in re.finditer(
+            r"[“‘\"']([^”’\"']+)[”’\"']",
+            segment,
+        ):
+            matches.append((title_match.group(1), anchor_match.group(1)))
+    if not matches:
+        return ()
+    aspects: list[QueryAspect] = []
+    for index, (raw_title, raw_anchor) in enumerate(matches[:max_aspects], start=1):
+        title = raw_title.strip()
+        anchor = raw_anchor.strip()
+        if not title or len(re.sub(r"\s+", "", anchor)) < 2:
+            continue
+        definition_request = any(
+            marker in text
+            for marker in ("完整定义", "定义是什么", "如何定义", "所称", "是指")
+        ) and len(matches) == 1
+        if definition_request:
+            sub_question = f"根据《{title}》，“{anchor}”的完整定义是什么？"
+            document_query = f"{title} {anchor} 是指 完整定义"
+            evidence_need = f"《{title}》中“{anchor}”的完整定义原文"
+        else:
+            sub_question = (
+                f"根据《{title}》，请说明与“{anchor}”直接对应的明确规定，"
+                "并完整保留条件、范围、期限或例外。"
+            )
+            document_query = f"{title} {anchor}"
+            evidence_need = f"《{title}》中与“{anchor}”直接对应的制度原文"
+        filters = {"source_title": title, "indicator": anchor}
+        requested_format = re.search(
+            r"[（(]\s*(pdf|word|docx?|excel|xlsx?|xls)\s*[）)]\s*$",
+            title,
+            flags=re.IGNORECASE,
+        )
+        if requested_format:
+            filters["file_type"] = {
+                "word": "docx",
+                "excel": "xlsx",
+            }.get(requested_format.group(1).lower(), requested_format.group(1).lower())
+        aspects.append(
+            QueryAspect(
+                aspect_id=f"document_anchor_{index}",
+                question=sub_question,
+                search_queries=(
+                    QuerySearchQuery(sub_question, "semantic_question", "指定文档与引文联合检索"),
+                    QuerySearchQuery(
+                        document_query,
+                        "document_style_statement",
+                        "以标题和条款锚点定位原文",
+                    ),
+                    QuerySearchQuery(anchor, "keyword_anchor", "引文术语兜底"),
+                ),
+                evidence_need=evidence_need,
+                keywords=tuple(_dedupe([anchor, *_keywords_from_text(anchor)])),
+                modality="text",
+                table_filters=filters,
+                explicit_filter_keys=tuple(filters),
+            )
+        )
+    if len(aspects) >= 3:
+        title_counts: dict[str, int] = {}
+        for title, _anchor in matches:
+            title_counts[title.strip()] = title_counts.get(title.strip(), 0) + 1
+        repeated_title = next(
+            (title for title, count in title_counts.items() if count > 1),
+            None,
+        )
+        if repeated_title:
+            # Preserve a bounded document-level context aspect in addition to
+            # each explicit anchor. This retains the surrounding clause when a
+            # single source contains multiple quoted requirements.
+            aspects.append(
+                QueryAspect(
+                    aspect_id=f"document_anchor_context_{len(aspects) + 1}",
+                    question=f"根据《{repeated_title}》整理用户列出的各项明确规定并分别引用原文。",
+                    search_queries=_fallback_search_queries(
+                        f"{repeated_title} 明确规定 条件 范围 期限 例外"
+                    ),
+                    evidence_need=f"《{repeated_title}》中用户明确列出的制度规定",
+                    keywords=tuple(_keywords_from_text(repeated_title)),
+                    modality="text",
+                    table_filters={"source_title": repeated_title},
+                    explicit_filter_keys=("source_title",),
+                )
+            )
+    return tuple(aspects)
+
+
+def _asks_ratio_calculation(question: str) -> bool:
+    """Distinguish a ratio request from a lookup whose quoted column is a ratio."""
+
+    intent_text = re.sub(r"《[^》]*》", "", str(question or ""))
+    intent_text = re.sub(r"[“‘\"'][^”’\"']*[”’\"']", "", intent_text)
+    compact = re.sub(r"\s+", "", intent_text)
+    return bool(
+        re.search(r"数值占.*?数值", compact)
+        or re.search(r"占.*?(?:百分比|比例|比重|多少)", compact)
+        or re.search(r"(?:比例|比重|百分比).*?(?:多少|是多少|计算)", compact)
     )
 
 
@@ -904,19 +1041,9 @@ def _fallback_mcq_aspect(question: str, options: list[str] | None = None) -> Que
 
 
 def _prioritized_mcq_option_queries(option_statements: list[str]) -> list[str]:
-    """Return a bounded, evidence-oriented query set for MCQ options.
+    """Bound option-derived queries without adding topic-specific facts."""
 
-    MCQ stems often contain four options with multiple semicolon-separated
-    facts. Sending every raw fact through hybrid retrieval and CPU reranking
-    scales poorly and can time out. Prefer local-document style aliases because
-    they are closer to source text, then fill any remaining budget with raw
-    option statements.
-    """
-
-    alias_queries: list[str] = []
-    for statement in option_statements:
-        alias_queries.extend(_mcq_document_style_aliases(statement))
-    return _dedupe([*alias_queries, *option_statements])[:MCQ_OPTION_SEARCH_QUERY_BUDGET]
+    return _dedupe(option_statements)[:MCQ_OPTION_SEARCH_QUERY_BUDGET]
 
 
 def _normalize_mcq_title(value: str) -> str:
@@ -937,702 +1064,6 @@ def _mcq_option_evidence_statements(options: list[str]) -> list[str]:
     return statements
 
 
-def _mcq_document_style_aliases(statement: str) -> list[str]:
-    compact = re.sub(r"\s+", "", str(statement or ""))
-    aliases: list[str] = []
-    if all(term in compact for term in ("申请书", "名称", "拟设地", "注册资本", "股权结构", "业务范围")):
-        aliases.append(
-            "申请书 内容包括但不限于 拟设立中资商业银行 名称 拟设地 注册资本 股权结构 业务范围 基本信息"
-        )
-        if "2023年版" in compact or "目录" in compact:
-            aliases.append("中资商业银行行政许可事项 申请材料目录及格式要求 2023年版")
-    if "折现率曲线" in compact or all(term in compact for term in ("基础利率", "综合溢价", "曲线")):
-        aliases.append("计算现金流现值 所采用的 折现率曲线 由 基础利率曲线 加 综合溢价形成")
-        aliases.append("寿险合同负债评估 折现率曲线 基础利率曲线 综合溢价")
-    if all(term in compact for term in ("小额信用", "知识产权质押", "创新积分贷款")):
-        aliases.append("鼓励商业银行 综合运用 小额信用贷款 知识产权质押贷款 创新积分贷款 降低融资门槛")
-    if "专利权质押登记" in compact and ("线上" in compact or "无纸化" in compact or "全覆盖" in compact):
-        aliases.append("试验区内商业银行各分支机构 实现 专利权质押登记 全流程无纸化线上办理 全覆盖")
-    if "较大数据安全事件" in compact or (
-        "敏感级" in compact and ("难以消除" in compact or "部分业务" in compact)
-    ):
-        aliases.append(
-            "较大数据安全事件 敏感级及以上数据 泄露 破坏 非法获取 非法利用 对个人造成不可消除或者消除代价较大的负面影响 部分业务无法正常开展 声誉受到破坏"
-        )
-    if "重大数据" in compact and ("省级区域经济" in compact or "银行保险行业安全" in compact):
-        aliases.append("重大数据安全事件 重要数据 泄露 破坏 非法获取 非法利用 对省级区域经济带来重大影响 对银行保险行业安全造成影响")
-    if "数字化回函" in compact and ("法律效力" in compact or "证明力" in compact):
-        aliases.append("以符合相关规定的数字方式 办理银行询证函及回函 与纸质银行询证函及回函 具有同等法律效力和证明力")
-    if ("10个工作日" in compact or "回函时限" in compact) and ("询证函" in compact or "回函" in compact):
-        aliases.append("银行业金融机构 应当自收到符合规定的询证函之日起 10个工作日内 按照要求 将回函直接回复会计师事务所")
-    if "一函一个基准日" in compact or "一个函证基准日" in compact:
-        aliases.append("一份询证函 只列示 一个函证基准日")
-    if "公开渠道" in compact and ("函证" in compact or "公示" in compact):
-        aliases.append("银行业金融机构 应当 在其总行或总部网站 微信公众号等公开渠道 就办理函证相关事项进行公示")
-    if "不正当催收" in compact or ("催收" in compact and "无关第三人" in compact) or ("暴力" in compact and "催收" in compact):
-        aliases.append("消费金融公司 不得采用 暴力 威胁 恐吓 骚扰 等不正当手段进行催收 不得对与债务无关的第三人进行催收")
-    if "重要实体" in compact and ("核心业务条线" in compact or "关键功能" in compact):
-        aliases.append("重要实体 承载 本机构核心业务条线和关键功能 对持续经营 维持关键功能具有重要作用")
-    if ("处置工具" in compact or "工具可包括" in compact) and (
-        "自救" in compact or "战略投资" in compact or "过桥机构" in compact
-    ):
-        aliases.append("处置工具 包括 机构自救 股东注资 引入战略投资者 处置不良资产 接管 收购承接 建立过桥机构 破产清算")
-    if "交易头寸" in compact and ("做市" in compact or "对客" in compact or "每日" in compact):
-        aliases.append("以交易目的持有的头寸 包括 自营业务 做市业务 为满足客户需求提供的对客交易 对冲前述交易相关风险")
-        aliases.append("交易账簿 金融工具 外汇和商品头寸 原则上 应能够每日进行公允价值计量 变动计入损益")
-    if "监管并表" in compact or ("第三支柱" in compact and "表格另有规定" in compact):
-        aliases.append("商业银行 应按照 监管并表范围 披露相关信息 表格中另有规定的除外")
-    return aliases
-
-
-def _domain_heuristic_aspects(question: str, max_aspects: int | None = None) -> list[QueryAspect]:
-    normalized = re.sub(r"\s+", "", question)
-    aspects: list[QueryAspect] = list(_cross_policy_heuristic_aspects(normalized))
-    detected = _detect_requested_items(question)
-    effective_limit = max_aspects
-    if aspects and max_aspects is not None:
-        # Deterministic policy detectors are direct evidence anchors.  The
-        # budget estimator can undercount terse prompts such as "A、B以及C";
-        # do not let that low estimate drop already detected anchors.
-        effective_limit = max(max_aspects, len(aspects))
-    for item in detected:
-        aspect = _heuristic_aspect_for_item(item, normalized)
-        if aspect is not None:
-            aspects.append(aspect)
-        if effective_limit is not None and len(aspects) >= effective_limit:
-            break
-    deduped = _dedupe_aspects(aspects)
-    return deduped[:effective_limit] if effective_limit is not None else deduped
-
-
-def _should_use_domain_heuristic_plan(question: str, aspects: list[QueryAspect]) -> bool:
-    normalized = re.sub(r"\s+", "", question)
-    deterministic_domain_ids = {
-        "consumer_finance_geographic_scope",
-        "pillar3_table_types",
-        "large_exposure_threshold",
-        "bail_in_resolution_principle",
-        "digital_confirmation_effectiveness",
-        "confirmation_response_deadline",
-        "trading_book_policy_audit_retention",
-        "important_data_major_event",
-        "going_concern_trigger_threshold",
-        "tier2_loss_absorption_order",
-        "trading_book_purpose_and_fair_value",
-        "pillar3_disclosure_scope",
-        "pillar3_disclosure_frequency",
-        "intellectual_property_finance_target",
-        "patent_pledge_registration_online_coverage",
-        "insurance_group_report_obligation",
-        "bank_confirmation_public_channels",
-        "auditor_confirmation_process_control",
-        "commercial_bank_establishment_application_content",
-        "commercial_bank_application_catalog_2023_version",
-        "important_data_extremely_major_event",
-        "life_discount_curve_ultimate_rate",
-        "core_business_line_failure_impact",
-        "accident_insurance_definition",
-        "accident_insurance_pricing_requirement",
-    }
-    deterministic_single_domain_ids = {
-        "pillar3_disclosure_frequency",
-    }
-    if len(aspects) == 1 and aspects[0].aspect_id in deterministic_single_domain_ids:
-        return True
-    if len(aspects) >= 2 and any(aspect.aspect_id in deterministic_domain_ids for aspect in aspects):
-        return True
-    return bool(
-        len(aspects) >= 2
-        and any(marker in normalized for marker in ("每项", "逐项", "分别", "跨制度", "联合核验"))
-        and any(marker in normalized for marker in ("直接引用", "引用", "依据"))
-    )
-
-
-def _cross_policy_heuristic_aspects(normalized_question: str) -> list[QueryAspect]:
-    requested: list[QueryAspect] = []
-    if "数字化" in normalized_question and "回函" in normalized_question and "效力" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="digital_confirmation_effectiveness",
-                question="数字化银行回函的效力",
-                search_queries=(
-                    QuerySearchQuery("数字化回函与纸质回函具有同等法律效力和证明力", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("银行函证工作操作指引 数字化回函与纸质回函具有同等法律效力和证明力", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("数字化回函 纸质回函 同等法律效力 证明力", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="数字化银行回函与纸质回函效力的直接规定",
-                keywords=("数字化回函", "纸质回函", "同等法律效力", "证明力"),
-            )
-        )
-    if (
-        "回函时限" in normalized_question
-        or ("回函" in normalized_question and "回复时限" in normalized_question)
-        or ("回函" in normalized_question and "10个工作日" in normalized_question)
-        or ("询证函" in normalized_question and "10个工作日" in normalized_question)
-        or ("询证函" in normalized_question and any(term in normalized_question for term in ("回复时限", "答复时限", "办理时限")))
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="confirmation_response_deadline",
-                question="银行询证函回函时限",
-                search_queries=(
-                    QuerySearchQuery("银行业金融机构收到符合规定的询证函后多久回函", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("银行业金融机构 应当自收到符合规定的询证函之日起 10个工作日内 按照要求 将回函直接回复会计师事务所", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("符合规定的询证函 10个工作日 回函直接回复会计师事务所", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="银行询证函回函时限和回复对象的直接规定",
-                keywords=("询证函", "10个工作日", "回函", "会计师事务所"),
-            )
-        )
-    if (
-        ("交易账簿" in normalized_question or "账簿划分" in normalized_question)
-        and ("内部审计" in normalized_question or "留档" in normalized_question)
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="trading_book_policy_audit_retention",
-                question="交易账簿划分政策内部审计频率和留档要求",
-                search_queries=(
-                    QuerySearchQuery("交易账簿划分政策内部审计频率和留档要求", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("商业银行 应每年 对划分政策和程序 开展内部审计 内部审计结果 应留档备查", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("划分政策和程序 每年 内部审计 留档备查", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="交易账簿划分政策内部审计频率及留档要求",
-                keywords=("交易账簿", "划分政策", "每年", "内部审计", "留档备查"),
-            )
-        )
-    if (
-        "重要数据" in normalized_question
-        and (
-            "特别重大" in normalized_question
-            or "2个及以上" in normalized_question
-            or "两个及以上" in normalized_question
-            or "省级区域门槛" in normalized_question
-        )
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="important_data_extremely_major_event",
-                question="重要数据事件何时属于特别重大数据安全事件",
-                search_queries=(
-                    QuerySearchQuery("重要数据事件何时属于特别重大数据安全事件", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery(
-                        "特别重大数据安全事件 重要数据 泄露 破坏 非法获取 非法利用 对2个及以上省级区域经济运行秩序造成特别严重影响",
-                        "document_style_statement",
-                        "制度原文锚点",
-                    ),
-                    QuerySearchQuery("重要数据 2个及以上 省级区域经济运行秩序 特别严重影响 特别重大数据安全事件", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="重要数据事件构成特别重大数据安全事件的省级区域和后果条件",
-                keywords=("重要数据", "特别重大数据安全事件", "2个及以上", "省级区域", "特别严重影响"),
-            )
-        )
-    if (
-        "重要数据事件" in normalized_question
-        and any(term in normalized_question for term in ("重大事件", "重大数据安全事件"))
-    ) or (
-        "重大数据事件" in normalized_question
-        or ("重大数据" in normalized_question and any(term in normalized_question for term in ("条件", "构成", "属于")))
-        or ("重要数据" in normalized_question and "重大" in normalized_question and any(term in normalized_question for term in ("层级", "影响范围", "后果条件")))
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="important_data_major_event",
-                question="重要数据事件何时属于重大数据安全事件",
-                search_queries=(
-                    QuerySearchQuery("重要数据事件何时属于重大数据安全事件", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery(
-                        "重大数据安全事件 重要数据 泄露 破坏 非法获取 非法利用 对省级区域经济带来重大影响 对银行保险行业安全造成影响",
-                        "document_style_statement",
-                        "制度原文锚点",
-                    ),
-                    QuerySearchQuery("重要数据 泄露 破坏 非法获取 非法利用 省级区域经济 银行保险行业安全", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="重要数据事件构成重大数据安全事件的条件",
-                keywords=("重要数据", "重大数据安全事件", "泄露", "破坏", "非法获取", "省级区域经济", "银行保险行业安全"),
-            )
-        )
-    if "持续经营" in normalized_question and "触发" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="going_concern_trigger_threshold",
-                question="持续经营触发事件条件",
-                search_queries=_fallback_search_queries("持续经营触发阈值"),
-                evidence_need="持续经营触发事件的核心一级资本充足率阈值",
-                keywords=("持续经营触发事件", "核心一级资本充足率", "5.125%"),
-            )
-        )
-    if (
-        ("二级资本" in normalized_question and ("吸收损失" in normalized_question or "损失吸收" in normalized_question))
-        or ("资本工具" in normalized_question and "损失吸收顺序" in normalized_question)
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="tier2_loss_absorption_order",
-                question="二级资本吸收损失顺序",
-                search_queries=_fallback_search_queries("二级资本损失吸收顺序"),
-                evidence_need="二级资本工具吸收损失的启动顺序",
-                keywords=("二级资本", "其他一级资本工具", "全部吸收损失", "再启动"),
-            )
-        )
-    if (
-        "寿险" in normalized_question and "折现率" in normalized_question and "终极利率" in normalized_question
-    ) or ("终极利率" in normalized_question and "暂定" in normalized_question):
-        requested.append(
-            QueryAspect(
-                aspect_id="life_discount_curve_ultimate_rate",
-                question="寿险合同负债评估折现率曲线终极利率暂定值",
-                search_queries=(
-                    QuerySearchQuery("寿险合同负债评估折现率曲线终极利率暂定值是多少", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("寿险合同负债评估 折现率曲线 终极利率 暂定为4.5%", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("终极利率 暂定为4.5% 寿险合同负债评估 折现率曲线", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="寿险合同负债评估折现率曲线终极利率暂定值",
-                keywords=("寿险", "折现率曲线", "终极利率", "4.5%"),
-            )
-        )
-    if "交易账簿" in normalized_question and "公允价值计量" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="trading_book_purpose_and_fair_value",
-                question="交易账簿头寸定义：“以交易目的持有的头寸”；公允价值计量条件：“能够每日进行公允价值计量，变动计入损益”",
-                search_queries=(
-                    QuerySearchQuery("交易账簿头寸定义和公允价值计量频率要求", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("以交易目的持有的头寸 包括 自营业务 做市业务 为满足客户需求提供的对客交易 对冲前述交易相关风险 交易账簿中的金融工具 外汇和商品头寸 原则上 能够每日进行公允价值计量 变动计入损益", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("能够每日进行公允价值计量 变动计入损益", "document_style_statement", "制度条件短句锚点"),
-                    QuerySearchQuery("自营业务 做市业务 对客交易 对冲前述交易相关风险 每日进行公允价值计量 变动计入损益", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="交易账簿头寸范围和每日公允价值计量要求",
-                keywords=("交易账簿", "自营业务", "做市业务", "对客交易", "每日", "公允价值计量", "损益"),
-            )
-        )
-    if "第三支柱" in normalized_question and "单体口径" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="pillar3_disclosure_scope",
-                question="第三支柱信息披露口径",
-                search_queries=(
-                    QuerySearchQuery("第三支柱信息披露口径是否按单体口径", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("商业银行 应按照 本办法第二章规定的并表范围 监管并表范围 披露相关信息 表格中另有规定的除外", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("监管并表范围 披露相关信息 表格中另有规定的除外", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="第三支柱信息披露并表范围口径",
-                keywords=("第三支柱", "监管并表范围", "表格中另有规定的除外", "披露相关信息"),
-            )
-        )
-    if (
-        ("商业银行信息披露内容和要求" in normalized_question or "第三支柱" in normalized_question)
-        and (
-            "商业银行应根据表格要求" in normalized_question
-            or "披露频率" in normalized_question
-            or "频率" in normalized_question
-            or ("商业银行应" in normalized_question and "披露" in normalized_question)
-        )
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="pillar3_disclosure_frequency",
-                question="商业银行第三支柱信息披露频率和表格例外",
-                search_queries=(
-                    QuerySearchQuery("商业银行第三支柱信息披露频率和表格例外", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery(
-                        "商业银行 应根据 表格要求 分别按照季度 半年和年度的频率 披露信息 表格中另有规定的除外",
-                        "document_style_statement",
-                        "制度原文锚点",
-                    ),
-                    QuerySearchQuery("二、披露内容 商业银行应根据表格要求 季度 半年 年度 表格中另有规定的除外", "keyword_anchor", "章节关键句兜底"),
-                ),
-                evidence_need="商业银行第三支柱信息披露的频率要求及表格另有规定的例外",
-                keywords=("商业银行", "第三支柱", "披露频率", "季度", "半年", "年度", "表格中另有规定的除外"),
-            )
-        )
-    if "中资商业银行" in normalized_question and "筹建" in normalized_question and "申请书" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="commercial_bank_establishment_application_content",
-                question="中资商业银行法人机构筹建审批申请书基本信息要求",
-                search_queries=(
-                    QuerySearchQuery("中资商业银行法人机构筹建审批申请书应说明哪些基本信息", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("申请书 内容包括但不限于 拟设立中资商业银行 名称 拟设地 注册资本 股权结构 业务范围 基本信息", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("申请书 名称 拟设地 注册资本 股权结构 业务范围 基本信息", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="中资商业银行法人机构筹建审批申请书基本信息要求",
-                keywords=("中资商业银行", "筹建审批", "申请书", "名称", "拟设地", "注册资本", "股权结构", "业务范围"),
-            )
-        )
-    if "中资商业银行" in normalized_question and ("2023年版" in normalized_question or "目录" in normalized_question):
-        requested.append(
-            QueryAspect(
-                aspect_id="commercial_bank_application_catalog_2023_version",
-                question="中资商业银行行政许可事项申请材料目录版本",
-                search_queries=(
-                    QuerySearchQuery("中资商业银行行政许可事项申请材料目录及格式要求版本", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("中资商业银行行政许可事项 申请材料目录及格式要求 2023 年版", "document_style_statement", "封面版本锚点"),
-                    QuerySearchQuery("申请材料目录及格式要求 2023 年版", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="中资商业银行行政许可事项申请材料目录及格式要求的封面版本",
-                keywords=("中资商业银行", "行政许可事项", "申请材料目录", "格式要求", "2023年版"),
-            )
-        )
-    if "2027年" in normalized_question and "知识产权金融生态" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="intellectual_property_finance_target",
-                question="2027年知识产权金融生态目标",
-                search_queries=(
-                    QuerySearchQuery("2027年知识产权金融生态目标是什么", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("到2027年 试点地区 基本建成 服务便捷高效 信息共享畅通 体制机制完备 知识产权金融生态综合试验区", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("2027年 服务便捷高效 信息共享畅通 体制机制完备 知识产权金融生态综合试验区", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="2027年知识产权金融生态综合试验区建设目标",
-                keywords=("2027年", "知识产权金融生态", "服务便捷高效", "信息共享畅通", "体制机制完备"),
-            )
-        )
-    if "专利权质押登记" in normalized_question and any(
-        term in normalized_question for term in ("线上", "无纸化", "全覆盖")
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="patent_pledge_registration_online_coverage",
-                question="专利权质押登记线上全覆盖目标",
-                search_queries=(
-                    QuerySearchQuery("专利权质押登记线上全覆盖目标是什么", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery(
-                        "试验区内商业银行各分支机构 实现 专利权质押登记 全流程无纸化线上办理 全覆盖",
-                        "document_style_statement",
-                        "制度原文锚点",
-                    ),
-                    QuerySearchQuery("商业银行各分支机构 专利权质押登记 全流程无纸化线上办理 全覆盖", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="专利权质押登记全流程无纸化线上办理全覆盖目标",
-                keywords=("试验区", "商业银行各分支机构", "专利权质押登记", "全流程无纸化线上办理", "全覆盖"),
-            )
-        )
-    if "保险集团" in normalized_question and ("报告义务" in normalized_question or "偿付能力报告" in normalized_question):
-        requested.append(
-            QueryAspect(
-                aspect_id="insurance_group_report_obligation",
-                question="列入名单保险集团报告义务",
-                search_queries=(
-                    QuerySearchQuery("列入名单保险集团的报告义务是什么", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery(
-                        "应当编报保险集团偿付能力报告的公司名单 下列保险集团 应当 按照 保险公司偿付能力监管规则第19号 保险集团 有关规定 编报保险集团偿付能力报告",
-                        "document_style_statement",
-                        "制度标题和原文锚点",
-                    ),
-                    QuerySearchQuery("应当编报保险集团偿付能力报告的公司名单 下列保险集团 第19号 保险集团 编报保险集团偿付能力报告", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="列入名单保险集团编报偿付能力报告义务",
-                keywords=("应当编报保险集团偿付能力报告的公司名单", "保险集团", "第19号", "编报", "偿付能力报告"),
-            )
-        )
-    if "函证" in normalized_question and "公开渠道" in normalized_question:
-        requested.append(
-            QueryAspect(
-                aspect_id="bank_confirmation_public_channels",
-                question="银行函证事项公开渠道公示要求",
-                search_queries=(
-                    QuerySearchQuery("银行函证事项应通过哪些公开渠道公示", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("银行业金融机构 应当 在其总行或总部网站 微信公众号等公开渠道 就办理函证相关事项进行公示", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("总行或总部网站 微信公众号 公开渠道 办理函证相关事项 公示", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="银行函证事项公开渠道公示要求",
-                keywords=("函证", "总行或总部网站", "微信公众号", "公开渠道", "公示"),
-            )
-        )
-    if (
-        "询证函" in normalized_question
-        and (
-            ("注册会计师" in normalized_question and "控制" in normalized_question)
-            or "全过程控制" in normalized_question
-            or ("全过程" in normalized_question and "控制" in normalized_question)
-            or "过程控制" in normalized_question
-            or "过程控制主体" in normalized_question
-        )
-    ):
-        requested.append(
-            QueryAspect(
-                aspect_id="auditor_confirmation_process_control",
-                question="注册会计师对询证函的过程控制要求",
-                search_queries=(
-                    QuerySearchQuery("注册会计师对银行询证函全过程控制要求", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("注册会计师 应当始终 对银行询证函的全过程保持控制", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("注册会计师 银行询证函 全过程保持控制", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="注册会计师对银行询证函全过程控制要求",
-                keywords=("注册会计师", "银行询证函", "全过程保持控制"),
-            )
-        )
-    if "消费金融" in normalized_question and any(term in normalized_question for term in ("业务地域范围", "地域范围", "全国范围", "开展业务")):
-        requested.append(
-            QueryAspect(
-                aspect_id="consumer_finance_geographic_scope",
-                question="消费金融公司业务地域范围",
-                search_queries=(
-                    QuerySearchQuery("消费金融公司业务地域范围是什么", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("消费金融公司 可以在全国范围内开展业务", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("第十四条 消费金融公司可以在全国范围内开展业务", "keyword_anchor", "条款关键句兜底"),
-                ),
-                evidence_need="消费金融公司业务地域范围的直接规定",
-                keywords=("消费金融公司", "全国范围", "开展业务", "第十四条"),
-            )
-        )
-    if "第三支柱" in normalized_question and any(term in normalized_question for term in ("表格类型", "两种类型", "固定表格", "可变表格")):
-        requested.append(
-            QueryAspect(
-                aspect_id="pillar3_table_types",
-                question="第三支柱表格类型",
-                search_queries=(
-                    QuerySearchQuery("第三支柱表格类型包括哪些", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("商业银行以表格形式进行第三支柱信息披露 包括固定表格和可变表格", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("二、披露内容 固定表格 可变表格", "keyword_anchor", "章节关键句兜底"),
-                ),
-                evidence_need="第三支柱信息披露表格类型的直接规定",
-                keywords=("第三支柱", "固定表格", "可变表格", "披露内容"),
-            )
-        )
-    if "核心业务条线" in normalized_question and any(term in normalized_question for term in ("经营失败", "重大损失", "影响")):
-        requested.append(
-            QueryAspect(
-                aspect_id="core_business_line_failure_impact",
-                question="核心业务条线经营失败影响",
-                search_queries=(
-                    QuerySearchQuery("核心业务条线经营失败可能造成什么影响", "semantic_question", "贴近用户意图"),
-                    QuerySearchQuery("核心业务条线 在经营失败时 可能导致机构收入 利润和特许经营权价值受到重大损失", "document_style_statement", "制度原文锚点"),
-                    QuerySearchQuery("核心业务条线 经营失败 收入 利润 特许经营权价值 重大损失", "keyword_anchor", "关键术语兜底"),
-                ),
-                evidence_need="核心业务条线经营失败可能造成重大损失的直接说明",
-                keywords=("核心业务条线", "经营失败", "收入", "利润", "特许经营权价值", "重大损失"),
-            )
-        )
-    if "意外伤害保险" in normalized_question or "意外险" in normalized_question:
-        if "定义" in normalized_question:
-            requested.append(
-                QueryAspect(
-                    aspect_id="accident_insurance_definition",
-                    question="意外伤害保险定义",
-                    search_queries=(
-                        QuerySearchQuery("意外伤害保险的定义是什么", "semantic_question", "贴近用户意图"),
-                        QuerySearchQuery("意外伤害保险 是以被保险人因遭受意外伤害造成死亡 伤残 或者发生保险合同约定的其他事故为给付保险金条件的人身保险", "document_style_statement", "制度原文锚点"),
-                        QuerySearchQuery("意外伤害保险 死亡 伤残 保险合同约定 给付保险金 人身保险", "keyword_anchor", "关键术语兜底"),
-                    ),
-                    evidence_need="意外伤害保险定义的直接规定",
-                    keywords=("意外伤害保险", "死亡", "伤残", "给付保险金", "人身保险"),
-                )
-            )
-        if any(term in normalized_question for term in ("定价", "厘定保险费", "保险费")):
-            requested.append(
-                QueryAspect(
-                    aspect_id="accident_insurance_pricing_requirement",
-                    question="意外伤害保险定价要求",
-                    search_queries=(
-                        QuerySearchQuery("意外伤害保险定价要求是什么", "semantic_question", "贴近用户意图"),
-                        QuerySearchQuery("保险公司 在厘定保险费时 应符合一般精算原理 采用公平 合理的定价假设", "document_style_statement", "制度原文锚点"),
-                        QuerySearchQuery("厘定保险费 一般精算原理 公平 合理 定价假设", "keyword_anchor", "关键术语兜底"),
-                    ),
-                    evidence_need="意外伤害保险保险费厘定和定价假设要求",
-                    keywords=("保险费", "一般精算原理", "公平", "合理", "定价假设"),
-                )
-            )
-    if "大额风险暴露" in normalized_question and any(term in normalized_question for term in ("门槛", "定义", "2.5%", "一级资本净额", "条件", "与", "和")):
-        requested.append(
-            QueryAspect(
-                aspect_id="large_exposure_threshold",
-                question="大额风险暴露门槛",
-                search_queries=_fallback_search_queries("大额风险暴露门槛"),
-                evidence_need="大额风险暴露的定量门槛或监管定义",
-                keywords=("大额风险暴露", "一级资本净额", "2.5%", "单一客户", "一组关联客户"),
-            )
-        )
-    if "自救原则" in normalized_question or ("处置" in normalized_question and "自救" in normalized_question):
-        requested.append(
-            QueryAspect(
-                aspect_id="bail_in_resolution_principle",
-                question="处置自救原则",
-                search_queries=_fallback_search_queries("处置自救原则"),
-                evidence_need="处置策略建议中自救为本原则的直接规定",
-                keywords=("处置策略", "自救为本", "基本原则", "处置计划建议示例"),
-            )
-        )
-    single_domain_ids = {"pillar3_disclosure_frequency"}
-    return requested if len(requested) >= 2 or any(aspect.aspect_id in single_domain_ids for aspect in requested) else []
-
-
-def _heuristic_aspect_for_item(item: str, normalized: str) -> QueryAspect | None:
-    if item == "文档版本信息":
-        return QueryAspect(
-            aspect_id="document_version_info",
-            question="文件版本是什么",
-            search_queries=(
-                QuerySearchQuery("文档重要声明中的文件版本是什么", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("重要声明 文件版本 发布日期 适用范围", "document_style_statement", "贴近文档元数据表述"),
-                QuerySearchQuery("文件版本 版本号 发布日期", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="文档重要声明、文件版本、发布日期或适用范围",
-            keywords=("文件版本", "版本号", "发布日期", "重要声明", "适用范围"),
-        )
-    if item == "统计报表定义":
-        return QueryAspect(
-            aspect_id="statistical_report_definition",
-            question="统计报表是什么意思",
-            search_queries=(
-                QuerySearchQuery("统计报表在本文档中是什么意思", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("统计报表是指 指定模板 期间 币种 机构层级 指标口径", "document_style_statement", "贴近制度定义句"),
-                QuerySearchQuery("统计报表 定义 指标口径", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="统计报表术语定义和字段口径",
-            keywords=("统计报表", "定义", "指定模板", "期间", "币种", "指标口径"),
-        )
-    if item == "校验规则分类":
-        return QueryAspect(
-            aspect_id="check_rule_classification",
-            question="校验规则分为哪几类",
-            search_queries=(
-                QuerySearchQuery("校验规则分为哪几类", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("校验规则分为格式规则 完整性规则 数值规则 勾稽规则 跨期规则 跨表规则 依据规则", "document_style_statement", "贴近制度分类句"),
-                QuerySearchQuery("校验规则 分类 格式 完整性 数值 勾稽 跨期 跨表 依据", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="校验规则分类说明",
-            keywords=("校验规则", "格式规则", "完整性规则", "数值规则", "勾稽规则", "跨期规则", "跨表规则", "依据规则"),
-        )
-    if item.startswith("规则编号查询:"):
-        rule_code = item.split(":", maxsplit=1)[1]
-        return QueryAspect(
-            aspect_id=f"rule_{_clean_aspect_id(rule_code, 1).lower()}",
-            question=f"规则 {rule_code} 的触发条件和处理建议是什么",
-            search_queries=(
-                QuerySearchQuery(f"规则 {rule_code} 的触发条件和处理建议是什么", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery(f"规则编号 {rule_code} 规则名称 触发条件 处理建议", "document_style_statement", "贴近规则表字段"),
-                QuerySearchQuery(f"{rule_code} 触发条件 处理建议", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need=f"规则表中 {rule_code} 的触发条件和处理建议",
-            keywords=(rule_code, "触发条件", "处理建议", "规则编号"),
-        )
-    if item == "普惠小微贷款纳入":
-        return QueryAspect(
-            aspect_id="inclusive_micro_loan_scope",
-            question="普惠小微贷款纳入应如何处理",
-            search_queries=(
-                QuerySearchQuery("普惠小微贷款纳入的认定标准和处理流程", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("普惠小微贷款 纳入 口径 条件 处理流程", "document_style_statement", "贴近填报说明证据句"),
-                QuerySearchQuery("普惠小微贷款 纳入 口径 条件", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="普惠小微贷款纳入的口径、条件和处理流程",
-            keywords=("普惠小微贷款", "普惠小微", "纳入", "口径", "条件", "处理流程"),
-        )
-    if item == "绿色信贷识别":
-        return QueryAspect(
-            aspect_id="green_credit_identification",
-            question="绿色信贷识别应如何处理",
-            search_queries=(
-                QuerySearchQuery("绿色信贷识别的标准和方法有哪些", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("绿色信贷 识别 标准 分类 认定方法", "document_style_statement", "贴近制度原文"),
-                QuerySearchQuery("绿色信贷 识别 标准 分类", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="绿色信贷识别的标准、分类和识别方法",
-            keywords=("绿色信贷", "识别", "标准", "分类", "认定方法"),
-        )
-    if item == "逾期与不良贷款关系":
-        return QueryAspect(
-            aspect_id="overdue_nonperforming_relationship",
-            question="逾期与不良贷款关系应如何处理",
-            search_queries=(
-                QuerySearchQuery("逾期贷款与不良贷款之间的认定关系和转换规则", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("逾期贷款 不良贷款 关系 认定标准 转换规则", "document_style_statement", "贴近填报说明证据句"),
-                QuerySearchQuery("逾期 不良 认定 转换", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="逾期贷款与不良贷款的关系、认定标准和转换规则",
-            keywords=("逾期贷款", "不良贷款", "关系", "认定标准", "转换规则"),
-        )
-    if item == "资产合计差异排查" or ("资产合计" in normalized and "差异" in normalized and not item):
-        return QueryAspect(
-            aspect_id="asset_total_difference_check",
-            question="资产合计差异应该优先排查哪些问题",
-            search_queries=(
-                QuerySearchQuery("资产合计与分项合计存在差异时应优先检查哪些原因", "semantic_question", "贴近用户问题的处理口径"),
-                QuerySearchQuery("资产合计校验差异处理流程 币种折算 四舍五入 科目映射 重复汇总", "document_style_statement", "贴近填报说明中的证据句"),
-                QuerySearchQuery("资产合计 差异 币种折算 四舍五入 科目映射 重复汇总", "keyword_anchor", "关键术语兜底"),
-            ),
-            evidence_need="资产合计差异处理或优先排查章节",
-            keywords=("资产合计", "差异", "优先检查", "优先排查", "币种折算", "四舍五入", "科目映射", "重复汇总"),
-        )
-    if item == "外币折算依据保留" or ("外币折算" in normalized and not item):
-        return QueryAspect(
-            aspect_id="foreign_currency_evidence",
-            question="外币折算差异需要保留什么依据",
-            search_queries=(
-                QuerySearchQuery("外币折算导致资产合计差异时需要保留哪些支持材料", "semantic_question", "贴近用户问题的留痕依据"),
-                QuerySearchQuery("外币折算差异 留痕依据 汇率日期 折算规则 原币金额来源", "document_style_statement", "贴近制度材料表述"),
-                QuerySearchQuery("外币折算 汇率日期 折算规则 原币金额来源", "keyword_anchor", "关键术语兜底"),
-            ),
-            evidence_need="外币折算差异的留痕依据或支持材料",
-            keywords=("外币折算", "保留", "依据", "汇率日期", "折算规则", "原币金额", "来源"),
-        )
-    if item == "历史差错更正记录":
-        return QueryAspect(
-            aspect_id="historical_error_correction",
-            question="历史差错更正记录应如何处理",
-            search_queries=(
-                QuerySearchQuery("历史差错更正记录需要保留哪些更正依据", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("历史差错 更正记录 更正原因 更正前后数据 审批痕迹", "document_style_statement", "贴近制度材料表述"),
-                QuerySearchQuery("历史差错 更正记录 更正原因", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="历史差错更正记录、原因、前后数据和审批痕迹要求",
-            keywords=("历史差错", "差错更正", "更正记录", "更正原因", "审批痕迹"),
-        )
-    if item == "多期间影响说明":
-        return QueryAspect(
-            aspect_id="multi_period_impact",
-            question="多期间影响说明应如何处理",
-            search_queries=(
-                QuerySearchQuery("多期间影响说明需要覆盖哪些期间和影响口径", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("多期间影响说明 跨期影响 涉及期间 调整口径", "document_style_statement", "贴近制度材料表述"),
-                QuerySearchQuery("多期间 影响说明 跨期 期间", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="多期间影响说明、跨期影响和涉及期间要求",
-            keywords=("多期间", "影响说明", "跨期", "涉及期间", "调整口径"),
-        )
-    if item == "依据不足违规报告边界":
-        return QueryAspect(
-            aspect_id="insufficient_evidence_safety_boundary",
-            question="依据不足时是否可以直接判断银行违规或生成正式监管报告",
-            search_queries=(
-                QuerySearchQuery("依据不足时是否可以判断银行违规或生成正式监管报告", "semantic_question", "贴近用户意图"),
-                QuerySearchQuery("依据不足 无法判断 银行违规 正式监管报告 不得生成", "document_style_statement", "贴近系统边界表述"),
-                QuerySearchQuery("依据不足 违规 正式监管报告", "keyword_anchor", "术语兜底"),
-            ),
-            evidence_need="依据不足时的拒答边界、违规判断边界和正式监管报告生成边界",
-            keywords=("依据不足", "无法判断", "银行违规", "正式监管报告", "不得生成"),
-        )
-    return None
-
-
-def _detect_requested_items(question: str) -> list[str]:
-    normalized = re.sub(r"\s+", "", question)
-    detectors = [
-        ("文档版本信息", ("文件版本",)),
-        ("文档版本信息", ("版本", "模拟制度")),
-        ("统计报表定义", ("统计报表", "意思")),
-        ("统计报表定义", ("统计报表", "定义")),
-        ("校验规则分类", ("校验规则", "几类")),
-        ("校验规则分类", ("校验规则", "分类")),
-        ("普惠小微贷款纳入", ("普惠小微", "纳入")),
-        ("绿色信贷识别", ("绿色信贷", "识别")),
-        ("逾期与不良贷款关系", ("逾期", "不良")),
-        ("资产合计差异排查", ("资产合计", "差异")),
-        ("资产合计差异排查", ("资产合计", "不一致")),
-        ("资产合计差异排查", ("资产合计", "分项加总")),
-        ("资产合计差异排查", ("资产合计", "分项合计")),
-        ("外币折算依据保留", ("外币折算",)),
-        ("历史差错更正记录", ("历史差错", "更正")),
-        ("多期间影响说明", ("多期间", "影响")),
-    ]
-    items = [label for label, terms in detectors if all(term in normalized for term in terms)]
-    for rule_code in re.findall(r"R-[A-Z]+-\d+", question.upper()):
-        items.append(f"规则编号查询:{rule_code}")
-    if _asks_insufficient_evidence_safety_boundary(normalized) and "依据不足违规报告边界" not in items:
-        items.append("依据不足违规报告边界")
-    return _dedupe(items)
 
 
 def _asks_insufficient_evidence_safety_boundary(normalized_question: str) -> bool:
@@ -1773,6 +1204,8 @@ def _clean_table_filters(value: Any) -> dict[str, Any]:
 
 def _fallback_table_aspect(question: str, options: list[str] | None = None) -> QueryAspect | None:
     normalized = re.sub(r"\s+", "", question)
+    operation_intent = re.sub(r"《[^》]*》", "", normalized)
+    operation_intent = re.sub(r"[“‘\"'][^”’\"']*[”’\"']", "", operation_intent)
     if _is_document_formula_question(normalized):
         # “附件” is a broad spreadsheet marker, but regulatory Word/PDF
         # appendices also use that word. Formula questions must stay on text
@@ -1791,26 +1224,26 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
 
     table_task = "lookup"
     operation = "none"
-    if any(term in normalized for term in ["最高", "最大", "最多"]):
+    if any(term in operation_intent for term in ["最高", "最大", "最多"]):
         table_task = "compare"
         operation = "max"
-    elif any(term in normalized for term in ["最低", "最小", "最少"]):
+    elif any(term in operation_intent for term in ["最低", "最小", "最少"]):
         table_task = "compare"
         operation = "min"
-    elif any(term in normalized for term in ["比较", "对比"]):
+    elif any(term in operation_intent for term in ["比较", "对比"]):
         table_task = "compare"
         operation = "none"
     elif (
-        any(term in normalized for term in ["差值", "差额", "相差", "变化", "增加", "减少"])
-        or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", normalized)
-        or ("计算" in normalized and re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+[－—-][\u4e00-\u9fffA-Za-z0-9_]+", normalized))
+        any(term in operation_intent for term in ["差值", "差额", "相差", "变化", "增加", "减少"])
+        or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", operation_intent)
+        or ("计算" in operation_intent and re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+[－—-][\u4e00-\u9fffA-Za-z0-9_]+", operation_intent))
     ):
         table_task = "calculate"
         operation = "difference"
-    elif explicit_table and ("占比" in normalized or "比例" in normalized):
+    elif explicit_table and _asks_ratio_calculation(question):
         table_task = "calculate"
         operation = "ratio"
-    elif any(term in normalized for term in ["求和", "总和", "加总", "之和", "分项之和", "分项合计"]):
+    elif any(term in operation_intent for term in ["求和", "总和", "加总", "之和", "分项之和", "分项合计"]):
         table_task = "calculate"
         operation = "sum"
 
@@ -1819,6 +1252,66 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
     table_question = _mixed_table_question_part(question) if modality == "mixed" else question
     filters = _extract_table_filters(table_question)
     selectors = _extract_table_selectors(table_question, table_task, options or [])
+    if (
+        filters.get("source_title")
+        and filters.get("row_label")
+        and filters.get("column_label")
+    ):
+        # A title + row + column is a complete cell locator. Period tokens may
+        # legitimately live inside a hierarchical row/column label and must not
+        # become independent hard filters against sparse legacy metadata.
+        source_title = str(filters.get("source_title") or "")
+        period_tokens = {
+            "year": (f"{filters.get('year')}年",),
+            "month": (f"{filters.get('month')}月",),
+            "quarter": (
+                f"{filters.get('quarter')}季度",
+                f"{'一二三四'[int(filters['quarter']) - 1]}季度"
+                if str(filters.get("quarter") or "").isdigit()
+                and 1 <= int(filters["quarter"]) <= 4
+                else "",
+            ),
+        }
+        for period_key, tokens in period_tokens.items():
+            if not any(token and token in source_title for token in tokens):
+                filters.pop(period_key, None)
+    if table_task == "calculate" and selectors:
+        # Calculation operands carry their own columns.  A global column filter
+        # would discard all but one operand before the executor can calculate.
+        filters.pop("column_label", None)
+    if table_task in {"compare", "calculate"} and len(selectors) >= 2:
+        selector_columns = [
+            str(selector.get("column_label") or "")
+            for selector in selectors
+            if selector.get("column_label")
+        ]
+        if len(set(selector_columns)) >= 2 and all(
+            re.search(r"(?:\d{1,2}月|[一二三四1-4]季度|[1-4]季)", column)
+            for column in selector_columns
+        ):
+            # Period labels embedded in distinct operand columns are selector
+            # constraints, not one global period hard filter.
+            filters.pop("month", None)
+            filters.pop("quarter", None)
+    selector_columns = [
+        str(selector.get("column_label") or "")
+        for selector in selectors
+        if selector.get("column_label")
+    ]
+    if (
+        filters.get("source_title")
+        and selector_columns
+        and all(
+            re.search(r"(?:\d{1,2}月|[一二三四1-4]季度|[1-4]季)", column)
+            for column in selector_columns
+        )
+    ):
+        # An explicitly named report plus a period-bearing column is already a
+        # complete locator.  Legacy indexes do not always duplicate that column
+        # period into cell-level month/quarter metadata, so it must not become a
+        # second hard filter.
+        filters.pop("month", None)
+        filters.pop("quarter", None)
     if table_task == "compare" and selectors:
         # Comparison operands are carried by selectors.  Keeping the first and
         # last quoted operands as global indicator/column filters would reduce
@@ -1901,11 +1394,18 @@ def _mixed_regulation_aspects(table_aspect: QueryAspect) -> tuple[QueryAspect, .
         table_aspect.question,
         flags=re.DOTALL,
     )
+    named = re.search(
+        r"(?:先)?依据《([^》]+)》(.+?)(?=[，,；;。]\s*再从《)",
+        table_aspect.question,
+        flags=re.DOTALL,
+    )
     regulation_question = (
         labelled.group(1).strip()
         if labelled
         else unlabelled.group(1).strip()
         if unlabelled
+        else f"根据《{named.group(1).strip()}》{named.group(2).strip()}"
+        if named
         else f"监管制度对“{indicator}”的定义、填报口径、适用范围和报送要求是什么？"
     )
     regulatory_filter_keys = {
@@ -1931,7 +1431,7 @@ def _mixed_regulation_aspects(table_aspect: QueryAspect) -> tuple[QueryAspect, .
         for key, value in table_aspect.table_filters.items()
         if key in regulatory_filter_keys
     }
-    if labelled or unlabelled:
+    if labelled or unlabelled or named:
         labelled_filters = _extract_table_filters(regulation_question)
         for key in regulation_source_filter_keys:
             if labelled_filters.get(key):
@@ -1956,7 +1456,7 @@ def _mixed_regulation_aspects(table_aspect: QueryAspect) -> tuple[QueryAspect, .
         # the evidence anchor.  Reusing the spreadsheet indicator here makes
         # the text retriever search for table vocabulary and can silently drop
         # the制度侧 evidence.
-        anchor = regulation_question if labelled or unlabelled else indicator
+        anchor = regulation_question if labelled or unlabelled or named else indicator
         question_specs = [(regulation_question, anchor)]
     aspects: list[QueryAspect] = []
     bounded_specs = question_specs[: max(1, QUERY_PLANNER_MAX_ASPECTS - 1)]
@@ -2067,6 +1567,15 @@ def _extract_table_selectors(
 ) -> list[dict[str, Any]]:
     quoted = _quoted_terms(question)
     selectors: list[dict[str, Any]] = []
+    row_match = re.search(r"行项目\s*[“\"‘']([^”\"’']+)", question)
+    row_label = row_match.group(1).strip() if row_match else ""
+    column_labels = _dedupe(
+        [
+            value.strip()
+            for value in re.findall(r"(?:在)?列\s*[“\"‘']([^”\"’']+)", question)
+            if value.strip()
+        ]
+    )
     if "四类贷款余额" in re.sub(r"\s+", "", question):
         return [
             {"label": label}
@@ -2079,7 +1588,29 @@ def _extract_table_selectors(
     if regional_metric_selectors:
         return regional_metric_selectors
     period_selectors = _period_selectors(question) if table_task in {"compare", "calculate"} else []
-    if len(period_selectors) >= 2:
+    if table_task == "calculate" and row_label and len(column_labels) >= 2:
+        # Explicit row/column grammar is unambiguous and must take precedence
+        # over generic quoted-term and period extraction.  Sheet names are also
+        # quoted, but are never calculation operands.
+        selectors = [
+            {"row_label": row_label, "column_label": column_labels[0]},
+            {"row_label": row_label, "column_label": column_labels[1]},
+        ]
+    elif table_task == "calculate" and row_label:
+        ratio_columns = re.search(
+            r"行项目\s*[“\"‘'][^”\"’']+[”\"’']的"
+            r"\s*[“\"‘']([^”\"’']+)[”\"’']数值占"
+            r"\s*[“\"‘']([^”\"’']+)[”\"’']数值",
+            question,
+        )
+        if ratio_columns:
+            selectors = [
+                {"row_label": row_label, "column_label": ratio_columns.group(1).strip()},
+                {"row_label": row_label, "column_label": ratio_columns.group(2).strip()},
+            ]
+    if selectors:
+        pass
+    elif len(period_selectors) >= 2:
         selectors = period_selectors
     elif table_task == "calculate" and len(quoted) >= 3:
         # “row”从“column A”到“column B” means B - A.
@@ -2126,10 +1657,26 @@ def _extract_table_selectors(
             labels = _mentioned_table_indicators(segment)
         selectors = [{"label": item} for item in _dedupe(labels)]
     elif table_task == "lookup":
-        if len(quoted) >= 2:
-            selectors = [{"row_or_indicator": quoted[0], "column_label": quoted[-1]}]
-        elif quoted:
-            selectors = [{"row_or_indicator": quoted[0]}]
+        if row_label and column_labels:
+            selectors = [{
+                "row_label": row_label,
+                "column_label": column_labels[0],
+            }]
+        else:
+            lookup_match = re.search(r"请给出\s*[“\"]([^”\"]+)[”\"]\s*在\s*[“\"]([^”\"]+)[”\"]\s*列", question)
+        if not selectors and lookup_match:
+            selectors = [{
+                "row_or_indicator": lookup_match.group(1).strip(),
+                "column_label": lookup_match.group(2).strip(),
+            }]
+        elif not selectors:
+            sheet_match = re.search(r"工作表\s*[“\"‘']([^”\"’']+)", question)
+            sheet_name = sheet_match.group(1).strip() if sheet_match else ""
+            data_terms = [term for term in quoted if term != sheet_name]
+            if len(data_terms) >= 2:
+                selectors = [{"row_or_indicator": data_terms[0], "column_label": data_terms[-1]}]
+            elif data_terms:
+                selectors = [{"row_or_indicator": data_terms[0]}]
     return selectors
 
 
@@ -2284,6 +1831,13 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     # explicit Excel/report attachment title is the hard table locator and
     # therefore takes precedence over the first generic book-title quote.
     title_match = re.search(r"(?:Excel|表格|报表)(?:\s*附件)?《([^》]+)》", question, flags=re.IGNORECASE)
+    work_sheet_position = question.find("工作表")
+    if work_sheet_position >= 0:
+        preceding_titles = list(re.finditer(r"《([^》]+)》", question[:work_sheet_position]))
+        if preceding_titles:
+            # In a joint policy/report request, the report is the last named
+            # document immediately before the worksheet locator.
+            title_match = preceding_titles[-1]
     if title_match is None:
         title_match = re.search(r"《([^》]+)》", question)
     if title_match:
@@ -2343,7 +1897,12 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         filters["version_status"] = "current"
     elif any(marker in question for marker in ("已废止", "废止版本", "失效版本")):
         filters["version_status"] = "repealed"
-    sheet_match = re.search(r"工作表[：:]\s*(.+?)(?=）\s*[，,]|[，。；;]\s*)", question)
+    # Prefer the bounded quote form.  It remains stable when the sheet name is
+    # followed by a Chinese closing quote and then ordinary prose (the common
+    # ``工作表“Sheet1”，请…`` form).
+    sheet_match = re.search(r"工作表\s*[“\"‘']([^”\"’']+)", question)
+    if sheet_match is None:
+        sheet_match = re.search(r"工作表[：:]\s*(.+?)(?=）\s*[，,]|[，。；;]\s*)", question)
     if sheet_match is None:
         sheet_match = re.search(r"工作表[：:]\s*([^，。；;]+)", question)
     if sheet_match is None:
@@ -2372,11 +1931,33 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         value = quarter_match.group(1) or quarter_match.group(2)
         filters["quarter"] = {"一": 1, "二": 2, "三": 3, "四": 4}.get(value, int(value) if value.isdigit() else None)
     quoted_terms = _quoted_terms(question)
-    if quoted_terms:
+    explicit_row = re.search(r"行项目\s*[“\"‘']([^”\"’']+)", question)
+    explicit_columns = [
+        value.strip()
+        for value in re.findall(r"(?:在)?列\s*[“\"‘']([^”\"’']+)", question)
+        if value.strip()
+    ]
+    lookup_match = re.search(r"请给出\s*[“\"]([^”\"]+)[”\"]\s*在\s*[“\"]([^”\"]+)[”\"]\s*列", question)
+    if lookup_match:
+        # This is an explicit row/column lookup syntax, so the preceding
+        # quoted sheet name must not be mistaken for the requested indicator.
+        filters["indicator"] = lookup_match.group(1).strip()
+        filters["row_label"] = lookup_match.group(1).strip()
+        filters["column_label"] = lookup_match.group(2).strip()
+    elif explicit_row:
+        filters["indicator"] = explicit_row.group(1).strip()
+        filters["row_label"] = explicit_row.group(1).strip()
+        if explicit_columns:
+            filters["column_label"] = explicit_columns[-1]
+    elif quoted_terms:
+        sheet_name = str(filters.get("sheet") or "").strip()
+        # Quoted measurement-scope phrases ("本年累计", "截至当期", "账面余额")
+        # describe the column, not a queried row, so they must not become the
+        # indicator.  Only the remaining quoted terms name the requested row.
         non_scope_terms = [
             term
             for term in quoted_terms
-            if not any(scope in term for scope in TABLE_SCOPE_TERMS)
+            if term.strip() != sheet_name and not any(scope in term for scope in TABLE_SCOPE_TERMS)
         ]
         if non_scope_terms:
             filters["indicator"] = non_scope_terms[0]
@@ -2392,10 +1973,11 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         filters["row_label"] = indicators[0]
     scope_text = re.split(r"(?:请比较|请对比|比较|对比)", question, maxsplit=1)[0]
     scope_text = re.sub(r"《[^》]+》", "", scope_text)
-    for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
-        if label.replace(" ", "") in re.sub(r"\s+", "", scope_text):
-            filters["row_label"] = label
-            break
+    if explicit_row is None:
+        for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
+            if label.replace(" ", "") in re.sub(r"\s+", "", scope_text):
+                filters["row_label"] = label
+                break
     row_scoped_phrase = False
     focused_scope = re.search(r"》的?([^，。；：:]{2,24})口径下", question)
     if focused_scope is None:
@@ -2509,6 +2091,13 @@ def _mixed_table_question_part(question: str) -> str:
     labelled = _labelled_question_part(question, "报表侧")
     if labelled != question:
         return labelled
+    named_report = re.search(
+        r"(再从《[^》]+》工作表.+?)(?=(?:[。；;]\s*(?:最后|并说明|不得|行业汇总|请分别))|$)",
+        question,
+        flags=re.DOTALL,
+    )
+    if named_report:
+        return named_report.group(1).strip()
     match = re.search(
         r"(?:^|[；;。])\s*((?:再|并)?(?:比较|查询|读取|计算|核对).+?)(?=(?:[。；;]\s*(?:最后|并说明|不得|行业汇总))|$)",
         question,
@@ -2646,155 +2235,27 @@ def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:
 
 
 def _document_style_alias(question: str) -> str:
-    text = str(question or "")
-    text = re.sub(r"(?:沟通策略)?沟通对象", "沟通策略 与哪些主体开展有效沟通", text)
-    text = text.replace("沟通策略对象", "沟通策略 与哪些主体开展有效沟通")
+    """Create a query-shaped alias only from the user's own wording.
+
+    This transformation intentionally contains no regulatory conclusions,
+    thresholds, document titles, or benchmark-specific vocabulary.
+    """
+
+    text = re.sub(r"\s+", " ", str(question or "")).strip()
+    text = re.sub(r"[\uFF1F?\u3002\uFF1B;\uFF0C,\uFF1A:]+", " ", text)
     text = re.sub(
-        r"大额风险暴露(?:门槛|定义|监管定义)?",
-        "处置计划建议示例 商业银行版 大额风险暴露和同业融入情况 对主要同业客户的风险暴露情况 参考大额风险暴露的相关统计要求 大额风险暴露是指 商业银行 对单一客户或一组关联客户 超过其一级资本净额 2.5% 的风险暴露",
+        r"(?:\u8BF7\u95EE|\u8BF7\u8BF4\u660E|\u8BF7\u89E3\u91CA|"
+        r"\u662F\u4EC0\u4E48|\u6709\u54EA\u4E9B|\u5982\u4F55|"
+        r"\u4E3A\u4F55|\u591A\u5C11)$",
+        "",
         text,
     )
-    text = re.sub(
-        r"(?:处置)?自救原则",
-        "处置计划建议示例 商业银行版 处置计划的实施 处置策略 策略建议中可以选择应用多种处置工具 应坚持自救为本的基本原则",
-        text,
-    )
-    text = re.sub(
-        r"(?:意外伤害保险)?(?:保费)?厘定(?:要求|原则)|(?:保费)?定价原则",
-        "保险公司 在厘定保险费时 应符合 一般精算原理 采用 公平 合理 定价假设",
-        text,
-    )
-    text = re.sub(
-        r"(?:意外伤害保险|意外险)(?:的)?(?:保费)?定价要求",
-        "保险公司 在厘定保险费时 应符合 一般精算原理 采用 公平 合理 定价假设",
-        text,
-    )
-    text = re.sub(
-        r"(?:意外伤害保险|意外险)(?:的)?(?:统一)?定义",
-        "本办法所称意外伤害保险 是以 被保险人 因遭受意外伤害造成死亡 伤残 或者发生保险合同约定的其他事故 为给付保险金条件的人身保险",
-        text,
-    )
-    text = re.sub(
-        r"保险集团报告义务",
-        "应当编报保险集团偿付能力报告的公司名单 下列保险集团 应当 按照 保险公司偿付能力监管规则第19号 保险集团 编报 保险集团偿付能力报告",
-        text,
-    )
-    text = re.sub(
-        r"数字化银行回函的效力|数字化回函效力",
-        "以符合相关规定的数字方式 办理银行询证函及回函 与纸质银行询证函及回函 具有同等法律效力和证明力",
-        text,
-    )
-    text = re.sub(
-        r"回函时限|询证函回复时限|合规询证函回复时限",
-        "银行业金融机构 应当自收到符合规定的询证函之日起 10个工作日内 按照要求 将回函直接回复会计师事务所",
-        text,
-    )
-    text = re.sub(
-        r"函证事项.*公开渠道公示|办理函证相关事项.*公示|公开渠道公示函证事项",
-        "银行业金融机构 应当 在其总行或总部网站 微信公众号等公开渠道 就办理函证相关事项进行公示",
-        text,
-    )
-    text = re.sub(
-        r"一函一个基准日|一个函证基准日",
-        "一份询证函 只列示 一个函证基准日",
-        text,
-    )
-    text = re.sub(
-        r"消费金融(?:公司)?(?:催收)?禁限|催收禁限|禁止.*无关第三人催收",
-        "消费金融公司 不得采用 暴力 威胁 恐吓 骚扰 等不正当手段进行催收 不得对与债务无关的第三人进行催收",
-        text,
-    )
-    text = re.sub(
-        r"重要实体(?:要求|定义|作用)?",
-        "重要实体 承载 本机构核心业务条线和关键功能 对持续经营 维持关键功能具有重要作用",
-        text,
-    )
-    text = re.sub(
-        r"处置工具|处置自救原则",
-        "处置工具 包括 机构自救 股东注资 引入战略投资者 处置不良资产 接管 收购承接 建立过桥机构 破产清算 应坚持自救为本的基本原则",
-        text,
-    )
-    text = re.sub(
-        r"大额风险暴露门槛",
-        "大额风险暴露是指 商业银行 对单一客户或一组关联客户 超过其一级资本净额 2.5%的风险暴露",
-        text,
-    )
-    text = re.sub(
-        r"消费金融公司(?:的)?业务地域范围|消费金融公司.*全国范围开展业务",
-        "消费金融公司 可以在全国范围内开展业务",
-        text,
-    )
-    text = re.sub(
-        r"专利权质押登记线上全覆盖目标|专利权质押登记.*全覆盖",
-        "试验区内商业银行各分支机构 实现 专利权质押登记 全流程无纸化线上办理 全覆盖",
-        text,
-    )
-    text = re.sub(
-        r"重大数据事件(?:的)?条件|重要数据事件何时属于重大事件",
-        "重大数据安全事件 重要数据遭到泄露 破坏 非法获取 非法利用 对省级区域经济带来重大影响 对银行保险行业安全造成影响",
-        text,
-    )
-    text = re.sub(
-        r"交易账簿头寸|交易头寸",
-        "以交易目的持有的头寸 包括 自营业务 做市业务 为满足客户需求提供的对客交易 对冲前述交易相关风险 交易账簿头寸原则上每日进行公允价值计量 变动计入损益",
-        text,
-    )
-    text = re.sub(
-        r"第三支柱(?:信息)?(?:披露)?(?:表格)?(?:类型|频率|并表范围)?",
-        "商业银行以表格形式进行第三支柱信息披露 包括固定表格和可变表格 按照监管并表范围披露 表格中另有规定的除外 根据表格要求分别按照季度 半年 年度频率披露信息",
-        text,
-    )
-    text = re.sub(
-        r"中资商业银行法人机构筹建申请书|法人机构筹建申请书",
-        "中资商业银行法人机构筹建审批 申请书 内容包括但不限于 拟设立机构 名称 拟设地 注册资本 股权结构 业务范围 基本信息",
-        text,
-    )
-    text = re.sub(
-        r"目录版本|2023年版目录",
-        "中资商业银行行政许可事项申请材料目录及格式要求 2023年版",
-        text,
-    )
-    text = re.sub(
-        r"终极利率(?:暂定值)?",
-        "终极利率 暂定为 4.5%",
-        text,
-    )
-    text = re.sub(
-        r"薪酬递延",
-        "高级管理人员 对风险有重要影响岗位 员工 绩效薪酬 40%以上 延期支付 期限 一般不少于3年",
-        text,
-    )
-    text = re.sub(
-        r"催收禁限",
-        "不得采用 暴力 威胁 恐吓 骚扰 不正当手段 催收 不得对与债务无关的第三人进行催收",
-        text,
-    )
-    text = re.sub(
-        r"持续经营触发阈值",
-        "持续经营触发事件 指 商业银行 核心一级资本充足率 降至 5.125% 或以下",
-        text,
-    )
-    text = re.sub(
-        r"损失吸收顺序",
-        "所有其他一级资本工具 全部吸收损失后 再启动 二级资本工具 吸收损失",
-        text,
-    )
-    text = text.replace("投连险", "投资连结险")
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _mixed_regulation_document_style_alias(regulation_question: str, anchor_question: str) -> str:
-    alias = _document_style_alias(anchor_question)
-    compact = re.sub(r"\s+", "", regulation_question)
-    if "大额风险暴露" in compact and "处置" in compact:
-        alias = f"商业银行版 处置计划建议示例 {alias}"
-    if "资本工具" in compact and any(term in alias for term in ("持续经营触发事件", "二级资本工具", "吸收损失")):
-        alias = f"资本工具合格标准 {alias}"
-    if "意外伤害保险" in compact and any(term in alias for term in ("厘定保险费", "意外伤害保险")):
-        alias = f"意外伤害保险业务监管办法 {alias}"
-    if "保险集团报告义务" in compact or "保险集团偿付能力报告" in compact:
-        alias = f"应当编报保险集团偿付能力报告的公司名单 {alias}"
-    return alias
+    del regulation_question
+    return _document_style_alias(anchor_question)
 
 
 def _clean_text(value: Any) -> str:
@@ -2820,39 +2281,9 @@ def _dedupe_search_queries(items: list[QuerySearchQuery]) -> list[QuerySearchQue
 
 
 def _keywords_from_text(text: str) -> list[str]:
-    domain_phrases = [
-        "资产合计",
-        "差异",
-        "优先检查",
-        "优先排查",
-        "币种折算",
-        "外币折算",
-        "四舍五入",
-        "科目映射",
-        "重复汇总",
-        "保留",
-        "依据",
-        "汇率日期",
-        "折算规则",
-        "原币金额",
-        "逾期贷款",
-        "不良贷款",
-        "风险分类",
-        "绿色信贷",
-        "普惠小微",
-        "大额风险暴露",
-        "一级资本净额",
-        "2.5%",
-        "自救为本",
-    ]
-    normalized = re.sub(r"\s+", "", text)
-    keywords = [phrase for phrase in domain_phrases if phrase in normalized]
-    if "自救" in normalized and "自救为本" not in keywords:
-        keywords.append("自救为本")
-    keywords.extend(token for token in re.findall(r"[A-Za-z0-9_]{2,}", text))
-    if keywords:
-        return _dedupe(keywords)
-    return _dedupe(re.findall(r"[\u4e00-\u9fff]{2,8}", text))[:6]
+    tokens = re.findall(r"[A-Za-z0-9_./%-]{2,}|[\u4e00-\u9fff]{2,12}", str(text or ""))
+    stopwords = {"请问", "请说明", "请解释", "是什么", "有哪些", "如何", "为何"}
+    return [token for token in _dedupe(tokens) if token not in stopwords][:8]
 
 
 def _infer_evidence_type(text: str) -> str:
