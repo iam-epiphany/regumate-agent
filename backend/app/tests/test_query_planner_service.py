@@ -1377,7 +1377,8 @@ def test_table_filters_keep_institution_category_in_row_label(monkeypatch) -> No
     table = plan.aspects[0]
     assert table.table_filters["indicator"] == "资金运用余额"
     assert table.table_filters["row_label"] == "财产险公司 资金运用余额"
-    # ASCII 单引号列口径不得污染 column_label（原 column_scope 正则 bug）。
+    # ASCII 单引号列口径从引号内干净提取（原 column_scope 正则吞词 bug）。
+    assert table.table_filters["column_label"] == "截至当期-账面余额"
     assert "财产险公司" not in str(table.table_filters.get("column_label") or "")
 
     plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，人身险公司资金运用余额在'截至当期-账面余额'口径下的数值是多少？")
@@ -1415,3 +1416,16 @@ def test_institution_row_terms_ignores_title_embedded_words() -> None:
         "资金运用余额",
     )
     assert terms == ["财产险公司"]
+
+
+def test_compare_question_never_gets_sheet_institution_row_label(monkeypatch) -> None:
+    """compare（哪一项数值最高）无指标词：工作表名中的机构词不得成为行定位词。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据 Excel 附件《2024年9月人身险公司经营情况表》（工作表：人身保险公司（月度） ），"
+        "在“本年累计/截至当期”口径下，以下哪一项数值最高？"
+    )
+    table = plan.aspects[0]
+    assert table.table_filters.get("row_label") in (None, "")
+    assert table.table_filters["column_label"] == "本年累计/截至当期"

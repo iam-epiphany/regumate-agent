@@ -1934,21 +1934,39 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
                 current_row_label = str(filters.get("row_label") or "").strip()
                 filters["row_label"] = f"{institution_terms[0]} {current_row_label}".strip()
     row_scoped_phrase = False
-    focused_scope = re.search(r"》的?([^，。；：:'‘’“”\"]{2,24})口径下", question)
-    if focused_scope is None:
-        focused_scope = re.search(r"表的?([^，。；：:'‘’“”\"]{2,24})口径下", question)
-    if focused_scope:
-        value = focused_scope.group(1).strip("的在按以")
+    # Quoted column scope first: the quotes are an exact boundary, so
+    # '截至当期-账面余额'口径下 extracts cleanly while an institution term in
+    # front of the quote ("财产险公司资金运用余额在'截至当期-账面余额'口径下")
+    # is never swallowed into the column label.  Handles ASCII single quotes,
+    # which _quoted_terms does not.
+    quoted_scope = re.search(r"[‘“\"']([^’”\"']{1,24})[’”\"']?(?:列|口径)下", question)
+    if quoted_scope:
+        value = quoted_scope.group(1).strip("的在按以")
         row_scoped_phrase = value == str(filters.get("row_label") or "").strip()
         if value and not row_scoped_phrase and "表" not in value:
             filters["column_label"] = value
-    column_scope = re.search(r"[‘“\"]?([^，。；：:‘“’”\"']{2,24})[’”\"]?(?:列|口径)下?(?:中|比较|取数|查询|读取)?", question)
+    else:
+        focused_scope = re.search(r"》的?([^，。；：:]{2,24})口径下", question)
+        if focused_scope is None:
+            focused_scope = re.search(r"表的?([^，。；：:]{2,24})口径下", question)
+        if focused_scope:
+            value = focused_scope.group(1).strip("的在按以")
+            row_scoped_phrase = value == str(filters.get("row_label") or "").strip()
+            if (
+                value
+                and not row_scoped_phrase
+                and "表" not in value
+                and not re.search(r"(?:公司|银行)", value)
+            ):
+                filters["column_label"] = value
+    column_scope = re.search(r"[‘“\"]?([^，。；：:‘“’”\"]{2,24})[’”\"]?(?:列|口径)下?(?:中|比较|取数|查询|读取)?", question)
     if column_scope and "column_label" not in filters and not row_scoped_phrase:
-        value = column_scope.group(1).split("》")[-1].strip("的在按以")
+        value = column_scope.group(1).split("》")[-1].strip("的在按以'‘’\"”")
         if (
             value
             and value != str(filters.get("row_label") or "").strip()
             and not any(marker in value for marker in ("情况表", "统计表", "工作表"))
+            and not re.search(r"(?:公司|银行)", value)
         ):
             filters["column_label"] = value
     explicit_total_column = re.search(
@@ -2174,9 +2192,11 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
     Matches 公司/银行-suffixed institution names (财产险公司/人身险公司/
     保险公司/大型商业银行…) and the corpus's named aggregate rows
     (保险业合计/全国合计).  ``text`` must already have book titles removed;
-    additionally, when an indicator is present the term must co-occur with it
-    in the same clause, so a title-embedded institution word inside a natural
-    title ("…保险公司资金运用情况表中…") is never treated as a row locator.
+    an indicator is required (an institution term only locates a row together
+    with an indicator — compare/max-style questions never name a row here),
+    and the term must co-occur with the indicator in the same clause, so a
+    title-embedded institution word inside a natural title ("…保险公司资金
+    运用情况表中…") is never treated as a row locator.
     """
 
     compact = re.sub(r"\s+", "", str(text or ""))
@@ -2188,6 +2208,14 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
         "",
         compact,
     )
+    # A sheet name ("工作表：人身保险公司（月度）") is its own filter and its
+    # institution words locate the sheet, not a row — drop it before matching.
+    compact = re.sub(r"工作表\s*[：:]\s*[^，。；）)]+[）)]?", "", compact)
+    # An institution term only locates a row together with an indicator
+    # ("财产险公司 资金运用余额").  Without an indicator (compare/max-style
+    # questions) the term would constrain rows the question never names.
+    if not indicator:
+        return []
     candidates: list[str] = []
     for match in re.finditer(r"(?:其中：)?[\u4e00-\u9fff]{2,6}?(?:公司|银行)", compact):
         word = match.group(0).lstrip("其中：")
@@ -2204,8 +2232,6 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
     for label in ("保险业合计", "全国合计"):
         if label in compact and label not in candidates:
             candidates.append(label)
-    if not indicator:
-        return candidates[:1]
     # 机构词必须与指标词同分句且紧邻（其后 12 字符内出现指标词），
     # 否则标题粘连的机构词（"…保险公司资金运用情况表中…"）会被误当行定位词。
     segments = re.split(r"[，。；;、？?]", compact)
