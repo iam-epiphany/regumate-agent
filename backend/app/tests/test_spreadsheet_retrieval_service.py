@@ -495,32 +495,37 @@ def _add_table_row(
     value: float,
     coordinate: str,
     column_label: str = "本年累计 / 原保险保费收入",
+    source_title: str = "2024年一季度全国各地区原保险保费收入情况表",
+    year: int = 2024,
+    quarter: int | None = 1,
 ) -> None:
     document_id = "DOC-TEST-0001"
+    period_raw = f"{year}年{quarter}季度" if quarter is not None else f"{year}年"
     if db_session.get(Document, 1) is None:
         db_session.add(
             Document(
                 document_id=document_id,
-                filename="2024年一季度全国各地区原保险保费收入情况表.xlsx",
+                filename=f"{source_title}.xlsx",
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 file_type="xlsx",
                 size=1024,
-                storage_path="2024年一季度全国各地区原保险保费收入情况表.xlsx",
-                document_metadata=json.dumps({"source_title": "2024年一季度全国各地区原保险保费收入情况表"}, ensure_ascii=False),
+                storage_path=f"{source_title}.xlsx",
+                document_metadata=json.dumps({"source_title": source_title}, ensure_ascii=False),
                 status="indexed",
                 index_version="test",
                 chunk_count=1,
             )
         )
+    sheet_name = "2024年一季度" if source_title == "2024年一季度全国各地区原保险保费收入情况表" else source_title
     metadata = {
         "spreadsheet_table": True,
         "table_chunk_role": "row",
-        "source_title": "2024年一季度全国各地区原保险保费收入情况表",
+        "source_title": source_title,
         "source_format": "xlsx",
-        "sheet_name": "2024年一季度",
-        "table_title": "2024年一季度全国各地区原保险保费收入情况表",
+        "sheet_name": sheet_name,
+        "table_title": source_title,
         "unit": "亿元",
-        "period": {"year": 2024, "quarter": 1, "month": None, "raw": "2024年一季度"},
+        "period": {"year": year, "quarter": quarter, "month": None, "raw": period_raw},
         "row_label": row_label,
         "row_cells": {
             "地区": row_label.split(" / ")[0],
@@ -756,3 +761,139 @@ def test_row_target_matches_requires_all_words() -> None:
     assert not _row_target_matches("财产险公司 资金运用余额", "保险公司资金运用余额")
     assert _row_target_matches("资金运用余额", "其中:财产险公司资金运用余额")
     assert _row_target_matches("全国", "全国合计")
+
+
+def _add_transposed_bank_rows(db_session) -> None:
+    """转置布局表：机构类别在列、“X季度 / 指标”组合在行。"""
+    for quarter, coord, value in (
+        ("一季度", "G5", 8234.537443),
+        ("二季度", "G6", 8051.364405),
+        ("三季度", "G7", 8274.705191),
+        ("四季度", "G8", 8064.958648),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-TEST-0001-CHUNK-{coord}",
+            row_label=f"{quarter} / 不良贷款余额",
+            value=value,
+            coordinate=coord,
+            column_label="农村商业银行",
+            source_title="2025年商业银行主要指标分机构类情况表（季度）",
+            year=2025,
+            quarter=None,
+        )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-OTHER",
+        row_label="一季度 / 不良贷款率",
+        value=0.02862,
+        coordinate="G9",
+        column_label="农村商业银行",
+        source_title="2025年商业银行主要指标分机构类情况表（季度）",
+        year=2025,
+        quarter=None,
+    )
+
+
+def test_transposed_lookup_institution_column(db_session) -> None:
+    """转置表（机构在列、时间/指标在行）：时间+指标匹配行、机构词匹配列。"""
+    _add_transposed_bank_rows(db_session)
+    aspect = _aspect(
+        "根据《2025年商业银行主要指标分机构类情况表（季度）》，农村商业银行一季度不良贷款余额是多少？",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2025年商业银行主要指标分机构类情况表（季度）",
+            "year": 2025,
+            "quarter": 1,
+            "row_label": "农村商业银行",
+            "indicator": "不良贷款余额",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["cell"] == "G5"
+    assert matches[0].citation.metadata["value"] == "8234.537443"
+
+
+def test_transposed_calculate_cross_period_difference(db_session) -> None:
+    """转置表跨期差值：一季度与四季度按文本序（先 − 后）。"""
+    _add_transposed_bank_rows(db_session)
+    aspect = _aspect(
+        "根据《2025年商业银行主要指标分机构类情况表（季度）》，农村商业银行一季度与四季度不良贷款余额的差值是多少？",
+        table_task="calculate",
+        operation="difference",
+        table_filters={
+            "source_title": "2025年商业银行主要指标分机构类情况表（季度）",
+            "row_label": "农村商业银行",
+            "indicator": "不良贷款余额",
+        },
+        selectors=(
+            {"year": 2025, "quarter": 1, "row_label": "不良贷款余额"},
+            {"year": 2025, "quarter": 4, "row_label": "不良贷款余额"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(169.578795)
+    assert matches[0].citation.metadata["calculation_display_formula"] == "8234.537443 - 8064.958648 = 169.578795"
+
+
+def test_selector_label_word_and_with_structural_prefix(db_session) -> None:
+    """“财产险公司 银行存款” 在行 “其中：财产险公司 / 其中：银行存款” 中
+    被 “其中：” 隔开，应按词级 AND 匹配而非连续子串。"""
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-D1",
+        row_label="其中：财产险公司 / 其中：银行存款",
+        value=3887.79602,
+        coordinate="C7",
+        column_label="截至当期 / 账面余额",
+    )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-D2",
+        row_label="其中：财产险公司 / 资金运用余额",
+        value=24155.58512,
+        coordinate="C6",
+        column_label="截至当期 / 账面余额",
+    )
+    aspect = _aspect(
+        "财产险公司银行存款占资金运用余额的比例约为多少？",
+        table_task="calculate",
+        operation="ratio",
+        table_filters={
+            "source_title": "2024年一季度全国各地区原保险保费收入情况表",
+            "year": 2024,
+            "quarter": 1,
+            "indicator": "银行存款",
+            "row_label": "财产险公司 银行存款",
+        },
+        selectors=(
+            {"row_or_indicator": "财产险公司 银行存款"},
+            {"row_or_indicator": "财产险公司 资金运用余额"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(0.1609481203, rel=1e-6)
+
+
+def test_operand_decimal_prefers_displayed_value(db_session) -> None:
+    """计算操作数优先取显示值字符串，避免 float 精度噪声。"""
+    from decimal import Decimal
+
+    from backend.app.services.spreadsheet_retrieval_service import _operand_decimal
+
+    candidate = SimpleNamespace(
+        selected_cell={
+            "value": "24155.58512",
+            "normalized_value": 24155.58512172,
+        },
+    )
+    assert _operand_decimal(candidate) == Decimal("24155.58512")

@@ -730,7 +730,10 @@ def test_named_pdf_suffix_becomes_explicit_file_type_filter(monkeypatch) -> None
 
 
 def test_query_planner_llm_returns_structured_multi_view_queries(monkeypatch) -> None:
+    # The LLM planner is opt-in (QUERY_PLANNER_ENABLED defaults to False for
+    # determinism); this test exercises the opt-in path explicitly.
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", "test-key")
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_ENABLED", True)
 
     llm_payload = {
         "aspects": [
@@ -1434,3 +1437,101 @@ def test_compare_question_never_gets_sheet_institution_row_label(monkeypatch) ->
     table = plan.aspects[0]
     assert table.table_filters.get("row_label") in (None, "")
     assert table.table_filters["column_label"] == "本年累计/截至当期"
+
+
+def test_ratio_phrase_not_read_as_difference(monkeypatch) -> None:
+    """“占…的比例…多少”不能因“比例”的“比”+“多少”的“多”被误判为差值。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，财产险公司银行存款占资金运用余额的比例约为多少？")
+    table = plan.aspects[0]
+    assert table.operation == "ratio"
+    assert list(table.selectors) == [
+        {"row_or_indicator": "财产险公司 银行存款"},
+        {"row_or_indicator": "财产险公司 资金运用余额"},
+    ]
+    # 同结构换指标/机构仍为 ratio（通用形态）。
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，人身险公司债券占资金运用余额的比例约为多少？")
+    assert plan.aspects[0].operation == "ratio"
+
+
+def test_planner_detects_multiplier_ratio(monkeypatch) -> None:
+    """“是…的多少倍”是 ratio 形态，不是 lookup。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年12月保险业经营情况表》，原保险保费收入是赔付支出的多少倍？")
+    table = plan.aspects[0]
+    assert table.operation == "ratio"
+    assert [s["row_or_indicator"] for s in table.selectors] == ["原保险保费收入", "赔付支出"]
+
+
+def test_multi_institution_difference_selectors(monkeypatch) -> None:
+    """“X公司与Y公司…的差值”：每个机构词限定同一指标的一行（问题顺序）。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，人身险公司与财产险公司资金运用余额的差值是多少？")
+    table = plan.aspects[0]
+    assert table.operation == "difference"
+    assert list(table.selectors) == [
+        {"row_or_indicator": "人身险公司 资金运用余额"},
+        {"row_or_indicator": "财产险公司 资金运用余额"},
+    ]
+    # 换机构/指标同样生效。
+    plan = plan_query("根据《2025年四季度保险公司资金运用情况表》，城市商业银行与民营银行净利润的差值是多少？")
+    assert [s["row_or_indicator"] for s in plan.aspects[0].selectors] == [
+        "城市商业银行 净利润",
+        "民营银行 净利润",
+    ]
+
+
+def test_cross_table_selectors_carry_source_titles(monkeypatch) -> None:
+    """两张《表》的差值：每个操作数限定在各自表。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《2025年12月人身险公司经营情况表》和《2025年12月财产保险公司经营情况表》，"
+        "人身险公司与财产险公司原保险保费收入（本年累计）的差值是多少？"
+    )
+    table = plan.aspects[0]
+    assert list(table.selectors) == [
+        {"row_or_indicator": "原保险保费收入", "source_title": "2025年12月人身险公司经营情况表"},
+        {"row_or_indicator": "原保险保费收入", "source_title": "2025年12月财产保险公司经营情况表"},
+    ]
+    # 连词“与”不进入机构词；row_label 并入第一个机构词。
+    assert table.table_filters["row_label"] == "人身险公司 原保险保费收入"
+
+
+def test_institution_term_drops_conjunction_prefix(monkeypatch) -> None:
+    """“人身险公司与财产险公司”中的“与”是连词，不是机构名一部分。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    terms = query_planner_service._institution_row_terms(
+        "人身险公司与财产险公司原保险保费收入的差值",
+        "原保险保费收入",
+    )
+    assert terms == ["人身险公司", "财产险公司"]
+
+
+def test_indicator_substring_dedup() -> None:
+    """“不良贷款余额”同时包含“贷款余额”，不能拆成两个操作数。"""
+    indicators = query_planner_service._mentioned_table_indicators(
+        "农村商业银行一季度不良贷款余额与四季度不良贷款余额的差值"
+    )
+    assert indicators == ["不良贷款余额"]
+
+
+def test_period_selectors_use_global_year(monkeypatch) -> None:
+    """《2025年…表》中的年份不紧邻季度词时，跨期选择器仍归属该年份。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《2025年商业银行主要指标分机构类情况表（季度）》，"
+        "农村商业银行一季度与四季度不良贷款余额的差值是多少？"
+    )
+    table = plan.aspects[0]
+    assert table.operation == "difference"
+    # 文本序（一季度在前），且无 ordered_transition 标记（先 − 后）。
+    assert list(table.selectors) == [
+        {"year": 2025, "quarter": 1, "row_label": "不良贷款余额"},
+        {"year": 2025, "quarter": 4, "row_label": "不良贷款余额"},
+    ]

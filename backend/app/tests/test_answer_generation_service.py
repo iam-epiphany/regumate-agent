@@ -273,6 +273,21 @@ def test_calculation_trace_accepts_scaled_percentage_ratio() -> None:
     assert answer_generation_service._calculation_trace_valid(metadata) is True
 
 
+def test_calculation_trace_recomputes_from_displayed_values() -> None:
+    """trace 校验与计算同源：显示值字符串优先，避免 float 噪声导致误拒。"""
+    metadata = {
+        "operation": "difference",
+        "calculation_formula": "表!G5 - 表!G38",
+        "calculation_result": 169.578795,
+        "calculation_cells": [
+            {"sheet_name": "表", "cell": "G5", "value": "8234.537443", "normalized_value": 8234.537442863},
+            {"sheet_name": "表", "cell": "G38", "value": "8064.958648", "normalized_value": 8064.958647601},
+        ],
+    }
+
+    assert answer_generation_service._calculation_trace_valid(metadata) is True
+
+
 def test_table_value_formatter_honors_requested_decimal_places() -> None:
     assert answer_generation_service._format_value(17.8159210005, decimal_places=2) == "17.82"
 

@@ -938,6 +938,8 @@ def _asks_ratio_calculation(question: str) -> bool:
         re.search(r"数值占.*?数值", compact)
         or re.search(r"占.*?(?:百分比|比例|比重|多少)", compact)
         or re.search(r"(?:比例|比重|百分比).*?(?:多少|是多少|计算)", compact)
+        # “原保险保费收入是赔付支出的多少倍” — multiplier form of a ratio.
+        or re.search(r"(?:是|为|相当于)[^，。；]{0,16}?(?:多少|几)倍", compact)
     )
 
 
@@ -1173,7 +1175,9 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         operation = "none"
     elif (
         any(term in operation_intent for term in ["差值", "差额", "相差", "变化", "增加", "减少"])
-        or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", operation_intent)
+        # “A比B多|少” is the difference form; “占…比例…多少” (the 比 of 比例
+        # plus the 多 of 多少) must not be read as a difference.
+        or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比(?!例|重|百分)[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", operation_intent)
         or ("计算" in operation_intent and re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+[－—-][\u4e00-\u9fffA-Za-z0-9_]+", operation_intent))
     ):
         table_task = "calculate"
@@ -1549,9 +1553,11 @@ def _extract_table_selectors(
     if selectors:
         pass
     elif len(period_selectors) >= 2:
-        # Cross-period differences are "later minus earlier"; the period
-        # selectors are ordered by time, so mark them as an ordered transition.
-        selectors = [{**selector, "ordered_transition": True} for selector in period_selectors]
+        # Cross-period differences (“一季度与四季度…的差值”) follow the
+        # question order (first − second): the period selectors are already in
+        # text order, so no ordered-transition marker is applied.  Only the
+        # explicit “从A到B” and “A比B多” forms mark a reversed direction.
+        selectors = period_selectors
     elif table_task == "calculate" and len(quoted) >= 3:
         # “row”从“column A”到“column B” means B - A.
         selectors = [
@@ -1561,20 +1567,63 @@ def _extract_table_selectors(
     elif table_task == "calculate":
         normalized = re.sub(r"\s+", "", question)
         indicators = _mentioned_table_indicators(question)
-        diff_match = re.search(r"(.+?)比(.+?)(?:多|少)", normalized)
-        if diff_match and len(indicators) >= 2:
-            # "A比B多" means A - B.  The selectors are deliberately reversed
-            # (B first) and marked as an ordered transition, so the calculator
-            # evaluates second - first.
+        source_titles = [m.group(1).strip() for m in re.finditer(r"《([^》]+)》", question)][:2]
+        if len(source_titles) >= 2 and indicators:
+            # Cross-table questions (“《表1》和《表2》…的差值”) pin each operand
+            # to its own quoted title.  The operand is usually the same metric
+            # in both tables.
+            metrics = (
+                indicators[:2]
+                if len(indicators) >= 2
+                else [indicators[0], indicators[0]]
+            )
             selectors = [
-                {"row_or_indicator": indicators[1], "ordered_transition": True},
-                {"row_or_indicator": indicators[0]},
+                {"row_or_indicator": metric, "source_title": title}
+                for metric, title in zip(metrics, source_titles)
             ]
         elif any(term in normalized for term in ["分项之和", "分项合计", "四个分项"]):
             component_order = ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
             selectors = [{"row_or_indicator": item} for item in component_order]
         elif len(indicators) >= 2:
-            selectors = [{"row_or_indicator": item} for item in indicators[:2]]
+            # “占…比例/比重”与“…的多少倍”是 ratio 句式；其中的“比”字不能与
+            # “A比B多|少”的差值句式混淆（“比例”的“比”+“多少”的“多”），
+            # 故排除 例/重/百分 开头。
+            diff_match = re.search(r"(.+?)比(?!例|重|百分)(.+?)(?:多|少)", normalized)
+            if diff_match:
+                # "A比B多" means A - B.  The selectors are deliberately reversed
+                # (B first) and marked as an ordered transition, so the calculator
+                # evaluates second - first.
+                selectors = [
+                    {"row_or_indicator": indicators[1], "ordered_transition": True},
+                    {"row_or_indicator": indicators[0]},
+                ]
+            else:
+                selectors = [{"row_or_indicator": item} for item in indicators[:2]]
+        else:
+            institution_terms = _institution_row_terms(question, indicators[0] if indicators else "")
+            if len(institution_terms) >= 2:
+                # “人身险公司与财产险公司资金运用余额的差值”：两个机构词各自
+                # 限定同一指标的一行（问题顺序）。
+                selectors = [
+                    {"row_or_indicator": f"{term} {indicators[0]}"}
+                    for term in institution_terms[:2]
+                ]
+        if selectors and len(source_titles) < 2 and indicators:
+            # 单表差值/比例：操作数都限定在同一机构行（“财产险公司 银行存款”
+            # 与“财产险公司 资金运用余额”），防止分母落到无机构前缀的合计行。
+            # 多机构词场景（“人身险公司与财产险公司…的差值”）的操作数已由
+            # 上面的分支各自带好机构词，不再重复并入。
+            institution_terms = _institution_row_terms(question, indicators[0])
+            if len(institution_terms) == 1:
+                term = institution_terms[0]
+                selectors = [
+                    (
+                        {**sel, "row_or_indicator": f"{term} {sel['row_or_indicator']}"}
+                        if "row_or_indicator" in sel and term not in str(sel["row_or_indicator"])
+                        else sel
+                    )
+                    for sel in selectors
+                ]
     elif table_task == "compare" and options:
         scope = quoted[0] if quoted else ""
         selectors = [
@@ -1696,10 +1745,17 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
             current_year = int(match.group(1))
         if current_year is not None:
             periods.append({"year": current_year, "month": int(match.group(2))})
+    # A year inside a book title (“《2025年…表》…一季度…”) is not adjacent to
+    # the quarter words, so a per-match year prefix never fires.  Fall back to
+    # the first year mentioned anywhere in the question.
+    global_year_match = re.search(r"(20\d{2})年", compact)
+    global_year = int(global_year_match.group(1)) if global_year_match else None
     current_year = None
     for match in re.finditer(r"(?:(20\d{2})年)?([一二三四1-4])季度", compact):
         if match.group(1):
             current_year = int(match.group(1))
+        elif current_year is None and global_year is not None:
+            current_year = global_year
         if current_year is None:
             continue
         quarter_text = match.group(2)
@@ -1798,6 +1854,13 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
                 "word": "docx",
                 "excel": "xlsx",
             }.get(normalized_format, normalized_format)
+    # Cross-table questions (“《表1》和《表2》…的差值”) carry one concrete
+    # title per operand.  Keep up to two quoted titles so the selectors can
+    # pin each operand to its own table; a single title keeps the historical
+    # single-source behaviour.
+    all_titles = [m.group(1).strip() for m in re.finditer(r"《([^》]+)》", question)]
+    if len(all_titles) >= 2:
+        filters["source_titles"] = all_titles[:2]
     else:
         natural_title = re.search(
             r"(20\d{2}年(?:\d{1,2}月|[一二三四1-4]季度)?[^，。；：:]{2,45}?(?:经营情况表|原保险保费收入表|贷款表|指标分机构类表))",
@@ -1917,7 +1980,9 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         # qualifier is already rewarded by the token-overlap scoring.
         filters["row_label"] = indicators[0]
     scope_text = re.split(r"(?:请比较|请对比|比较|对比)", question, maxsplit=1)[0]
-    scope_text = re.sub(r"《[^》]+》", "", scope_text)
+    # A position word right after the title (“《…情况表》中保险公司…”) belongs
+    # to the title fragment, not to the institution name.
+    scope_text = re.sub(r"《[^》]+》[中里内下于的]?", "", scope_text)
     if explicit_row is None:
         matched_label = False
         for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
@@ -2190,7 +2255,16 @@ def _mentioned_table_indicators(question: str) -> list[str]:
     normalized = re.sub(r"\s+", "", question)
     matches = [indicator for indicator in COMMON_TABLE_INDICATORS if indicator in normalized]
     matches.sort(key=lambda item: normalized.find(item))
-    return _dedupe(matches)
+    # Substring overlap: “不良贷款余额” also contains “贷款余额”.  A longer
+    # indicator already covers its own shorter substring, so drop any match
+    # that is a substring of an earlier (longer) one to avoid duplicated
+    # operands such as [不良贷款余额, 贷款余额].
+    filtered: list[str] = []
+    for match in matches:
+        if any(match in existing and match != existing for existing in filtered):
+            continue
+        filtered.append(match)
+    return filtered
 
 
 def _institution_row_terms(text: str, indicator: str) -> list[str]:
@@ -2225,21 +2299,22 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
         return []
     candidates: list[str] = []
     for match in re.finditer(r"(?:其中：)?[\u4e00-\u9fff]{2,6}?(?:公司|银行)", compact):
-        word = match.group(0).lstrip("其中：")
-        if re.search(r"[年季月表]", word):
-            # Title/time粘连（如 "…年四季度保险公司…"）: 贪婪匹配把前导
-            # 时间/位置词一起吞了，剥掉通用时间与位置前缀后保留机构名。
-            word = re.sub(
-                r"^(?:[\d一二三四五六七八九十]{1,2}|年|月|季度|上|下|当|本|今|去|各|全|其|中|里|内|于|的|在|情况|统计|经营)+",
-                "",
-                word,
-            )
+        # 剥掉“其中：”与并列连词（“人身险公司与财产险公司”中的“与”属于
+        # 句法连接，不是机构名的一部分）。
+        word = re.sub(r"^(?:其中：|以及|与|和|及|或)+", "", match.group(0))
+        # 标题/时间粘连（如 "…情况表中保险公司…"）可能把位置/时间词吞进机构名；
+        # 剥掉通用前缀。 "中国" 是机构名合法前缀（中国银行/中国人寿），保留。
+        word = re.sub(
+            r"^(?!中国)(?:[\d一二三四五六七八九十]{1,2}|年|月|季度|上|下|当|本|今|去|各|全|其|中|里|内|于|的|在|情况|统计|经营)+",
+            "",
+            word,
+        )
         if word and word not in candidates:
             candidates.append(word)
     for label in ("保险业合计", "全国合计"):
         if label in compact and label not in candidates:
             candidates.append(label)
-    # 机构词必须与指标词同分句且紧邻（其后 12 字符内出现指标词），
+    # 机构词必须与指标词同分句且紧邻（指标词起点在机构词后 12 字符内），
     # 否则标题粘连的机构词（"…保险公司资金运用情况表中…"）会被误当行定位词。
     segments = re.split(r"[，。；;、？?]", compact)
     same_clause: list[str] = []
@@ -2248,10 +2323,10 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
             if indicator in segment and term in segment:
                 position = segment.find(term)
                 after = segment[position + len(term):]
-                if indicator in after[:12]:
+                if indicator in after and after.find(indicator) <= 12:
                     same_clause.append(term)
                 break
-    return same_clause[:1] if same_clause else []
+    return same_clause
 
 
 def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:

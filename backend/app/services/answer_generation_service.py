@@ -1680,7 +1680,16 @@ def _calculation_trace_valid(metadata: dict[str, Any]) -> bool:
     if not cells or not all(isinstance(item, dict) for item in cells):
         return False
     try:
-        values = [float(item["normalized_value"]) for item in cells]
+        # Recompute from the same displayed values the calculator used
+        # (``_operand_decimal`` prefers the value string), so a result such as
+        # 169.578795 is reproduced exactly instead of drifting by float noise.
+        def _cell_number(item: dict[str, Any]) -> float:
+            raw = item.get("value")
+            if isinstance(raw, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", raw.strip()):
+                return float(raw.strip())
+            return float(item["normalized_value"])
+
+        values = [_cell_number(item) for item in cells]
         expected = float(result)
     except (KeyError, TypeError, ValueError):
         return False

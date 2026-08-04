@@ -416,7 +416,12 @@ def _explicit_request_boundary_code(question: str) -> str | None:
     if any(bank in compact for bank in _OUT_OF_CORPUS_BANK_NAMES):
         if any(request in compact for request in _OUT_OF_CORPUS_DATA_REQUESTS):
             return "out_of_scope_or_realtime"
-    if any(marker in intent_text for marker in _SUBJECTIVE_DECISION_MARKERS):
+    if any(marker in intent_text for marker in _SUBJECTIVE_DECISION_MARKERS) or re.search(
+        # “评估某银行收购一家农村商业银行的可行性” — 并购/经营决策咨询。
+        # “可行性评估” (the reverse order) stays a legitimate method question.
+        r"评估[^，。；]{0,14}可行性",
+        intent_text,
+    ):
         return "subjective_business_advice"
     if any(marker in intent_text for marker in _PREDICTION_MARKERS):
         return "unsupported_prediction"

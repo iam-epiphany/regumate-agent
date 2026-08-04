@@ -3800,6 +3800,25 @@ def test_boundary_code_prediction_request() -> None:
     assert _explicit_request_boundary_code("请根据资料库预测未来十二个月银行业总资产的具体数值。") == "unsupported_prediction"
 
 
+def test_boundary_code_assess_feasibility_is_subjective_advice() -> None:
+    from backend.app.services.rag_service import _explicit_request_boundary_code
+
+    # “评估…的可行性”是主观商业决策咨询，必须拒答。
+    assert (
+        _explicit_request_boundary_code("请评估某银行收购一家农村商业银行的可行性。")
+        == "subjective_business_advice"
+    )
+    assert (
+        _explicit_request_boundary_code("请评估本行设立消费金融公司的可行性。")
+        == "subjective_business_advice"
+    )
+    # “可行性分析”是制度要求的合法成分，不得误伤。
+    assert (
+        _explicit_request_boundary_code("恢复措施分析至少包括可行性分析、金融基础服务及消费者权益保护方案。")
+        is None
+    )
+
+
 def test_boundary_code_accounting_expected_is_not_prediction() -> None:
     from backend.app.services.rag_service import _explicit_request_boundary_code
 
