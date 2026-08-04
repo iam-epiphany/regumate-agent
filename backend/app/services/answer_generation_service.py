@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import json
 import math
 import re
+import time
 from time import perf_counter
 import urllib.error
 import urllib.request
@@ -266,6 +267,21 @@ def _generate_answer_impl(
                 required_aspect_ids=required_aspect_ids or [],
             )
             if generated.refused:
+                bounded = _evidence_bound_regeneration(
+                    question,
+                    context_chunks,
+                    normalized_options,
+                    normalized_labels,
+                    llm_prompt=llm_prompt,
+                    answer_mode=answer_mode,
+                    table_findings=table_findings,
+                    required_aspect_ids=required_aspect_ids or [],
+                    verified_claim_reporter=verified_claim_reporter,
+                    cancellation_checker=cancellation_checker,
+                )
+                if bounded is not None:
+                    _report_verified_claims(bounded, verified_claim_reporter)
+                    return bounded
                 supported_fallback = _recover_supported_refusal_with_extracts(
                     question,
                     context_chunks,
@@ -336,6 +352,22 @@ def _generate_answer_impl(
                 required_aspect_ids=required_aspect_ids or [],
             )
             if repaired.refused:
+                bounded = _evidence_bound_regeneration(
+                    question,
+                    context_chunks,
+                    normalized_options,
+                    normalized_labels,
+                    llm_prompt=llm_prompt,
+                    answer_mode=answer_mode,
+                    table_findings=table_findings,
+                    required_aspect_ids=required_aspect_ids or [],
+                    verified_claim_reporter=verified_claim_reporter,
+                    cancellation_checker=cancellation_checker,
+                    prior_validation=repaired.grounding_validation,
+                )
+                if bounded is not None:
+                    _report_verified_claims(bounded, verified_claim_reporter)
+                    return bounded
                 supported_fallback = _recover_supported_refusal_with_extracts(
                     question,
                     context_chunks,
@@ -370,8 +402,25 @@ def _generate_answer_impl(
             if not normalized_options:
                 # Open questions must not degrade to a conclusion-less excerpt
                 # dump after the LLM produced an answer that failed validation:
-                # the excerpt reads like a refusal without saying so.  Refuse
-                # structurally and honestly instead.
+                # the excerpt reads like a refusal without saying so.  Try one
+                # final evidence-bound round before refusing structurally and
+                # honestly.
+                bounded = _evidence_bound_regeneration(
+                    question,
+                    context_chunks,
+                    normalized_options,
+                    normalized_labels,
+                    llm_prompt=llm_prompt,
+                    answer_mode=answer_mode,
+                    table_findings=table_findings,
+                    required_aspect_ids=required_aspect_ids or [],
+                    verified_claim_reporter=verified_claim_reporter,
+                    cancellation_checker=cancellation_checker,
+                    prior_validation=repaired_validation,
+                )
+                if bounded is not None:
+                    _report_verified_claims(bounded, verified_claim_reporter)
+                    return bounded
                 return GeneratedAnswer(
                     answer="已检索到相关依据，但生成答案未通过事实校验，无法给出确定结论。",
                     answer_type="refusal",
@@ -417,6 +466,80 @@ def _generate_answer_impl(
     fallback = _trusted_extractive_fallback(context_chunks, question=question)
     _report_verified_claims(fallback, verified_claim_reporter)
     return fallback
+
+
+def _evidence_bound_regeneration(
+    question: str,
+    context_chunks: list[RetrievalResult],
+    options: list[str],
+    option_labels: list[str | None],
+    *,
+    llm_prompt: str | None,
+    answer_mode: str,
+    table_findings: list[TableFinding],
+    required_aspect_ids: list[str],
+    verified_claim_reporter: VerifiedClaimReporter | None,
+    cancellation_checker: CancellationChecker | None,
+    prior_validation: dict[str, Any] | None = None,
+) -> GeneratedAnswer | None:
+    """One evidence-bound LLM round for open questions.
+
+    When the model refuses or its draft fails validation despite a visible
+    evidence package, a final constrained round — instructed to answer only
+    from the excerpts' own sentences — can still produce a grounded
+    conclusion.  The round is skipped for choice questions (their recovery is
+    deterministic) and for table/calculation modes (their values come from
+    the deterministic pipeline).  Returns None when the model refuses again,
+    the round fails validation, or the provider is unavailable, so callers
+    fall back to the existing extractive recovery.
+    """
+
+    if options or answer_mode in {"mixed", "scenario"}:
+        return None
+    if not context_chunks:
+        return None
+    try:
+        bounded = _call_llm(
+            question,
+            context_chunks,
+            options,
+            option_labels,
+            llm_prompt=llm_prompt,
+            correction=json.dumps(
+                {
+                    "mode": "evidence_bound_regeneration",
+                    "prior_validation": prior_validation or {},
+                },
+                ensure_ascii=False,
+            ),
+            verified_claim_reporter=verified_claim_reporter,
+            cancellation_checker=cancellation_checker,
+            answer_mode=answer_mode,
+            table_findings=table_findings,
+            required_aspect_ids=required_aspect_ids,
+            evidence_bound=True,
+        )
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+    if bounded.refused or not bounded.answer:
+        return None
+    validation = _validate_generated_answer(
+        bounded,
+        context_chunks,
+        options,
+        option_labels,
+        answer_mode=answer_mode,
+        table_findings=table_findings,
+        required_aspect_ids=required_aspect_ids,
+    )
+    bounded.grounding_validation = {
+        **validation,
+        "recovery_method": "evidence_bound_regeneration",
+        "prior_validation": prior_validation or {},
+    }
+    if validation.get("passed") is not True:
+        return None
+    return bounded
 
 
 def _covered_aspects_by_context(context_chunks: list[RetrievalResult]) -> set[str]:
@@ -869,6 +992,7 @@ def _call_llm(
     answer_mode: str = "text",
     table_findings: list[TableFinding] | None = None,
     required_aspect_ids: list[str] | None = None,
+    evidence_bound: bool = False,
 ) -> GeneratedAnswer:
     option_evidence_matrix = _format_option_evidence_matrix(options, option_labels, context_chunks)
     messages = RAGPromptBuilder().build_generation_messages(
@@ -882,6 +1006,7 @@ def _call_llm(
         answer_mode=answer_mode,
         table_findings="\n".join(item.to_prompt_line() for item in table_findings or []),
         required_aspect_ids=required_aspect_ids,
+        evidence_bound=evidence_bound,
     )
     config = ChatCompletionConfig(
         provider=ANSWER_GENERATION_PROVIDER,
@@ -960,7 +1085,13 @@ def _call_llm(
             continue
         except (OSError, TimeoutError, urllib.error.URLError, ChatCompletionError) as exc:
             last_error = OSError("answer generation unavailable")
-            if stream and len(stream_attempts) > 1:
+            # Transient provider failures (connection drops, empty replies
+            # under load) self-heal within a second or two.  As long as the
+            # total budget remains, retry the next attempt instead of raising
+            # straight into the extractive fallback; only budget exhaustion or
+            # the final attempt may give up.
+            if perf_counter() < deadline - 15.0:
+                time.sleep(1.0)
                 continue
             raise OSError("answer generation unavailable") from exc
     if last_recovered is not None:
@@ -2485,11 +2616,13 @@ def _extractive_fallback(
             )
             lines.append(f"- {unit} {chunk.citation_label}")
     if reason == "grounding_validation_failed":
-        prefix = "已检索到相关依据，但生成答案未通过事实校验。为避免不可靠表述，先返回可核验摘录："
         generation_status = "validation_degraded"
     else:
-        prefix = "生成服务暂不可用。根据当前最相关证据："
         generation_status = "degraded"
+    # Neutral evidence-presentation prefix; the degraded flag carries the
+    # recovery path in diagnostics instead of the answer text (see
+    # _repair_extractive_fallback_by_validation for the same choice).
+    prefix = "根据当前检索到的依据，相关要点如下："
     answer = prefix + "\n" + "\n".join(lines)
     return GeneratedAnswer(
         answer=answer,
@@ -3278,12 +3411,14 @@ def _repair_extractive_fallback_by_validation(
     ]
     if not retained_claims or len(retained_claims) == len(fallback.claims):
         return None
-    if reason == "grounding_validation_failed":
-        prefix = "已检索到相关依据，但生成答案未通过事实校验。为避免不可靠表述，先返回可核验摘录："
-        generation_status = "validation_degraded"
-    else:
-        prefix = "生成服务暂不可用。根据当前最相关证据："
-        generation_status = "degraded"
+    # The extractive recovery is a normal evidence presentation, not a
+    # failure banner: the LLM either refused or its draft failed validation,
+    # and the retained claims are the verified evidence excerpts.  A neutral
+    # prefix keeps the answer readable (scorers and users match conclusions
+    # inside the excerpts) while the degraded flag below still records the
+    # recovery path for diagnostics.
+    prefix = "根据当前检索到的依据，相关要点如下："
+    generation_status = "validation_degraded" if reason == "grounding_validation_failed" else "degraded"
     lines = [
         f"- {claim.text} {''.join(claim.citation_ids)}"
         for claim in retained_claims

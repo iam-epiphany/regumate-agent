@@ -124,9 +124,13 @@ _SUBJECTIVE_DECISION_MARKERS = (
 )
 _OUT_OF_CORPUS_MARKERS = (
     "某银行年报", "某银行内部", "内部信贷审批", "内部资料", "最新LPR", "LPR报价",
-    "定期存款利率", "当前存款利率", "实时", "他行数据", "上市银行年报",
+    "定期存款利率", "存款挂牌利率", "当前存款利率", "实时", "他行数据", "上市银行年报",
     "今天最新", "刚发布", "资料库之外", "未收录", "没有收录", "尚未入库",
     "内部检查通报", "分行审计报告",
+    # 贷款市场报价利率（LPR）是央行实时发布的市场利率，语料中无此数据
+    # （语料仅 407 号附件以“常见市场利率”名义提及一次），“LPR”单独出现
+    # 即代表实时报价请求。
+    "LPR",
 )
 # A named bank alone is not out of scope: the corpus itself cites specific
 # institutions ("对应的编报主体为中国建设银行股份有限公司…").  Refusal
@@ -137,6 +141,9 @@ _OUT_OF_CORPUS_BANK_NAMES = (
 _OUT_OF_CORPUS_DATA_REQUESTS = (
     "年报", "年度报告", "财务数据", "不良贷款率", "净利润", "对比数据", "报告中的",
     "存款利率", "具体数据", "定期报告", "经营数据", "季度报告", "业绩", "财报", "指标",
+    # 拨备覆盖率既出现在行业分机构汇总表中，也常被用于个别上市银行对比；
+    # 与 _OUT_OF_CORPUS_BANK_NAMES 共现时才触发拒答，行业口径问题不受影响。
+    "拨备覆盖率",
 )
 _CALCULATION_WITHOUT_OPERAND_TERMS = (
     "计算", "算出", "核算", "比较", "排名", "换算", "折算", "占比", "比例", "差额", "差异",
@@ -420,7 +427,11 @@ def _explicit_request_boundary_code(question: str) -> str | None:
     if any(marker in intent_text for marker in _SUBJECTIVE_DECISION_MARKERS) or re.search(
         # “评估某银行收购一家农村商业银行的可行性” — 并购/经营决策咨询。
         # “可行性评估” (the reverse order) stays a legitimate method question.
-        r"评估[^，。；]{0,14}可行性",
+        # The gap between 评估 and 可行性 may carry a long subject
+        # (“评估某信托公司收购一家不良资产平台的可行性”), so the bound is
+        # generous; the ordered 评估…可行性 pattern still keeps pure method
+        # questions such as “可行性评估” and “分析可行性” out of this class.
+        r"评估[^，。；]{0,24}可行性",
         intent_text,
     ):
         return "subjective_business_advice"
@@ -1279,7 +1290,16 @@ def _select_prompt_chunks(
         if len(selected) >= MAX_PROMPT_CHUNKS:
             break
         top_score = max((_prompt_score(chunk) for chunk in aspect_retrieval.candidates), default=0.0)
-        for chunk in aspect_retrieval.candidates:
+        # Generic neighbours: order by rerank score plus small evidence-fit
+        # bonuses so a definition clause (“最低资本是指…”) or a subject
+        # qualifier (“财产保险公司” vs “人身保险公司”) wins the remaining
+        # budget over an equally scored but less answering neighbour.  The
+        # bonus never bypasses _passes_prompt_score; it only breaks ties.
+        for chunk in sorted(
+            aspect_retrieval.candidates,
+            key=lambda item: _prompt_score(item) + _evidence_fit_bonus(question, item),
+            reverse=True,
+        ):
             if len(selected) >= MAX_PROMPT_CHUNKS:
                 break
             if chunk.chunk_id in aspect_retrieval.selected_chunk_ids:
@@ -2053,6 +2073,50 @@ def _prompt_score(chunk: RetrievalResult) -> float:
     if metadata_score is not None:
         return metadata_score
     return float(chunk.score or 0.0)
+
+
+# Definition-type questions (“X是如何定义的/包括哪些”) are answered by the
+# clause that defines the term (“X是指…/所称X…”).  A definition clause can sit
+# one or two ranks below a numerically stronger neighbour, so generic prompt
+# selection gives it a small deterministic bonus instead of letting the
+# neighbour crowd it out.  Subject qualifiers (“财产保险公司” vs
+# “人身保险公司”, “内部评级法” vs “权重法”) get the same tie-break treatment:
+# a chunk that contains the institution or method named in the question is
+# more likely to answer it than an equally scored sibling.
+_DEFINITION_QUESTION_MARKERS = ("定义", "如何界定", "是指什么", "指什么", "是什么", "包括哪些", "如何计算")
+_DEFINITION_EVIDENCE_MARKERS = ("是指", "所称", "指以", "指经", "指为", "指商业", "指保险公司", "指商业银行")
+_SUBJECT_QUALIFIERS = (
+    "财产保险公司", "人身保险公司", "财产险公司", "人身险公司", "再保险公司",
+    "保险公司", "保险集团", "商业银行", "财务公司", "信托公司", "货币经纪公司",
+    "金融租赁公司", "消费金融公司", "内部评级法", "权重法", "标准法", "第三档",
+    "非寿险", "寿险", "中央交易对手", "资产管理产品", "非集中清算衍生品",
+)
+
+
+def _evidence_fit_bonus(question: str, chunk: RetrievalResult) -> float:
+    """Deterministic evidence-fit tie-break for generic prompt selection."""
+    text = re.sub(r"\s+", "", chunk.text)
+    if not text:
+        return 0.0
+    bonus = 0.0
+    if any(marker in question for marker in _DEFINITION_QUESTION_MARKERS):
+        quoted = [
+            re.sub(r"\s+", "", item)
+            for item in re.findall(r"[“‘'\"]([^”’'\"]+)[”’'\"]", question)
+            if item
+        ]
+        definition_markers = any(marker in text for marker in _DEFINITION_EVIDENCE_MARKERS)
+        if definition_markers and quoted and any(
+            f"{term}是指" in text or f"所称{term}" in text or f"{term}指" in text
+            for term in quoted
+            if len(term) >= 3
+        ):
+            bonus += 0.2
+        elif definition_markers and not quoted:
+            bonus += 0.05
+    qualifier_hits = sum(1 for qualifier in _SUBJECT_QUALIFIERS if qualifier in question and qualifier in text)
+    bonus += 0.1 * qualifier_hits
+    return bonus
 
 
 def _match_chunk_to_aspects(chunk: RetrievalResult, aspects: list[QuestionAspect]) -> list[str]:

@@ -63,6 +63,7 @@ class RAGPromptBuilder:
         answer_mode: str = "text",
         table_findings: str | None = None,
         required_aspect_ids: list[str] | None = None,
+        evidence_bound: bool = False,
     ) -> list[dict[str, str]]:
         prompt = llm_prompt or self.build(query, chunks)
         normalized_options = options or []
@@ -73,6 +74,14 @@ class RAGPromptBuilder:
         )
         has_user_labels = any(label for label in normalized_labels)
         structured_rule_block = "".join(STRUCTURED_OUTPUT_RULES)
+        evidence_bound_instruction = (
+            "这是证据受限重答：前一轮回答被拒绝或未通过校验。"
+            "你只能使用上述知识片段中的原文组织答案，不得引入片段之外的任何内容。"
+            "如果片段足以回答问题，请用片段原句直接给出结论并标注引用；"
+            "如果片段不足以回答问题，必须设置refused=true并说明缺失内容。\n"
+            if evidence_bound
+            else ""
+        )
         return [
             {
                 "role": "system",
@@ -101,6 +110,7 @@ class RAGPromptBuilder:
                     f"不可修改的结构化表格结果：\n{table_findings or '无'}\n"
                     "若存在不可修改的结构化表格结果，必须逐字保留其值、单位、公式和引用，不得重算或改写。\n"
                     "场景判断只允许输出合规、不合规或依据不足；建议不得描述为系统自动生成的可执行监管规则。\n"
+                    f"{evidence_bound_instruction}"
                     "输出结构：{\"refused\":false,\"refusal_reason\":null,"
                     "\"claims\":[{\"role\":\"conclusion\",\"text\":\"... [1]\","
                     "\"citation_ids\":[\"[1]\"],\"aspect_ids\":[\"aspect_1\"]},"

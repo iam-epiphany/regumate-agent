@@ -2304,8 +2304,10 @@ def test_content_failure_still_runs_llm_repair(monkeypatch) -> None:
         required_aspect_ids=["requirement_one", "requirement_two"],
     )
 
-    # Content failures (unsupported entities) keep the LLM repair round.
-    assert len(llm_calls) == 2
+    # Content failures (unsupported entities) keep the LLM repair round, and
+    # the final evidence-bound round runs once more before the structural
+    # refusal (three LLM calls total: draft, repair, evidence-bound).
+    assert len(llm_calls) == 3
 
 
 def test_required_aspect_validation_does_not_count_chunk_aspect_for_tagged_claim() -> None:
