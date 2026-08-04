@@ -440,11 +440,16 @@ def _finish_aspect_matches(
         candidate.metadata["inferred_metadata_score"] = round(
             inferred_filter_scores.get(candidate.chunk_id, 0.0), 6
         )
+    retrieval_fit_scores = {
+        candidate.chunk_id: _retrieval_fit_score(candidate, aspect)
+        for candidate in candidates
+    }
     candidates.sort(
         key=lambda candidate: (
             bool(preferred_file_type and candidate.filename.lower().endswith(f".{preferred_file_type}")),
             inferred_filter_scores.get(candidate.chunk_id, 0.0),
             document_style_scores.get(candidate.chunk_id, 0.0),
+            retrieval_fit_scores.get(candidate.chunk_id, 0.0),
             fusion_scores.get(candidate.chunk_id, 0.0),
             candidate.score + candidate.anchor_boost,
         ),
@@ -598,6 +603,69 @@ def _finish_aspect_matches(
             fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.01, 0.99) - offset * 0.0001
         existing_chunk_ids = {match.citation.chunk_id for match in formula_support_matches}
         matches = formula_support_matches + [
+            match for match in matches if match.citation.chunk_id not in existing_chunk_ids
+        ]
+
+    # Definition-clause channel: definition questions ("X是如何定义的") are
+    # answered by the clause that actually defines the quoted term ("X是指…"/
+    # "所称X…").  That clause can lose to numerically stronger neighbours in
+    # vector ranking even when it was recalled (e.g. "最低资本" definition sat
+    # at RRF rank 2 but never reached the prompt).  A bounded lexical scan for
+    # the quoted term inside already-recalled documents, with a full-corpus
+    # fallback, promotes the defining clause deterministically.
+    definition_clause_matches = _definition_clause_support_matches(
+        db,
+        aspect,
+        matches,
+        document_chunk_cache=document_chunk_cache,
+    )
+    if definition_clause_matches:
+        definition_clause_matches.sort(key=lambda match: match.rerank_score, reverse=True)
+        for offset, supplement in enumerate(definition_clause_matches, start=1):
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.02, 0.99) - offset * 0.0001
+        existing_chunk_ids = {match.citation.chunk_id for match in definition_clause_matches}
+        matches = definition_clause_matches + [
+            match for match in matches if match.citation.chunk_id not in existing_chunk_ids
+        ]
+
+    # Intent-gap supplement (CRAG-lite): when the question's own keywords or
+    # quoted terms are absent from the recalled evidence, the right clause may
+    # still live in the same documents (e.g. "实物结算…可以不适用初始保证金"
+    # exists in the same 办法 whose other 豁免 clauses were recalled).  A
+    # bounded lexical scan over the recalled documents promotes those clauses;
+    # prohibition-intent questions ("禁止性规定/不得") additionally search
+    # "{institution}不得" clauses that generic vector ranking may have missed.
+    intent_gap_matches = _intent_gap_supplement(
+        db,
+        aspect,
+        matches,
+        document_chunk_cache=document_chunk_cache,
+    )
+    if intent_gap_matches:
+        intent_gap_matches.sort(key=lambda match: match.rerank_score, reverse=True)
+        for offset, supplement in enumerate(intent_gap_matches, start=1):
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.015, 0.99) - offset * 0.0001
+        existing_chunk_ids = {match.citation.chunk_id for match in intent_gap_matches}
+        matches = intent_gap_matches + [
+            match for match in matches if match.citation.chunk_id not in existing_chunk_ids
+        ]
+
+    # List-completeness supplement (CRAG-lite, list questions): “包括哪些/哪些
+    # 情形” answers live in an enumeration clause (“（一）…（二）…”).  When such a
+    # clause carries the question's topic terms but lost the prompt seat to
+    # numerically stronger neighbours, promote it inside the recalled documents.
+    list_completeness_matches = _list_completeness_supplement(
+        db,
+        aspect,
+        matches,
+        document_chunk_cache=document_chunk_cache,
+    )
+    if list_completeness_matches:
+        list_completeness_matches.sort(key=lambda match: match.rerank_score, reverse=True)
+        for offset, supplement in enumerate(list_completeness_matches[: _LIST_COMPLETENESS_LIMIT], start=1):
+            fusion_scores[supplement.citation.chunk_id] = min(real_fusion_best + 0.01, 0.99) - offset * 0.0001
+        existing_chunk_ids = {match.citation.chunk_id for match in list_completeness_matches}
+        matches = list_completeness_matches + [
             match for match in matches if match.citation.chunk_id not in existing_chunk_ids
         ]
 
@@ -1145,6 +1213,467 @@ def _direct_exact_support_match(
             "fusion_method": "bounded_document_exact_anchor",
         },
     )
+
+
+# Definition questions are answered by the clause defining the quoted term.
+# The marker set mirrors rag_service._DEFINITION_QUESTION_MARKERS; kept here so
+# the retrieval channel does not depend on rag_service internals.
+_DEFINITION_QUESTION_MARKERS = ("定义", "如何界定", "是指什么", "指什么", "是什么", "包括哪些", "如何理解")
+
+
+# Mutual-exclusion term pairs for attachment-level disambiguation: when the
+# question names one method/institution class, chunks whose source document
+# title carries the same term win the rerank-input seat over equally scored
+# chunks from the rival attachment ("内部评级法" vs "权重法", "非寿险" vs
+# "寿险", "财产险" vs "人身险").  Generic and corpus-independent.
+_ATTACHMENT_TERM_PAIRS = (
+    ("内部评级法", "权重法"),
+    ("权重法", "内部评级法"),
+    ("标准法", "内部模型法"),
+    ("内部模型法", "标准法"),
+    ("非寿险", "寿险"),
+    ("寿险", "非寿险"),
+    ("财产险", "人身险"),
+    ("人身险", "财产险"),
+    ("财产保险公司", "人身保险公司"),
+    ("人身保险公司", "财产保险公司"),
+    ("商业银行", "财务公司"),
+    ("财务公司", "商业银行"),
+)
+_SECTION_SUBJECT_QUALIFIERS = (
+    "财产保险公司", "人身保险公司", "财产险公司", "人身险公司", "再保险公司",
+    "保险公司", "保险集团", "商业银行", "财务公司", "信托公司", "货币经纪公司",
+    "金融租赁公司", "消费金融公司", "非寿险", "寿险", "财产险", "人身险",
+)
+
+
+def _retrieval_fit_score(candidate: Any, aspect: QueryAspect) -> float:
+    """Attachment/section-level fit tie-break for rerank-input ordering.
+
+    Two generic signals, both corpus-independent:
+    - attachment fit: the question's method/institution term appears in the
+      candidate's source title (and the rival term does not);
+    - section fit: the question's subject qualifier appears in the candidate's
+      section title/path (same-document paragraph disambiguation, e.g. the
+      财产保险公司 pressure-scenario paragraph vs the 人身保险公司 one).
+    """
+
+    question = str(aspect.question or "")
+    if not question:
+        return 0.0
+    filename = str(candidate.filename or "")
+    score = 0.0
+    for term, rival in _ATTACHMENT_TERM_PAIRS:
+        if term in question:
+            if term in filename:
+                score += 0.3
+            elif rival in filename:
+                score -= 0.25
+    for match in re.finditer(r"附件\s*([0-9一二三四五六七八九十]+)", question):
+        if f"附件{match.group(1)}" in filename:
+            score += 0.3
+    section = " ".join(
+        part
+        for part in (
+            candidate.section_title or "",
+            *(candidate.section_path or []),
+        )
+        if part
+    )
+    if section:
+        for qualifier in _SECTION_SUBJECT_QUALIFIERS:
+            if qualifier in question and qualifier in section:
+                score += 0.2
+    return score
+
+
+_INTENT_GAP_STOPWORDS = {
+    "监管要求", "处理", "资产", "业务", "情形", "条件", "范围", "规定", "要求",
+    "事项", "行为", "公司", "银行", "保险", "机构", "相关", "有关", "具体",
+    "主要", "应当", "可以", "不得", "是否", "如何", "哪些", "什么", "多少",
+    "规定", "规则", "办法", "通知", "内容", "情况", "问题", "信息", "数据",
+}
+_INTENT_GAP_PROHIBITION_MARKERS = ("禁止性", "不得", "禁止", "不允许", "负面清单")
+_INTENT_GAP_PATTERN_LIMIT = 6
+# “不符合X标准的资产如何处理”类问题的答案条款是监管文本中的兜底条款
+# （“对不符合…标准的…，应纳入…处理/视为…/比照…”）。这类条款的关键词是
+# 否定词（3 字）与处理动词（2 字），都被词长/停用词过滤排除，因此单独成通道。
+_INTENT_GAP_FALLBACK_NEGATIONS = ("不符合", "不满足", "未达到", "未符合", "无法")
+_INTENT_GAP_FALLBACK_ACTIONS = ("处理", "处置", "对待", "纳入", "视为", "比照")
+_LIST_COMPLETENESS_MARKERS = (
+    "哪些", "包括哪些", "有哪些", "哪些情形", "哪些条件", "哪些情况", "哪些主体",
+    "哪些假设", "哪些原则", "哪些内容", "包括什么",
+    "下列情形之一", "以下情形之一", "具备下列条件", "符合下列条件",
+    "包括但不限于",
+)
+_LIST_COMPLETENESS_LIMIT = 6
+
+
+def _intent_gap_supplement(
+    db: Session,
+    aspect: QueryAspect,
+    matches: list[RetrievalMatch],
+    *,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[RetrievalMatch]:
+    """Deterministic clause recovery for keywords missing from the evidence.
+
+    Generic and bounded by the already-recalled documents: a term the user or
+    the planner named (aspect keywords, quoted phrases) that is absent from
+    every recalled excerpt is searched lexically inside those same documents.
+    Prohibition questions additionally scan "{institution}不得" clauses, which
+    vector ranking frequently misses in favour of nearby 监管指标 paragraphs.
+    """
+
+    if not hasattr(db, "scalars") or not matches:
+        return []
+    question = str(aspect.question or "")
+    terms: set[str] = set()
+    for keyword in aspect.keywords:
+        cleaned = re.sub(r"\s+", "", str(keyword or ""))
+        if 3 <= len(cleaned) <= 20 and cleaned not in _INTENT_GAP_STOPWORDS:
+            terms.add(cleaned)
+    for quoted in re.findall(r"[“‘'\"]([^”’'\"]+)[”’'\"]", question):
+        cleaned = re.sub(r"\s+", "", quoted)
+        if 2 <= len(cleaned) <= 24:
+            terms.add(cleaned)
+    if any(marker in question for marker in _INTENT_GAP_PROHIBITION_MARKERS):
+        for keyword in aspect.keywords:
+            cleaned = re.sub(r"\s+", "", str(keyword or ""))
+            if 4 <= len(cleaned) <= 12 and any(tail in cleaned for tail in ("公司", "银行", "机构")):
+                terms.add(f"{cleaned}不得")
+    fallback_terms: set[str] = set()
+    if any(negation in question for negation in _INTENT_GAP_FALLBACK_NEGATIONS) and any(
+        action in question for action in _INTENT_GAP_FALLBACK_ACTIONS
+    ):
+        # Fallback-clause channel: “不符合…如何处理” answers live in catch-all
+        # clauses that mention both the negation and a treatment verb.  The
+        # negation itself is the highest-signal anchor, so search for it and
+        # require a treatment verb inside the same chunk during the scan.
+        for negation in _INTENT_GAP_FALLBACK_NEGATIONS:
+            if negation in question:
+                terms.add(negation)
+                fallback_terms.add(negation)
+    if not terms:
+        return []
+    evidence_text = "\n".join(str(match.evidence_text or "") for match in matches[:24])
+    normalized_evidence = _normalize_exact_support_text(evidence_text)
+    missing = [
+        term
+        for term in sorted(terms)
+        if _normalize_exact_support_text(term) not in normalized_evidence
+    ]
+    if not missing:
+        return []
+    scope_document_ids = {
+        str(match.citation.document_id or "")
+        for match in matches
+        if match.citation.document_id
+    }
+    if not scope_document_ids:
+        return []
+    chunks_by_document = _chunks_by_document(
+        db,
+        scope_document_ids,
+        document_chunk_cache=document_chunk_cache,
+    )
+    existing_ids = {match.citation.chunk_id for match in matches}
+    supplements: list[RetrievalMatch] = []
+    matched_patterns: set[str] = set()
+    for term in missing[: _INTENT_GAP_PATTERN_LIMIT]:
+        normalized_term = _normalize_exact_support_text(term)
+        is_fallback_term = term in fallback_terms
+        for document_chunks in chunks_by_document.values():
+            for chunk in document_chunks:
+                if chunk.index_status != "indexed" or chunk.chunk_id in existing_ids:
+                    continue
+                searchable = str(chunk.text or chunk.embedding_text or "")
+                if normalized_term not in _normalize_exact_support_text(searchable):
+                    continue
+                if is_fallback_term and not any(
+                    action in searchable for action in _INTENT_GAP_FALLBACK_ACTIONS
+                ):
+                    continue
+                document_chunks_for_match = document_chunks
+                match = _direct_exact_support_match(
+                    chunk,
+                    document_chunks_for_match,
+                    aspect,
+                    term,
+                    support_score=1.2,
+                )
+                match.citation.evidence_role = "intent_gap_support"
+                match.evidence_role = "intent_gap_support"
+                match.metadata["evidence_role"] = "intent_gap_support"
+                match.metadata["fusion_method"] = "intent_gap_lexical"
+                match.metadata["intent_gap_term"] = term
+                supplements.append(match)
+                existing_ids.add(chunk.chunk_id)
+                matched_patterns.add(term)
+                break
+    return supplements
+
+
+def _list_completeness_supplement(
+    db: Session,
+    aspect: QueryAspect,
+    matches: list[RetrievalMatch],
+    *,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[RetrievalMatch]:
+    """Recover list-clause chunks for enumeration questions.
+
+    “包括哪些/有哪些/哪些情形” questions are answered by a clause that
+    enumerates items (“（一）…（二）…”, “1. … 2. …”).  Hybrid ranking often
+    recalls the items' paragraphs but not the clause that frames the list, or
+    the framing clause itself is split across chunk boundaries.  This pass
+    scans the already-recalled documents for enumeration-bearing chunks that
+    mention the question's topic terms and were not recalled, then promotes
+    them so the answer generator sees the whole list framing clause.
+    """
+
+    if not hasattr(db, "scalars") or not matches:
+        return []
+    question = str(aspect.question or "")
+    if not any(marker in question for marker in _LIST_COMPLETENESS_MARKERS):
+        return []
+    topic_terms = []
+    for keyword in aspect.keywords:
+        cleaned = re.sub(r"\s+", "", str(keyword or ""))
+        if 4 <= len(cleaned) <= 20 and cleaned not in _INTENT_GAP_STOPWORDS:
+            topic_terms.append(cleaned)
+    if not topic_terms:
+        return []
+    scope_document_ids = {
+        str(match.citation.document_id or "")
+        for match in matches
+        if match.citation.document_id
+    }
+    if not scope_document_ids:
+        return []
+    chunks_by_document = _chunks_by_document(
+        db,
+        scope_document_ids,
+        document_chunk_cache=document_chunk_cache,
+    )
+    existing_ids = {match.citation.chunk_id for match in matches}
+    supplements: list[RetrievalMatch] = []
+    for document_chunks in chunks_by_document.values():
+        for chunk in document_chunks:
+            if chunk.index_status != "indexed" or chunk.chunk_id in existing_ids:
+                continue
+            text = str(chunk.text or chunk.embedding_text or "")
+            if not _looks_like_enumeration_clause(text):
+                continue
+            if not any(term in text for term in topic_terms):
+                continue
+            match = _direct_exact_support_match(
+                chunk,
+                document_chunks,
+                aspect,
+                topic_terms[0],
+                support_score=1.1,
+            )
+            match.citation.evidence_role = "list_completeness_support"
+            match.evidence_role = "list_completeness_support"
+            match.metadata["evidence_role"] = "list_completeness_support"
+            match.metadata["fusion_method"] = "list_completeness_lexical"
+            supplements.append(match)
+            existing_ids.add(chunk.chunk_id)
+    return supplements
+
+
+def _looks_like_enumeration_clause(text: str) -> bool:
+    """True when the text carries at least three enumeration items.
+
+    Covers the item styles used by regulation texts: （一）…（二）…, (一)…(二)…,
+    1. … 2. … (with a following non-digit so 1.5% rates are not counted), and
+    circled numbers ①②③.  A bare count is intentionally loose — the topic-term
+    filter in the caller keeps false positives out of the prompt.
+    """
+
+    if len(text) < 24:
+        return False
+    chinese_items = len(re.findall(r"[（(][一二三四五六七八九十]{1,3}[）)]", text))
+    if chinese_items >= 3:
+        return True
+    numeric_items = len(
+        re.findall(r"(?<!\d)\d{1,2}[.．、](?!\d)", text)
+    )
+    if numeric_items >= 3:
+        return True
+    circled_items = len(re.findall(r"[①②③④⑤⑥⑦⑧⑨⑩]", text))
+    return circled_items >= 3
+
+
+def _definition_clause_support_matches(
+    db: Session,
+    aspect: QueryAspect,
+    matches: list[RetrievalMatch],
+    *,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[RetrievalMatch]:
+    """Deterministically locate the clause that defines a quoted term.
+
+    Definition questions (“X是如何定义的/如何界定”) are answered by the
+    clause carrying “X是指…/所称X…”.  Such a clause is routinely recalled by
+    hybrid retrieval yet loses the prompt seat to numerically stronger
+    neighbours (real case: “最低资本” definition at RRF rank 2 never reached
+    the prompt).  This channel scans the already-recalled documents first
+    (cheap), then falls back to the full corpus (bounded by the quoted term),
+    and promotes every defining clause with a high deterministic score so
+    prompt selection cannot drop it.
+    """
+
+    if not hasattr(db, "scalars"):
+        return []
+    question = str(aspect.question or "")
+    if not any(marker in question for marker in _DEFINITION_QUESTION_MARKERS):
+        return []
+    quoted = [
+        re.sub(r"\s+", "", term)
+        for term in re.findall(r"[“‘'\"]([^”’'\"]+)[”’'\"]", question)
+        if term
+    ]
+    quoted = [term for term in quoted if 2 <= len(term) <= 24]
+    if not quoted:
+        return []
+    patterns: list[str] = []
+    for term in quoted:
+        patterns.extend(
+            [
+                f"{term}是指",
+                f"所称{term}",
+                f"{term}指",
+                f"{term}是由于",
+            ]
+        )
+    patterns = list(dict.fromkeys(patterns))
+    scope_document_ids = {
+        str(match.citation.document_id or "")
+        for match in matches
+        if match.citation.document_id
+    }
+    if not scope_document_ids:
+        return []
+    found = _definition_clause_chunks(db, patterns, scope_document_ids, document_chunk_cache)
+    if not found:
+        found = _definition_clause_chunks(db, patterns, None, document_chunk_cache)
+    if not found:
+        return []
+    existing_ids = {match.citation.chunk_id for match in matches}
+    supplements: list[RetrievalMatch] = []
+    for chunk, matched_pattern in found:
+        if chunk.chunk_id in existing_ids or chunk.index_status != "indexed":
+            continue
+        document_chunks = (
+            document_chunk_cache or {}
+        ).get(str(chunk.document_id)) or _chunks_by_document(
+            db,
+            {str(chunk.document_id)},
+            document_chunk_cache=document_chunk_cache,
+        ).get(str(chunk.document_id))
+        if not document_chunks:
+            document_chunks = [chunk]
+        elif chunk not in document_chunks:
+            # Full-corpus fallback chunks are not part of the cached list;
+            # keep the chunk itself so neighbour lookup can anchor on it.
+            document_chunks = [chunk, *document_chunks]
+        match = _direct_exact_support_match(
+            chunk,
+            document_chunks,
+            aspect,
+            matched_pattern,
+            support_score=1.5,
+        )
+        match.citation.evidence_role = "definition_clause"
+        match.evidence_role = "definition_clause"
+        match.metadata["evidence_role"] = "definition_clause"
+        match.metadata["fusion_method"] = "definition_clause_lexical"
+        match.metadata["definition_clause_pattern"] = matched_pattern
+        match.metadata["definition_clause_term"] = matched_pattern.replace("是指", "").replace("所称", "").replace("是指", "").replace("指", "").replace("是由于", "")
+        supplements.append(match)
+        existing_ids.add(chunk.chunk_id)
+        # A PDF/Word clause can be clipped exactly at the chunk boundary
+        # ("…而导致 29" where the next chunk continues "直接或间接损失的
+        # 风险…").  Promote the immediate successor so the definition
+        # sentence is complete for the generator.
+        next_chunk_id = getattr(chunk, "next_chunk_id", None)
+        if next_chunk_id:
+            successor = next(
+                (item for item in document_chunks if item.chunk_id == next_chunk_id),
+                None,
+            )
+            if successor is not None and successor.index_status == "indexed" and successor.chunk_id not in existing_ids:
+                successor_match = _direct_exact_support_match(
+                    successor,
+                    document_chunks,
+                    aspect,
+                    matched_pattern,
+                    support_score=1.4,
+                )
+                successor_match.citation.evidence_role = "definition_clause"
+                successor_match.evidence_role = "definition_clause"
+                successor_match.metadata["evidence_role"] = "definition_clause"
+                successor_match.metadata["fusion_method"] = "definition_clause_lexical"
+                successor_match.metadata["definition_clause_pattern"] = matched_pattern
+                successor_match.metadata["definition_clause_successor"] = True
+                supplements.append(successor_match)
+                existing_ids.add(successor.chunk_id)
+    return supplements
+
+
+def _definition_clause_chunks(
+    db: Session,
+    patterns: list[str],
+    document_ids: set[str] | None,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[tuple[Any, str]]:
+    """Return (chunk, matched pattern) for chunks containing a definition pattern."""
+
+    if document_ids:
+        chunks_by_document = _chunks_by_document(
+            db,
+            document_ids,
+            document_chunk_cache=document_chunk_cache,
+        )
+        found: list[tuple[Any, str]] = []
+        for chunk in (c for chunks in chunks_by_document.values() for c in chunks):
+            searchable = str(chunk.text or chunk.embedding_text or "")
+            normalized_searchable = _normalize_exact_support_text(searchable)
+            for pattern in patterns:
+                if _normalize_exact_support_text(pattern) in normalized_searchable:
+                    found.append((chunk, pattern))
+                    break
+        return found
+    # Full-corpus fallback: the term may live in a document vector retrieval
+    # never recalled.  Bound it to the quoted term's definition patterns only.
+    import sqlalchemy as _sa
+
+    statement = (
+        _sa.select(DocumentChunk)
+        .where(
+            DocumentChunk.index_status == "indexed",
+            or_(
+                *(
+                    DocumentChunk.text.contains(pattern)
+                    for pattern in patterns
+                )
+            ),
+        )
+        .limit(24)
+    )
+    rows = db.execute(statement).scalars().all()
+    found = []
+    for chunk in rows:
+        searchable = _normalize_exact_support_text(str(chunk.text or chunk.embedding_text or ""))
+        matched = next(
+            (pattern for pattern in patterns if _normalize_exact_support_text(pattern) in searchable),
+            None,
+        )
+        if matched:
+            found.append((chunk, matched))
+    return found
 
 
 def _bounded_document_lexical_support_matches(

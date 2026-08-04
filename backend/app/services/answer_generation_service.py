@@ -421,6 +421,24 @@ def _generate_answer_impl(
                 if bounded is not None:
                     _report_verified_claims(bounded, verified_claim_reporter)
                     return bounded
+                # The model exhausted its rounds without a valid answer (empty
+                # replies and empty claim lists are common under provider
+                # instability).  Before refusing structurally, try the trusted
+                # extractive fallback: when the evidence carries the answer,
+                # extracts pass the same trust gate and beat a bare refusal.
+                extractive = _trusted_extractive_fallback(
+                    context_chunks,
+                    question=question,
+                    reason="grounding_validation_failed",
+                )
+                if extractive is not None and not extractive.refused:
+                    extractive.grounding_validation = {
+                        **extractive.grounding_validation,
+                        "recovery_method": "extractive_fallback_after_validation_failed",
+                        "llm_validation": repaired_validation,
+                    }
+                    _report_verified_claims(extractive, verified_claim_reporter)
+                    return extractive
                 return GeneratedAnswer(
                     answer="已检索到相关依据，但生成答案未通过事实校验，无法给出确定结论。",
                     answer_type="refusal",
@@ -1137,6 +1155,75 @@ def _request_llm_content(
             )
 
 
+def _claim_chunk_bigram_overlap(text: str, chunk_text: str) -> float:
+    """Normalized bigram overlap between a claim and a chunk's text.
+
+    Used by citation misalignment repair: a claim that reuses the exact
+    wording of a clause has near-total overlap with its own clause and near
+    zero with an unrelated clause (0.05 vs 0.9 in the real case).
+    """
+
+    normalized_a = _normalize_evidence_text(re.sub(r"\[\d+\]", "", str(text or "")))
+    normalized_b = _normalize_evidence_text(str(chunk_text or ""))
+    if len(normalized_a) < 2 or len(normalized_b) < 2:
+        return 0.0
+    bigrams_a = {normalized_a[index : index + 2] for index in range(len(normalized_a) - 1)}
+    bigrams_b = {normalized_b[index : index + 2] for index in range(len(normalized_b) - 1)}
+    return len(bigrams_a & bigrams_b) / max(len(bigrams_a), 1)
+
+
+_CITATION_REPAIR_MIN_OVERLAP = 0.20
+_CITATION_REPAIR_TARGET_OVERLAP = 0.35
+
+
+def _repair_misaligned_citations(
+    claims: list[AnswerClaim],
+    context_chunks: list[RetrievalResult],
+) -> None:
+    """Redirect claims whose citation labels point at unrelated chunks.
+
+    Generation models occasionally attach the wrong label to an otherwise
+    correct claim (the gold clause sits at [11] while the model cites [10]).
+    When the cited chunk has near-zero lexical overlap with the claim but a
+    different chunk overlaps substantially, the citation is redirected to the
+    matching chunk.  Purely lexical and deterministic; unrelated citations are
+    left untouched for the regular validation gates.
+    """
+
+    if not claims or not context_chunks:
+        return
+    chunks_by_label = {
+        chunk.citation_label: chunk
+        for chunk in context_chunks
+        if chunk.citation_label
+    }
+    for claim in claims:
+        repaired: list[str] = []
+        for citation_id in claim.citation_ids:
+            chunk = chunks_by_label.get(citation_id)
+            if chunk is None:
+                repaired.append(citation_id)
+                continue
+            overlap = _claim_chunk_bigram_overlap(claim.text, chunk.text)
+            if overlap >= _CITATION_REPAIR_MIN_OVERLAP:
+                repaired.append(citation_id)
+                continue
+            best_label: str | None = None
+            best_overlap = 0.0
+            for candidate in context_chunks:
+                if candidate.citation_label == citation_id:
+                    continue
+                candidate_overlap = _claim_chunk_bigram_overlap(claim.text, candidate.text)
+                if candidate_overlap > best_overlap:
+                    best_overlap = candidate_overlap
+                    best_label = candidate.citation_label
+            if best_label is not None and best_overlap >= _CITATION_REPAIR_TARGET_OVERLAP:
+                repaired.append(best_label)
+            else:
+                repaired.append(citation_id)
+        claim.citation_ids = repaired
+
+
 def _parse_generated_answer_content(
     content: str,
     *,
@@ -1159,6 +1246,10 @@ def _parse_generated_answer_content(
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     ]
     if not refused and claims:
+        # The model can attach a wrong label to a correct claim (gold clause
+        # at [11] cited as [10]); repair that before the local verification
+        # drops the claim as unsupported.
+        _repair_misaligned_citations(claims, context_chunks)
         # Keep the final body on the same trust boundary as the preview: the
         # conclusion is mandatory, while an invalid explanation can be omitted
         # without hiding an already verified conclusion.  When the conclusion
@@ -1536,6 +1627,7 @@ def _validate_generated_answer(
     table_findings: list[TableFinding] | None = None,
     required_aspect_ids: list[str] | None = None,
 ) -> dict[str, Any]:
+    _align_claim_aspect_ids(generated, required_aspect_ids or [])
     validation = validate_grounded_answer(generated.answer or "", generated.claims, context_chunks)
     required_aspect_validation = _validate_required_aspect_coverage(
         generated,
@@ -1650,6 +1742,36 @@ def _selection_metadata_only_failure(
         any(re.search(rf"(?:答案|正确选项)\s*(?:为|是)?\s*[:：]?\s*{re.escape(label)}(?:[.、，,。\s]|$)", claims[index].text) for label in labels)
         for index in insufficient_indexes
     )
+
+
+def _align_claim_aspect_ids(
+    generated: GeneratedAnswer,
+    required_aspect_ids: list[str],
+) -> None:
+    """Drop invented aspect labels from LLM claims.
+
+    The planner's aspect ids are semantic labels (e.g.
+    ``irb_unclassified_exposure_treatment``) that the generation model
+    sometimes rewrites freely (``..._handling``).  Such claims then fail the
+    required-aspect coverage check and a correct, fully-grounded answer is
+    refused.  Removing labels that are not among the required ids lets the
+    single-aspect coverage fallback attribute the claim through its cited
+    chunk's evidence-side metadata instead of trusting the invented label.
+    """
+
+    required = {
+        str(value).strip()
+        for value in required_aspect_ids
+        if str(value).strip()
+    }
+    if not required:
+        return
+    for claim in generated.claims:
+        claim.aspect_ids = [
+            str(value).strip()
+            for value in claim.aspect_ids
+            if str(value).strip() in required
+        ]
 
 
 def _validate_required_aspect_coverage(
@@ -3208,6 +3330,10 @@ def _fallback_definition_bonus(normalized_text: str, anchors: list[str]) -> floa
     return 0.0
 
 
+_EXTRACTIVE_FALLBACK_NEGATIONS = ("不符合", "不满足", "未达到", "未符合", "无法")
+_EXTRACTIVE_FALLBACK_ACTIONS = ("处理", "处置", "对待", "纳入", "视为", "比照")
+
+
 def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 650) -> str:
     source = str(text or "").strip()
     segments = [
@@ -3250,6 +3376,16 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 6
             if "现金流现值" in normalized and "折现率曲线" in normalized:
                 semantic_score += 10.0
             if "基础利率曲线" in normalized and "综合溢价" in normalized:
+                semantic_score += 12.0
+        # “不符合/不满足…标准的…如何处理”由兜底条款回答（“对不符合…的…，
+        # 应纳入…处理/视为…/比照…”）。问题含否定词+处理动词时，给同含两者的
+        # 句子高权重，避免只选中一般性分类/流程条款。
+        if any(marker in normalized_question for marker in _EXTRACTIVE_FALLBACK_NEGATIONS) and any(
+            marker in normalized_question for marker in _EXTRACTIVE_FALLBACK_ACTIONS
+        ):
+            if any(marker in normalized for marker in _EXTRACTIVE_FALLBACK_NEGATIONS) and any(
+                marker in normalized for marker in _EXTRACTIVE_FALLBACK_ACTIONS
+            ):
                 semantic_score += 12.0
         segment_bigrams = {
             normalized[index : index + 2]

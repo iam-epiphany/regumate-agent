@@ -2802,13 +2802,17 @@ def test_open_question_uses_extractive_fallback_when_generation_validation_fails
         has_sufficient_context=True,
     )
 
-    # Open questions refuse structurally after validation failure instead of
-    # degrading to a conclusion-less excerpt dump.
-    assert result.refused is True
+    # After the LLM rounds fail validation, the trusted extractive fallback
+    # takes over when the evidence passes the same trust gate; the structural
+    # refusal is reserved for cases where even the extracts cannot pass.
+    assert result.refused is False
     assert result.degraded is True
-    assert result.answer_type == "refusal"
-    assert result.refusal_reason == "validation_failed_no_reliable_answer"
-    assert result.grounding_validation["recovery_method"] == "structural_refusal_after_validation_failed"
+    assert result.answer_type == "extractive_fallback"
+    assert "交易账簿包括为交易目的而持有的金融工具" in result.answer
+    assert result.grounding_validation.get("recovery_method") in (
+        "extractive_fallback_after_validation_failed",
+        "trusted_extractive_fallback",
+    )
     assert result.grounding_validation["passed"] is True
 
 
@@ -3182,3 +3186,147 @@ def test_streaming_extractor_claim_object_spans_chunk_boundary() -> None:
     assert [(role, claim.text) for role, claim in second] == [("conclusion", "跨块结论。")]
     # A further append after the array closed emits nothing more.
     assert extractor.append("trailing") == []
+
+
+def test_invented_claim_aspect_ids_aligned_to_required() -> None:
+    """LLM 自由发挥的 aspect_id 被清理，单方面问题时回退到证据侧推断。"""
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="对不符合各类风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。",
+            metadata={"aspect_id": "irb_unclassified_exposure_treatment", "prompt_matched_aspects": ["irb_unclassified_exposure_treatment"]},
+        ),
+    ]
+    generated = answer_generation_service.GeneratedAnswer(
+        answer="对不符合各类风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。[1]",
+        answer_type="llm_grounded",
+        generation_status="completed",
+        claims=[
+            AnswerClaim(
+                text="对不符合各类风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。[1]",
+                citation_ids=["[1]"],
+                role="conclusion",
+                aspect_ids=["irb_unclassified_exposure_handling"],
+            )
+        ],
+        refused=False,
+    )
+
+    validation = answer_generation_service._validate_generated_answer(
+        generated,
+        chunks,
+        [],
+        [],
+        required_aspect_ids=["irb_unclassified_exposure_treatment"],
+    )
+
+    assert generated.claims[0].aspect_ids == []
+    assert validation["passed"] is True
+    assert validation["required_aspects_complete"] is True
+
+
+def test_invented_claim_aspect_ids_keeps_valid_labels() -> None:
+    """多方面问题时只清理发明标注，正确标注保留。"""
+    from backend.app.services.answer_generation_service import _align_claim_aspect_ids
+
+    generated = answer_generation_service.GeneratedAnswer(
+        answer="测试",
+        answer_type="llm_grounded",
+        generation_status="completed",
+        claims=[
+            AnswerClaim(
+                text="测试",
+                citation_ids=["[1]"],
+                role="conclusion",
+                aspect_ids=["aspect_alpha", "aspect_free_form"],
+            )
+        ],
+        refused=False,
+    )
+    _align_claim_aspect_ids(generated, ["aspect_alpha"])
+    assert generated.claims[0].aspect_ids == ["aspect_alpha"]
+
+
+def test_extractive_excerpt_prefers_fallback_clause() -> None:
+    """“不符合…如何处理”问题时，extractive 优先选中含兜底处理的句子。"""
+    from backend.app.services.answer_generation_service import _relevant_extractive_excerpt
+
+    text = (
+        "（一）商业银行应制定风险暴露分类政策。"
+        "（二）商业银行应结合本行的管理架构、资产结构和风险特征确定分类的标准和流程。"
+        "（四）商业银行开展分类时，应将资产划入相应的风险暴露类别。"
+        "对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、其他风险暴露"
+        "划分标准且存在信用风险的资产，应纳入公司风险暴露处理。"
+        "（六）商业银行应建立分类和调整的报告制度。"
+    )
+    question = "商业银行采用内部评级法时，不符合各类风险暴露分类标准的资产应如何处理？"
+    excerpt = _relevant_extractive_excerpt(text, question)
+    assert "纳入公司风险暴露处理" in excerpt
+
+
+def test_extractive_excerpt_ignores_fallback_boost_for_plain_questions() -> None:
+    """非“不符合…处理”型问题不受兜底条款加分影响（不引入噪音）。"""
+    from backend.app.services.answer_generation_service import _relevant_extractive_excerpt
+
+    text = (
+        "（一）商业银行应制定风险暴露分类政策。"
+        "（二）商业银行应结合本行的管理架构、资产结构和风险特征确定分类的标准和流程。"
+        "对不符合划分标准的资产，应纳入公司风险暴露处理。"
+        "（六）商业银行应建立分类和调整的报告制度，定期报告分类状况。"
+    )
+    question = "商业银行风险暴露分类的报告制度有什么要求？"
+    excerpt = _relevant_extractive_excerpt(text, question)
+    assert "报告制度" in excerpt
+
+
+def test_repair_misaligned_citations_redirects_to_matching_chunk() -> None:
+    """引用标签错位时重定向到词面匹配的 chunk；无关引用保持不变。"""
+    from backend.app.services.answer_generation_service import _repair_misaligned_citations
+
+    chunks = [
+        _chunk(
+            chunk_id="C10",
+            citation_label="[10]",
+            text="对“混合资产池”，需调整为基础资产适用于信用风险内部评级法和权重法部分的资本要求的加权平均。",
+        ),
+        _chunk(
+            chunk_id="C11",
+            citation_label="[11]",
+            text="对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、其他风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。",
+        ),
+    ]
+    claim = AnswerClaim(
+        text="对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、其他风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。[10]",
+        citation_ids=["[10]"],
+        role="conclusion",
+        aspect_ids=[],
+    )
+    _repair_misaligned_citations([claim], chunks)
+    assert claim.citation_ids == ["[11]"]
+
+
+def test_repair_misaligned_citations_keeps_correct_citations() -> None:
+    """引用正确时不被改动。"""
+    from backend.app.services.answer_generation_service import _repair_misaligned_citations
+
+    chunks = [
+        _chunk(
+            chunk_id="C10",
+            citation_label="[10]",
+            text="对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、其他风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。",
+        ),
+        _chunk(
+            chunk_id="C11",
+            citation_label="[11]",
+            text="对“混合资产池”，需调整为基础资产适用于信用风险内部评级法和权重法部分的资本要求的加权平均。",
+        ),
+    ]
+    claim = AnswerClaim(
+        text="对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、其他风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。[10]",
+        citation_ids=["[10]"],
+        role="conclusion",
+        aspect_ids=[],
+    )
+    _repair_misaligned_citations([claim], chunks)
+    assert claim.citation_ids == ["[10]"]
