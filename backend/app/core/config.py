@@ -185,13 +185,13 @@ LLM_INCLUDE_THINKING = _env_bool("LLM_INCLUDE_THINKING", False)
 LLM_RESPONSE_FORMAT = os.getenv("LLM_RESPONSE_FORMAT", "json_object").strip() or "json_object"
 LLM_STREAM = _env_bool("LLM_STREAM", True)
 
-# The LLM query planner is non-deterministic (the upstream API does not
-# guarantee identical outputs even at temperature 0), so the deterministic
-# fallback planner is the default: the same question always produces the same
-# search queries and therefore the same evidence.  Set QUERY_PLANNER_ENABLED
-# to opt into the LLM planner for question forms the deterministic planner
-# cannot rewrite.
-QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", False)
+# The LLM query planner rewrites open text questions into domain-aware search
+# queries (制度原文风格), which the deterministic fallback cannot reproduce.
+# It is enabled by default; the upstream API is sampled at temperature 0 but
+# does not guarantee byte-identical outputs.  Set QUERY_PLANNER_ENABLED=false
+# to force the deterministic fallback planner (identical input always yields
+# identical search queries and evidence).
+QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", True)
 QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", LLM_PROVIDER)
 QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or LLM_API_KEY
 QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", LLM_BASE_URL)
