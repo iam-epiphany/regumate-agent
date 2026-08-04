@@ -897,3 +897,50 @@ def test_operand_decimal_prefers_displayed_value(db_session) -> None:
         },
     )
     assert _operand_decimal(candidate) == Decimal("24155.58512")
+
+
+def test_cross_table_calculation_returns_operand_table_evidence(db_session) -> None:
+    """跨表计算返回每个操作数表的单元格证据（可引用全部源表）。"""
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-P1",
+        row_label="人身险公司 / 原保险保费收入",
+        value=43624.19,
+        coordinate="C5",
+        column_label="本年累计 / 原保险保费收入",
+        source_title="2025年12月人身险公司经营情况表",
+    )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-P2",
+        row_label="财产险公司 / 原保险保费收入",
+        value=17569.98,
+        coordinate="C7",
+        column_label="本年累计 / 原保险保费收入",
+        source_title="2025年12月财产保险公司经营情况表",
+    )
+    aspect = _aspect(
+        "《2025年12月人身险公司经营情况表》和《2025年12月财产保险公司经营情况表》中"
+        "人身险公司与财产险公司原保险保费收入（本年累计）的差值是多少？",
+        table_task="calculate",
+        operation="difference",
+        table_filters={
+            "source_title": "2025年12月人身险公司经营情况表",
+            "indicator": "原保险保费收入",
+        },
+        selectors=(
+            {"row_or_indicator": "原保险保费收入", "source_title": "2025年12月人身险公司经营情况表"},
+            {"row_or_indicator": "原保险保费收入", "source_title": "2025年12月财产保险公司经营情况表"},
+        ),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 2
+    sources = {m.citation.metadata.get("source_title") for m in matches}
+    assert "2025年12月人身险公司经营情况表" in sources
+    assert "2025年12月财产保险公司经营情况表" in sources
+    calculation = next(
+        m for m in matches if m.citation.metadata.get("calculation_result") is not None
+    )
+    assert calculation.citation.metadata["calculation_result"] == pytest.approx(26054.21)

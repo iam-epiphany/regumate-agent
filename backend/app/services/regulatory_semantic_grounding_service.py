@@ -291,8 +291,16 @@ def semantic_risk_codes(
     return risks
 
 
-def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: int = 1) -> str:
-    """Focus semantic checks on the cited statement, not unrelated rules in the same chunk."""
+def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: int | None = None) -> str:
+    """Focus semantic checks on the cited statement, not unrelated rules in the same chunk.
+
+    Every sentence that substantially overlaps the claim is kept (not just
+    the single closest one): a multi-case claim such as “下列两种情形中的
+    较早发生者：(1)…；(2)…” covers several evidence sentences, and dropping
+    the others would remove their subjects/objects and falsely flag
+    subject_scope_expanded.  Unrelated sentences stay excluded so the chunk's
+    other rules cannot interfere with the claim's frame.
+    """
 
     sentences = [
         sentence.strip()
@@ -316,10 +324,12 @@ def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: i
         scored.append((overlap, -index, sentence))
     if not scored:
         return str(evidence or "")
-    selected = sorted(scored, reverse=True)[:max_sentences]
-    selected_indexes = sorted(-item[1] for item in selected if item[0] > 0)
-    if not selected_indexes:
+    relevant = [item for item in scored if item[0] >= 0.5]
+    if not relevant:
         return str(evidence or "")
+    if max_sentences is not None:
+        relevant = sorted(relevant, key=lambda item: (-item[0], item[1]))[:max_sentences]
+    selected_indexes = sorted(-item[1] for item in relevant)
     return "".join(sentences[index] for index in selected_indexes)
 
 

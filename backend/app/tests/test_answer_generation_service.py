@@ -2643,6 +2643,74 @@ def test_call_llm_reuses_context_package_prompt_in_request_payload(monkeypatch) 
     assert result.answer == "监管报送期限为2025年12月31日。[1]"
 
 
+def test_parse_keeps_claims_requiring_semantic_verifier(monkeypatch) -> None:
+    """需要语义验证器的结论 claim 不被解析层清空（验证是批量后置的）。"""
+    monkeypatch.setattr(
+        answer_generation_service,
+        "claim_requires_semantic_verifier",
+        lambda claim, chunks: True,
+    )
+    monkeypatch.setattr(
+        answer_generation_service,
+        "validate_grounded_answer",
+        lambda answer, claims, chunks: {"passed": True},
+    )
+    content = json.dumps(
+        {
+            "refused": False,
+            "refusal_reason": None,
+            "claims": [
+                {
+                    "role": "conclusion",
+                    "text": "无法生存触发事件指下列两种情形中的较早发生者。[1]",
+                    "citation_ids": ["[1]"],
+                },
+                {
+                    "role": "explanation",
+                    "text": "依据附件1中的规定。[1]",
+                    "citation_ids": ["[1]"],
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+    generated = answer_generation_service._parse_generated_answer_content(
+        content,
+        question="无法生存触发事件包括哪些情形？",
+        context_chunks=[_chunk()],
+        options=[],
+        option_labels=[],
+        answer_mode="text",
+    )
+    assert generated.answer is not None
+    assert len(generated.claims) == 2
+
+
+def test_generation_prompt_requires_citing_all_related_files() -> None:
+    messages = answer_generation_service.RAGPromptBuilder().build_generation_messages(
+        "对比两个附件的定义是否一致。",
+        [_chunk()],
+    )
+    user_message = messages[1]["content"]
+    assert "必须引用每个相关文件" in user_message
+
+
+def test_calculation_citation_text_joins_operand_chunk_labels() -> None:
+    from types import SimpleNamespace
+
+    metadata = {
+        "calculation_cells": [
+            {"chunk_id": "CH-A"},
+            {"chunk_id": "CH-B"},
+        ]
+    }
+    chunks = [
+        SimpleNamespace(chunk_id="CH-A", citation_label="[1]"),
+        SimpleNamespace(chunk_id="CH-B", citation_label="[2]"),
+    ]
+    assert answer_generation_service._calculation_citation_text(metadata, chunks) == "[1][2]"
+
+
 def test_generation_prompt_requires_one_claim_per_required_aspect() -> None:
     messages = answer_generation_service.RAGPromptBuilder().build_generation_messages(
         "请分别说明两个事项。",

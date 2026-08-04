@@ -1542,3 +1542,39 @@ def test_prompt_core_prefers_explicit_condition_match_over_generic_higher_score(
     selected = _best_non_duplicate_candidate([generic, exact], [], aspect)
 
     assert selected is exact
+
+
+def test_select_relevant_evidence_keeps_all_related_sentences() -> None:
+    """多情形 claim 的相关证据句全部保留（不能只留最相关 1 句）。"""
+    from backend.app.services.regulatory_semantic_grounding_service import select_relevant_evidence
+
+    claim = (
+        "无法生存触发事件指下列两种情形中的较早发生者："
+        "（1）国家金融监督管理总局认定若不进行减记或转股，该商业银行将无法生存；"
+        "（2）相关部门认定若不进行公共部门注资或提供同等效力的支持，该商业银行将无法生存。"
+    )
+    evidence = (
+        "（六）持续经营触发事件和无法生存触发事件。"
+        "无法生存触发事件是指下列两种情形中的较早发生者："
+        "1.国家金融监督管理总局认定若不进行减记或转股，该商业银行将无法生存；"
+        "2.相关部门认定若不进行公共部门注资或提供同等效力的支持，该商业银行将无法生存。"
+    )
+    focused = select_relevant_evidence(claim, evidence)
+    assert "国家金融监督管理总局认定" in focused
+    assert "相关部门认定" in focused
+
+
+def test_select_relevant_evidence_still_excludes_unrelated_sentences() -> None:
+    """同 chunk 的无关规则句仍被排除（聚焦语义保持）。"""
+    from backend.app.services.regulatory_semantic_grounding_service import select_relevant_evidence
+
+    claim = "消费金融公司应当建立风险管理制度。"
+    evidence = (
+        "消费金融公司应当建立风险管理制度。"
+        "第十四条 消费金融公司可以在全国范围内开展业务。"
+        "符合条件的公司可以申请经营其他人民币业务。"
+    )
+    focused = select_relevant_evidence(claim, evidence)
+    assert "建立风险管理制度" in focused
+    assert "开展业务" not in focused
+    assert "申请经营其他人民币业务" not in focused

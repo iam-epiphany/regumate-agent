@@ -626,6 +626,30 @@ def _has_structured_table_evidence(context_chunks: list[RetrievalResult]) -> boo
     return False
 
 
+def _calculation_citation_text(metadata: dict[str, Any], context_chunks: list[RetrievalResult]) -> str:
+    """Citation labels of every chunk involved in a calculation.
+
+    Cross-table calculations put each operand's chunk in the context; citing
+    them all keeps the answer traceable to every source table.  Falls back to
+    an empty string so the caller keeps the anchor label.
+    """
+    cell_chunk_ids = {
+        str(item.get("chunk_id") or "")
+        for item in metadata.get("calculation_cells") or []
+        if isinstance(item, dict) and item.get("chunk_id")
+    }
+    if not cell_chunk_ids:
+        return ""
+    labels = sorted(
+        {
+            item.citation_label
+            for item in context_chunks
+            if item.chunk_id in cell_chunk_ids and item.citation_label
+        }
+    )
+    return "".join(labels)
+
+
 def _deterministic_table_answer(
     context_chunks: list[RetrievalResult],
     options: list[str],
@@ -665,7 +689,9 @@ def _deterministic_table_answer(
     )
     output_unit = _deterministic_table_output_unit(metadata)
     value_with_unit = f"{value_text} {output_unit}" if output_unit else value_text
-    citation_label = chunk.citation_label
+    # Cross-table calculations return one cell-level evidence per operand
+    # table; cite every involved chunk instead of only the anchor table.
+    citation_label = _calculation_citation_text(metadata, context_chunks) or chunk.citation_label
     if option_text:
         answer = f"答案为 {_format_selected_option(option_text, option_label)}。依据表格证据，核验值为 {value_with_unit}。{citation_label}"
     elif metadata.get("comparison_operation") in {"max", "min"}:
@@ -688,7 +714,9 @@ def _deterministic_table_answer(
         answer = f"查询结果为 {value_with_unit}。{citation_label}"
     claim = AnswerClaim(
         text=answer.rsplit(citation_label, 1)[0].strip(),
-        citation_ids=[citation_label],
+        # A cross-table answer cites several chunks (“[1][2]”); keep them as
+        # separate citation ids so each label validates against the context.
+        citation_ids=re.findall(r"\[\d+\]", citation_label) or [citation_label],
         role="calculation" if metadata.get("calculation_result") is not None else "table_fact",
         aspect_ids=[str(chunk.metadata.get("aspect_id"))] if chunk.metadata.get("aspect_id") else [],
     )
@@ -1006,7 +1034,16 @@ def _parse_generated_answer_content(
         # itself fails verification, every claim is dropped so the repair
         # ladder decides between a corrected generation and a structural
         # refusal — unverified claims must never reach the user silently.
-        if _claim_is_verified(question, claims[0], context_chunks, options, option_labels):
+        # A conclusion that requires the semantic verifier is *not* a failed
+        # verification here: regulatory semantics are validated as a batch in
+        # validate_grounded_answer (validate_regulatory_semantics).  Dropping
+        # such claims in the parse stage would turn a pending verification
+        # into an empty answer and a false refusal, so they are kept for the
+        # batch validation that decides between passing, repairing and
+        # refusing.
+        if claim_requires_semantic_verifier(claims[0], context_chunks):
+            pass
+        elif _claim_is_verified(question, claims[0], context_chunks, options, option_labels):
             claims = [claims[0], *[
                 claim
                 for claim in claims[1:]

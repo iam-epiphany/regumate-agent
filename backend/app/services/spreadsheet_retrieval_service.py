@@ -285,8 +285,26 @@ def _indexed_spreadsheet_matches(
         )
         if calculation:
             _attach_sum_comparison_target(calculation, candidates, selected, filters, operation)
-            _set_valid_diagnostic([calculation])
-            return [calculation]
+            matches: list[RetrievalMatch] = [calculation]
+            # Cross-table calculations (“《表1》和《表2》…的差值”) draw operands
+            # from different source files.  Return one cell-level evidence per
+            # operand table as well, so the answer can cite every involved
+            # source instead of only the anchor table.
+            anchor_chunk_id = str(calculation.citation.chunk_id or "")
+            operand_source_titles = {
+                normalize_table_text(candidate.metadata.get("source_title") or "")
+                for candidate in selected
+            }
+            if len(operand_source_titles) > 1:
+                for candidate in selected:
+                    cell_chunk_id = str(candidate.chunk.chunk_id or "")
+                    if cell_chunk_id == anchor_chunk_id:
+                        continue
+                    matches.append(
+                        _to_match(candidate, aspect, "lookup", operation, match_status="valid_cell")
+                    )
+            _set_valid_diagnostic(matches)
+            return matches
         # Transposed-layout fallback: period selectors keep their quarters in
         # the row labels (“一季度 / 不良贷款余额”), so the standard selector
         # year/quarter equality checks always fail.  Retry with transposed
