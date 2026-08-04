@@ -2194,7 +2194,32 @@ def _is_duplicate_or_redundant(chunk: RetrievalResult, selected: list[RetrievalR
         shorter, longer = sorted([normalized, selected_normalized], key=len)
         if len(shorter) >= 80 and shorter in longer:
             return True
+        # Same-document template paragraphs (e.g. repeated “填写说明 1.定义…”
+        # blocks that differ only in their tail) crowd out the answering
+        # clause.  A strong shared prefix inside one document marks them as
+        # redundant without touching legitimately parallel clauses across
+        # documents or sections.
+        if (
+            len(shorter) >= 60
+            and str(chunk.metadata.get("document_id") or "")
+            and str(chunk.metadata.get("document_id") or "")
+            == str(selected_chunk.metadata.get("document_id") or "")
+            and _normalized_prefix_overlap(shorter, longer) >= 0.7
+        ):
+            return True
     return False
+
+
+def _normalized_prefix_overlap(shorter: str, longer: str) -> float:
+    """Fraction of the shorter normalized text covered by a common prefix."""
+
+    if not shorter:
+        return 0.0
+    limit = min(len(shorter), len(longer))
+    index = 0
+    while index < limit and shorter[index] == longer[index]:
+        index += 1
+    return index / len(shorter)
 
 
 def _sort_prompt_chunks(chunks: list[RetrievalResult], query_plan: QueryPlan) -> list[RetrievalResult]:

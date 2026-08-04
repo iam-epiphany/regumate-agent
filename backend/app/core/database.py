@@ -1,3 +1,5 @@
+import sqlite3
+
 from collections.abc import Generator
 from pathlib import Path, PureWindowsPath
 import unicodedata
@@ -15,8 +17,17 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 @event.listens_for(engine, "connect")
 def _configure_sqlite(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        # Docker Desktop bind mounts cannot always create the -wal/-shm
+        # sidecar files that WAL requires; fall back to the single-file
+        # rollback journal, which works reliably on every mount type.
+        cursor.execute("PRAGMA journal_mode=DELETE")
+    # The database lives on a Docker Desktop volume mount where file-lock
+    # handoff is slower than on a local disk; a longer busy timeout absorbs
+    # concurrent readers/writers instead of surfacing as 500s.
+    cursor.execute("PRAGMA busy_timeout=15000")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

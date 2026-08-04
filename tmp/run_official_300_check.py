@@ -40,7 +40,10 @@ def main() -> int:
     base_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
     cases = read_cases("data/contest_dataset/QA数据.xlsx")
     results: list[dict] = []
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    import os
+    workers = int(os.environ.get("OFFICIAL300_WORKERS", "2"))
+    out_path = os.environ.get("OFFICIAL300_OUT", "data/evaluation/official_300_regression_fix1.json")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(ask, base_url, case.question, list(case.options), 120.0): case
             for case in cases
@@ -59,7 +62,7 @@ def main() -> int:
     wrong = [r["id"] for r in results if not r["correct"] and not r.get("error")]
     print(f"official 300: {correct}/{total} correct, {errors} errors")
     print("wrong ids:", wrong)
-    with open("data/evaluation/official_300_regression_fix1.json", "w", encoding="utf-8") as handle:
+    with open(out_path, "w", encoding="utf-8") as handle:
         json.dump({"total": total, "correct": correct, "errors": errors, "results": results}, handle, ensure_ascii=False, indent=2)
     return 0 if correct == total and errors == 0 else 1
 

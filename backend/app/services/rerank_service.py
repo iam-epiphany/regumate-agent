@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
+from time import perf_counter, sleep
 from typing import Any
 
 from backend.app.core import config
@@ -10,6 +11,9 @@ from backend.app.services.model_path_resolver import ModelPathResolutionError, r
 from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
 from backend.app.services.performance_metrics import ByteLRUCache, check_request_budget, measure
+
+# Lock-contention retry window for rerank passes (seconds).
+_LOCK_RETRY_BUDGET_SECONDS = 45.0
 from backend.app.services.vector_store_service import VectorSearchResult
 
 
@@ -198,8 +202,10 @@ def _compute_scores(pairs: list[list[str]]) -> list[float]:
 
 def _compute_score_batch(pairs: list[list[str]], profile: Any) -> list[float]:
     try:
+        # Model acquisition stays outside the inference lock (see the
+        # embedding service): a cold load must not block concurrent requests.
+        reranker = _get_reranker()
         with MODEL_INFERENCE_LOCK:
-            reranker = _get_reranker()
             with measure("rerank.inference"):
                 raw_scores = reranker.compute_score(
                     pairs,
@@ -208,14 +214,36 @@ def _compute_score_batch(pairs: list[list[str]], profile: Any) -> list[float]:
                     batch_size=min(profile.rerank_batch_size, RERANK_INFERENCE_BATCH_LIMIT),
                 )
     except TypeError:
+        reranker = _get_reranker()
         with MODEL_INFERENCE_LOCK:
-            reranker = _get_reranker()
             with measure("rerank.inference"):
                 raw_scores = reranker.compute_score(
                     pairs,
                     normalize=True,
                     max_length=profile.rerank_max_length,
                 )
+    except TimeoutError:
+        # Lock contention under concurrent load: retry within the request
+        # budget instead of failing the whole retrieval as a 503.  The lock
+        # holder is a bounded model pass (seconds), so waiting is productive.
+        retry_deadline = perf_counter() + _LOCK_RETRY_BUDGET_SECONDS
+        while True:
+            check_request_budget("rerank.lock_retry")
+            if perf_counter() >= retry_deadline:
+                raise RerankServiceError("BGE reranker 评分失败（推理锁等待超时）") from None
+            try:
+                reranker = _get_reranker()
+                with MODEL_INFERENCE_LOCK:
+                    with measure("rerank.inference"):
+                        raw_scores = reranker.compute_score(
+                            pairs,
+                            normalize=True,
+                            max_length=profile.rerank_max_length,
+                            batch_size=min(profile.rerank_batch_size, RERANK_INFERENCE_BATCH_LIMIT),
+                        )
+                break
+            except TimeoutError:
+                sleep(0.5)
     except Exception as exc:
         if selected_model_device() == "cuda" and is_cuda_failure(exc):
             _fallback_reranker_to_cpu(exc)

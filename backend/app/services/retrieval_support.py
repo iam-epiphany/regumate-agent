@@ -2780,7 +2780,31 @@ def _exact_support_recall(expected: str, actual: str) -> float:
     return sum(bigram in actual_text for bigram in bigrams) / len(bigrams)
 
 
+# When the same chunk carries several evidence roles (a bounded lexical hit
+# plus an MCQ exact-support hit, for example), the highest-value role must
+# survive deduplication: MCQ exact support is what prompt selection keys on.
+_ROLE_PRIORITY = {
+    "mcq_exact_support": 6,
+    "list_completeness_support": 5,
+    "intent_gap_support": 4,
+    "definition_clause": 4,
+    "mcq_rule_preamble": 3,
+    "exact_anchor_support": 2,
+    "bounded_lexical_support": 1,
+    "direct_evidence": 0,
+}
+
+
 def _to_retrieval_results(matches: list[RetrievalMatch]) -> list[RetrievalResult]:
+    best_by_evidence_id: dict[str, tuple[int, RetrievalMatch]] = {}
+    for match in matches:
+        citation = match.citation
+        evidence_id = str(match.metadata.get("evidence_id") or citation.chunk_id)
+        role = str(match.metadata.get("evidence_role") or match.evidence_role or "")
+        priority = _ROLE_PRIORITY.get(role, 0)
+        previous = best_by_evidence_id.get(evidence_id)
+        if previous is None or priority > previous[0]:
+            best_by_evidence_id[evidence_id] = (priority, match)
     results: list[RetrievalResult] = []
     seen_evidence: set[str] = set()
     seen_text: set[str] = set()
@@ -2790,6 +2814,11 @@ def _to_retrieval_results(matches: list[RetrievalMatch]) -> list[RetrievalResult
         normalized_text = _normalize_for_dedupe(text)
         evidence_id = str(match.metadata.get("evidence_id") or citation.chunk_id)
         if evidence_id in seen_evidence or normalized_text in seen_text:
+            continue
+        chosen = best_by_evidence_id.get(evidence_id)
+        if chosen is None or chosen[1] is not match:
+            # A lower-value role of the same chunk appeared first; wait for
+            # the highest-value version instead of emitting the weaker one.
             continue
         seen_evidence.add(evidence_id)
         seen_text.add(normalized_text)
@@ -2899,6 +2928,25 @@ def _expand_neighbor_matches(
 ) -> list[RetrievalMatch]:
     if not matches:
         return []
+
+    # Same chunk can carry several evidence roles; keep the highest-value
+    # role (mcq_exact_support over bounded_lexical_support, etc.) before
+    # expanding neighbours, or the weaker first version would shadow the
+    # stronger one for prompt selection.
+    best_by_chunk_id: dict[str, RetrievalMatch] = {}
+    order: list[str] = []
+    for match in matches:
+        chunk_id = match.citation.chunk_id
+        role = str(match.metadata.get("evidence_role") or match.evidence_role or "")
+        previous = best_by_chunk_id.get(chunk_id)
+        if previous is None:
+            best_by_chunk_id[chunk_id] = match
+            order.append(chunk_id)
+        elif _ROLE_PRIORITY.get(role, 0) > _ROLE_PRIORITY.get(
+            str(previous.metadata.get("evidence_role") or previous.evidence_role or ""), 0
+        ):
+            best_by_chunk_id[chunk_id] = match
+    matches = [best_by_chunk_id[chunk_id] for chunk_id in order]
 
     document_ids = {match.citation.document_id for match in matches}
     chunks_by_document = _chunks_by_document(

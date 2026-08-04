@@ -2281,7 +2281,7 @@ def _format_option_evidence_matrix(
             for index, fact in enumerate(item["facts"])
         )
         lines.append(
-            f"{_format_prompt_option(item['text'], item['label'])}: 最低事实覆盖={item['minimum_fact_coverage']:.2f}；{fact_text}"
+            f"{format_prompt_option(item['text'], item['label'])}: 最低事实覆盖={item['minimum_fact_coverage']:.2f}；{fact_text}"
         )
     return "\n".join(lines)
 

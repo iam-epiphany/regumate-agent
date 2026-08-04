@@ -3876,3 +3876,57 @@ def test_qa_refuses_prediction_request_before_retrieval(monkeypatch) -> None:
     assert body["refusal_reason"] == "explicit_request_boundary"
     assert body["refusal_code"] == "unsupported_prediction"
     assert body["context_package"] is None
+
+
+def test_duplicate_suppression_removes_same_document_template_paragraphs() -> None:
+    """同文档公共前缀高度重叠的模板段落只保留一份，避免挤占答案条款。"""
+    from backend.app.services.rag_service import _is_duplicate_or_redundant
+
+    chunk = RetrievalResult(
+        chunk_id="C2",
+        rank=2,
+        score=0.8,
+        source_doc="417.docx",
+        text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R11的填写说明。",
+        citation_label="[2]",
+        metadata={"document_id": "DOC-417"},
+    )
+    selected = [
+        RetrievalResult(
+            chunk_id="C1",
+            rank=1,
+            score=0.9,
+            source_doc="417.docx",
+            text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R10的填写说明。",
+            citation_label="[1]",
+            metadata={"document_id": "DOC-417"},
+        )
+    ]
+    assert _is_duplicate_or_redundant(chunk, selected) is True
+
+
+def test_duplicate_suppression_keeps_cross_document_similar_clauses() -> None:
+    """不同文档的相似条款不被误判为重复。"""
+    from backend.app.services.rag_service import _is_duplicate_or_redundant
+
+    chunk = RetrievalResult(
+        chunk_id="C2",
+        rank=2,
+        score=0.8,
+        source_doc="402.docx",
+        text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R11的填写说明。",
+        citation_label="[2]",
+        metadata={"document_id": "DOC-402"},
+    )
+    selected = [
+        RetrievalResult(
+            chunk_id="C1",
+            rank=1,
+            score=0.9,
+            source_doc="417.docx",
+            text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R10的填写说明。",
+            citation_label="[1]",
+            metadata={"document_id": "DOC-417"},
+        )
+    ]
+    assert _is_duplicate_or_redundant(chunk, selected) is False

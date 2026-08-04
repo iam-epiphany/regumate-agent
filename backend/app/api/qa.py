@@ -6,6 +6,7 @@ from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import SessionLocal, get_db
@@ -53,8 +54,42 @@ def ask_question(payload: QARequest, response: Response, db: Session = Depends(g
             )
             record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
             return result
+    except OperationalError as exc:
+        # The SQLite database on a Docker volume mount can transiently fail to
+        # open under concurrent load ("unable to open database file").  One
+        # bounded retry with a fresh session absorbs the glitch; a second
+        # failure is a real storage problem and surfaces as 500.
+        record_trace_event("request_retry", "db_transient", {"error": str(exc)[:120]})
+        sleep(1.0)
+        try:
+            with SessionLocal() as retry_db:
+                return answer_question(
+                    retry_db, payload.question, options=payload.options,
+                    include_debug=payload.include_debug, progress_reporter=progress,
+                )
+        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
+            if isinstance(retry_exc, OperationalError):
+                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
+            if isinstance(retry_exc, RetrievalServiceUnavailable):
+                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
+            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
     except RetrievalServiceUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Model-inference lock contention or a transient Qdrant hiccup under
+        # concurrent load; one bounded retry with a fresh session absorbs it.
+        record_trace_event("request_retry", "retrieval_transient", {"error": str(exc)[:120]})
+        sleep(1.0)
+        try:
+            with SessionLocal() as retry_db:
+                return answer_question(
+                    retry_db, payload.question, options=payload.options,
+                    include_debug=payload.include_debug, progress_reporter=progress,
+                )
+        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
+            if isinstance(retry_exc, OperationalError):
+                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
+            if isinstance(retry_exc, RetrievalServiceUnavailable):
+                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
+            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
     except RequestBudgetExceeded as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
 

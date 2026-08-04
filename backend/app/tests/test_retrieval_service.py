@@ -654,3 +654,76 @@ def test_intent_gap_fallback_requires_treatment_verb() -> None:
     )
     terms = [s.metadata.get("intent_gap_term") for s in supplements]
     assert "不符合" not in terms
+
+
+def test_to_retrieval_results_keeps_highest_role_version() -> None:
+    """同一 chunk 的多个 role 版本去重时保留高价值 role（mcq_exact_support）。"""
+    from backend.app.schemas.qa import Citation
+    from backend.app.services.retrieval_support import _to_retrieval_results
+    from backend.app.services.retrieval_service import RetrievalMatch
+
+    text = "商业银行应按给定格式或自定义格式填写可变表格。如使用自定义格式披露信息，应提供与给定格式等效可比的信息内容。"
+    base = dict(
+        document_id="DOC-1", chunk_id="DOC-1-CHUNK-0006", filename="417.docx",
+        section_title="二、披露内容", page_number=None, excerpt=text,
+        score=0.92, rerank_score=0.92, chunk_type="paragraph",
+    )
+    weak = RetrievalMatch(
+        citation=Citation(**base, evidence_role="bounded_lexical_support"),
+        score=0.92, rerank_score=0.92, coverage_score=0.0,
+        evidence_role="bounded_lexical_support", evidence_text=text,
+        metadata={"evidence_role": "bounded_lexical_support", "fusion_method": "bounded_document_lexical_support"},
+    )
+    strong = RetrievalMatch(
+        citation=Citation(**base, evidence_role="mcq_exact_support"),
+        score=0.90, rerank_score=0.90, coverage_score=0.0,
+        evidence_role="mcq_exact_support", evidence_text=text,
+        metadata={"evidence_role": "mcq_exact_support", "fusion_method": "mcq_exact_support"},
+    )
+    results = _to_retrieval_results([weak, strong])
+    assert len(results) == 1
+    assert results[0].metadata["evidence_role"] == "mcq_exact_support"
+
+
+def test_expand_neighbor_matches_keeps_highest_role_version() -> None:
+    """邻居扩展前按 chunk 去重时保留高价值 role 版本。"""
+    from backend.app.schemas.qa import Citation
+    from backend.app.services.retrieval_support import _expand_neighbor_matches
+    from backend.app.services.retrieval_service import RetrievalMatch
+
+    text = "商业银行应按给定格式或自定义格式填写可变表格。如使用自定义格式披露信息，应提供与给定格式等效可比的信息内容。"
+    base = dict(
+        document_id="DOC-1", chunk_id="DOC-1-CHUNK-0006", filename="417.docx",
+        section_title="二、披露内容", page_number=None, excerpt=text,
+        score=0.92, rerank_score=0.92, chunk_type="paragraph",
+    )
+    weak = RetrievalMatch(
+        citation=Citation(**base, evidence_role="bounded_lexical_support"),
+        score=0.92, rerank_score=0.92, coverage_score=0.0,
+        evidence_role="bounded_lexical_support", evidence_text=text,
+        metadata={"evidence_role": "bounded_lexical_support"},
+    )
+    strong = RetrievalMatch(
+        citation=Citation(**base, evidence_role="mcq_exact_support"),
+        score=0.90, rerank_score=0.90, coverage_score=0.0,
+        evidence_role="mcq_exact_support", evidence_text=text,
+        metadata={"evidence_role": "mcq_exact_support"},
+    )
+    # Fake db: cache must cover DOC-1 so no DB hit happens.
+    class _FakeDb:
+        def scalars(self, *args, **kwargs):
+            raise AssertionError("no db expected")
+    from backend.app.services.retrieval_support import _DocumentChunkSnapshot
+
+    snapshot = _DocumentChunkSnapshot(
+        id=1, chunk_id="DOC-1-CHUNK-0006", document_id="DOC-1", text=text,
+        embedding_text=text, chunk_metadata=None, index_status="indexed",
+        source_file="417.docx", page_number=None, section_title="二、披露内容",
+    )
+    expanded = _expand_neighbor_matches(
+        _FakeDb(), "测试问题", [weak, strong],
+        document_chunk_cache={"DOC-1": [snapshot]},
+    )
+    roles = {m.metadata.get("evidence_role") for m in expanded if m.citation.chunk_id == "DOC-1-CHUNK-0006"}
+    assert "mcq_exact_support" in roles
+    assert "bounded_lexical_support" not in roles

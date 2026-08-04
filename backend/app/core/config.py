@@ -55,7 +55,11 @@ FRONTEND_DEV_SERVER = os.getenv("REGUMATE_FRONTEND_DEV_SERVER", "").strip().rstr
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(os.getenv("REGUMATE_DATA_DIR", PROJECT_ROOT / "data"))
-DATABASE_PATH = DATA_DIR / "app.db"
+# The SQLite database may live on a separate Docker named volume: bind mounts
+# on Docker Desktop cannot reliably serve SQLite's multi-connection locking
+# (uvicorn's worker threads open one connection per thread).
+DATABASE_DIR = Path(os.getenv("REGUMATE_DB_DIR") or DATA_DIR)
+DATABASE_PATH = DATABASE_DIR / "app.db"
 DOCUMENT_DIR = DATA_DIR / "documents" / "originals"
 QDRANT_STORAGE_DIR = DATA_DIR / "qdrant"
 AUDIT_ARCHIVE_DIR = DATA_DIR / "audit_archives"
@@ -216,7 +220,9 @@ ANSWER_GENERATION_TOTAL_BUDGET_SECONDS = _env_float(
 # exceeding the generation total budget.
 ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 4, minimum=1)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
-MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 30.0, minimum=0.1)
+# Model passes hold the lock for seconds; 90s of waiting absorbs a cold-load
+# neighbour plus concurrent inference without failing the request.
+MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 90.0, minimum=0.1)
 # deepseek-v4-flash emits reasoning_content for long prompts and consumes the
 # token budget before any answer content; 3000 leaves room for both the
 # reasoning tail and the structured JSON answer.
@@ -292,6 +298,7 @@ def ensure_runtime_dirs() -> None:
 
     for path in [
         DATA_DIR,
+        DATABASE_DIR,
         DOCUMENT_DIR,
         QDRANT_STORAGE_DIR,
         AUDIT_ARCHIVE_DIR,

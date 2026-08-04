@@ -15,11 +15,15 @@ class InstrumentedRLock:
 
     def __enter__(self) -> "InstrumentedRLock":
         started = perf_counter_ns()
-        check_request_budget("model_lock.wait")
+        # Waiting for the lock is queueing, not inference: it must not consume
+        # the request budget, or a slow concurrent neighbour would fail this
+        # request while it is merely waiting its turn.  The budget is checked
+        # after the lock is acquired, immediately before the model pass.
         remaining = remaining_request_budget_seconds()
         timeout = MODEL_INFERENCE_LOCK_WAIT_SECONDS if remaining is None else min(MODEL_INFERENCE_LOCK_WAIT_SECONDS, remaining)
         if not self._lock.acquire(timeout=max(0.001, timeout)):
             raise TimeoutError("Timed out waiting for the shared model inference lock")
+        check_request_budget("model_lock.wait")
         observe_timing("model_lock.wait", (perf_counter_ns() - started) / 1_000_000)
         self._acquired_at = perf_counter_ns()
         return self

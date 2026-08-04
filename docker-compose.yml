@@ -13,8 +13,10 @@ services:
         condition: service_healthy
     environment:
       REGUMATE_DATA_DIR: /app/data/evaluation/final_runtime
+      REGUMATE_DB_DIR: /app/db_runtime
       REGUMATE_MODEL_CACHE_DIR: /app/data/model_cache
       REGUMATE_OFFLINE_MODE: ${REGUMATE_OFFLINE_MODE:-false}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
       REGUMATE_BUILD_ID: ${REGUMATE_BUILD_ID:-dev}
       SEMANTIC_GROUNDING_MODE: ${SEMANTIC_GROUNDING_MODE:-risk_based}
       SEMANTIC_GROUNDING_MODEL: ${SEMANTIC_GROUNDING_MODEL:-deepseek-v4-flash}
@@ -67,6 +69,7 @@ services:
       - "127.0.0.1:${REGUMATE_APP_PORT:-8000}:8000"
     volumes:
       - ./data:/app/data
+      - regumate_db:/app/db_runtime
       - ./data/models:/app/data/models:ro
     restart: unless-stopped
     healthcheck:
@@ -90,3 +93,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+volumes:
+  regumate_db:
