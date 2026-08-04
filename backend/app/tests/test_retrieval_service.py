@@ -320,3 +320,73 @@ def test_retrieve_citations_limits_candidates_before_rerank(monkeypatch) -> None
     assert diagnostics.candidate_count == 40
     assert diagnostics.rerank_input_count == 24
     assert diagnostics.reranked_count == 20
+
+
+def _coverage_candidate(chunk_id: str, document_id: str) -> "object":
+    from backend.app.services.vector_store_service import VectorSearchResult
+
+    return VectorSearchResult(
+        chunk_id=chunk_id,
+        document_id=document_id,
+        filename=f"{document_id}.doc",
+        section_title=None,
+        page_number=None,
+        text="证据文本",
+        embedding_text="证据文本",
+        token_count=5,
+        score=1.0,
+    )
+
+
+def test_select_with_document_coverage_keeps_secondary_source() -> None:
+    """多文件相关时，次要文件至少 1 个进入最终证据（不被高分文件挤掉）。"""
+    from backend.app.services.retrieval_service import (
+        _AnnotatedChunk,
+        _select_with_document_coverage,
+    )
+
+    items = [
+        _AnnotatedChunk(candidate=_coverage_candidate(f"A{i}", "DOC-A"), rerank_score=0.9, coverage_score=0.5, evidence_role="direct_evidence")
+        for i in range(8)
+    ] + [
+        _AnnotatedChunk(candidate=_coverage_candidate(f"B{i}", "DOC-B"), rerank_score=0.8, coverage_score=0.5, evidence_role="direct_evidence")
+        for i in range(4)
+    ]
+    selected = _select_with_document_coverage(items, limit=6)
+    assert len(selected) == 6
+    docs = {item.candidate.document_id for item in selected}
+    assert "DOC-A" in docs and "DOC-B" in docs
+    # 第一轮每文件最高分 1 个（A0/B0），随后按序回填至 limit。
+    assert [item.candidate.chunk_id for item in selected] == ["A0", "B0", "A1", "A2", "A3", "A4"]
+
+
+def test_select_with_document_coverage_does_not_trim_single_file() -> None:
+    """单文件问题不受影响：回填后仍满额且顺序不变。"""
+    from backend.app.services.retrieval_service import (
+        _AnnotatedChunk,
+        _select_with_document_coverage,
+    )
+
+    items = [
+        _AnnotatedChunk(candidate=_coverage_candidate(f"A{i}", "DOC-A"), rerank_score=0.9, coverage_score=0.5, evidence_role="direct_evidence")
+        for i in range(12)
+    ]
+    selected = _select_with_document_coverage(items, limit=6)
+    assert [item.candidate.chunk_id for item in selected] == [f"A{i}" for i in range(6)]
+
+
+def test_rerank_input_with_document_coverage_keeps_secondary_source() -> None:
+    """rerank 输入阶段文件覆盖：次要文件的最高分候选进入重排。"""
+    from backend.app.services.retrieval_service import rerank_input_with_document_coverage
+
+    candidates = [
+        _coverage_candidate(f"A{i}", "DOC-A")
+        for i in range(10)
+    ] + [
+        _coverage_candidate(f"B{i}", "DOC-B")
+        for i in range(3)
+    ]
+    bounded = rerank_input_with_document_coverage(candidates, limit=8)
+    assert len(bounded) == 8
+    docs = {candidate.document_id for candidate in bounded}
+    assert "DOC-A" in docs and "DOC-B" in docs

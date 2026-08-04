@@ -70,6 +70,7 @@ from backend.app.services.retrieval_service import (
     filter_candidates_by_metadata,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
+    rerank_input_with_document_coverage,
     matches_from_reranked,
     question_terms,
     reset_retrieval_diagnostics,
@@ -699,7 +700,7 @@ def _retrieve_aspects(
                 mcq_material_document_ids=prepared.mcq_material_document_ids,
             )
             rerank_inputs.append(
-                limit_rerank_candidates(candidates, preserve_order=True, limit=effective)
+                rerank_input_with_document_coverage(candidates, limit=effective)
             )
             rerank_questions.append(_rerank_query_for_aspect(aspect))
         rerank_limits = [

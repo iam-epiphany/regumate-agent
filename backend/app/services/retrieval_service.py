@@ -619,28 +619,71 @@ def _rank_key(item: _AnnotatedChunk) -> tuple[float, float, float]:
 
 
 def _select_final_chunks(items: list[_AnnotatedChunk], question: str, limit: int) -> list[_AnnotatedChunk]:
-    if _should_enforce_diversity(question):
-        return _limit_document_repetition(items, limit=limit)
-    return items[:limit]
+    # Document coverage is always on: a multi-file question must not lose
+    # every chunk of a secondary source to one high-scoring file, while a
+    # single-file question is unchanged (round 2 refills the quota).
+    return _select_with_document_coverage(items, limit=limit)
 
 
-def _limit_document_repetition(items: list[_AnnotatedChunk], limit: int) -> list[_AnnotatedChunk]:
+def _select_with_document_coverage(items: list[_AnnotatedChunk], limit: int) -> list[_AnnotatedChunk]:
+    """Select final chunks with document coverage first.
+
+    Round 1 keeps the highest-ranked chunk of every document so an involved
+    source is never crowded out entirely; round 2 refills the remaining quota
+    in rank order, so single-file questions keep the same context.
+    """
+    if len(items) <= limit:
+        return items
     selected: list[_AnnotatedChunk] = []
-    per_document: dict[str, int] = {}
+    covered_documents: set[str] = set()
     for item in items:
-        document_id = item.candidate.document_id
-        if per_document.get(document_id, 0) >= 2 and len(items) > limit:
+        document_id = str(item.candidate.document_id or "")
+        if not document_id or document_id in covered_documents:
             continue
         selected.append(item)
-        per_document[document_id] = per_document.get(document_id, 0) + 1
+        covered_documents.add(document_id)
+        if len(selected) >= limit:
+            return selected
+    for item in items:
+        if item in selected:
+            continue
+        selected.append(item)
         if len(selected) >= limit:
             break
     return selected
 
 
-def _should_enforce_diversity(question: str) -> bool:
-    normalized = _normalize_for_match(question)
-    return any(term in normalized for term in ["综合", "总结", "对比", "比较", "区别", "关系", "不同"])
+def rerank_input_with_document_coverage(
+    candidates: list[VectorSearchResult],
+    *,
+    limit: int,
+) -> list[VectorSearchResult]:
+    """Bound the rerank input while keeping document coverage.
+
+    RRF fusion can rank one file's chunks above every chunk of a secondary
+    source, so the cross-encoder never sees the other file.  Round 1 keeps
+    the top chunk of each document, round 2 refills by rank — single-file
+    questions are unchanged.
+    """
+    if len(candidates) <= limit:
+        return candidates
+    selected: list[VectorSearchResult] = []
+    covered_documents: set[str] = set()
+    for candidate in candidates:
+        document_id = str(candidate.document_id or "")
+        if not document_id or document_id in covered_documents:
+            continue
+        selected.append(candidate)
+        covered_documents.add(document_id)
+        if len(selected) >= limit:
+            return selected
+    for candidate in candidates:
+        if candidate in selected:
+            continue
+        selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _to_citation(item: _AnnotatedChunk) -> Citation:

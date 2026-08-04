@@ -48,6 +48,7 @@ from backend.app.services.retrieval_service import (
     filter_candidates_by_metadata,
     get_last_retrieval_diagnostics,
     limit_rerank_candidates,
+    rerank_input_with_document_coverage,
     matches_from_reranked,
     question_terms,
     reset_retrieval_diagnostics,
@@ -459,9 +460,8 @@ def _finish_aspect_matches(
             retrieval_filter_document_ids=set(retrieval_filter.document_ids or ()),
             mcq_material_document_ids=mcq_material_document_ids,
         )
-        rerank_input = limit_rerank_candidates(
+        rerank_input = rerank_input_with_document_coverage(
             candidates,
-            preserve_order=True,
             limit=effective_rerank_limit,
         )
     else:
