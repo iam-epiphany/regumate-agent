@@ -1,0 +1,2107 @@
+{
+  "total": 300,
+  "correct": 300,
+  "errors": 0,
+  "results": [
+    {
+      "id": "Q001",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q002",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q003",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q004",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q005",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q006",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q007",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q008",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q009",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q010",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q011",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q013",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q012",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q014",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q015",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q017",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q016",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q018",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q019",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q021",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q020",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q023",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q022",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q024",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q025",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q026",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q027",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q028",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q029",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q030",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q032",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q031",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q034",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q033",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q035",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q037",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q036",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q038",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q039",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q040",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q041",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q043",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q042",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q044",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q045",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q046",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q047",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q048",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q049",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q050",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q051",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q052",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q053",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q055",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q054",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q056",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q057",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q059",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q058",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q060",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q061",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q062",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q063",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q064",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q065",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q066",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q067",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q068",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q069",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q070",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q071",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q072",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q073",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q074",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q075",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q076",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q077",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q078",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q079",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q080",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q081",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q083",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q082",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q084",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q085",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q086",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q087",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q089",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q088",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q091",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q090",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q092",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q093",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q094",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q095",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q096",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q097",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q099",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q098",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q100",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q102",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q103",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q101",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q104",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q106",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q105",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q107",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q108",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q109",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q111",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q112",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q110",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q113",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q115",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q114",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q116",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q118",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q119",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q120",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q117",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q121",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q122",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q124",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q125",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q126",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q127",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q123",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q128",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q129",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q131",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q130",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q133",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q134",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q135",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q136",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q132",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q137",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q139",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q138",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q140",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q142",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q143",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q141",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q144",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q145",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q146",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q148",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q147",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q150",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q151",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q149",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q153",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q152",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q155",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q154",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q157",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q158",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q159",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q156",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q161",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q160",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q163",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q162",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q164",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q166",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q167",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q165",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q169",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q168",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q170",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q172",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q171",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q174",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q175",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q173",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q176",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q177",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q178",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q179",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q181",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q182",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q183",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q184",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q185",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q180",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q187",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q186",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q188",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q190",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q191",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q189",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q193",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q194",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q195",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q196",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q192",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q198",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q199",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q200",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q201",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q202",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q203",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q197",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q205",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q204",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q207",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q206",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q209",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q208",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q211",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q210",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q213",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q212",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q215",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q214",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q217",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q216",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q219",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q218",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q221",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q220",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q223",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q222",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q225",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q224",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q227",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q226",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q229",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q228",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q231",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q230",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q233",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q232",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q235",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q234",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q237",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q236",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q239",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q238",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q241",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q242",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q243",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q240",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q245",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q244",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q247",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q248",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q249",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q246",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q251",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q250",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q253",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q254",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q255",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q252",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q256",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q258",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q259",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q260",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q261",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q257",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q263",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q262",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q265",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q266",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q267",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q264",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q269",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q268",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q271",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q272",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q273",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q274",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q275",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q270",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q277",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q278",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q279",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q280",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q281",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q276",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q283",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q284",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q285",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q286",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q287",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q282",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q289",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q290",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q291",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q292",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q293",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q288",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q295",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q296",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q297",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q298",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q299",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q294",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    },
+    {
+      "id": "Q300",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null
+    }
+  ]
+}

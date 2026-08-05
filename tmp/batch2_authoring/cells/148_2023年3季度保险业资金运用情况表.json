@@ -1,0 +1,1046 @@
+{
+"filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+"title": "2023年3季度保险业资金运用情况表2023年3季度保险业资金运用情况表",
+"cells": [
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 6,
+"column": 1,
+"coord": "A6",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "275230.6254",
+"numeric": 275230.625444969
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 6,
+"column": 4,
+"coord": "D6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1091",
+"numeric": 0.1091
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 7,
+"column": 1,
+"coord": "A7",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0292",
+"numeric": 0.0292
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0292",
+"numeric": 0.0292
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 7,
+"column": 4,
+"coord": "D7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0292",
+"numeric": 0.0292
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 8,
+"column": 1,
+"coord": "A8",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0328",
+"numeric": 0.0328
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0328",
+"numeric": 0.0328
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 8,
+"column": 4,
+"coord": "D8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0328",
+"numeric": 0.0328
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 9,
+"column": 1,
+"coord": "A9",
+"row_label": "其中：人身险公司",
+"column_label": "项目",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 账面余额",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 规模占比",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 9,
+"column": 4,
+"coord": "D9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 同比增长",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 10,
+"column": 1,
+"coord": "A10",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 10,
+"column": 4,
+"coord": "D10",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 11,
+"column": 1,
+"coord": "A11",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "账面余额",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "规模占比",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 11,
+"column": 4,
+"coord": "D11",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "同比增长",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 12,
+"column": 1,
+"coord": "A12",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "245787.3897",
+"numeric": 245787.389679703
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 12,
+"column": 4,
+"coord": "D12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1124",
+"numeric": 0.1124
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 13,
+"column": 1,
+"coord": "A13",
+"row_label": "其中：银行存款",
+"column_label": "项目",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "21833.23",
+"numeric": 21833.2299977221
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 规模占比",
+"value": "0.08882974031",
+"numeric": 0.0888297403140739
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 13,
+"column": 4,
+"coord": "D13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.02878605453",
+"numeric": -0.0287860545324065
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 14,
+"column": 1,
+"coord": "A14",
+"row_label": "债券",
+"column_label": "项目",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "债券",
+"column_label": "截至当期 / 账面余额",
+"value": "110034.323",
+"numeric": 110034.323043921
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "债券",
+"column_label": "截至当期 / 规模占比",
+"value": "0.4476809131",
+"numeric": 0.447680913114834
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 14,
+"column": 4,
+"coord": "D14",
+"row_label": "债券",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1913724605",
+"numeric": 0.191372460517602
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 15,
+"column": 1,
+"coord": "A15",
+"row_label": "股票",
+"column_label": "项目",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "股票",
+"column_label": "截至当期 / 账面余额",
+"value": "18794.05507",
+"numeric": 18794.0550669005
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "股票",
+"column_label": "截至当期 / 规模占比",
+"value": "0.07646468393",
+"numeric": 0.0764646839343219
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 15,
+"column": 4,
+"coord": "D15",
+"row_label": "股票",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1660341784",
+"numeric": 0.166034178436388
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 16,
+"column": 1,
+"coord": "A16",
+"row_label": "证券投资基金",
+"column_label": "项目",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "13779.17087",
+"numeric": 13779.1708693048
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 规模占比",
+"value": "0.05606134183",
+"numeric": 0.0560613418257994
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 16,
+"column": 4,
+"coord": "D16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1984546525",
+"numeric": 0.198454652499253
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 17,
+"column": 1,
+"coord": "A17",
+"row_label": "长期股权投资",
+"column_label": "项目",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "23093.2924",
+"numeric": 23093.2924001506
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 规模占比",
+"value": "0.093956376",
+"numeric": 0.0939563759973388
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 17,
+"column": 4,
+"coord": "D17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0896650786",
+"numeric": 0.0896650786043246
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 18,
+"column": 1,
+"coord": "A18",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0293",
+"numeric": 0.0293
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0293",
+"numeric": 0.0293
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 18,
+"column": 4,
+"coord": "D18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0293",
+"numeric": 0.0293
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 19,
+"column": 1,
+"coord": "A19",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0332",
+"numeric": 0.0332
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0332",
+"numeric": 0.0332
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 19,
+"column": 4,
+"coord": "D19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0332",
+"numeric": 0.0332
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 20,
+"column": 1,
+"coord": "A20",
+"row_label": "其中：财产保险公司",
+"column_label": "项目",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 账面余额",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 规模占比",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 20,
+"column": 4,
+"coord": "D20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 同比增长",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 21,
+"column": 1,
+"coord": "A21",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 21,
+"column": 4,
+"coord": "D21",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 22,
+"column": 1,
+"coord": "A22",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "账面余额",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "规模占比",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 22,
+"column": 4,
+"coord": "D22",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "同比增长",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 23,
+"column": 1,
+"coord": "A23",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "20097.72807",
+"numeric": 20097.728067272
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 23,
+"column": 4,
+"coord": "D23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.06177708576",
+"numeric": 0.0617770857635481
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 24,
+"column": 1,
+"coord": "A24",
+"row_label": "其中：银行存款",
+"column_label": "项目",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "3694.053944",
+"numeric": 3694.0539437491
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 规模占比",
+"value": "0.183804554",
+"numeric": 0.183804553996561
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 24,
+"column": 4,
+"coord": "D24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.1207956074",
+"numeric": -0.120795607434132
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 25,
+"column": 1,
+"coord": "A25",
+"row_label": "债券",
+"column_label": "项目",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "债券",
+"column_label": "截至当期 / 账面余额",
+"value": "7289.983609",
+"numeric": 7289.983609038
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 25,
+"column": 3,
+"coord": "C25",
+"row_label": "债券",
+"column_label": "截至当期 / 规模占比",
+"value": "0.3627267512",
+"numeric": 0.3627267512346
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 25,
+"column": 4,
+"coord": "D25",
+"row_label": "债券",
+"column_label": "截至当期 / 同比增长",
+"value": "0.193053627",
+"numeric": 0.19305362702741
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 26,
+"column": 1,
+"coord": "A26",
+"row_label": "股票",
+"column_label": "项目",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "股票",
+"column_label": "截至当期 / 账面余额",
+"value": "1329.503917",
+"numeric": 1329.5039174488
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "股票",
+"column_label": "截至当期 / 规模占比",
+"value": "0.06615195076",
+"numeric": 0.0661519507577487
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 26,
+"column": 4,
+"coord": "D26",
+"row_label": "股票",
+"column_label": "截至当期 / 同比增长",
+"value": "0.06847811837",
+"numeric": 0.0684781183665849
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 27,
+"column": 1,
+"coord": "A27",
+"row_label": "证券投资基金",
+"column_label": "项目",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 27,
+"column": 2,
+"coord": "B27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "1812.195312",
+"numeric": 1812.1953122331
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 27,
+"column": 3,
+"coord": "C27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 规模占比",
+"value": "0.09016916271",
+"numeric": 0.0901691627116876
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 27,
+"column": 4,
+"coord": "D27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1184050502",
+"numeric": 0.118405050177012
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 28,
+"column": 1,
+"coord": "A28",
+"row_label": "长期股权投资",
+"column_label": "项目",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 28,
+"column": 2,
+"coord": "B28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "1273.579598",
+"numeric": 1273.5795983879
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 28,
+"column": 3,
+"coord": "C28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0633693318",
+"numeric": 0.0633693318033222
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 28,
+"column": 4,
+"coord": "D28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 同比增长",
+"value": "0.01306284602",
+"numeric": 0.0130628460198848
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 29,
+"column": 1,
+"coord": "A29",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 29,
+"column": 2,
+"coord": "B29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0331",
+"numeric": 0.0331
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 29,
+"column": 3,
+"coord": "C29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0331",
+"numeric": 0.0331
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 29,
+"column": 4,
+"coord": "D29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0331",
+"numeric": 0.0331
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 30,
+"column": 1,
+"coord": "A30",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 30,
+"column": 2,
+"coord": "B30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0321",
+"numeric": 0.0321
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 30,
+"column": 3,
+"coord": "C30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0321",
+"numeric": 0.0321
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 30,
+"column": 4,
+"coord": "D30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0321",
+"numeric": 0.0321
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 31,
+"column": 1,
+"coord": "A31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "项目",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 31,
+"column": 2,
+"coord": "B31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 账面余额",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 31,
+"column": 3,
+"coord": "C31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 规模占比",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年3季度保险资金运用情况表",
+"row": 31,
+"column": 4,
+"coord": "D31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 同比增长",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含明天系四家公司。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+}
+]
+}

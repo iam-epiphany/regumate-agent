@@ -29,7 +29,7 @@ def main() -> int:
     parser.add_argument("--questions", type=Path, required=True)
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
-    parser.add_argument("--db", type=Path, default=PROJECT_ROOT / "data/evaluation/final_runtime/app.db")
+    parser.add_argument("--db", type=Path, default=PROJECT_ROOT / "evaluation/final_runtime/app.db")
     parser.add_argument("--lock", type=Path)
     parser.add_argument("--split", choices=["dev", "holdout", "all"], default="all")
     parser.add_argument("--profile", choices=["trust100", "hard50", "hard70", "iterative100"], default="trust100")

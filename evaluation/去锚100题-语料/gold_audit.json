@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-02T00:59:29.434805+00:00",
+  "case_count": 100,
+  "passed_count": 100,
+  "duplicate_pairs": [],
+  "cases": [
+    {
+      "id": "BW-D01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-D15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F16",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F17",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F18",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F19",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-F20",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-L09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R16",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R17",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R18",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-R19",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-T13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL2",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL3",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL4",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL5",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL6",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL7",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL8",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TBL9",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC2",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC3",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC4",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC5",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC6",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC7",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC8",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-TC9",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-X01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-X02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-X03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "BW-X04",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-02T01:11:29Z",
+  "review_model": "deepseek-v4-flash",
+  "selected_count": 15,
+  "results": [
+    {
+      "id": "BW-D06",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.95,
+        "reason": "候选答案未直接给出无法生存触发事件的两个具体情形，仅提供相关条款摘录，未回答问题核心，与参考答案事实语义不一致。"
+      }
+    },
+    {
+      "id": "BW-D15",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.95,
+        "reason": "候选答案针对银行业金融机构的集中办理要求，而参考答案要求会计师事务所安排专门部门或岗位集中发送、收回询证函，二者主体和内容不一致。"
+      }
+    },
+    {
+      "id": "BW-F07",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.95,
+        "reason": "候选答案提供的是商业银行整体累计净利润数据，并非中国工商银行2025年年度报告中的净利润数据，事实主体不一致。"
+      }
+    },
+    {
+      "id": "BW-F08",
+      "verdict": {
+        "correct": true,
+        "confidence": 1.0,
+        "reason": "候选答案与参考答案在事实语义上完全一致，未发现实质性差异或额外事实。"
+      }
+    },
+    {
+      "id": "BW-F09",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.7,
+        "reason": "候选答案未提供招商银行与建设银行2025年不良贷款率的对比数据，而是涉及拨备覆盖率和其他银行，与问题要求的事实不一致。"
+      }
+    },
+    {
+      "id": "BW-F17",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.7,
+        "reason": "候选答案未直接回答是否应上调消费贷款产品定价，而是提供法规摘录，未给出明确建议，与参考答案不一致。"
+      }
+    },
+    {
+      "id": "BW-F18",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.6,
+        "reason": "候选答案仅提供监管条款摘录，未直接回答是否增加发行规模，与参考答案的事实语义不一致。"
+      }
+    },
+    {
+      "id": "BW-L07",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.95,
+        "reason": "候选答案未提及每日公允价值计量及变动计入损益的核心原则，与参考答案内容不一致。"
+      }
+    },
+    {
+      "id": "BW-L08",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.95,
+        "reason": "候选答案遗漏了参考答案中的“鼓励保险机构为知识产权创新企业提供综合保险方案”，且补充了参考答案未提及的其他任务，事实语义不一致。"
+      }
+    },
+    {
+      "id": "BW-R16",
+      "verdict": {
+        "correct": true,
+        "confidence": 0.9,
+        "reason": "候选答案具体描述了按监管并表口径披露的要求，与参考答案的核心语义一致，未与参考答案冲突。"
+      }
+    },
+    {
+      "id": "BW-TBL10",
+      "verdict": {
+        "correct": false,
+        "confidence": 1,
+        "reason": "候选答案称无法确定，与参考答案给出的具体数值不一致。"
+      }
+    },
+    {
+      "id": "BW-TBL6",
+      "verdict": {
+        "correct": false,
+        "confidence": 0.99,
+        "reason": "候选答案数值384799.2195亿元与参考答案24155.58512亿元不一致，事实错误。"
+      }
+    },
+    {
+      "id": "BW-TBL7",
+      "verdict": {
+        "correct": false,
+        "confidence": 1.0,
+        "reason": "候选答案数值384799.2195亿元与参考答案3887.79602亿元明显不符。"
+      }
+    },
+    {
+      "id": "BW-TBL8",
+      "verdict": {
+        "correct": false,
+        "confidence": 1,
+        "reason": "候选答案数值与参考答案9813.496504亿元不符。"
+      }
+    },
+    {
+      "id": "BW-TBL9",
+      "verdict": {
+        "correct": false,
+        "confidence": 1.0,
+        "reason": "候选答案声称无法确定，与参考答案给出的具体数值不一致。"
+      }
+    }
+  ]
+}

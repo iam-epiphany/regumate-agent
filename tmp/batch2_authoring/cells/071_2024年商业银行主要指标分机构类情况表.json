@@ -1,0 +1,3765 @@
+{
+"filename": "071_2024年商业银行主要指标分机构类情况表（季度）_2024年商业银行主要指标分机构类情况表.xls",
+"cells": [
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 1,
+"coord": "A5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 2,
+"coord": "B5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 3,
+"coord": "C5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "大型商业银行",
+"value": "13661.74447",
+"numeric": 13661.744469117
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 4,
+"coord": "D5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "5264.348873",
+"numeric": 5264.348873416
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 5,
+"coord": "E5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "城市商业银行",
+"value": "5331.665603",
+"numeric": 5331.665602827
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 6,
+"coord": "F5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "民营银行",
+"value": "224.9283869",
+"numeric": 224.928386921
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 7,
+"coord": "G5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "农村商业银行",
+"value": "9052.604281",
+"numeric": 9052.604281148
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 5,
+"column": 8,
+"coord": "H5",
+"row_label": "一季度 / 不良贷款余额",
+"column_label": "外资银行",
+"value": "134.3102342",
+"numeric": 134.310234163
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 1,
+"coord": "A6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "次级类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "大型商业银行",
+"value": "4803.813953",
+"numeric": 4803.813953148
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 4,
+"coord": "D6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "2038.535178",
+"numeric": 2038.535178078
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 5,
+"coord": "E6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "城市商业银行",
+"value": "2932.051968",
+"numeric": 2932.051967902
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 6,
+"coord": "F6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "民营银行",
+"value": "63.11757661",
+"numeric": 63.117576613
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 7,
+"coord": "G6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "农村商业银行",
+"value": "3948.256455",
+"numeric": 3948.256454507
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 6,
+"column": 8,
+"coord": "H6",
+"row_label": "一季度 / 次级类贷款余额",
+"column_label": "外资银行",
+"value": "32.81354017",
+"numeric": 32.813540169
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 1,
+"coord": "A7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "可疑类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "大型商业银行",
+"value": "4828.89721",
+"numeric": 4828.897209749
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 4,
+"coord": "D7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1575.376809",
+"numeric": 1575.376808573
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 5,
+"coord": "E7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "城市商业银行",
+"value": "960.5614427",
+"numeric": 960.561442724
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 6,
+"coord": "F7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "民营银行",
+"value": "95.67193421",
+"numeric": 95.671934212
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 7,
+"coord": "G7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "农村商业银行",
+"value": "4327.069026",
+"numeric": 4327.06902637
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 7,
+"column": 8,
+"coord": "H7",
+"row_label": "一季度 / 可疑类贷款余额",
+"column_label": "外资银行",
+"value": "54.3127602",
+"numeric": 54.312760197
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 1,
+"coord": "A8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "损失类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "大型商业银行",
+"value": "4029.033306",
+"numeric": 4029.033306222
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 4,
+"coord": "D8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1650.436887",
+"numeric": 1650.436886766
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 5,
+"coord": "E8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "城市商业银行",
+"value": "1439.052192",
+"numeric": 1439.052192203
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 6,
+"coord": "F8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "民营银行",
+"value": "66.1388761",
+"numeric": 66.138876096
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 7,
+"coord": "G8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "农村商业银行",
+"value": "777.2788003",
+"numeric": 777.278800266
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 8,
+"column": 8,
+"coord": "H8",
+"row_label": "一季度 / 损失类贷款余额",
+"column_label": "外资银行",
+"value": "47.1839338",
+"numeric": 47.183933798
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 1,
+"coord": "A9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "大型商业银行",
+"value": "0.01246",
+"numeric": 0.01246
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 4,
+"coord": "D9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "股份制商业\n银行",
+"value": "0.01249",
+"numeric": 0.01249
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 5,
+"coord": "E9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "城市商业银行",
+"value": "0.01781",
+"numeric": 0.01781
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 6,
+"coord": "F9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "民营银行",
+"value": "0.01715",
+"numeric": 0.01715
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 7,
+"coord": "G9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "农村商业银行",
+"value": "0.03335",
+"numeric": 0.03335
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 9,
+"column": 8,
+"coord": "H9",
+"row_label": "一季度 / 不良贷款率",
+"column_label": "外资银行",
+"value": "0.00922",
+"numeric": 0.00922
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 1,
+"coord": "A10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "资产利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "大型商业银行",
+"value": "0.00716",
+"numeric": 0.00716
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 4,
+"coord": "D10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "股份制商业\n银行",
+"value": "0.00854",
+"numeric": 0.00854
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 5,
+"coord": "E10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "城市商业银行",
+"value": "0.0066",
+"numeric": 0.0066
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 6,
+"coord": "F10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "民营银行",
+"value": "0.01037",
+"numeric": 0.01037
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 7,
+"coord": "G10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "农村商业银行",
+"value": "0.00756",
+"numeric": 0.00756
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 10,
+"column": 8,
+"coord": "H10",
+"row_label": "一季度 / 资产利润率",
+"column_label": "外资银行",
+"value": "0.00923",
+"numeric": 0.00923
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 1,
+"coord": "A11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "拨备覆盖率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "大型商业银行",
+"value": "2.51215",
+"numeric": 2.51215
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 4,
+"coord": "D11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "股份制商业\n银行",
+"value": "2.18028",
+"numeric": 2.18028
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 5,
+"coord": "E11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "城市商业银行",
+"value": "1.91237",
+"numeric": 1.91237
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 6,
+"coord": "F11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "民营银行",
+"value": "2.31249",
+"numeric": 2.31249
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 7,
+"coord": "G11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "农村商业银行",
+"value": "1.32713",
+"numeric": 1.32713
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 11,
+"column": 8,
+"coord": "H11",
+"row_label": "一季度 / 拨备覆盖率",
+"column_label": "外资银行",
+"value": "2.53181",
+"numeric": 2.53181
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 1,
+"coord": "A12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "资本充足率*",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "大型商业银行",
+"value": "0.18309",
+"numeric": 0.18309
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 4,
+"coord": "D12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "股份制商业\n银行",
+"value": "0.1353",
+"numeric": 0.1353
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 5,
+"coord": "E12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "城市商业银行",
+"value": "0.1246",
+"numeric": 0.1246
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 6,
+"coord": "F12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "民营银行",
+"value": "0.12632",
+"numeric": 0.12632
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 7,
+"coord": "G12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "农村商业银行",
+"value": "0.12703",
+"numeric": 0.12703
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 12,
+"column": 8,
+"coord": "H12",
+"row_label": "一季度 / 资本充足率*",
+"column_label": "外资银行",
+"value": "0.19849",
+"numeric": 0.19849
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 1,
+"coord": "A13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "流动性比例",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "大型商业银行",
+"value": "0.66312",
+"numeric": 0.66312
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 4,
+"coord": "D13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "股份制商业\n银行",
+"value": "0.60121",
+"numeric": 0.60121
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 5,
+"coord": "E13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "城市商业银行",
+"value": "0.82531",
+"numeric": 0.82531
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 6,
+"coord": "F13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "民营银行",
+"value": "0.55507",
+"numeric": 0.55507
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 7,
+"coord": "G13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "农村商业银行",
+"value": "0.81987",
+"numeric": 0.81987
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 13,
+"column": 8,
+"coord": "H13",
+"row_label": "一季度 / 流动性比例",
+"column_label": "外资银行",
+"value": "0.79544",
+"numeric": 0.79544
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 1,
+"coord": "A14",
+"row_label": "一季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "一季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "净利润",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "一季度 / 净利润",
+"column_label": "大型商业银行",
+"value": "3240.188589",
+"numeric": 3240.188588813
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 4,
+"coord": "D14",
+"row_label": "一季度 / 净利润",
+"column_label": "股份制商业\n银行",
+"value": "1522.441021",
+"numeric": 1522.441021103
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 5,
+"coord": "E14",
+"row_label": "一季度 / 净利润",
+"column_label": "城市商业银行",
+"value": "926.9896024",
+"numeric": 926.989602445
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 6,
+"coord": "F14",
+"row_label": "一季度 / 净利润",
+"column_label": "民营银行",
+"value": "51.10331325",
+"numeric": 51.103313254
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 7,
+"coord": "G14",
+"row_label": "一季度 / 净利润",
+"column_label": "农村商业银行",
+"value": "894.3850081",
+"numeric": 894.385008139
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 14,
+"column": 8,
+"coord": "H14",
+"row_label": "一季度 / 净利润",
+"column_label": "外资银行",
+"value": "88.25379785",
+"numeric": 88.253797852
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 1,
+"coord": "A15",
+"row_label": "一季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "一季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "一季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "净息差",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "一季度 / 净息差",
+"column_label": "大型商业银行",
+"value": "0.01469",
+"numeric": 0.01469
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 4,
+"coord": "D15",
+"row_label": "一季度 / 净息差",
+"column_label": "股份制商业\n银行",
+"value": "0.0162",
+"numeric": 0.0162
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 5,
+"coord": "E15",
+"row_label": "一季度 / 净息差",
+"column_label": "城市商业银行",
+"value": "0.01452",
+"numeric": 0.01452
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 6,
+"coord": "F15",
+"row_label": "一季度 / 净息差",
+"column_label": "民营银行",
+"value": "0.04324",
+"numeric": 0.04324
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 7,
+"coord": "G15",
+"row_label": "一季度 / 净息差",
+"column_label": "农村商业银行",
+"value": "0.01716",
+"numeric": 0.01716
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 15,
+"column": 8,
+"coord": "H15",
+"row_label": "一季度 / 净息差",
+"column_label": "外资银行",
+"value": "0.01468",
+"numeric": 0.01468
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 1,
+"coord": "A16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "大型商业银行",
+"value": "13782.28377",
+"numeric": 13782.283768262
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 4,
+"coord": "D16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "5265.824357",
+"numeric": 5265.824357124
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 5,
+"coord": "E16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "城市商业银行",
+"value": "5394.642265",
+"numeric": 5394.642264585
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 6,
+"coord": "F16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "民营银行",
+"value": "228.4858085",
+"numeric": 228.485808453
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 7,
+"coord": "G16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "农村商业银行",
+"value": "8579.61058",
+"numeric": 8579.61057989
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 16,
+"column": 8,
+"coord": "H16",
+"row_label": "二季度 / 不良贷款余额",
+"column_label": "外资银行",
+"value": "146.8351744",
+"numeric": 146.835174423
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 1,
+"coord": "A17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "次级类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "大型商业银行",
+"value": "4465.130887",
+"numeric": 4465.130886834
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 4,
+"coord": "D17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1906.38134",
+"numeric": 1906.381339953
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 5,
+"coord": "E17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "城市商业银行",
+"value": "2932.089992",
+"numeric": 2932.089991555
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 6,
+"coord": "F17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "民营银行",
+"value": "59.07925852",
+"numeric": 59.079258517
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 7,
+"coord": "G17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "农村商业银行",
+"value": "4019.351496",
+"numeric": 4019.351495649
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 17,
+"column": 8,
+"coord": "H17",
+"row_label": "二季度 / 次级类贷款余额",
+"column_label": "外资银行",
+"value": "40.31360679",
+"numeric": 40.313606786
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 1,
+"coord": "A18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "可疑类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "大型商业银行",
+"value": "5048.281137",
+"numeric": 5048.281137432
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 4,
+"coord": "D18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1586.170478",
+"numeric": 1586.170477583
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 5,
+"coord": "E18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "城市商业银行",
+"value": "945.792975",
+"numeric": 945.792975
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 6,
+"coord": "F18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "民营银行",
+"value": "107.2633045",
+"numeric": 107.263304484
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 7,
+"coord": "G18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "农村商业银行",
+"value": "3700.303213",
+"numeric": 3700.303213484
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 18,
+"column": 8,
+"coord": "H18",
+"row_label": "二季度 / 可疑类贷款余额",
+"column_label": "外资银行",
+"value": "43.476762",
+"numeric": 43.476762002
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 1,
+"coord": "A19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "损失类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "大型商业银行",
+"value": "4268.871744",
+"numeric": 4268.871743994
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 4,
+"coord": "D19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1773.27254",
+"numeric": 1773.272539588
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 5,
+"coord": "E19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "城市商业银行",
+"value": "1516.759299",
+"numeric": 1516.75929903
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 6,
+"coord": "F19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "民营银行",
+"value": "62.14324545",
+"numeric": 62.143245452
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 7,
+"coord": "G19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "农村商业银行",
+"value": "859.9558708",
+"numeric": 859.95587076
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 19,
+"column": 8,
+"coord": "H19",
+"row_label": "二季度 / 损失类贷款余额",
+"column_label": "外资银行",
+"value": "63.04480564",
+"numeric": 63.044805635
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 1,
+"coord": "A20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "大型商业银行",
+"value": "0.01236",
+"numeric": 0.01236
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 4,
+"coord": "D20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "股份制商业\n银行",
+"value": "0.01248",
+"numeric": 0.01248
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 5,
+"coord": "E20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "城市商业银行",
+"value": "0.0177",
+"numeric": 0.0177
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 6,
+"coord": "F20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "民营银行",
+"value": "0.01752",
+"numeric": 0.01752
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 7,
+"coord": "G20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "农村商业银行",
+"value": "0.03144",
+"numeric": 0.03144
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 20,
+"column": 8,
+"coord": "H20",
+"row_label": "二季度 / 不良贷款率",
+"column_label": "外资银行",
+"value": "0.01044",
+"numeric": 0.01044
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 1,
+"coord": "A21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "资产利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "大型商业银行",
+"value": "0.00693",
+"numeric": 0.00693
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 4,
+"coord": "D21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "股份制商业\n银行",
+"value": "0.00765",
+"numeric": 0.00765
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 5,
+"coord": "E21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "城市商业银行",
+"value": "0.0063",
+"numeric": 0.0063
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 6,
+"coord": "F21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "民营银行",
+"value": "0.01019",
+"numeric": 0.01019
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 7,
+"coord": "G21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "农村商业银行",
+"value": "0.00645",
+"numeric": 0.00645
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 21,
+"column": 8,
+"coord": "H21",
+"row_label": "二季度 / 资产利润率",
+"column_label": "外资银行",
+"value": "0.00773",
+"numeric": 0.00773
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 1,
+"coord": "A22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "拨备覆盖率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "大型商业银行",
+"value": "2.538",
+"numeric": 2.538
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 4,
+"coord": "D22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "股份制商业\n银行",
+"value": "2.16579",
+"numeric": 2.16579
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 5,
+"coord": "E22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "城市商业银行",
+"value": "1.92345",
+"numeric": 1.92345
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 6,
+"coord": "F22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "民营银行",
+"value": "2.2714",
+"numeric": 2.2714
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 7,
+"coord": "G22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "农村商业银行",
+"value": "1.43138",
+"numeric": 1.43138
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 22,
+"column": 8,
+"coord": "H22",
+"row_label": "二季度 / 拨备覆盖率",
+"column_label": "外资银行",
+"value": "2.3714",
+"numeric": 2.3714
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 1,
+"coord": "A23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "资本充足率*",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "大型商业银行",
+"value": "0.1831",
+"numeric": 0.1831
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 4,
+"coord": "D23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "股份制商业\n银行",
+"value": "0.1361",
+"numeric": 0.1361
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 5,
+"coord": "E23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "城市商业银行",
+"value": "0.1271",
+"numeric": 0.1271
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 6,
+"coord": "F23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "民营银行",
+"value": "0.12437",
+"numeric": 0.12437
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 7,
+"coord": "G23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "农村商业银行",
+"value": "0.13077",
+"numeric": 0.13077
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 23,
+"column": 8,
+"coord": "H23",
+"row_label": "二季度 / 资本充足率*",
+"column_label": "外资银行",
+"value": "0.19469",
+"numeric": 0.19469
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 1,
+"coord": "A24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "流动性比例",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "大型商业银行",
+"value": "0.68941",
+"numeric": 0.68941
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 4,
+"coord": "D24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "股份制商业\n银行",
+"value": "0.64358",
+"numeric": 0.64358
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 5,
+"coord": "E24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "城市商业银行",
+"value": "0.87871",
+"numeric": 0.87871
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 6,
+"coord": "F24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "民营银行",
+"value": "0.56559",
+"numeric": 0.56559
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 7,
+"coord": "G24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "农村商业银行",
+"value": "0.8781",
+"numeric": 0.8781
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 24,
+"column": 8,
+"coord": "H24",
+"row_label": "二季度 / 流动性比例",
+"column_label": "外资银行",
+"value": "0.83578",
+"numeric": 0.83578
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 1,
+"coord": "A25",
+"row_label": "二季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "二季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "净利润",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 3,
+"coord": "C25",
+"row_label": "二季度 / 净利润",
+"column_label": "大型商业银行",
+"value": "6268.068383",
+"numeric": 6268.06838262
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 4,
+"coord": "D25",
+"row_label": "二季度 / 净利润",
+"column_label": "股份制商业\n银行",
+"value": "2737.116781",
+"numeric": 2737.11678133
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 5,
+"coord": "E25",
+"row_label": "二季度 / 净利润",
+"column_label": "城市商业银行",
+"value": "1788.229865",
+"numeric": 1788.229864707
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 6,
+"coord": "F25",
+"row_label": "二季度 / 净利润",
+"column_label": "民营银行",
+"value": "101.4794366",
+"numeric": 101.479436586
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 7,
+"coord": "G25",
+"row_label": "二季度 / 净利润",
+"column_label": "农村商业银行",
+"value": "1529.805879",
+"numeric": 1529.805878838
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 25,
+"column": 8,
+"coord": "H25",
+"row_label": "二季度 / 净利润",
+"column_label": "外资银行",
+"value": "149.4226541",
+"numeric": 149.422654078
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 1,
+"coord": "A26",
+"row_label": "二季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "二季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "二季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "净息差",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "二季度 / 净息差",
+"column_label": "大型商业银行",
+"value": "0.01459",
+"numeric": 0.01459
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 4,
+"coord": "D26",
+"row_label": "二季度 / 净息差",
+"column_label": "股份制商业\n银行",
+"value": "0.01634",
+"numeric": 0.01634
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 5,
+"coord": "E26",
+"row_label": "二季度 / 净息差",
+"column_label": "城市商业银行",
+"value": "0.01449",
+"numeric": 0.01449
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 6,
+"coord": "F26",
+"row_label": "二季度 / 净息差",
+"column_label": "民营银行",
+"value": "0.04208",
+"numeric": 0.04208
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 7,
+"coord": "G26",
+"row_label": "二季度 / 净息差",
+"column_label": "农村商业银行",
+"value": "0.01724",
+"numeric": 0.01724
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 26,
+"column": 8,
+"coord": "H26",
+"row_label": "二季度 / 净息差",
+"column_label": "外资银行",
+"value": "0.01459",
+"numeric": 0.01459
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 1,
+"coord": "A27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 2,
+"coord": "B27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 3,
+"coord": "C27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "大型商业银行",
+"value": "14111.95907",
+"numeric": 14111.959071349
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 4,
+"coord": "D27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "5283.935603",
+"numeric": 5283.93560332
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 5,
+"coord": "E27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "城市商业银行",
+"value": "5613.658586",
+"numeric": 5613.658585691
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 6,
+"coord": "F27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "民营银行",
+"value": "240.0256745",
+"numeric": 240.025674454
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 7,
+"coord": "G27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "农村商业银行",
+"value": "8364.905656",
+"numeric": 8364.905655746
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 27,
+"column": 8,
+"coord": "H27",
+"row_label": "三季度 / 不良贷款余额",
+"column_label": "外资银行",
+"value": "154.5146876",
+"numeric": 154.514687618
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 1,
+"coord": "A28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 2,
+"coord": "B28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "次级类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 3,
+"coord": "C28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "大型商业银行",
+"value": "4218.143384",
+"numeric": 4218.143384309
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 4,
+"coord": "D28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1813.236112",
+"numeric": 1813.236111542
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 5,
+"coord": "E28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "城市商业银行",
+"value": "2945.363766",
+"numeric": 2945.363766093
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 6,
+"coord": "F28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "民营银行",
+"value": "55.33258211",
+"numeric": 55.332582107
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 7,
+"coord": "G28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "农村商业银行",
+"value": "3788.612466",
+"numeric": 3788.612466051
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 28,
+"column": 8,
+"coord": "H28",
+"row_label": "三季度 / 次级类贷款余额",
+"column_label": "外资银行",
+"value": "35.63672773",
+"numeric": 35.636727733
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 1,
+"coord": "A29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 2,
+"coord": "B29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "可疑类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 3,
+"coord": "C29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "大型商业银行",
+"value": "5106.374166",
+"numeric": 5106.374166424
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 4,
+"coord": "D29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1650.994094",
+"numeric": 1650.99409353
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 5,
+"coord": "E29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "城市商业银行",
+"value": "1085.908909",
+"numeric": 1085.908909311
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 6,
+"coord": "F29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "民营银行",
+"value": "106.1690291",
+"numeric": 106.169029105
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 7,
+"coord": "G29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "农村商业银行",
+"value": "3613.61948",
+"numeric": 3613.619480305
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 29,
+"column": 8,
+"coord": "H29",
+"row_label": "三季度 / 可疑类贷款余额",
+"column_label": "外资银行",
+"value": "55.19017251",
+"numeric": 55.190172513
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 1,
+"coord": "A30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 2,
+"coord": "B30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "损失类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 3,
+"coord": "C30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "大型商业银行",
+"value": "4787.441521",
+"numeric": 4787.441520615
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 4,
+"coord": "D30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1819.705398",
+"numeric": 1819.705398248
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 5,
+"coord": "E30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "城市商业银行",
+"value": "1582.38591",
+"numeric": 1582.385910296
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 6,
+"coord": "F30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "民营银行",
+"value": "78.52406324",
+"numeric": 78.524063244
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 7,
+"coord": "G30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "农村商业银行",
+"value": "962.6737104",
+"numeric": 962.673710381
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 30,
+"column": 8,
+"coord": "H30",
+"row_label": "三季度 / 损失类贷款余额",
+"column_label": "外资银行",
+"value": "63.68778737",
+"numeric": 63.687787371
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 1,
+"coord": "A31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 2,
+"coord": "B31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 3,
+"coord": "C31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "大型商业银行",
+"value": "0.01249",
+"numeric": 0.01249
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 4,
+"coord": "D31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "股份制商业\n银行",
+"value": "0.01246",
+"numeric": 0.01246
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 5,
+"coord": "E31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "城市商业银行",
+"value": "0.01818",
+"numeric": 0.01818
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 6,
+"coord": "F31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "民营银行",
+"value": "0.01791",
+"numeric": 0.01791
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 7,
+"coord": "G31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "农村商业银行",
+"value": "0.03041",
+"numeric": 0.03041
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 31,
+"column": 8,
+"coord": "H31",
+"row_label": "三季度 / 不良贷款率",
+"column_label": "外资银行",
+"value": "0.01101",
+"numeric": 0.01101
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 1,
+"coord": "A32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 2,
+"coord": "B32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "资产利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 3,
+"coord": "C32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "大型商业银行",
+"value": "0.00713",
+"numeric": 0.00713
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 4,
+"coord": "D32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "股份制商业\n银行",
+"value": "0.00742",
+"numeric": 0.00742
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 5,
+"coord": "E32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "城市商业银行",
+"value": "0.00578",
+"numeric": 0.00578
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 6,
+"coord": "F32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "民营银行",
+"value": "0.00918",
+"numeric": 0.00918
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 7,
+"coord": "G32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "农村商业银行",
+"value": "0.00581",
+"numeric": 0.00581
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 32,
+"column": 8,
+"coord": "H32",
+"row_label": "三季度 / 资产利润率",
+"column_label": "外资银行",
+"value": "0.00728",
+"numeric": 0.00728
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 1,
+"coord": "A33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 2,
+"coord": "B33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "拨备覆盖率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 3,
+"coord": "C33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "大型商业银行",
+"value": "2.50284",
+"numeric": 2.50284
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 4,
+"coord": "D33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "股份制商业\n银行",
+"value": "2.17107",
+"numeric": 2.17107
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 5,
+"coord": "E33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "城市商业银行",
+"value": "1.88948",
+"numeric": 1.88948
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 6,
+"coord": "F33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "民营银行",
+"value": "2.2444",
+"numeric": 2.2444
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 7,
+"coord": "G33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "农村商业银行",
+"value": "1.48772",
+"numeric": 1.48772
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 33,
+"column": 8,
+"coord": "H33",
+"row_label": "三季度 / 拨备覆盖率",
+"column_label": "外资银行",
+"value": "2.30699",
+"numeric": 2.30699
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 1,
+"coord": "A34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 2,
+"coord": "B34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "资本充足率*",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 3,
+"coord": "C34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "大型商业银行",
+"value": "0.18263",
+"numeric": 0.18263
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 4,
+"coord": "D34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "股份制商业\n银行",
+"value": "0.13802",
+"numeric": 0.13802
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 5,
+"coord": "E34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "城市商业银行",
+"value": "0.1286",
+"numeric": 0.1286
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 6,
+"coord": "F34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "民营银行",
+"value": "0.1218",
+"numeric": 0.1218
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 7,
+"coord": "G34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "农村商业银行",
+"value": "0.13259",
+"numeric": 0.13259
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 34,
+"column": 8,
+"coord": "H34",
+"row_label": "三季度 / 资本充足率*",
+"column_label": "外资银行",
+"value": "0.19971",
+"numeric": 0.19971
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 1,
+"coord": "A35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 2,
+"coord": "B35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "流动性比例",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 3,
+"coord": "C35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "大型商业银行",
+"value": "0.73568",
+"numeric": 0.73568
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 4,
+"coord": "D35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "股份制商业\n银行",
+"value": "0.64065",
+"numeric": 0.64065
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 5,
+"coord": "E35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "城市商业银行",
+"value": "0.91338",
+"numeric": 0.91338
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 6,
+"coord": "F35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "民营银行",
+"value": "0.5719",
+"numeric": 0.5719
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 7,
+"coord": "G35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "农村商业银行",
+"value": "0.86951",
+"numeric": 0.86951
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 35,
+"column": 8,
+"coord": "H35",
+"row_label": "三季度 / 流动性比例",
+"column_label": "外资银行",
+"value": "0.8047",
+"numeric": 0.8047
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 1,
+"coord": "A36",
+"row_label": "三季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 2,
+"coord": "B36",
+"row_label": "三季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "净利润",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 3,
+"coord": "C36",
+"row_label": "三季度 / 净利润",
+"column_label": "大型商业银行",
+"value": "9792.003481",
+"numeric": 9792.00348054
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 4,
+"coord": "D36",
+"row_label": "三季度 / 净利润",
+"column_label": "股份制商业\n银行",
+"value": "4001.05584",
+"numeric": 4001.055840009
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 5,
+"coord": "E36",
+"row_label": "三季度 / 净利润",
+"column_label": "城市商业银行",
+"value": "2479.907858",
+"numeric": 2479.907858104
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 6,
+"coord": "F36",
+"row_label": "三季度 / 净利润",
+"column_label": "民营银行",
+"value": "141.1411396",
+"numeric": 141.141139578
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 7,
+"coord": "G36",
+"row_label": "三季度 / 净利润",
+"column_label": "农村商业银行",
+"value": "2079.880217",
+"numeric": 2079.880217138
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 36,
+"column": 8,
+"coord": "H36",
+"row_label": "三季度 / 净利润",
+"column_label": "外资银行",
+"value": "212.0842378",
+"numeric": 212.084237787
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 1,
+"coord": "A37",
+"row_label": "三季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "三季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 2,
+"coord": "B37",
+"row_label": "三季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "净息差",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 3,
+"coord": "C37",
+"row_label": "三季度 / 净息差",
+"column_label": "大型商业银行",
+"value": "0.01447",
+"numeric": 0.01447
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 4,
+"coord": "D37",
+"row_label": "三季度 / 净息差",
+"column_label": "股份制商业\n银行",
+"value": "0.01628",
+"numeric": 0.01628
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 5,
+"coord": "E37",
+"row_label": "三季度 / 净息差",
+"column_label": "城市商业银行",
+"value": "0.01432",
+"numeric": 0.01432
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 6,
+"coord": "F37",
+"row_label": "三季度 / 净息差",
+"column_label": "民营银行",
+"value": "0.04133",
+"numeric": 0.04133
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 7,
+"coord": "G37",
+"row_label": "三季度 / 净息差",
+"column_label": "农村商业银行",
+"value": "0.01723",
+"numeric": 0.01723
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 37,
+"column": 8,
+"coord": "H37",
+"row_label": "三季度 / 净息差",
+"column_label": "外资银行",
+"value": "0.01437",
+"numeric": 0.01437
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 1,
+"coord": "A38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 2,
+"coord": "B38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 3,
+"coord": "C38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "大型商业银行",
+"value": "14007.11289",
+"numeric": 14007.112894835
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 4,
+"coord": "D38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "5216.77478",
+"numeric": 5216.774780392
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 5,
+"coord": "E38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "城市商业银行",
+"value": "5434.428792",
+"numeric": 5434.428791553
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 6,
+"coord": "F38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "民营银行",
+"value": "226.2120066",
+"numeric": 226.212006627
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 7,
+"coord": "G38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "农村商业银行",
+"value": "7775.663189",
+"numeric": 7775.663188838
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 38,
+"column": 8,
+"coord": "H38",
+"row_label": "四季度 / 不良贷款余额",
+"column_label": "外资银行",
+"value": "131.7354758",
+"numeric": 131.735475762
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 1,
+"coord": "A39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 2,
+"coord": "B39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "次级类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 3,
+"coord": "C39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "大型商业银行",
+"value": "3969.517843",
+"numeric": 3969.517843448
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 4,
+"coord": "D39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1706.956739",
+"numeric": 1706.95673926
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 5,
+"coord": "E39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "城市商业银行",
+"value": "2772.984943",
+"numeric": 2772.98494261
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 6,
+"coord": "F39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "民营银行",
+"value": "82.82105487",
+"numeric": 82.821054869
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 7,
+"coord": "G39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "农村商业银行",
+"value": "2269.287709",
+"numeric": 2269.287708711
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 39,
+"column": 8,
+"coord": "H39",
+"row_label": "四季度 / 次级类贷款余额",
+"column_label": "外资银行",
+"value": "34.56055417",
+"numeric": 34.560554173
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 1,
+"coord": "A40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 2,
+"coord": "B40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "可疑类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 3,
+"coord": "C40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "大型商业银行",
+"value": "4615.748222",
+"numeric": 4615.748222238
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 4,
+"coord": "D40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1517.997895",
+"numeric": 1517.997895358
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 5,
+"coord": "E40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "城市商业银行",
+"value": "980.3753088",
+"numeric": 980.375308766
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 6,
+"coord": "F40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "民营银行",
+"value": "94.09304458",
+"numeric": 94.093044584
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 7,
+"coord": "G40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "农村商业银行",
+"value": "2703.65216",
+"numeric": 2703.652159986
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 40,
+"column": 8,
+"coord": "H40",
+"row_label": "四季度 / 可疑类贷款余额",
+"column_label": "外资银行",
+"value": "37.27979582",
+"numeric": 37.279795816
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 1,
+"coord": "A41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 2,
+"coord": "B41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "机构 / 时间/指标",
+"value": "损失类贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 3,
+"coord": "C41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "大型商业银行",
+"value": "5421.846829",
+"numeric": 5421.846829149
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 4,
+"coord": "D41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "股份制商业\n银行",
+"value": "1991.820146",
+"numeric": 1991.820145774
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 5,
+"coord": "E41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "城市商业银行",
+"value": "1681.06854",
+"numeric": 1681.068540177
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 6,
+"coord": "F41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "民营银行",
+"value": "49.29790717",
+"numeric": 49.297907173
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 7,
+"coord": "G41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "农村商业银行",
+"value": "2802.723319",
+"numeric": 2802.723319238
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 41,
+"column": 8,
+"coord": "H41",
+"row_label": "四季度 / 损失类贷款余额",
+"column_label": "外资银行",
+"value": "59.89512577",
+"numeric": 59.895125771
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 1,
+"coord": "A42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 2,
+"coord": "B42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "机构 / 时间/指标",
+"value": "不良贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 3,
+"coord": "C42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "大型商业银行",
+"value": "0.0123",
+"numeric": 0.0123
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 4,
+"coord": "D42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "股份制商业\n银行",
+"value": "0.01223",
+"numeric": 0.01223
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 5,
+"coord": "E42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "城市商业银行",
+"value": "0.01757",
+"numeric": 0.01757
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 6,
+"coord": "F42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "民营银行",
+"value": "0.0166",
+"numeric": 0.0166
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 7,
+"coord": "G42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "农村商业银行",
+"value": "0.028",
+"numeric": 0.028
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 42,
+"column": 8,
+"coord": "H42",
+"row_label": "四季度 / 不良贷款率",
+"column_label": "外资银行",
+"value": "0.00937",
+"numeric": 0.00937
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 1,
+"coord": "A43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 2,
+"coord": "B43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "机构 / 时间/指标",
+"value": "资产利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 3,
+"coord": "C43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "大型商业银行",
+"value": "0.00713",
+"numeric": 0.00713
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 4,
+"coord": "D43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "股份制商业\n银行",
+"value": "0.00688",
+"numeric": 0.00688
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 5,
+"coord": "E43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "城市商业银行",
+"value": "0.00441",
+"numeric": 0.00441
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 6,
+"coord": "F43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "民营银行",
+"value": "0.00914",
+"numeric": 0.00914
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 7,
+"coord": "G43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "农村商业银行",
+"value": "0.00449",
+"numeric": 0.00449
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 43,
+"column": 8,
+"coord": "H43",
+"row_label": "四季度 / 资产利润率",
+"column_label": "外资银行",
+"value": "0.0064",
+"numeric": 0.0064
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 1,
+"coord": "A44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 2,
+"coord": "B44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "机构 / 时间/指标",
+"value": "拨备覆盖率",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 3,
+"coord": "C44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "大型商业银行",
+"value": "2.48002",
+"numeric": 2.48002
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 4,
+"coord": "D44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "股份制商业\n银行",
+"value": "2.16301",
+"numeric": 2.16301
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 5,
+"coord": "E44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "城市商业银行",
+"value": "1.88077",
+"numeric": 1.88077
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 6,
+"coord": "F44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "民营银行",
+"value": "2.28331",
+"numeric": 2.28331
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 7,
+"coord": "G44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "农村商业银行",
+"value": "1.56398",
+"numeric": 1.56398
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 44,
+"column": 8,
+"coord": "H44",
+"row_label": "四季度 / 拨备覆盖率",
+"column_label": "外资银行",
+"value": "2.52298",
+"numeric": 2.52298
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 1,
+"coord": "A45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 2,
+"coord": "B45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "机构 / 时间/指标",
+"value": "资本充足率*",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 3,
+"coord": "C45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "大型商业银行",
+"value": "0.18333",
+"numeric": 0.18333
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 4,
+"coord": "D45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "股份制商业\n银行",
+"value": "0.13984",
+"numeric": 0.13984
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 5,
+"coord": "E45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "城市商业银行",
+"value": "0.12974",
+"numeric": 0.12974
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 6,
+"coord": "F45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "民营银行",
+"value": "0.12238",
+"numeric": 0.12238
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 7,
+"coord": "G45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "农村商业银行",
+"value": "0.13484",
+"numeric": 0.13484
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 45,
+"column": 8,
+"coord": "H45",
+"row_label": "四季度 / 资本充足率*",
+"column_label": "外资银行",
+"value": "0.19474",
+"numeric": 0.19474
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 1,
+"coord": "A46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 2,
+"coord": "B46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "机构 / 时间/指标",
+"value": "流动性比例",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 3,
+"coord": "C46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "大型商业银行",
+"value": "0.72408",
+"numeric": 0.72408
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 4,
+"coord": "D46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "股份制商业\n银行",
+"value": "0.70256",
+"numeric": 0.70256
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 5,
+"coord": "E46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "城市商业银行",
+"value": "0.99818",
+"numeric": 0.99818
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 6,
+"coord": "F46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "民营银行",
+"value": "0.57524",
+"numeric": 0.57524
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 7,
+"coord": "G46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "农村商业银行",
+"value": "0.85693",
+"numeric": 0.85693
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 46,
+"column": 8,
+"coord": "H46",
+"row_label": "四季度 / 流动性比例",
+"column_label": "外资银行",
+"value": "0.79878",
+"numeric": 0.79878
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 1,
+"coord": "A47",
+"row_label": "四季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 2,
+"coord": "B47",
+"row_label": "四季度 / 净利润",
+"column_label": "机构 / 时间/指标",
+"value": "净利润",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 3,
+"coord": "C47",
+"row_label": "四季度 / 净利润",
+"column_label": "大型商业银行",
+"value": "13099.19172",
+"numeric": 13099.191718802
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 4,
+"coord": "D47",
+"row_label": "四季度 / 净利润",
+"column_label": "股份制商业\n银行",
+"value": "4993.369376",
+"numeric": 4993.369376243
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 5,
+"coord": "E47",
+"row_label": "四季度 / 净利润",
+"column_label": "城市商业银行",
+"value": "2545.868439",
+"numeric": 2545.868438795
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 6,
+"coord": "F47",
+"row_label": "四季度 / 净利润",
+"column_label": "民营银行",
+"value": "187.7589693",
+"numeric": 187.758969287
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 7,
+"coord": "G47",
+"row_label": "四季度 / 净利润",
+"column_label": "农村商业银行",
+"value": "2155.374326",
+"numeric": 2155.374325509
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 47,
+"column": 8,
+"coord": "H47",
+"row_label": "四季度 / 净利润",
+"column_label": "外资银行",
+"value": "253.3030236",
+"numeric": 253.303023594
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 1,
+"coord": "A48",
+"row_label": "四季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "四季度",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 2,
+"coord": "B48",
+"row_label": "四季度 / 净息差",
+"column_label": "机构 / 时间/指标",
+"value": "净息差",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 3,
+"coord": "C48",
+"row_label": "四季度 / 净息差",
+"column_label": "大型商业银行",
+"value": "0.01444",
+"numeric": 0.01444
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 4,
+"coord": "D48",
+"row_label": "四季度 / 净息差",
+"column_label": "股份制商业\n银行",
+"value": "0.01613",
+"numeric": 0.01613
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 5,
+"coord": "E48",
+"row_label": "四季度 / 净息差",
+"column_label": "城市商业银行",
+"value": "0.01383",
+"numeric": 0.01383
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 6,
+"coord": "F48",
+"row_label": "四季度 / 净息差",
+"column_label": "民营银行",
+"value": "0.04106",
+"numeric": 0.04106
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 7,
+"coord": "G48",
+"row_label": "四季度 / 净息差",
+"column_label": "农村商业银行",
+"value": "0.01731",
+"numeric": 0.01731
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 48,
+"column": 8,
+"coord": "H48",
+"row_label": "四季度 / 净息差",
+"column_label": "外资银行",
+"value": "0.01416",
+"numeric": 0.01416
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 1,
+"coord": "A49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "机构 / 时间/指标",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 2,
+"coord": "B49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "机构 / 时间/指标",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 3,
+"coord": "C49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "大型商业银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 4,
+"coord": "D49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "股份制商业\n银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 5,
+"coord": "E49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "城市商业银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 6,
+"coord": "F49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "民营银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 7,
+"coord": "G49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "农村商业银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 49,
+"column": 8,
+"coord": "H49",
+"row_label": "注：1、外资银行资本充足率不含外国银行分行。",
+"column_label": "外资银行",
+"value": "注：1、外资银行资本充足率不含外国银行分行。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 1,
+"coord": "A50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "机构 / 时间/指标",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 2,
+"coord": "B50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "机构 / 时间/指标",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 3,
+"coord": "C50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "大型商业银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 4,
+"coord": "D50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "股份制商业\n银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 5,
+"coord": "E50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "城市商业银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 6,
+"coord": "F50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "民营银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 7,
+"coord": "G50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "农村商业银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 50,
+"column": 8,
+"coord": "H50",
+"row_label": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"column_label": "外资银行",
+"value": "2、自2019年起，邮政储蓄银行纳入“大型商业银行”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 1,
+"coord": "A51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "机构 / 时间/指标",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 2,
+"coord": "B51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "机构 / 时间/指标",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 3,
+"coord": "C51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "大型商业银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 4,
+"coord": "D51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "股份制商业\n银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 5,
+"coord": "E51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "城市商业银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 6,
+"coord": "F51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "民营银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 7,
+"coord": "G51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "农村商业银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行分机构类情况表",
+"row": 51,
+"column": 8,
+"coord": "H51",
+"row_label": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "外资银行",
+"value": "3、我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。因此，自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+}
+]
+}

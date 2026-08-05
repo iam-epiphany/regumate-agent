@@ -1,0 +1,2146 @@
+{
+"filename": "012_2025年商业银行主要监管指标情况表_2025年商业银行主要监管指标情况表.xls",
+"title": "2025年商业银行主要监管指标情况表2025年商业银行主要监管指标情况表",
+"cells": [
+{
+"sheet": "商业银行季度",
+"row": 6,
+"column": 1,
+"coord": "A6",
+"row_label": "正常类贷款",
+"column_label": "时间 / 项目",
+"value": "正常类贷款",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "正常类贷款",
+"column_label": "一季度",
+"value": "2186944.558",
+"numeric": 2186944.55820639
+},
+{
+"sheet": "商业银行季度",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "正常类贷款",
+"column_label": "二季度",
+"value": "2217935.095",
+"numeric": 2217935.09521831
+},
+{
+"sheet": "商业银行季度",
+"row": 6,
+"column": 4,
+"coord": "D6",
+"row_label": "正常类贷款",
+"column_label": "三季度",
+"value": "2236670.642",
+"numeric": 2236670.64209214
+},
+{
+"sheet": "商业银行季度",
+"row": 6,
+"column": 5,
+"coord": "E6",
+"row_label": "正常类贷款",
+"column_label": "四季度",
+"value": "2251401.198",
+"numeric": 2251401.19809053
+},
+{
+"sheet": "商业银行季度",
+"row": 7,
+"column": 1,
+"coord": "A7",
+"row_label": "关注类贷款",
+"column_label": "时间 / 项目",
+"value": "关注类贷款",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "关注类贷款",
+"column_label": "一季度",
+"value": "49594.81981",
+"numeric": 49594.819805289
+},
+{
+"sheet": "商业银行季度",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "关注类贷款",
+"column_label": "二季度",
+"value": "50010.05317",
+"numeric": 50010.053172566
+},
+{
+"sheet": "商业银行季度",
+"row": 7,
+"column": 4,
+"coord": "D7",
+"row_label": "关注类贷款",
+"column_label": "三季度",
+"value": "51057.03514",
+"numeric": 51057.035143938
+},
+{
+"sheet": "商业银行季度",
+"row": 7,
+"column": 5,
+"coord": "E7",
+"row_label": "关注类贷款",
+"column_label": "四季度",
+"value": "51065.53984",
+"numeric": 51065.539841395
+},
+{
+"sheet": "商业银行季度",
+"row": 8,
+"column": 1,
+"coord": "A8",
+"row_label": "不良贷款余额",
+"column_label": "时间 / 项目",
+"value": "不良贷款余额",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "不良贷款余额",
+"column_label": "一季度",
+"value": "34366.14638",
+"numeric": 34366.146383902
+},
+{
+"sheet": "商业银行季度",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "不良贷款余额",
+"column_label": "二季度",
+"value": "34342.12593",
+"numeric": 34342.125930294
+},
+{
+"sheet": "商业银行季度",
+"row": 8,
+"column": 4,
+"coord": "D8",
+"row_label": "不良贷款余额",
+"column_label": "三季度",
+"value": "35224.7845",
+"numeric": 35224.784503599
+},
+{
+"sheet": "商业银行季度",
+"row": 8,
+"column": 5,
+"coord": "E8",
+"row_label": "不良贷款余额",
+"column_label": "四季度",
+"value": "34984.19419",
+"numeric": 34984.194188104
+},
+{
+"sheet": "商业银行季度",
+"row": 9,
+"column": 1,
+"coord": "A9",
+"row_label": "其中：次级类贷款",
+"column_label": "时间 / 项目",
+"value": "其中：次级类贷款",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "其中：次级类贷款",
+"column_label": "一季度",
+"value": "11526.11033",
+"numeric": 11526.110327694
+},
+{
+"sheet": "商业银行季度",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "其中：次级类贷款",
+"column_label": "二季度",
+"value": "11729.09359",
+"numeric": 11729.093593393
+},
+{
+"sheet": "商业银行季度",
+"row": 9,
+"column": 4,
+"coord": "D9",
+"row_label": "其中：次级类贷款",
+"column_label": "三季度",
+"value": "11893.86004",
+"numeric": 11893.860043834
+},
+{
+"sheet": "商业银行季度",
+"row": 9,
+"column": 5,
+"coord": "E9",
+"row_label": "其中：次级类贷款",
+"column_label": "四季度",
+"value": "11371.10342",
+"numeric": 11371.103424484
+},
+{
+"sheet": "商业银行季度",
+"row": 10,
+"column": 1,
+"coord": "A10",
+"row_label": "可疑类贷款",
+"column_label": "时间 / 项目",
+"value": "可疑类贷款",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "可疑类贷款",
+"column_label": "一季度",
+"value": "9392.608048",
+"numeric": 9392.608048378
+},
+{
+"sheet": "商业银行季度",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "可疑类贷款",
+"column_label": "二季度",
+"value": "8903.046188",
+"numeric": 8903.046188184
+},
+{
+"sheet": "商业银行季度",
+"row": 10,
+"column": 4,
+"coord": "D10",
+"row_label": "可疑类贷款",
+"column_label": "三季度",
+"value": "8969.808531",
+"numeric": 8969.808531083
+},
+{
+"sheet": "商业银行季度",
+"row": 10,
+"column": 5,
+"coord": "E10",
+"row_label": "可疑类贷款",
+"column_label": "四季度",
+"value": "8084.419833",
+"numeric": 8084.419833366
+},
+{
+"sheet": "商业银行季度",
+"row": 11,
+"column": 1,
+"coord": "A11",
+"row_label": "损失类贷款",
+"column_label": "时间 / 项目",
+"value": "损失类贷款",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "损失类贷款",
+"column_label": "一季度",
+"value": "13447.42801",
+"numeric": 13447.428007844
+},
+{
+"sheet": "商业银行季度",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "损失类贷款",
+"column_label": "二季度",
+"value": "13709.98615",
+"numeric": 13709.986145723
+},
+{
+"sheet": "商业银行季度",
+"row": 11,
+"column": 4,
+"coord": "D11",
+"row_label": "损失类贷款",
+"column_label": "三季度",
+"value": "14361.11593",
+"numeric": 14361.11592868
+},
+{
+"sheet": "商业银行季度",
+"row": 11,
+"column": 5,
+"coord": "E11",
+"row_label": "损失类贷款",
+"column_label": "四季度",
+"value": "15528.67093",
+"numeric": 15528.670928249
+},
+{
+"sheet": "商业银行季度",
+"row": 12,
+"column": 1,
+"coord": "A12",
+"row_label": "正常类贷款占比",
+"column_label": "时间 / 项目",
+"value": "正常类贷款占比",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "正常类贷款占比",
+"column_label": "一季度",
+"value": "0.9630275389",
+"numeric": 0.963027538889165
+},
+{
+"sheet": "商业银行季度",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "正常类贷款占比",
+"column_label": "二季度",
+"value": "0.9633615752",
+"numeric": 0.963361575229107
+},
+{
+"sheet": "商业银行季度",
+"row": 12,
+"column": 4,
+"coord": "D12",
+"row_label": "正常类贷款占比",
+"column_label": "三季度",
+"value": "0.9628568294",
+"numeric": 0.96285682937099
+},
+{
+"sheet": "商业银行季度",
+"row": 12,
+"column": 5,
+"coord": "E12",
+"row_label": "正常类贷款占比",
+"column_label": "四季度",
+"value": "0.9631865068",
+"numeric": 0.963186506786039
+},
+{
+"sheet": "商业银行季度",
+"row": 13,
+"column": 1,
+"coord": "A13",
+"row_label": "关注类贷款占比",
+"column_label": "时间 / 项目",
+"value": "关注类贷款占比",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "关注类贷款占比",
+"column_label": "一季度",
+"value": "0.02183922637",
+"numeric": 0.0218392263669958
+},
+{
+"sheet": "商业银行季度",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "关注类贷款占比",
+"column_label": "二季度",
+"value": "0.02172189966",
+"numeric": 0.0217218996649099
+},
+{
+"sheet": "商业银行季度",
+"row": 13,
+"column": 4,
+"coord": "D13",
+"row_label": "关注类贷款占比",
+"column_label": "三季度",
+"value": "0.0219793715",
+"numeric": 0.0219793715045106
+},
+{
+"sheet": "商业银行季度",
+"row": 13,
+"column": 5,
+"coord": "E13",
+"row_label": "关注类贷款占比",
+"column_label": "四季度",
+"value": "0.02184667885",
+"numeric": 0.0218466788499056
+},
+{
+"sheet": "商业银行季度",
+"row": 14,
+"column": 1,
+"coord": "A14",
+"row_label": "不良贷款率",
+"column_label": "时间 / 项目",
+"value": "不良贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "不良贷款率",
+"column_label": "一季度",
+"value": "0.01513",
+"numeric": 0.01513
+},
+{
+"sheet": "商业银行季度",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "不良贷款率",
+"column_label": "二季度",
+"value": "0.01491",
+"numeric": 0.01491
+},
+{
+"sheet": "商业银行季度",
+"row": 14,
+"column": 4,
+"coord": "D14",
+"row_label": "不良贷款率",
+"column_label": "三季度",
+"value": "0.01516",
+"numeric": 0.01516
+},
+{
+"sheet": "商业银行季度",
+"row": 14,
+"column": 5,
+"coord": "E14",
+"row_label": "不良贷款率",
+"column_label": "四季度",
+"value": "0.01496",
+"numeric": 0.01496
+},
+{
+"sheet": "商业银行季度",
+"row": 15,
+"column": 1,
+"coord": "A15",
+"row_label": "其中：次级类贷款率",
+"column_label": "时间 / 项目",
+"value": "其中：次级类贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "其中：次级类贷款率",
+"column_label": "一季度",
+"value": "0.00507",
+"numeric": 0.00507
+},
+{
+"sheet": "商业银行季度",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "其中：次级类贷款率",
+"column_label": "二季度",
+"value": "0.00509",
+"numeric": 0.00509
+},
+{
+"sheet": "商业银行季度",
+"row": 15,
+"column": 4,
+"coord": "D15",
+"row_label": "其中：次级类贷款率",
+"column_label": "三季度",
+"value": "0.00512",
+"numeric": 0.00512
+},
+{
+"sheet": "商业银行季度",
+"row": 15,
+"column": 5,
+"coord": "E15",
+"row_label": "其中：次级类贷款率",
+"column_label": "四季度",
+"value": "0.00486",
+"numeric": 0.00486
+},
+{
+"sheet": "商业银行季度",
+"row": 16,
+"column": 1,
+"coord": "A16",
+"row_label": "可疑类贷款率",
+"column_label": "时间 / 项目",
+"value": "可疑类贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "可疑类贷款率",
+"column_label": "一季度",
+"value": "0.00413",
+"numeric": 0.00413
+},
+{
+"sheet": "商业银行季度",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "可疑类贷款率",
+"column_label": "二季度",
+"value": "0.00386",
+"numeric": 0.00386
+},
+{
+"sheet": "商业银行季度",
+"row": 16,
+"column": 4,
+"coord": "D16",
+"row_label": "可疑类贷款率",
+"column_label": "三季度",
+"value": "0.00386",
+"numeric": 0.00386
+},
+{
+"sheet": "商业银行季度",
+"row": 16,
+"column": 5,
+"coord": "E16",
+"row_label": "可疑类贷款率",
+"column_label": "四季度",
+"value": "0.00345",
+"numeric": 0.00345
+},
+{
+"sheet": "商业银行季度",
+"row": 17,
+"column": 1,
+"coord": "A17",
+"row_label": "损失类贷款率",
+"column_label": "时间 / 项目",
+"value": "损失类贷款率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "损失类贷款率",
+"column_label": "一季度",
+"value": "0.00592",
+"numeric": 0.00592
+},
+{
+"sheet": "商业银行季度",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "损失类贷款率",
+"column_label": "二季度",
+"value": "0.00595",
+"numeric": 0.00595
+},
+{
+"sheet": "商业银行季度",
+"row": 17,
+"column": 4,
+"coord": "D17",
+"row_label": "损失类贷款率",
+"column_label": "三季度",
+"value": "0.00618",
+"numeric": 0.00618
+},
+{
+"sheet": "商业银行季度",
+"row": 17,
+"column": 5,
+"coord": "E17",
+"row_label": "损失类贷款率",
+"column_label": "四季度",
+"value": "0.00664",
+"numeric": 0.00664
+},
+{
+"sheet": "商业银行季度",
+"row": 18,
+"column": 1,
+"coord": "A18",
+"row_label": "贷款损失准备",
+"column_label": "时间 / 项目",
+"value": "贷款损失准备",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "贷款损失准备",
+"column_label": "一季度",
+"value": "71525.69384",
+"numeric": 71525.693841306
+},
+{
+"sheet": "商业银行季度",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "贷款损失准备",
+"column_label": "二季度",
+"value": "72794.80815",
+"numeric": 72794.808149799
+},
+{
+"sheet": "商业银行季度",
+"row": 18,
+"column": 4,
+"coord": "D18",
+"row_label": "贷款损失准备",
+"column_label": "三季度",
+"value": "72968.54653",
+"numeric": 72968.546528254
+},
+{
+"sheet": "商业银行季度",
+"row": 18,
+"column": 5,
+"coord": "E18",
+"row_label": "贷款损失准备",
+"column_label": "四季度",
+"value": "71791.64036",
+"numeric": 71791.640361149
+},
+{
+"sheet": "商业银行季度",
+"row": 19,
+"column": 1,
+"coord": "A19",
+"row_label": "拨备覆盖率",
+"column_label": "时间 / 项目",
+"value": "拨备覆盖率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "拨备覆盖率",
+"column_label": "一季度",
+"value": "2.08128",
+"numeric": 2.08128
+},
+{
+"sheet": "商业银行季度",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "拨备覆盖率",
+"column_label": "二季度",
+"value": "2.11969",
+"numeric": 2.11969
+},
+{
+"sheet": "商业银行季度",
+"row": 19,
+"column": 4,
+"coord": "D19",
+"row_label": "拨备覆盖率",
+"column_label": "三季度",
+"value": "2.07151",
+"numeric": 2.07151
+},
+{
+"sheet": "商业银行季度",
+"row": 19,
+"column": 5,
+"coord": "E19",
+"row_label": "拨备覆盖率",
+"column_label": "四季度",
+"value": "2.05211",
+"numeric": 2.05211
+},
+{
+"sheet": "商业银行季度",
+"row": 20,
+"column": 1,
+"coord": "A20",
+"row_label": "贷款拨备率",
+"column_label": "时间 / 项目",
+"value": "贷款拨备率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "贷款拨备率",
+"column_label": "一季度",
+"value": "0.03149",
+"numeric": 0.03149
+},
+{
+"sheet": "商业银行季度",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "贷款拨备率",
+"column_label": "二季度",
+"value": "0.03161",
+"numeric": 0.03161
+},
+{
+"sheet": "商业银行季度",
+"row": 20,
+"column": 4,
+"coord": "D20",
+"row_label": "贷款拨备率",
+"column_label": "三季度",
+"value": "0.03141",
+"numeric": 0.03141
+},
+{
+"sheet": "商业银行季度",
+"row": 20,
+"column": 5,
+"coord": "E20",
+"row_label": "贷款拨备率",
+"column_label": "四季度",
+"value": "0.03071",
+"numeric": 0.03071
+},
+{
+"sheet": "商业银行季度",
+"row": 21,
+"column": 1,
+"coord": "A21",
+"row_label": "（二）流动性指标",
+"column_label": "时间 / 项目",
+"value": "（二）流动性指标",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 22,
+"column": 1,
+"coord": "A22",
+"row_label": "流动性比例",
+"column_label": "时间 / 项目",
+"value": "流动性比例",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "流动性比例",
+"column_label": "一季度",
+"value": "0.76149",
+"numeric": 0.76149
+},
+{
+"sheet": "商业银行季度",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "流动性比例",
+"column_label": "二季度",
+"value": "0.79897",
+"numeric": 0.79897
+},
+{
+"sheet": "商业银行季度",
+"row": 22,
+"column": 4,
+"coord": "D22",
+"row_label": "流动性比例",
+"column_label": "三季度",
+"value": "0.80102",
+"numeric": 0.80102
+},
+{
+"sheet": "商业银行季度",
+"row": 22,
+"column": 5,
+"coord": "E22",
+"row_label": "流动性比例",
+"column_label": "四季度",
+"value": "0.80953",
+"numeric": 0.80953
+},
+{
+"sheet": "商业银行季度",
+"row": 23,
+"column": 1,
+"coord": "A23",
+"row_label": "存贷比（人民币）*",
+"column_label": "时间 / 项目",
+"value": "存贷比（人民币）*",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "存贷比（人民币）*",
+"column_label": "一季度",
+"value": "0.80012",
+"numeric": 0.80012
+},
+{
+"sheet": "商业银行季度",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "存贷比（人民币）*",
+"column_label": "二季度",
+"value": "0.80344",
+"numeric": 0.80344
+},
+{
+"sheet": "商业银行季度",
+"row": 23,
+"column": 4,
+"coord": "D23",
+"row_label": "存贷比（人民币）*",
+"column_label": "三季度",
+"value": "0.80456",
+"numeric": 0.80456
+},
+{
+"sheet": "商业银行季度",
+"row": 23,
+"column": 5,
+"coord": "E23",
+"row_label": "存贷比（人民币）*",
+"column_label": "四季度",
+"value": "0.80079",
+"numeric": 0.80079
+},
+{
+"sheet": "商业银行季度",
+"row": 24,
+"column": 1,
+"coord": "A24",
+"row_label": "人民币超额备付金率",
+"column_label": "时间 / 项目",
+"value": "人民币超额备付金率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "人民币超额备付金率",
+"column_label": "一季度",
+"value": "0.01195",
+"numeric": 0.01195
+},
+{
+"sheet": "商业银行季度",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "人民币超额备付金率",
+"column_label": "二季度",
+"value": "0.01526",
+"numeric": 0.01526
+},
+{
+"sheet": "商业银行季度",
+"row": 24,
+"column": 4,
+"coord": "D24",
+"row_label": "人民币超额备付金率",
+"column_label": "三季度",
+"value": "0.01534",
+"numeric": 0.01534
+},
+{
+"sheet": "商业银行季度",
+"row": 24,
+"column": 5,
+"coord": "E24",
+"row_label": "人民币超额备付金率",
+"column_label": "四季度",
+"value": "0.01637",
+"numeric": 0.01637
+},
+{
+"sheet": "商业银行季度",
+"row": 25,
+"column": 1,
+"coord": "A25",
+"row_label": "流动性覆盖率**",
+"column_label": "时间 / 项目",
+"value": "流动性覆盖率**",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "流动性覆盖率**",
+"column_label": "一季度",
+"value": "1.46203",
+"numeric": 1.46203
+},
+{
+"sheet": "商业银行季度",
+"row": 25,
+"column": 3,
+"coord": "C25",
+"row_label": "流动性覆盖率**",
+"column_label": "二季度",
+"value": "1.4925",
+"numeric": 1.4925
+},
+{
+"sheet": "商业银行季度",
+"row": 25,
+"column": 4,
+"coord": "D25",
+"row_label": "流动性覆盖率**",
+"column_label": "三季度",
+"value": "1.49726",
+"numeric": 1.49726
+},
+{
+"sheet": "商业银行季度",
+"row": 25,
+"column": 5,
+"coord": "E25",
+"row_label": "流动性覆盖率**",
+"column_label": "四季度",
+"value": "1.57992",
+"numeric": 1.57992
+},
+{
+"sheet": "商业银行季度",
+"row": 26,
+"column": 1,
+"coord": "A26",
+"row_label": "净稳定资金比例**",
+"column_label": "时间 / 项目",
+"value": "净稳定资金比例**",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "净稳定资金比例**",
+"column_label": "一季度",
+"value": "1.27574",
+"numeric": 1.27574
+},
+{
+"sheet": "商业银行季度",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "净稳定资金比例**",
+"column_label": "二季度",
+"value": "1.27593",
+"numeric": 1.27593
+},
+{
+"sheet": "商业银行季度",
+"row": 26,
+"column": 4,
+"coord": "D26",
+"row_label": "净稳定资金比例**",
+"column_label": "三季度",
+"value": "1.27671",
+"numeric": 1.27671
+},
+{
+"sheet": "商业银行季度",
+"row": 26,
+"column": 5,
+"coord": "E26",
+"row_label": "净稳定资金比例**",
+"column_label": "四季度",
+"value": "1.2783",
+"numeric": 1.2783
+},
+{
+"sheet": "商业银行季度",
+"row": 27,
+"column": 1,
+"coord": "A27",
+"row_label": "（三）效益性指标",
+"column_label": "时间 / 项目",
+"value": "（三）效益性指标",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 28,
+"column": 1,
+"coord": "A28",
+"row_label": "净利润(本年累计)",
+"column_label": "时间 / 项目",
+"value": "净利润(本年累计)",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 28,
+"column": 2,
+"coord": "B28",
+"row_label": "净利润(本年累计)",
+"column_label": "一季度",
+"value": "6567.653726",
+"numeric": 6567.653725605
+},
+{
+"sheet": "商业银行季度",
+"row": 28,
+"column": 3,
+"coord": "C28",
+"row_label": "净利润(本年累计)",
+"column_label": "二季度",
+"value": "12422.75223",
+"numeric": 12422.752225651
+},
+{
+"sheet": "商业银行季度",
+"row": 28,
+"column": 4,
+"coord": "D28",
+"row_label": "净利润(本年累计)",
+"column_label": "三季度",
+"value": "18702.58166",
+"numeric": 18702.581663837
+},
+{
+"sheet": "商业银行季度",
+"row": 28,
+"column": 5,
+"coord": "E28",
+"row_label": "净利润(本年累计)",
+"column_label": "四季度",
+"value": "23776.06967",
+"numeric": 23776.069673397
+},
+{
+"sheet": "商业银行季度",
+"row": 29,
+"column": 1,
+"coord": "A29",
+"row_label": "资产利润率",
+"column_label": "时间 / 项目",
+"value": "资产利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 29,
+"column": 2,
+"coord": "B29",
+"row_label": "资产利润率",
+"column_label": "一季度",
+"value": "0.00678",
+"numeric": 0.00678
+},
+{
+"sheet": "商业银行季度",
+"row": 29,
+"column": 3,
+"coord": "C29",
+"row_label": "资产利润率",
+"column_label": "二季度",
+"value": "0.00634",
+"numeric": 0.00634
+},
+{
+"sheet": "商业银行季度",
+"row": 29,
+"column": 4,
+"coord": "D29",
+"row_label": "资产利润率",
+"column_label": "三季度",
+"value": "0.00631",
+"numeric": 0.00631
+},
+{
+"sheet": "商业银行季度",
+"row": 29,
+"column": 5,
+"coord": "E29",
+"row_label": "资产利润率",
+"column_label": "四季度",
+"value": "0.00597",
+"numeric": 0.00597
+},
+{
+"sheet": "商业银行季度",
+"row": 30,
+"column": 1,
+"coord": "A30",
+"row_label": "资本利润率",
+"column_label": "时间 / 项目",
+"value": "资本利润率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 30,
+"column": 2,
+"coord": "B30",
+"row_label": "资本利润率",
+"column_label": "一季度",
+"value": "0.0882",
+"numeric": 0.0882
+},
+{
+"sheet": "商业银行季度",
+"row": 30,
+"column": 3,
+"coord": "C30",
+"row_label": "资本利润率",
+"column_label": "二季度",
+"value": "0.0819",
+"numeric": 0.0819
+},
+{
+"sheet": "商业银行季度",
+"row": 30,
+"column": 4,
+"coord": "D30",
+"row_label": "资本利润率",
+"column_label": "三季度",
+"value": "0.0818",
+"numeric": 0.0818
+},
+{
+"sheet": "商业银行季度",
+"row": 30,
+"column": 5,
+"coord": "E30",
+"row_label": "资本利润率",
+"column_label": "四季度",
+"value": "0.07776",
+"numeric": 0.07776
+},
+{
+"sheet": "商业银行季度",
+"row": 31,
+"column": 1,
+"coord": "A31",
+"row_label": "净息差",
+"column_label": "时间 / 项目",
+"value": "净息差",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 31,
+"column": 2,
+"coord": "B31",
+"row_label": "净息差",
+"column_label": "一季度",
+"value": "0.01428",
+"numeric": 0.01428
+},
+{
+"sheet": "商业银行季度",
+"row": 31,
+"column": 3,
+"coord": "C31",
+"row_label": "净息差",
+"column_label": "二季度",
+"value": "0.01415",
+"numeric": 0.01415
+},
+{
+"sheet": "商业银行季度",
+"row": 31,
+"column": 4,
+"coord": "D31",
+"row_label": "净息差",
+"column_label": "三季度",
+"value": "0.01415",
+"numeric": 0.01415
+},
+{
+"sheet": "商业银行季度",
+"row": 31,
+"column": 5,
+"coord": "E31",
+"row_label": "净息差",
+"column_label": "四季度",
+"value": "0.01415",
+"numeric": 0.01415
+},
+{
+"sheet": "商业银行季度",
+"row": 32,
+"column": 1,
+"coord": "A32",
+"row_label": "非利息收入占比",
+"column_label": "时间 / 项目",
+"value": "非利息收入占比",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 32,
+"column": 2,
+"coord": "B32",
+"row_label": "非利息收入占比",
+"column_label": "一季度",
+"value": "0.24956",
+"numeric": 0.24956
+},
+{
+"sheet": "商业银行季度",
+"row": 32,
+"column": 3,
+"coord": "C32",
+"row_label": "非利息收入占比",
+"column_label": "二季度",
+"value": "0.25753",
+"numeric": 0.25753
+},
+{
+"sheet": "商业银行季度",
+"row": 32,
+"column": 4,
+"coord": "D32",
+"row_label": "非利息收入占比",
+"column_label": "三季度",
+"value": "0.23243",
+"numeric": 0.23243
+},
+{
+"sheet": "商业银行季度",
+"row": 32,
+"column": 5,
+"coord": "E32",
+"row_label": "非利息收入占比",
+"column_label": "四季度",
+"value": "0.22525",
+"numeric": 0.22525
+},
+{
+"sheet": "商业银行季度",
+"row": 33,
+"column": 1,
+"coord": "A33",
+"row_label": "成本收入比",
+"column_label": "时间 / 项目",
+"value": "成本收入比",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 33,
+"column": 2,
+"coord": "B33",
+"row_label": "成本收入比",
+"column_label": "一季度",
+"value": "0.28999",
+"numeric": 0.28999
+},
+{
+"sheet": "商业银行季度",
+"row": 33,
+"column": 3,
+"coord": "C33",
+"row_label": "成本收入比",
+"column_label": "二季度",
+"value": "0.30225",
+"numeric": 0.30225
+},
+{
+"sheet": "商业银行季度",
+"row": 33,
+"column": 4,
+"coord": "D33",
+"row_label": "成本收入比",
+"column_label": "三季度",
+"value": "0.31816",
+"numeric": 0.31816
+},
+{
+"sheet": "商业银行季度",
+"row": 33,
+"column": 5,
+"coord": "E33",
+"row_label": "成本收入比",
+"column_label": "四季度",
+"value": "0.35603",
+"numeric": 0.35603
+},
+{
+"sheet": "商业银行季度",
+"row": 34,
+"column": 1,
+"coord": "A34",
+"row_label": "（四）资本充足指标***",
+"column_label": "时间 / 项目",
+"value": "（四）资本充足指标***",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 35,
+"column": 1,
+"coord": "A35",
+"row_label": "核心一级资本净额",
+"column_label": "时间 / 项目",
+"value": "核心一级资本净额",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 35,
+"column": 2,
+"coord": "B35",
+"row_label": "核心一级资本净额",
+"column_label": "一季度",
+"value": "248370.3903",
+"numeric": 248370.390261898
+},
+{
+"sheet": "商业银行季度",
+"row": 35,
+"column": 3,
+"coord": "C35",
+"row_label": "核心一级资本净额",
+"column_label": "二季度",
+"value": "257937.1673",
+"numeric": 257937.167264942
+},
+{
+"sheet": "商业银行季度",
+"row": 35,
+"column": 4,
+"coord": "D35",
+"row_label": "核心一级资本净额",
+"column_label": "三季度",
+"value": "261041.0542",
+"numeric": 261041.05416034
+},
+{
+"sheet": "商业银行季度",
+"row": 35,
+"column": 5,
+"coord": "E35",
+"row_label": "核心一级资本净额",
+"column_label": "四季度",
+"value": "263178.1117",
+"numeric": 263178.111744508
+},
+{
+"sheet": "商业银行季度",
+"row": 36,
+"column": 1,
+"coord": "A36",
+"row_label": "一级资本净额",
+"column_label": "时间 / 项目",
+"value": "一级资本净额",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 36,
+"column": 2,
+"coord": "B36",
+"row_label": "一级资本净额",
+"column_label": "一季度",
+"value": "282821.6609",
+"numeric": 282821.660873809
+},
+{
+"sheet": "商业银行季度",
+"row": 36,
+"column": 3,
+"coord": "C36",
+"row_label": "一级资本净额",
+"column_label": "二季度",
+"value": "294052.567",
+"numeric": 294052.567001869
+},
+{
+"sheet": "商业银行季度",
+"row": 36,
+"column": 4,
+"coord": "D36",
+"row_label": "一级资本净额",
+"column_label": "三季度",
+"value": "296714.8062",
+"numeric": 296714.806150199
+},
+{
+"sheet": "商业银行季度",
+"row": 36,
+"column": 5,
+"coord": "E36",
+"row_label": "一级资本净额",
+"column_label": "四季度",
+"value": "298119.4007",
+"numeric": 298119.400682162
+},
+{
+"sheet": "商业银行季度",
+"row": 37,
+"column": 1,
+"coord": "A37",
+"row_label": "资本净额",
+"column_label": "时间 / 项目",
+"value": "资本净额",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 37,
+"column": 2,
+"coord": "B37",
+"row_label": "资本净额",
+"column_label": "一季度",
+"value": "354837.2301",
+"numeric": 354837.230069356
+},
+{
+"sheet": "商业银行季度",
+"row": 37,
+"column": 3,
+"coord": "C37",
+"row_label": "资本净额",
+"column_label": "二季度",
+"value": "367542.9839",
+"numeric": 367542.98385114
+},
+{
+"sheet": "商业银行季度",
+"row": 37,
+"column": 4,
+"coord": "D37",
+"row_label": "资本净额",
+"column_label": "三季度",
+"value": "368808.01",
+"numeric": 368808.010027964
+},
+{
+"sheet": "商业银行季度",
+"row": 37,
+"column": 5,
+"coord": "E37",
+"row_label": "资本净额",
+"column_label": "四季度",
+"value": "372708.9034",
+"numeric": 372708.903392897
+},
+{
+"sheet": "商业银行季度",
+"row": 38,
+"column": 1,
+"coord": "A38",
+"row_label": "信用风险加权资产",
+"column_label": "时间 / 项目",
+"value": "信用风险加权资产",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 38,
+"column": 2,
+"coord": "B38",
+"row_label": "信用风险加权资产",
+"column_label": "一季度",
+"value": "2145172.784",
+"numeric": 2145172.78433526
+},
+{
+"sheet": "商业银行季度",
+"row": 38,
+"column": 3,
+"coord": "C38",
+"row_label": "信用风险加权资产",
+"column_label": "二季度",
+"value": "2182235.67",
+"numeric": 2182235.66951187
+},
+{
+"sheet": "商业银行季度",
+"row": 38,
+"column": 4,
+"coord": "D38",
+"row_label": "信用风险加权资产",
+"column_label": "三季度",
+"value": "2224088.736",
+"numeric": 2224088.73641699
+},
+{
+"sheet": "商业银行季度",
+"row": 38,
+"column": 5,
+"coord": "E38",
+"row_label": "信用风险加权资产",
+"column_label": "四季度",
+"value": "2238974.12",
+"numeric": 2238974.11977395
+},
+{
+"sheet": "商业银行季度",
+"row": 39,
+"column": 1,
+"coord": "A39",
+"row_label": "市场风险加权资产",
+"column_label": "时间 / 项目",
+"value": "市场风险加权资产",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 39,
+"column": 2,
+"coord": "B39",
+"row_label": "市场风险加权资产",
+"column_label": "一季度",
+"value": "36868.59128",
+"numeric": 36868.591276068
+},
+{
+"sheet": "商业银行季度",
+"row": 39,
+"column": 3,
+"coord": "C39",
+"row_label": "市场风险加权资产",
+"column_label": "二季度",
+"value": "37274.78547",
+"numeric": 37274.785469131
+},
+{
+"sheet": "商业银行季度",
+"row": 39,
+"column": 4,
+"coord": "D39",
+"row_label": "市场风险加权资产",
+"column_label": "三季度",
+"value": "37750.67007",
+"numeric": 37750.670067482
+},
+{
+"sheet": "商业银行季度",
+"row": 39,
+"column": 5,
+"coord": "E39",
+"row_label": "市场风险加权资产",
+"column_label": "四季度",
+"value": "33871.39519",
+"numeric": 33871.395191626
+},
+{
+"sheet": "商业银行季度",
+"row": 40,
+"column": 1,
+"coord": "A40",
+"row_label": "操作风险加权资产",
+"column_label": "时间 / 项目",
+"value": "操作风险加权资产",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 40,
+"column": 2,
+"coord": "B40",
+"row_label": "操作风险加权资产",
+"column_label": "一季度",
+"value": "137097.9661",
+"numeric": 137097.966118869
+},
+{
+"sheet": "商业银行季度",
+"row": 40,
+"column": 3,
+"coord": "C40",
+"row_label": "操作风险加权资产",
+"column_label": "二季度",
+"value": "137322.5598",
+"numeric": 137322.559751712
+},
+{
+"sheet": "商业银行季度",
+"row": 40,
+"column": 4,
+"coord": "D40",
+"row_label": "操作风险加权资产",
+"column_label": "三季度",
+"value": "137337.4508",
+"numeric": 137337.450774629
+},
+{
+"sheet": "商业银行季度",
+"row": 40,
+"column": 5,
+"coord": "E40",
+"row_label": "操作风险加权资产",
+"column_label": "四季度",
+"value": "136637.2259",
+"numeric": 136637.225922016
+},
+{
+"sheet": "商业银行季度",
+"row": 41,
+"column": 1,
+"coord": "A41",
+"row_label": "应用资本底线后的风险加权资产合计",
+"column_label": "时间 / 项目",
+"value": "应用资本底线后的风险加权资产合计",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 41,
+"column": 2,
+"coord": "B41",
+"row_label": "应用资本底线后的风险加权资产合计",
+"column_label": "一季度",
+"value": "2321872.139",
+"numeric": 2321872.13939573
+},
+{
+"sheet": "商业银行季度",
+"row": 41,
+"column": 3,
+"coord": "C41",
+"row_label": "应用资本底线后的风险加权资产合计",
+"column_label": "二季度",
+"value": "2359363.71",
+"numeric": 2359363.71003196
+},
+{
+"sheet": "商业银行季度",
+"row": 41,
+"column": 4,
+"coord": "D41",
+"row_label": "应用资本底线后的风险加权资产合计",
+"column_label": "三季度",
+"value": "2401198.094",
+"numeric": 2401198.0936868
+},
+{
+"sheet": "商业银行季度",
+"row": 41,
+"column": 5,
+"coord": "E41",
+"row_label": "应用资本底线后的风险加权资产合计",
+"column_label": "四季度",
+"value": "2410795.211",
+"numeric": 2410795.21067249
+},
+{
+"sheet": "商业银行季度",
+"row": 42,
+"column": 1,
+"coord": "A42",
+"row_label": "核心一级资本充足率",
+"column_label": "时间 / 项目",
+"value": "核心一级资本充足率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 42,
+"column": 2,
+"coord": "B42",
+"row_label": "核心一级资本充足率",
+"column_label": "一季度",
+"value": "0.10697",
+"numeric": 0.10697
+},
+{
+"sheet": "商业银行季度",
+"row": 42,
+"column": 3,
+"coord": "C42",
+"row_label": "核心一级资本充足率",
+"column_label": "二季度",
+"value": "0.10932",
+"numeric": 0.10932
+},
+{
+"sheet": "商业银行季度",
+"row": 42,
+"column": 4,
+"coord": "D42",
+"row_label": "核心一级资本充足率",
+"column_label": "三季度",
+"value": "0.10871",
+"numeric": 0.10871
+},
+{
+"sheet": "商业银行季度",
+"row": 42,
+"column": 5,
+"coord": "E42",
+"row_label": "核心一级资本充足率",
+"column_label": "四季度",
+"value": "0.10916",
+"numeric": 0.10916
+},
+{
+"sheet": "商业银行季度",
+"row": 43,
+"column": 1,
+"coord": "A43",
+"row_label": "一级资本充足率",
+"column_label": "时间 / 项目",
+"value": "一级资本充足率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 43,
+"column": 2,
+"coord": "B43",
+"row_label": "一级资本充足率",
+"column_label": "一季度",
+"value": "0.1218",
+"numeric": 0.1218
+},
+{
+"sheet": "商业银行季度",
+"row": 43,
+"column": 3,
+"coord": "C43",
+"row_label": "一级资本充足率",
+"column_label": "二季度",
+"value": "0.12463",
+"numeric": 0.12463
+},
+{
+"sheet": "商业银行季度",
+"row": 43,
+"column": 4,
+"coord": "D43",
+"row_label": "一级资本充足率",
+"column_label": "三季度",
+"value": "0.12356",
+"numeric": 0.12356
+},
+{
+"sheet": "商业银行季度",
+"row": 43,
+"column": 5,
+"coord": "E43",
+"row_label": "一级资本充足率",
+"column_label": "四季度",
+"value": "0.12366",
+"numeric": 0.12366
+},
+{
+"sheet": "商业银行季度",
+"row": 44,
+"column": 1,
+"coord": "A44",
+"row_label": "资本充足率",
+"column_label": "时间 / 项目",
+"value": "资本充足率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 44,
+"column": 2,
+"coord": "B44",
+"row_label": "资本充足率",
+"column_label": "一季度",
+"value": "0.15282",
+"numeric": 0.15282
+},
+{
+"sheet": "商业银行季度",
+"row": 44,
+"column": 3,
+"coord": "C44",
+"row_label": "资本充足率",
+"column_label": "二季度",
+"value": "0.15578",
+"numeric": 0.15578
+},
+{
+"sheet": "商业银行季度",
+"row": 44,
+"column": 4,
+"coord": "D44",
+"row_label": "资本充足率",
+"column_label": "三季度",
+"value": "0.15359",
+"numeric": 0.15359
+},
+{
+"sheet": "商业银行季度",
+"row": 44,
+"column": 5,
+"coord": "E44",
+"row_label": "资本充足率",
+"column_label": "四季度",
+"value": "0.1546",
+"numeric": 0.1546
+},
+{
+"sheet": "商业银行季度",
+"row": 45,
+"column": 1,
+"coord": "A45",
+"row_label": "杠杆率",
+"column_label": "时间 / 项目",
+"value": "杠杆率",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 45,
+"column": 2,
+"coord": "B45",
+"row_label": "杠杆率",
+"column_label": "一季度",
+"value": "0.06613",
+"numeric": 0.06613
+},
+{
+"sheet": "商业银行季度",
+"row": 45,
+"column": 3,
+"coord": "C45",
+"row_label": "杠杆率",
+"column_label": "二季度",
+"value": "0.06718",
+"numeric": 0.06718
+},
+{
+"sheet": "商业银行季度",
+"row": 45,
+"column": 4,
+"coord": "D45",
+"row_label": "杠杆率",
+"column_label": "三季度",
+"value": "0.06661",
+"numeric": 0.06661
+},
+{
+"sheet": "商业银行季度",
+"row": 45,
+"column": 5,
+"coord": "E45",
+"row_label": "杠杆率",
+"column_label": "四季度",
+"value": "0.06602",
+"numeric": 0.06602
+},
+{
+"sheet": "商业银行季度",
+"row": 46,
+"column": 1,
+"coord": "A46",
+"row_label": "（五）市场风险指标",
+"column_label": "时间 / 项目",
+"value": "（五）市场风险指标",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 47,
+"column": 1,
+"coord": "A47",
+"row_label": "累计外汇敞口头寸比例",
+"column_label": "时间 / 项目",
+"value": "累计外汇敞口头寸比例",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 47,
+"column": 2,
+"coord": "B47",
+"row_label": "累计外汇敞口头寸比例",
+"column_label": "一季度",
+"value": "0.01445",
+"numeric": 0.01445
+},
+{
+"sheet": "商业银行季度",
+"row": 47,
+"column": 3,
+"coord": "C47",
+"row_label": "累计外汇敞口头寸比例",
+"column_label": "二季度",
+"value": "0.01294",
+"numeric": 0.01294
+},
+{
+"sheet": "商业银行季度",
+"row": 47,
+"column": 4,
+"coord": "D47",
+"row_label": "累计外汇敞口头寸比例",
+"column_label": "三季度",
+"value": "0.01227",
+"numeric": 0.01227
+},
+{
+"sheet": "商业银行季度",
+"row": 47,
+"column": 5,
+"coord": "E47",
+"row_label": "累计外汇敞口头寸比例",
+"column_label": "四季度",
+"value": "0.01182",
+"numeric": 0.01182
+},
+{
+"sheet": "商业银行季度",
+"row": 48,
+"column": 1,
+"coord": "A48",
+"row_label": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"column_label": "时间 / 项目",
+"value": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 48,
+"column": 2,
+"coord": "B48",
+"row_label": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"column_label": "一季度",
+"value": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 48,
+"column": 3,
+"coord": "C48",
+"row_label": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"column_label": "二季度",
+"value": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 48,
+"column": 4,
+"coord": "D48",
+"row_label": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"column_label": "三季度",
+"value": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 48,
+"column": 5,
+"coord": "E48",
+"row_label": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"column_label": "四季度",
+"value": "注：1.自2016年起，存贷比披露口径改为境内口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 49,
+"column": 1,
+"coord": "A49",
+"row_label": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"column_label": "时间 / 项目",
+"value": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 49,
+"column": 2,
+"coord": "B49",
+"row_label": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"column_label": "一季度",
+"value": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 49,
+"column": 3,
+"coord": "C49",
+"row_label": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"column_label": "二季度",
+"value": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 49,
+"column": 4,
+"coord": "D49",
+"row_label": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"column_label": "三季度",
+"value": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 49,
+"column": 5,
+"coord": "E49",
+"row_label": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"column_label": "四季度",
+"value": "2.流动性覆盖率、净稳定资金比例为资产规模在2000亿元以上的商业银行汇总数据。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 50,
+"column": 1,
+"coord": "A50",
+"row_label": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"column_label": "时间 / 项目",
+"value": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 50,
+"column": 2,
+"coord": "B50",
+"row_label": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"column_label": "一季度",
+"value": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 50,
+"column": 3,
+"coord": "C50",
+"row_label": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"column_label": "二季度",
+"value": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 50,
+"column": 4,
+"coord": "D50",
+"row_label": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"column_label": "三季度",
+"value": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 50,
+"column": 5,
+"coord": "E50",
+"row_label": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"column_label": "四季度",
+"value": "3.自2019年起，邮政储蓄银行纳入“商业银行合计”汇总口径。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 51,
+"column": 1,
+"coord": "A51",
+"row_label": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "时间 / 项目",
+"value": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 51,
+"column": 2,
+"coord": "B51",
+"row_label": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "一季度",
+"value": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 51,
+"column": 3,
+"coord": "C51",
+"row_label": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "二季度",
+"value": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 51,
+"column": 4,
+"coord": "D51",
+"row_label": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "三季度",
+"value": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+},
+{
+"sheet": "商业银行季度",
+"row": 51,
+"column": 5,
+"coord": "E51",
+"row_label": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"column_label": "四季度",
+"value": "4.我国自2024年1月1日起施行《商业银行资本管理办法》（以下称《新办法》），原《商业银行资本管理办法（试行）》同时废止。自2024年起，表中披露的资本充足率相关指标调整为按照《新办法》计算的数据结果，与历史数据不直接可比。",
+"numeric": null
+}
+]
+}

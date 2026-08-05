@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>技术文档</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<h1
+id="面向银行业监管制度与统计报表的可信-rag-问答系统-技术文档">面向银行业监管制度与统计报表的可信
+RAG 问答系统 —— 技术文档</h1>
+<p><strong>参赛单位：</strong> 揭榜挂帅赛道三号赛题（南京银行）
+<strong>版本：</strong> v2.0（2026-08-05，四阶段升级完成版）</p>
+<hr />
+<h2 id="赛题理解与总体思路">1. 赛题理解与总体思路</h2>
+<h3 id="命题背景">1.1 命题背景</h3>
+<p>银行业经营管理高度依赖监管制度、业务规程、统计报表与内部操作文件。信贷
+审批、风险分类、资本管理、消保投诉、反洗钱、支付结算、普惠金融与监管报送
+等场景都需要快速查询制度依据与指标口径。资料分散于金融监管总局、人民银行、
+政府网站等多个渠道，格式包含 Word、PDF、Excel 与网页附件，更新频繁、版本
+差异明显，人工查询易漏查、误用旧规、条款定位不准、表格指标口径混淆。</p>
+<h3 id="技术挑战命题列明的四个卡点">1.2
+技术挑战（命题列明的四个卡点）</h3>
+<ol type="1">
+<li><strong>多源异构文档解析难</strong>：监管原文 PDF/Word
+版式差异大，统计附件以 xls/xlsx
+为主，常规切分难以保留标题层级、条款编号、表头结构、单位与时间维度；</li>
+<li><strong>检索精度与证据定位难</strong>：问题依赖具体条款、金额阈值、期限、适用对象、
+例外情形与附件指标，仅关键词召回易出现同名文件、旧版新规混淆，无法稳定
+返回最小充分证据；</li>
+<li><strong>跨文件与跨模态推理难</strong>：部分问题需同时理解制度正文与统计报表，通用
+问答模型容易跳过检索依据，产生看似合理但不可核验的答案；</li>
+<li><strong>金融合规表达要求高</strong>：答案需区分”应当、可以、不得、原则上”等规范强度，
+并准确呈现金额、比例、日期、机构名称与文号，细微数字或主体错误可能影响
+业务判断。</li>
+</ol>
+<h3 id="总体设计原则">1.3 总体设计原则</h3>
+<ul>
+<li><strong>确定性优先</strong>：表格取数、表格计算、拒答边界等可程序化环节全部走确定性
+链路，不依赖 LLM 猜测；LLM 仅用于文本答案组织与语义理解；</li>
+<li><strong>证据闭环</strong>：答案必须引用证据（条款级/段落级/表格单元级），返回前经
+事实校验（数字、日期、机构、文号、引用标签），校验失败自动修复或拒答，
+证据不足一律拒答而非补写；</li>
+<li><strong>通用能力</strong>：所有优化均为语言/结构特征层面的通用改进，不绑定具体题目
+与文档，用评测集做回归门禁；</li>
+<li><strong>可复现</strong>：知识库构建、评测跑测、评分全部脚本化，manifest
+记录文件 溯源信息（doc_id、SHA-256、路径）。</li>
+</ul>
+<hr />
+<h2 id="系统架构">2. 系统架构</h2>
+<figure>
+<img src="./架构图.png" alt="ReguMate 系统架构图" />
+<figcaption aria-hidden="true">ReguMate 系统架构图</figcaption>
+</figure>
+<h3 id="技术选型">2.1 技术选型</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>组件</th>
+<th>选型</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>后端框架</td>
+<td>FastAPI + Uvicorn</td>
+<td>API 服务（分层：api/schemas/models/services/core）</td>
+</tr>
+<tr>
+<td>向量数据库</td>
+<td>Qdrant 1.18</td>
+<td>稠密/稀疏向量混合检索</td>
+</tr>
+<tr>
+<td>关系存储</td>
+<td>SQLite（WAL）</td>
+<td>文档、chunk、表格单元元数据与结构化索引</td>
+</tr>
+<tr>
+<td>Embedding</td>
+<td>BGE-M3（本地）</td>
+<td>稠密向量 + 稀疏向量</td>
+</tr>
+<tr>
+<td>重排</td>
+<td>BGE-reranker-v2-m3（本地）</td>
+<td>交叉编码器精排</td>
+</tr>
+<tr>
+<td>生成/规划</td>
+<td>DeepSeek API（deepseek-v4-flash）</td>
+<td>查询规划、答案生成、语义校验</td>
+</tr>
+<tr>
+<td>文档解析</td>
+<td>python-docx / pymupdf4llm / xlrd / openpyxl / LibreOffice</td>
+<td>Word/PDF/Excel 多格式解析</td>
+</tr>
+<tr>
+<td>前端</td>
+<td>React + TypeScript + Vite</td>
+<td>Web 客户端</td>
+</tr>
+<tr>
+<td>部署</td>
+<td>Docker Compose（CPU/GPU 双配置）</td>
+<td>一键部署与可复现环境</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="知识库构建任务一文档解析与索引流程">3.
+知识库构建（任务一：文档解析与索引流程）</h2>
+<h3 id="多格式解析">3.1 多格式解析</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>格式</th>
+<th>解析器</th>
+<th>结构化产出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>.doc</td>
+<td>LibreOffice 转换 + 结构抽取</td>
+<td>段落、标题层级、条款号元数据</td>
+</tr>
+<tr>
+<td>.docx</td>
+<td>python-docx</td>
+<td>段落、表格、章节结构</td>
+</tr>
+<tr>
+<td>.pdf</td>
+<td>pymupdf4llm</td>
+<td>版式感知的文本段落</td>
+</tr>
+<tr>
+<td>.xls / .xlsx</td>
+<td>xlrd / openpyxl（+LibreOffice）</td>
+<td>sheet → 单元格（行/列标签、坐标、数值、单位、公式）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="结构化索引解决常规切分丢结构">3.2
+结构化索引（解决”常规切分丢结构”）</h3>
+<ul>
+<li><strong>条款级元数据</strong>：每个 chunk 挂载
+section_number、parent_section、前后邻接
+chunk、标题层级，监管”第X条”结构得以保留；</li>
+<li><strong>表格单元级索引</strong>：Excel 附件不按文本切分，而是将每个
+sheet 解析为 133,001
+个带坐标、行/列标签、单位、数值的结构化单元格，支持按指标名称、
+期间维度、机构维度精确召回与确定性取数；</li>
+<li><strong>双索引</strong>：SQLite（元数据 + 单元格查询）与
+Qdrant（向量检索）并行， 向量索引 45,530 条。</li>
+</ul>
+<h3 id="入库规模与溯源">3.3 入库规模与溯源</h3>
+<ul>
+<li><strong>500 份文件</strong>（doc 32 / docx 34 / pdf 45 / xls 232 /
+xlsx 157）， <strong>解析成功率 100%</strong>（0 失败、0 降级）；</li>
+<li>每文件在 manifest 中记录 doc_id、标题、本地路径、文件大小、SHA-256、
+解析结果（chunk/cell 数）等溯源信息；</li>
+<li>全部流程脚本化：<code>prepare_contest_data.ps1</code> →
+<code>ingest_contest_dataset.py</code> → 校验
+<code>evaluate_ingestion.py</code>，可一键重建与评测一致的 500
+份文件知识库。</li>
+</ul>
+<hr />
+<h2 id="检索层任务二可溯源问答生成能力之检索">4.
+检索层（任务二：可溯源问答生成能力之检索）</h2>
+<h3 id="混合检索">4.1 混合检索</h3>
+<p>综合<strong>稠密向量（BGE-M3）+ 稀疏向量 + 关键词（BM25 类）+
+元数据过滤</strong> 四路召回，RRF
+融合排序；支持按文件名称、监管主题、业务领域、条款编号、
+指标名称、期间维度过滤。</p>
+<h3 id="查询规划query-planner">4.2 查询规划（Query Planner）</h3>
+<p>对复杂问题生成多视角子查询（aspect），分别检索后合并证据；规划超时 12
+秒，失败自动降级为单查询。</p>
+<h3 id="条款级索引与定义条款定位阶段一">4.3
+条款级索引与定义条款定位（阶段一）</h3>
+<ul>
+<li>定义型问题（“X 是如何定义的/所称 X 是指”）先定位”所称X/ X是指”条款，
+再取该条款所在 chunk 及前后邻接，解决定义句被切碎、同概念条款错位
+（如”内部评级法”↔︎“权重法”附件混淆）问题；</li>
+<li>检索候选按附件匹配度与章节限定词加分（<code>_retrieval_fit_score</code>）。</li>
+</ul>
+<h3 id="crag-lite-分级路由阶段二">4.4 CRAG-lite 分级路由（阶段二）</h3>
+<p>生成前判断”证据是否覆盖问题要点”： - 证据正确 → 直接生成； -
+证据缺失/模糊 → 定向补检索（文档内词面补搜、禁止性规定模式补搜、
+兜底条款通道、“哪些/包括”列表枚举条款补充），仍不足则结构化拒答； -
+生成后校验失败 → 证据受限二次生成（仅使用知识片段原文组句），再失败 走
+extractive 摘录或拒答，杜绝自由发挥。</p>
+<h3 id="hyde-覆盖缺口补检索-监管文档结构图阶段四">4.5 HyDE
+覆盖缺口补检索 + 监管文档结构图（阶段四）</h3>
+<ul>
+<li><strong>HyDE</strong>：规划查询全部无果的未覆盖 aspect，由 LLM
+生成”假设条款”参与 检索，缓解监管术语问法与文档措辞不匹配（每请求 ≤2
+aspect、1 次 LLM 调用）；</li>
+<li><strong>文档结构图条款引用多跳</strong>：解析”本办法第X条”引用关系，跨章节定位被引
+条款，解决跨文档/跨条款多跳推理（X 组跨文档题）。</li>
+</ul>
+<h3 id="确定性表格链路">4.6 确定性表格链路</h3>
+<p>表格取数/计算/比较走程序化链路：按指标名 + 期间 +
+机构维度从单元格索引 取数，算术仅限安全算子且变量必须来自证据，LLM
+不参与数值计算——官方 300 与自命题 200 题中<strong>表格取数、表格计算全部
+100% 通过</strong>。</p>
+<hr />
+<h2 id="生成与可信控制答案可验证性幻觉抑制">5.
+生成与可信控制（答案可验证性、幻觉抑制）</h2>
+<h3 id="证据受限生成">5.1 证据受限生成</h3>
+<p>提示词强制”仅使用知识片段原文组句、逐条引用 [n]
+标注来源、证据不足必须 拒答”；每条回答的 citations 携带
+doc_id、chunk_id、文件名、章节与摘录，
+支持条款级/段落级/表格单元级三种粒度证据返回。</p>
+<h3 id="事实校验grounding">5.2 事实校验（Grounding）</h3>
+<p>返回前对答案做确定性校验：关键数字、比例、日期、机构名称、文号必须与
+证据一致；引用标签按词面重叠重定向；LLM 自由发挥的标注在校验前清理。
+校验失败最多自动修复，仍失败则拒答。</p>
+<h3 id="拒答边界">5.3 拒答边界</h3>
+<p>依据不足、资料冲突、问题含糊、知识库外问题一律结构化拒答并给出原因——
+自命题 200 题中 40 道依据不足/数据缺失题<strong>拒答率
+100%</strong>。</p>
+<hr />
+<h2 id="性能与稳定性工程">6. 性能与稳定性工程</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>问题</th>
+<th>根因</th>
+<th>修复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>并发 503（4 workers 31 个）</td>
+<td>模型锁串行化 + LLM 竞争</td>
+<td>模型获取移出推理锁、锁等待不消耗预算、API 层瞬态重试一次 →
+<strong>40 题并发 0 错误</strong></td>
+</tr>
+<tr>
+<td>SQLite “unable to open database file”</td>
+<td>WAL 在 bind mount 上不可靠</td>
+<td>移入 named volume + 回退 DELETE 模式 + busy_timeout</td>
+</tr>
+<tr>
+<td>开放题延迟高</td>
+<td>CPU rerank 逐对 ~1.3s</td>
+<td>rerank 输入 24→12、batch 16、planner/生成超时收紧（rerank
+17.5s→8.9s）</td>
+</tr>
+<tr>
+<td>LLM 空输出</td>
+<td>max_tokens 被思考耗尽</td>
+<td>900→3000、attempts 4 交替流式/非流式重试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="实验设计与量化指标">7. 实验设计与量化指标</h2>
+<h3 id="评测体系">7.1 评测体系</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>评测集</th>
+<th>题量</th>
+<th>评分方式</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>官方 300 题（选择题）</td>
+<td>300</td>
+<td>选项比对（确定性）</td>
+<td>AGENTS.md 硬门禁，每次生产改动后回归</td>
+</tr>
+<tr>
+<td>官方 300 开放问答（judge 口径）</td>
+<td>300</td>
+<td>LLM judge + 人工复核</td>
+<td>开放式能力基线（84.7%）</td>
+</tr>
+<tr>
+<td>自命题 200 题（旧批 100 + 新批 100）</td>
+<td>200</td>
+<td><strong>确定性评分器</strong>（金标逐事实比对）</td>
+<td>八类题型细粒度回归：定义/规则/阈值/名单/表格取数/表格计算/跨文档/拒答</td>
+</tr>
+</tbody>
+</table>
+<p>自命题评分器为确定性程序：归一化 bigram recall ≥0.55 且关键实体
+（数字/日期/文号/《文件名》）全命中、无语义极性冲突即判事实通过；证据
+引用命中率按”金标要求来源文件全部出现在引用中”计算；逐题输出
+passed/failure_category/facts_met/source_evidence_met/latency_ms。</p>
+<h3 id="量化指标实测2026-08-050-运行错误">7.2
+量化指标实测（2026-08-05，0 运行错误）</h3>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 36%" />
+<col style="width: 36%" />
+</colgroup>
+<thead>
+<tr>
+<th>指标</th>
+<th style="text-align: right;">赛题要求</th>
+<th style="text-align: right;">实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>官方 300 题准确率</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>300/300（100%）</strong>，0
+错误（多次回归一致）</td>
+</tr>
+<tr>
+<td>制度事实类准确率（自命题 200 题：定义+规则+阈值+名单）</td>
+<td style="text-align: right;">≥85%</td>
+<td style="text-align: right;"><strong>89.3%（CPU）</strong> /
+85.7%（GPU）</td>
+</tr>
+<tr>
+<td>表格取数类准确率</td>
+<td style="text-align: right;">≥80%</td>
+<td style="text-align: right;"><strong>100%（40/40）</strong>；官方 300
+中取数 34/34、计算 33/33</td>
+</tr>
+<tr>
+<td>证据引用命中率</td>
+<td style="text-align: right;">≥90%</td>
+<td style="text-align: right;"><strong>91.3%（CPU）</strong> /
+91.9%（GPU）</td>
+</tr>
+<tr>
+<td>关键数字/日期/机构/文号错误率</td>
+<td style="text-align: right;">≤5%</td>
+<td style="text-align: right;"><strong>2.4%</strong>（按事实计）</td>
+</tr>
+<tr>
+<td>拒答/澄清率</td>
+<td style="text-align: right;">≥80%</td>
+<td style="text-align: right;"><strong>100%（40/40）</strong></td>
+</tr>
+<tr>
+<td>自命题 200 题总准确率</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>183/200（91.5%，CPU）</strong> /
+180/200（90.0%，GPU）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="性能实测单轮问答串行rtx-5070-laptop-ryzen-9-8945hx">7.3
+性能实测（单轮问答，串行，RTX 5070 Laptop / Ryzen 9 8945HX）</h3>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 36%" />
+<col style="width: 36%" />
+</colgroup>
+<thead>
+<tr>
+<th>评测集</th>
+<th style="text-align: right;">CPU 平均 / P50 / P95 / 最大</th>
+<th style="text-align: right;">GPU 平均 / P50 / P95 / 最大</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>官方 300（选择题）</td>
+<td style="text-align: right;">7.03 / 0.26 / 32.2 / 64.2 s</td>
+<td style="text-align: right;"><strong>0.54 / 0.22 / 3.51 / 8.66
+s</strong></td>
+</tr>
+<tr>
+<td>自命题 200 题（开放问答）</td>
+<td style="text-align: right;">28.4 / 29.8 / 72.0 / 134.6 s</td>
+<td style="text-align: right;"><strong>17.9 / 14.1 / 58.0 / 168.8
+s</strong></td>
+</tr>
+</tbody>
+</table>
+<p>开放题延迟由 LLM API 生成（约 10–12 s/题）主导，GPU 将本地检索+重排从
+~15 s 压到 ~3 s（平均提速 1.6 倍、P50 提速 2.1 倍）；长尾为 LLM API 偶发
+慢响应（CPU/GPU 均有）。选择题大部分走确定性表格链路（P50 ~0.2 s）。</p>
+<h3 id="工程验证">7.4 工程验证</h3>
+<ul>
+<li>后端单元测试 <strong>588 passed</strong>；</li>
+<li>反硬编码审计 <strong>0
+findings</strong>（逐批审计产物随包交付）；</li>
+<li>官方 300 在四阶段升级期间 6+ 次回归均 300/300、0 错误；</li>
+<li>4 workers 并发 40 题 <strong>0 错误</strong>（修复前 31 个
+503）。</li>
+</ul>
+<hr />
+<h2 id="迭代与失败归因ragas-三层">8. 迭代与失败归因（RAGAS 三层）</h2>
+<p>200 题联合评测曾卡在 87%，分层归因（context_recall /
+context_precision /
+faithfulness）确认<strong>瓶颈在检索层而非生成层</strong>：≥15/26
+题失败为证据拿不到 或拿错（定义条款被挤出
+top-k、同概念附件错位、多文档题只检索到一份），
+而校验机制可靠（无幻觉，是证据错了）。据此实施四阶段升级：</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一</td>
+<td>条款级索引 + 定义条款定位 + 附件/章节限定加权</td>
+<td>定义类 26/30→29/30，错位题恢复</td>
+</tr>
+<tr>
+<td>二</td>
+<td>CRAG-lite 分级路由 + 列表完整性补搜 + 引用修复</td>
+<td>拒答边界修复，B2-R10 0/4→4/5</td>
+</tr>
+<tr>
+<td>三</td>
+<td>并发 503 修复 + 延迟优化</td>
+<td>40 题并发 0 错误，rerank 减半</td>
+</tr>
+<tr>
+<td>四</td>
+<td>HyDE 覆盖缺口补检索 + 条款引用多跳</td>
+<td>BW-D12/B2-L01 从拒答/0/5 恢复</td>
+</tr>
+<tr>
+<td>合计</td>
+<td>—</td>
+<td><strong>200 题 87% → 91.5%（CPU）</strong>，官方 300 保持
+300/300</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="创新点总结">9. 创新点总结</h2>
+<ol type="1">
+<li><strong>条款级索引 +
+定义条款定位</strong>：监管文档按”第X条”结构索引，定义型问题
+先定位定义条款再取上下文，解决条款错位与定义句切碎；</li>
+<li><strong>CRAG-lite
+分级路由</strong>：生成前”证据-问题”相关性判断，证据缺失自动定向
+补检索（禁止性规定、兜底条款、列表枚举等模式），而非直接生成；</li>
+<li><strong>HyDE 覆盖缺口补检索 + 监管文档结构图</strong>：假设条款检索
++ “本办法第X条” 引用图多跳，解决跨文档/跨条款推理；</li>
+<li><strong>确定性表格链路</strong>：133,001 单元格结构化索引 +
+程序化取数/计算， 表格类题目 100% 准确且毫秒级返回；</li>
+<li><strong>证据闭环校验</strong>：数字/日期/机构/文号/引用标签确定性校验
++ 证据受限 二次生成 + 结构化拒答，实体错误率 2.4%、拒答率
+100%、证据引用命中率 91%+。</li>
+</ol>
+<hr />
+<h2 id="复现说明与已知限制">10. 复现说明与已知限制</h2>
+<h3 id="复现">10.1 复现</h3>
+<p>见代码提交包 README.md 与
+<code>data/自命题200题评测集/README.md</code>： 一键构建镜像 → 一键入库
+500 文件 → 官方 300 回归 → 自命题 200 题跑测评分。
+知识库重建后与评测环境一致（manifest SHA-256 可校验）。</p>
+<h3 id="已知限制如实说明">10.2 已知限制（如实说明）</h3>
+<ul>
+<li><strong>LLM 生成波动</strong>：同代码重复运行准确率波动 ±1–3
+题（文本生成题）；</li>
+<li><strong>跨文档题仍偏弱</strong>：8 题中 3–4
+题通过（金标要求多文件引用时生成层 对比结论偶有缺漏）；</li>
+<li><strong>开放题延迟长尾</strong>：LLM API 偶发慢响应（最大 ~170
+s），本地计算非瓶颈；</li>
+<li><strong>官方 300 开放问答（judge 口径）84.7%</strong>：低于选择题
+100%，属开放式
+生成口径，选择题（官方硬门禁）与自命题确定性评分均已达标。</li>
+</ul>
+</body>
+</html>

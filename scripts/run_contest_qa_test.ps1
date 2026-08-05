@@ -120,7 +120,7 @@ $arguments = @(
 )
 
 if ($Mode -eq "Full") {
-    $relativeOutput = if ($Output) { $Output } else { "data/evaluation/official_300/$(Get-Date -Format 'yyyyMMdd_HHmmss')" }
+    $relativeOutput = if ($Output) { $Output } else { "evaluation/系统测试结果/官方300题/contest_qa_test/$(Get-Date -Format 'yyyyMMdd_HHmmss')" }
     if ([System.IO.Path]::IsPathRooted($relativeOutput)) {
         throw "Output must be relative to the project root so the container can persist it: $relativeOutput"
     }

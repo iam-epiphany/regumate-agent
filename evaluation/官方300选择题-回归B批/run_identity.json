@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "mode": "diagnostic",
+  "created_at": "2026-08-03T10:59:31.433195+00:00",
+  "git_commit": "9b11a4eca7e7e91036868a373265d7816ed809da",
+  "worktree_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "qa_sha256": "bb43588e9fb45b51a57c61516bc7ff7bd33775863b0828c74212ae69c6395a51",
+  "corpus_snapshot_sha256": "41728b04ef86eccac49dee0e93f6eaa54e4b3903eba8b6e631923f1634ddc0af",
+  "evaluator_sha256": "a8c5ef356abf756fb826494f265a7b8b50e6933c06a3298821d73f3f4319982f",
+  "runner_sha256": "0d45a270eed0b2df8f62f133193ef178d36977ad30e505a9371d4528109eb37d",
+  "case_manifest_sha256": "8bf70ad3733f7daf584e1c712dbbc80f9cfd237ea14d2aae52877397b7a80b06",
+  "case_count": 300,
+  "runtime": {
+    "reachable": true,
+    "build_id": "regumate-agent-small",
+    "ready": true,
+    "qdrant": {
+      "collection": null,
+      "points": null,
+      "status": null
+    },
+    "model_device": {
+      "selected_device": "cuda",
+      "cuda_available": true,
+      "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+      "cuda_total_memory_gb": 7.96
+    },
+    "performance": {
+      "selected_mode": "gpu",
+      "rerank_batch_size": 24,
+      "rerank_max_length": 1024
+    }
+  },
+  "base_url": "http://127.0.0.1:8000"
+}

@@ -2168,6 +2168,46 @@ textarea {
   margin-top: auto;
 }
 
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.sidebar-head .brand {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.sidebar-collapse-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-solid);
+}
+
+.sidebar-collapse-button:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+}
+
 .system-status-panel {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -4590,5 +4630,75 @@ textarea {
 @media (max-width: 720px) {
   .audit-detail-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Collapsible sidebar (desktop): 折叠后收窄为一排图标 */
+@media (min-width: 861px) {
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .app-shell.sidebar-collapsed .sidebar {
+    padding: 18px 10px;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .app-shell.sidebar-collapsed .brand {
+    justify-content: center;
+    padding-inline: 0;
+    margin-bottom: 0;
+  }
+
+  .app-shell.sidebar-collapsed .brand-copy,
+  .app-shell.sidebar-collapsed .nav-label {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed nav {
+    gap: 6px;
+  }
+
+  .app-shell.sidebar-collapsed .nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-system-status {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed .mobile-status-button {
+    position: relative;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    color: var(--primary);
+  }
+
+  .app-shell.sidebar-collapsed .mobile-status-button .status-dot {
+    position: absolute;
+    right: 1px;
+    bottom: 2px;
+    width: 8px;
+    height: 8px;
+    border: 2px solid #fff;
+  }
+}
+
+@media (max-width: 860px) {
+  .sidebar-collapse-button {
+    display: none;
+  }
+
+  .sidebar-head,
+  .sidebar-footer {
+    display: contents;
   }
 }

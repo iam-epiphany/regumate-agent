@@ -182,7 +182,7 @@ docker compose up -d --build
 
 ### 100 题挑战集状态
 
-基于冻结 500 份官方文档构建的挑战集位于 `data/evaluation/trust_challenge_100/`，在线运行器只读取问题文件，离线评分器单独读取金标。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
+基于冻结 500 份官方文档构建的挑战集位于 `evaluation/trust_challenge_100/`，在线运行器只读取问题文件，离线评分器单独读取金标。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
 
 首次封存运行已原样封存，结果为 42/60，未达到发布门槛；失败证据、限制和哈希见 `outputs/evaluation/trust_challenge_100/holdout_failure_report.md`。2026-07-24 Stage 5 当前代码在 60 题封存集上的质量回归为 57/60、overall 95.00%、answerable 93.33%、refusal 100%，并已在 `docs/系统评测报告.md` 中单独列示为内部封存困难集回归结果。该题集状态为 `codex_verified`，未经过银行监管专家人工复核，60 题封存集也不是第三方独立盲测；不得把该结果表述为外部专家成绩或第三方盲测成绩。
 
@@ -231,7 +231,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_qa_tes
 结果会写入：
 
 ```text
-data/evaluation/contest_qa_test/<timestamp>/
+evaluation/系统测试结果/官方300题/contest_qa_test/<timestamp>/
 ```
 
 旧的一体化脚本仍可用于“启动系统、上传、评测”连续流程：
@@ -259,7 +259,62 @@ docker compose exec -T app python scripts/run_contest_qa_test.py \
 
 Linux NVIDIA GPU 机器可去掉 `--allow-cpu`。如果模型尚未预热，先按“正式运行”中的 `curl -X POST http://127.0.0.1:8000/api/health/warmup` 执行一次。
 
-## 八、开发验证
+## 八、系统测试（官方 300 题 + 自命题 200 题开放问答）
+
+### 为什么自命题 200 题
+
+官方 300 题为**选择题**，主要验证检索与识别能力，但无法完全展示系统的
+真实能力：选择题不需要系统自主组织答案，也无法考察答案中数字/日期/机构/
+文号是否准确、证据引用是否真实命中来源、依据不足时是否诚实拒答等开放
+问答关键能力。因此我们依据银行业真实业务场景（信贷审批、风险分类、资本
+管理、消保投诉、反洗钱、支付结算、普惠金融、监管报送等）自命题 **200 道
+开放问答题**（旧批 100 + 新批 100，覆盖定义/规则/阈值/名单/表格取数/
+表格计算/跨文档/拒答八类题型），编写金标与确定性评分器，用于测试系统的
+开放问答能力。测试结论见包外《测试报告_ReguMate可信RAG问答》（md + pdf）。
+
+### 一键全量测评（推荐）
+
+系统启动后，一条命令完成官方 300 题 + 自命题 200 题跑测与评分：
+
+```powershell
+python scripts/run_all_evaluations.py --base-url http://127.0.0.1:8000
+```
+
+流程：健康检查 → 官方 300 题计时（正确率+延迟）→ 自命题 200 题串行跑测
+（逐题延迟）→ 确定性评分 → 汇总表。产物写入
+`evaluation/系统测试结果/一键评测_<时间戳>/`（含 summary.json、官方300计时、
+逐题诊断与评分汇总）。
+
+> 说明：200 题开放问答单题约 15–35 秒（LLM 生成主导），全量约 1–2 小时；
+> 官方 300 题约 5–15 分钟。跑测为串行执行以保证逐题延迟测量纯净。
+> GPU 环境（`--gpus all` 启动）可显著加速：开放题平均 28 s → 18 s。
+
+### 分步跑法
+
+官方 300 题（选择题，计时+正确率）：
+
+```powershell
+python scripts/run_official300_timing.py http://127.0.0.1:8000 evaluation/系统测试结果/<输出目录>
+```
+
+自命题 200 题跑测：
+
+```powershell
+python scripts/run_pair_regression.py --questions data/自命题200题评测集/去锚100题/questions.jsonl `
+  --out evaluation/系统测试结果/<输出目录>/old_outputs.json --base-url http://127.0.0.1:8000
+python scripts/run_pair_regression.py --questions data/自命题200题评测集/去锚100题B/questions.jsonl `
+  --out evaluation/系统测试结果/<输出目录>/new_outputs.json --base-url http://127.0.0.1:8000
+```
+
+确定性评分（输出逐题诊断与分类汇总）：
+
+```powershell
+python scripts/score_pair_regression.py --out-dir evaluation/系统测试结果/<输出目录>
+```
+
+评测问答集、金标、评分器与字段说明：`data/自命题200题评测集/README.md`。
+
+## 九、开发验证
 
 后端单元测试：
 

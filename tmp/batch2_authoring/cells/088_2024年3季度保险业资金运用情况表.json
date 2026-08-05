@@ -1,0 +1,1006 @@
+{
+"filename": "088_2024年3季度保险业资金运用情况表_2024年三季度保险业资金运用情况表.xls",
+"title": "2024年3季度保险业资金运用情况表2024年3季度保险业资金运用情况表",
+"cells": [
+{
+"sheet": "sheet1",
+"row": 5,
+"column": 1,
+"coord": "A5",
+"row_label": "保险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "保险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 5,
+"column": 2,
+"coord": "B5",
+"row_label": "保险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 5,
+"column": 3,
+"coord": "C5",
+"row_label": "保险公司 / 资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "321512.0705",
+"numeric": 321512.070508299
+},
+{
+"sheet": "sheet1",
+"row": 5,
+"column": 4,
+"coord": "D5",
+"row_label": "保险公司 / 资金运用余额",
+"column_label": "截至当期 / 占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "sheet1",
+"row": 5,
+"column": 5,
+"coord": "E5",
+"row_label": "保险公司 / 资金运用余额",
+"column_label": "截至当期 / 同比变化",
+"value": "0.1406",
+"numeric": 0.1406
+},
+{
+"sheet": "sheet1",
+"row": 6,
+"column": 1,
+"coord": "A6",
+"row_label": "保险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "保险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "保险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化财务投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "保险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0312",
+"numeric": 0.0312
+},
+{
+"sheet": "sheet1",
+"row": 6,
+"column": 4,
+"coord": "D6",
+"row_label": "保险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.0312",
+"numeric": 0.0312
+},
+{
+"sheet": "sheet1",
+"row": 6,
+"column": 5,
+"coord": "E6",
+"row_label": "保险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0312",
+"numeric": 0.0312
+},
+{
+"sheet": "sheet1",
+"row": 7,
+"column": 1,
+"coord": "A7",
+"row_label": "保险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "保险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "保险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化综合投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "保险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0716",
+"numeric": 0.0716
+},
+{
+"sheet": "sheet1",
+"row": 7,
+"column": 4,
+"coord": "D7",
+"row_label": "保险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.0716",
+"numeric": 0.0716
+},
+{
+"sheet": "sheet1",
+"row": 7,
+"column": 5,
+"coord": "E7",
+"row_label": "保险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0716",
+"numeric": 0.0716
+},
+{
+"sheet": "sheet1",
+"row": 8,
+"column": 1,
+"coord": "A8",
+"row_label": "其中：财产险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "其中：财产险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "其中：财产险公司 / 资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "21357.52605",
+"numeric": 21357.5260475975
+},
+{
+"sheet": "sheet1",
+"row": 8,
+"column": 4,
+"coord": "D8",
+"row_label": "其中：财产险公司 / 资金运用余额",
+"column_label": "截至当期 / 占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "sheet1",
+"row": 8,
+"column": 5,
+"coord": "E8",
+"row_label": "其中：财产险公司 / 资金运用余额",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0674",
+"numeric": 0.0674
+},
+{
+"sheet": "sheet1",
+"row": 9,
+"column": 1,
+"coord": "A9",
+"row_label": "其中：财产险公司 / 其中：银行存款",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "其中：财产险公司 / 其中：银行存款",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "其中：财产险公司 / 其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "3817.936737",
+"numeric": 3817.9367366209
+},
+{
+"sheet": "sheet1",
+"row": 9,
+"column": 4,
+"coord": "D9",
+"row_label": "其中：财产险公司 / 其中：银行存款",
+"column_label": "截至当期 / 占比",
+"value": "0.1787630612",
+"numeric": 0.178763061232477
+},
+{
+"sheet": "sheet1",
+"row": 9,
+"column": 5,
+"coord": "E9",
+"row_label": "其中：财产险公司 / 其中：银行存款",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0237",
+"numeric": 0.0237
+},
+{
+"sheet": "sheet1",
+"row": 10,
+"column": 1,
+"coord": "A10",
+"row_label": "其中：财产险公司 / 债券",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "其中：财产险公司 / 债券",
+"column_label": "项目 / 机构类别/指标",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "其中：财产险公司 / 债券",
+"column_label": "截至当期 / 账面余额",
+"value": "7960.557669",
+"numeric": 7960.557668615
+},
+{
+"sheet": "sheet1",
+"row": 10,
+"column": 4,
+"coord": "D10",
+"row_label": "其中：财产险公司 / 债券",
+"column_label": "截至当期 / 占比",
+"value": "0.3727284542",
+"numeric": 0.372728454169929
+},
+{
+"sheet": "sheet1",
+"row": 10,
+"column": 5,
+"coord": "E10",
+"row_label": "其中：财产险公司 / 债券",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0944",
+"numeric": 0.0944
+},
+{
+"sheet": "sheet1",
+"row": 11,
+"column": 1,
+"coord": "A11",
+"row_label": "其中：财产险公司 / 股票",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "其中：财产险公司 / 股票",
+"column_label": "项目 / 机构类别/指标",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "其中：财产险公司 / 股票",
+"column_label": "截至当期 / 账面余额",
+"value": "1505.781154",
+"numeric": 1505.7811535419
+},
+{
+"sheet": "sheet1",
+"row": 11,
+"column": 4,
+"coord": "D11",
+"row_label": "其中：财产险公司 / 股票",
+"column_label": "截至当期 / 占比",
+"value": "0.0705035382",
+"numeric": 0.0705035381994201
+},
+{
+"sheet": "sheet1",
+"row": 11,
+"column": 5,
+"coord": "E11",
+"row_label": "其中：财产险公司 / 股票",
+"column_label": "截至当期 / 同比变化",
+"value": "0.1489",
+"numeric": 0.1489
+},
+{
+"sheet": "sheet1",
+"row": 12,
+"column": 1,
+"coord": "A12",
+"row_label": "其中：财产险公司 / 证券投资基金",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "其中：财产险公司 / 证券投资基金",
+"column_label": "项目 / 机构类别/指标",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "其中：财产险公司 / 证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "2118.112356",
+"numeric": 2118.1123560606
+},
+{
+"sheet": "sheet1",
+"row": 12,
+"column": 4,
+"coord": "D12",
+"row_label": "其中：财产险公司 / 证券投资基金",
+"column_label": "截至当期 / 占比",
+"value": "0.09917405",
+"numeric": 0.0991740499971843
+},
+{
+"sheet": "sheet1",
+"row": 12,
+"column": 5,
+"coord": "E12",
+"row_label": "其中：财产险公司 / 证券投资基金",
+"column_label": "截至当期 / 同比变化",
+"value": "0.1811",
+"numeric": 0.1811
+},
+{
+"sheet": "sheet1",
+"row": 13,
+"column": 1,
+"coord": "A13",
+"row_label": "其中：财产险公司 / 长期股权投资",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "其中：财产险公司 / 长期股权投资",
+"column_label": "项目 / 机构类别/指标",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "其中：财产险公司 / 长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "1365.142519",
+"numeric": 1365.1425185423
+},
+{
+"sheet": "sheet1",
+"row": 13,
+"column": 4,
+"coord": "D13",
+"row_label": "其中：财产险公司 / 长期股权投资",
+"column_label": "截至当期 / 占比",
+"value": "0.06391856976",
+"numeric": 0.0639185697584981
+},
+{
+"sheet": "sheet1",
+"row": 13,
+"column": 5,
+"coord": "E13",
+"row_label": "其中：财产险公司 / 长期股权投资",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0726",
+"numeric": 0.0726
+},
+{
+"sheet": "sheet1",
+"row": 14,
+"column": 1,
+"coord": "A14",
+"row_label": "其中：财产险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "其中：财产险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化财务投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "其中：财产险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0314",
+"numeric": 0.0314
+},
+{
+"sheet": "sheet1",
+"row": 14,
+"column": 4,
+"coord": "D14",
+"row_label": "其中：财产险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.0314",
+"numeric": 0.0314
+},
+{
+"sheet": "sheet1",
+"row": 14,
+"column": 5,
+"coord": "E14",
+"row_label": "其中：财产险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0314",
+"numeric": 0.0314
+},
+{
+"sheet": "sheet1",
+"row": 15,
+"column": 1,
+"coord": "A15",
+"row_label": "其中：财产险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：财产险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "其中：财产险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化综合投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "其中：财产险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0547",
+"numeric": 0.0547
+},
+{
+"sheet": "sheet1",
+"row": 15,
+"column": 4,
+"coord": "D15",
+"row_label": "其中：财产险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.0547",
+"numeric": 0.0547
+},
+{
+"sheet": "sheet1",
+"row": 15,
+"column": 5,
+"coord": "E15",
+"row_label": "其中：财产险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0547",
+"numeric": 0.0547
+},
+{
+"sheet": "sheet1",
+"row": 16,
+"column": 1,
+"coord": "A16",
+"row_label": "人身险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "人身险公司 / 资金运用余额",
+"column_label": "项目 / 机构类别/指标",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "人身险公司 / 资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "289404.8508",
+"numeric": 289404.850822283
+},
+{
+"sheet": "sheet1",
+"row": 16,
+"column": 4,
+"coord": "D16",
+"row_label": "人身险公司 / 资金运用余额",
+"column_label": "截至当期 / 占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "sheet1",
+"row": 16,
+"column": 5,
+"coord": "E16",
+"row_label": "人身险公司 / 资金运用余额",
+"column_label": "截至当期 / 同比变化",
+"value": "0.1493",
+"numeric": 0.1493
+},
+{
+"sheet": "sheet1",
+"row": 17,
+"column": 1,
+"coord": "A17",
+"row_label": "人身险公司 / 其中：银行存款",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "人身险公司 / 其中：银行存款",
+"column_label": "项目 / 机构类别/指标",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "人身险公司 / 其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "24239.78063",
+"numeric": 24239.7806342661
+},
+{
+"sheet": "sheet1",
+"row": 17,
+"column": 4,
+"coord": "D17",
+"row_label": "人身险公司 / 其中：银行存款",
+"column_label": "截至当期 / 占比",
+"value": "0.08375734051",
+"numeric": 0.0837573405055024
+},
+{
+"sheet": "sheet1",
+"row": 17,
+"column": 5,
+"coord": "E17",
+"row_label": "人身险公司 / 其中：银行存款",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0735",
+"numeric": 0.0735
+},
+{
+"sheet": "sheet1",
+"row": 18,
+"column": 1,
+"coord": "A18",
+"row_label": "人身险公司 / 债券",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "人身险公司 / 债券",
+"column_label": "项目 / 机构类别/指标",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "人身险公司 / 债券",
+"column_label": "截至当期 / 账面余额",
+"value": "142326.398",
+"numeric": 142326.398015084
+},
+{
+"sheet": "sheet1",
+"row": 18,
+"column": 4,
+"coord": "D18",
+"row_label": "人身险公司 / 债券",
+"column_label": "截至当期 / 占比",
+"value": "0.4917899531",
+"numeric": 0.491789953107879
+},
+{
+"sheet": "sheet1",
+"row": 18,
+"column": 5,
+"coord": "E18",
+"row_label": "人身险公司 / 债券",
+"column_label": "截至当期 / 同比变化",
+"value": "0.2552",
+"numeric": 0.2552
+},
+{
+"sheet": "sheet1",
+"row": 19,
+"column": 1,
+"coord": "A19",
+"row_label": "人身险公司 / 股票",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "人身险公司 / 股票",
+"column_label": "项目 / 机构类别/指标",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "人身险公司 / 股票",
+"column_label": "截至当期 / 账面余额",
+"value": "21838.06686",
+"numeric": 21838.0668560444
+},
+{
+"sheet": "sheet1",
+"row": 19,
+"column": 4,
+"coord": "D19",
+"row_label": "人身险公司 / 股票",
+"column_label": "截至当期 / 占比",
+"value": "0.07545853773",
+"numeric": 0.0754585377335456
+},
+{
+"sheet": "sheet1",
+"row": 19,
+"column": 5,
+"coord": "E19",
+"row_label": "人身险公司 / 股票",
+"column_label": "截至当期 / 同比变化",
+"value": "0.1724",
+"numeric": 0.1724
+},
+{
+"sheet": "sheet1",
+"row": 20,
+"column": 1,
+"coord": "A20",
+"row_label": "人身险公司 / 证券投资基金",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "人身险公司 / 证券投资基金",
+"column_label": "项目 / 机构类别/指标",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "人身险公司 / 证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "15685.92151",
+"numeric": 15685.9215073098
+},
+{
+"sheet": "sheet1",
+"row": 20,
+"column": 4,
+"coord": "D20",
+"row_label": "人身险公司 / 证券投资基金",
+"column_label": "截至当期 / 占比",
+"value": "0.0542006171",
+"numeric": 0.0542006171034851
+},
+{
+"sheet": "sheet1",
+"row": 20,
+"column": 5,
+"coord": "E20",
+"row_label": "人身险公司 / 证券投资基金",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0432",
+"numeric": 0.0432
+},
+{
+"sheet": "sheet1",
+"row": 21,
+"column": 1,
+"coord": "A21",
+"row_label": "人身险公司 / 长期股权投资",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "人身险公司 / 长期股权投资",
+"column_label": "项目 / 机构类别/指标",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "人身险公司 / 长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "22925.09152",
+"numeric": 22925.0915161201
+},
+{
+"sheet": "sheet1",
+"row": 21,
+"column": 4,
+"coord": "D21",
+"row_label": "人身险公司 / 长期股权投资",
+"column_label": "截至当期 / 占比",
+"value": "0.07921460698",
+"numeric": 0.0792146069804402
+},
+{
+"sheet": "sheet1",
+"row": 21,
+"column": 5,
+"coord": "E21",
+"row_label": "人身险公司 / 长期股权投资",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0042",
+"numeric": 0.0042
+},
+{
+"sheet": "sheet1",
+"row": 22,
+"column": 1,
+"coord": "A22",
+"row_label": "人身险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "人身险公司 / 年化财务投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化财务投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "人身险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0304",
+"numeric": 0.0304
+},
+{
+"sheet": "sheet1",
+"row": 22,
+"column": 4,
+"coord": "D22",
+"row_label": "人身险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.0304",
+"numeric": 0.0304
+},
+{
+"sheet": "sheet1",
+"row": 22,
+"column": 5,
+"coord": "E22",
+"row_label": "人身险公司 / 年化财务投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.0304",
+"numeric": 0.0304
+},
+{
+"sheet": "sheet1",
+"row": 23,
+"column": 1,
+"coord": "A23",
+"row_label": "人身险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "人身险公司",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "人身险公司 / 年化综合投资收益率",
+"column_label": "项目 / 机构类别/指标",
+"value": "年化综合投资收益率",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "人身险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.073",
+"numeric": 0.073
+},
+{
+"sheet": "sheet1",
+"row": 23,
+"column": 4,
+"coord": "D23",
+"row_label": "人身险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 占比",
+"value": "0.073",
+"numeric": 0.073
+},
+{
+"sheet": "sheet1",
+"row": 23,
+"column": 5,
+"coord": "E23",
+"row_label": "人身险公司 / 年化综合投资收益率",
+"column_label": "截至当期 / 同比变化",
+"value": "0.073",
+"numeric": 0.073
+},
+{
+"sheet": "sheet1",
+"row": 24,
+"column": 1,
+"coord": "A24",
+"row_label": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"column_label": "项目 / 机构类别/指标",
+"value": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"column_label": "项目 / 机构类别/指标",
+"value": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"column_label": "截至当期 / 账面余额",
+"value": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 24,
+"column": 4,
+"coord": "D24",
+"row_label": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"column_label": "截至当期 / 占比",
+"value": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"numeric": null
+},
+{
+"sheet": "sheet1",
+"row": 24,
+"column": 5,
+"coord": "E24",
+"row_label": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"column_label": "截至当期 / 同比变化",
+"value": "注：\n1.本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n2.年化财务投资收益率=〔（期末累计实现财务收益/平均资金运用余额）/x〕×4,x为当前季度。\n3.年化综合投资收益率=〔（期末累计实现综合收益/平均资金运用余额）/x〕×4,x为当前季度。",
+"numeric": null
+}
+]
+}

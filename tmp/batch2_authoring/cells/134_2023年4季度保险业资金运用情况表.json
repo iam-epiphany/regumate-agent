@@ -1,0 +1,1046 @@
+{
+"filename": "134_2023年4季度保险业资金运用情况表_2023年四季度保险业资金运用情况表.xlsx",
+"title": "2023年4季度保险业资金运用情况表2023年4季度保险业资金运用情况表",
+"cells": [
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 6,
+"column": 1,
+"coord": "A6",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "281573.6094",
+"numeric": 281573.609414449
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 6,
+"column": 4,
+"coord": "D6",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1105494033",
+"numeric": 0.110549403288851
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 7,
+"column": 1,
+"coord": "A7",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.02234890541",
+"numeric": 0.0223489054088857
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.02234890541",
+"numeric": 0.0223489054088857
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 7,
+"column": 4,
+"coord": "D7",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.02234890541",
+"numeric": 0.0223489054088857
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 8,
+"column": 1,
+"coord": "A8",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.0321660148",
+"numeric": 0.0321660147974141
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0321660148",
+"numeric": 0.0321660147974141
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 8,
+"column": 4,
+"coord": "D8",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.0321660148",
+"numeric": 0.0321660147974141
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 9,
+"column": 1,
+"coord": "A9",
+"row_label": "其中：人身险公司",
+"column_label": "项目",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 账面余额",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 规模占比",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 9,
+"column": 4,
+"coord": "D9",
+"row_label": "其中：人身险公司",
+"column_label": "截至当期 / 同比增长",
+"value": "其中：人身险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 10,
+"column": 1,
+"coord": "A10",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 10,
+"column": 4,
+"coord": "D10",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 11,
+"column": 1,
+"coord": "A11",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "账面余额",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "规模占比",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 11,
+"column": 4,
+"coord": "D11",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "同比增长",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 12,
+"column": 1,
+"coord": "A12",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "251914.1652",
+"numeric": 251914.165162238
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 12,
+"column": 4,
+"coord": "D12",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1151955768",
+"numeric": 0.115195576760055
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 13,
+"column": 1,
+"coord": "A13",
+"row_label": "其中：银行存款",
+"column_label": "项目",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "21558.13192",
+"numeric": 21558.1319226107
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 规模占比",
+"value": "0.08557729141",
+"numeric": 0.0855772914108533
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 13,
+"column": 4,
+"coord": "D13",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.03469523586",
+"numeric": -0.0346952358591501
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 14,
+"column": 1,
+"coord": "A14",
+"row_label": "债券",
+"column_label": "项目",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "债券",
+"column_label": "截至当期 / 账面余额",
+"value": "115775.9975",
+"numeric": 115775.997486169
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "债券",
+"column_label": "截至当期 / 规模占比",
+"value": "0.4595851028",
+"numeric": 0.459585102773424
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 14,
+"column": 4,
+"coord": "D14",
+"row_label": "债券",
+"column_label": "截至当期 / 同比增长",
+"value": "0.2306725801",
+"numeric": 0.230672580110362
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 15,
+"column": 1,
+"coord": "A15",
+"row_label": "股票",
+"column_label": "项目",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "股票",
+"column_label": "截至当期 / 账面余额",
+"value": "18160.25304",
+"numeric": 18160.2530356672
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "股票",
+"column_label": "截至当期 / 规模占比",
+"value": "0.07208905074",
+"numeric": 0.0720890507446121
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 15,
+"column": 4,
+"coord": "D15",
+"row_label": "股票",
+"column_label": "截至当期 / 同比增长",
+"value": "0.03008433942",
+"numeric": 0.0300843394156824
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 16,
+"column": 1,
+"coord": "A16",
+"row_label": "证券投资基金",
+"column_label": "项目",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "13549.15026",
+"numeric": 13549.1502564767
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 规模占比",
+"value": "0.05378478915",
+"numeric": 0.0537847891473302
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 16,
+"column": 4,
+"coord": "D16",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1214972455",
+"numeric": 0.121497245468685
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 17,
+"column": 1,
+"coord": "A17",
+"row_label": "长期股权投资",
+"column_label": "项目",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "23047.17415",
+"numeric": 23047.1741545042
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 规模占比",
+"value": "0.0914882025",
+"numeric": 0.0914882024981061
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 17,
+"column": 4,
+"coord": "D17",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.006764946263",
+"numeric": -0.00676494626334079
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 18,
+"column": 1,
+"coord": "A18",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.02290609058",
+"numeric": 0.0229060905779469
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.02290609058",
+"numeric": 0.0229060905779469
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 18,
+"column": 4,
+"coord": "D18",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.02290609058",
+"numeric": 0.0229060905779469
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 19,
+"column": 1,
+"coord": "A19",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.03374238853",
+"numeric": 0.0337423885317111
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.03374238853",
+"numeric": 0.0337423885317111
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 19,
+"column": 4,
+"coord": "D19",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.03374238853",
+"numeric": 0.0337423885317111
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 20,
+"column": 1,
+"coord": "A20",
+"row_label": "其中：财产保险公司",
+"column_label": "项目",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 账面余额",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 规模占比",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 20,
+"column": 4,
+"coord": "D20",
+"row_label": "其中：财产保险公司",
+"column_label": "截至当期 / 同比增长",
+"value": "其中：财产保险公司",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 21,
+"column": 1,
+"coord": "A21",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 21,
+"column": 4,
+"coord": "D21",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "截至当期",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 22,
+"column": 1,
+"coord": "A22",
+"row_label": "项目",
+"column_label": "项目",
+"value": "项目",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "项目",
+"column_label": "截至当期 / 账面余额",
+"value": "账面余额",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "项目",
+"column_label": "截至当期 / 规模占比",
+"value": "规模占比",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 22,
+"column": 4,
+"coord": "D22",
+"row_label": "项目",
+"column_label": "截至当期 / 同比增长",
+"value": "同比增长",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 23,
+"column": 1,
+"coord": "A23",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 账面余额",
+"value": "20200.46958",
+"numeric": 20200.4695774817
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 规模占比",
+"value": "1",
+"numeric": 1.0
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 23,
+"column": 4,
+"coord": "D23",
+"row_label": "资金运用余额",
+"column_label": "截至当期 / 同比增长",
+"value": "0.04591072741",
+"numeric": 0.0459107274121537
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 24,
+"column": 1,
+"coord": "A24",
+"row_label": "其中：银行存款",
+"column_label": "项目",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 账面余额",
+"value": "3653.85724",
+"numeric": 3653.8572398653
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 规模占比",
+"value": "0.180879817",
+"numeric": 0.180879816969127
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 24,
+"column": 4,
+"coord": "D24",
+"row_label": "其中：银行存款",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.1231534357",
+"numeric": -0.123153435670099
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 25,
+"column": 1,
+"coord": "A25",
+"row_label": "债券",
+"column_label": "项目",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "债券",
+"column_label": "截至当期 / 账面余额",
+"value": "7639.561954",
+"numeric": 7639.5619538054
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 25,
+"column": 3,
+"coord": "C25",
+"row_label": "债券",
+"column_label": "截至当期 / 规模占比",
+"value": "0.3781873448",
+"numeric": 0.378187344828931
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 25,
+"column": 4,
+"coord": "D25",
+"row_label": "债券",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1768129935",
+"numeric": 0.176812993483878
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 26,
+"column": 1,
+"coord": "A26",
+"row_label": "股票",
+"column_label": "项目",
+"value": "股票",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "股票",
+"column_label": "截至当期 / 账面余额",
+"value": "1265.147882",
+"numeric": 1265.1478817056
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "股票",
+"column_label": "截至当期 / 规模占比",
+"value": "0.06262962734",
+"numeric": 0.0626296273387581
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 26,
+"column": 4,
+"coord": "D26",
+"row_label": "股票",
+"column_label": "截至当期 / 同比增长",
+"value": "-0.005259855165",
+"numeric": -0.00525985516546024
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 27,
+"column": 1,
+"coord": "A27",
+"row_label": "证券投资基金",
+"column_label": "项目",
+"value": "证券投资基金",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 27,
+"column": 2,
+"coord": "B27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 账面余额",
+"value": "1785.542546",
+"numeric": 1785.542546364
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 27,
+"column": 3,
+"coord": "C27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 规模占比",
+"value": "0.08839114059",
+"numeric": 0.0883911405878613
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 27,
+"column": 4,
+"coord": "D27",
+"row_label": "证券投资基金",
+"column_label": "截至当期 / 同比增长",
+"value": "0.1223866566",
+"numeric": 0.122386656636875
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 28,
+"column": 1,
+"coord": "A28",
+"row_label": "长期股权投资",
+"column_label": "项目",
+"value": "长期股权投资",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 28,
+"column": 2,
+"coord": "B28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 账面余额",
+"value": "1306.217756",
+"numeric": 1306.2177562386
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 28,
+"column": 3,
+"coord": "C28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 规模占比",
+"value": "0.06466274218",
+"numeric": 0.064662742181731
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 28,
+"column": 4,
+"coord": "D28",
+"row_label": "长期股权投资",
+"column_label": "截至当期 / 同比增长",
+"value": "0.04756789316",
+"numeric": 0.0475678931637507
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 29,
+"column": 1,
+"coord": "A29",
+"row_label": "年化财务收益率",
+"column_label": "项目",
+"value": "年化财务收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 29,
+"column": 2,
+"coord": "B29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.02931156458",
+"numeric": 0.0293115645827393
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 29,
+"column": 3,
+"coord": "C29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.02931156458",
+"numeric": 0.0293115645827393
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 29,
+"column": 4,
+"coord": "D29",
+"row_label": "年化财务收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.02931156458",
+"numeric": 0.0293115645827393
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 30,
+"column": 1,
+"coord": "A30",
+"row_label": "年化综合收益率",
+"column_label": "项目",
+"value": "年化综合收益率",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 30,
+"column": 2,
+"coord": "B30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 账面余额",
+"value": "0.02872658371",
+"numeric": 0.0287265837066641
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 30,
+"column": 3,
+"coord": "C30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 规模占比",
+"value": "0.02872658371",
+"numeric": 0.0287265837066641
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 30,
+"column": 4,
+"coord": "D30",
+"row_label": "年化综合收益率",
+"column_label": "截至当期 / 同比增长",
+"value": "0.02872658371",
+"numeric": 0.0287265837066641
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 31,
+"column": 1,
+"coord": "A31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "项目",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 31,
+"column": 2,
+"coord": "B31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 账面余额",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 31,
+"column": 3,
+"coord": "C31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 规模占比",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "2023年4季度保险资金运用情况表",
+"row": 31,
+"column": 4,
+"coord": "D31",
+"row_label": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "截至当期 / 同比增长",
+"value": "备注：1、本表统计全部保险资金运用情况，包括非独立帐户和独立帐户,不含部分风险处置机构。\n     2、财务收益率年化=〔（期末累计实现财务收益/平均资金运用余额）/x〕*4,x为当前季度。\n     3、综合收益率年化=〔（期末累计实现综合收益/平均资金运用余额）/x〕*4,x为当前季度。\n     4、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+}
+]
+}

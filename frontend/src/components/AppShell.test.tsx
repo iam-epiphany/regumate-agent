@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listDocuments } from "../api/documents";
 import { getRagHealth } from "../api/system";
@@ -226,5 +226,46 @@ describe("AppShell system status", () => {
     await waitFor(() => expect(screen.getByText("可信问答服务已就绪")).toBeInTheDocument());
     expect(screen.getAllByText("已就绪").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("等待预热")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell collapsible sidebar", () => {
+  const storageKey = "regumate.sidebar-collapsed";
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  function renderShell(path = "/") {
+    return render(
+      <SystemStatusProvider>
+        <AppShell path={path} onNavigate={vi.fn()}><main>内容</main></AppShell>
+      </SystemStatusProvider>,
+    );
+  }
+
+  it("collapses to an icon rail and expands again, persisting the choice", () => {
+    const { container } = renderShell("/documents");
+
+    expect(screen.getByRole("button", { name: "折叠侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).not.toContain("sidebar-collapsed");
+
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).toContain("sidebar-collapsed");
+    expect(window.localStorage.getItem(storageKey)).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
+    expect(screen.getByRole("button", { name: "折叠侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).not.toContain("sidebar-collapsed");
+    expect(window.localStorage.getItem(storageKey)).toBe("0");
+  });
+
+  it("starts collapsed when the stored preference says so", () => {
+    window.localStorage.setItem(storageKey, "1");
+    const { container } = renderShell();
+
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).toContain("sidebar-collapsed");
   });
 });
