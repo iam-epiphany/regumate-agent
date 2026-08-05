@@ -1075,7 +1075,26 @@ def _hyde_search_candidates(db: Session, hypothetical: str) -> list[RetrievalRes
         raise RetrievalServiceUnavailable(str(exc)) from exc
     candidates = filter_active_candidates(raw_results)
     candidates.sort(key=lambda candidate: candidate.score + candidate.anchor_boost, reverse=True)
-    return _to_retrieval_results(candidates[:8])
+    results: list[RetrievalResult] = []
+    for index, candidate in enumerate(candidates[:8]):
+        results.append(
+            RetrievalResult(
+                chunk_id=candidate.chunk_id,
+                rank=index + 1,
+                score=candidate.score,
+                source_doc=candidate.filename,
+                section_title=candidate.section_title,
+                text=str(candidate.text or candidate.embedding_text or ""),
+                citation_label=f"[{index + 1}]",
+                metadata={
+                    "document_id": candidate.document_id,
+                    "chunk_id": candidate.chunk_id,
+                    "page_number": candidate.page_number,
+                    "chunk_type": getattr(candidate, "chunk_type", "paragraph"),
+                },
+            )
+        )
+    return results
 
 
 def _report_rerank_stage_summary(
