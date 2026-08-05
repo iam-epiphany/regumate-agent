@@ -95,7 +95,9 @@ MODEL_WARMUP_POLICY = _env_choice(
     "background",
     {"background", "lazy"},
 )
-RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
+# CPU batch-4 rerank costs ~18s for 24 candidates; batch 16 halves that while
+# the 90s inference-lock wait absorbs the longer single pass.
+RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 16)
 # Per-inference batch cap for the cross-encoder.  CPU profiles already pick
 # 4/2 so raising this only widens the GPU path (GPU profile default is 24).
 # Verified against an 8 GiB GPU: peak CUDA allocation stays far below the cap.
@@ -200,7 +202,7 @@ QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", LLM_PROVIDER)
 QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or LLM_API_KEY
 QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", LLM_BASE_URL)
 QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", LLM_MODEL)
-QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 20.0, minimum=0.1)
+QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 12.0, minimum=0.1)
 QUERY_PLANNER_MAX_ASPECTS = _env_int("QUERY_PLANNER_MAX_ASPECTS", 12, minimum=1)
 QUERY_PLANNER_MAX_SEARCH_QUERIES = _env_int("QUERY_PLANNER_MAX_SEARCH_QUERIES", 3, minimum=1)
 QUERY_PLANNER_INCLUDE_THINKING = _env_bool("QUERY_PLANNER_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
@@ -213,12 +215,12 @@ ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_UR
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
 ANSWER_GENERATION_TOTAL_BUDGET_SECONDS = _env_float(
-    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 90.0, minimum=1.0
+    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 60.0, minimum=1.0
 )
 # Provider intermittently returns empty streams/bodies for long prompts;
 # 4 alternating attempts keep the answer pipeline resilient without
 # exceeding the generation total budget.
-ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 4, minimum=1)
+ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 3, minimum=1)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
 # Model passes hold the lock for seconds; 90s of waiting absorbs a cold-load
 # neighbour plus concurrent inference without failing the request.

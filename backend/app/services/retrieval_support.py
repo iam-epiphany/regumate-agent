@@ -72,7 +72,11 @@ from backend.app.services.vector_store_service import VectorStoreError
 CONTEXT_CHUNK_CHAR_LIMIT = 1200
 ASPECT_QUERY_FUSION_METHOD = "aspect_query_rrf_then_bge_rerank"
 RRF_K = 60
-CONSTRAINED_RERANK_CANDIDATE_LIMIT = 20
+# CPU cross-encoder cost is ~1.3s per pair regardless of batch size, so the
+# rerank input size directly drives retrieval latency.  Open questions are
+# capped tighter than MCQ questions, whose option-fact evidence must stay
+# visible to the deterministic choice recovery (official 300 hard gate).
+CONSTRAINED_RERANK_CANDIDATE_LIMIT = 12
 MCQ_RERANK_CANDIDATE_LIMIT = 24
 QUERY_TYPE_WEIGHTS = {
     "semantic_question": 1.0,
@@ -1053,9 +1057,7 @@ def _effective_rerank_candidate_limit(
         return len(candidates)
     if aspect.aspect_id == "multiple_choice_evidence" or mcq_material_document_ids:
         return min(len(candidates), MCQ_RERANK_CANDIDATE_LIMIT)
-    if retrieval_filter_document_ids:
-        return CONSTRAINED_RERANK_CANDIDATE_LIMIT
-    return max(CONSTRAINED_RERANK_CANDIDATE_LIMIT, min(len(candidates), MCQ_RERANK_CANDIDATE_LIMIT))
+    return CONSTRAINED_RERANK_CANDIDATE_LIMIT
 
 
 def _document_style_evidence_score(candidate: Any, aspect: QueryAspect) -> float:

@@ -85,8 +85,9 @@ def test_reranker_uses_cpu_profile_batch_and_reuses_scores(monkeypatch) -> None:
     assert len(first) == len(second) == 6
     # Bounded rerank batches release the shared model channel between batches;
     # a second identical request must be served entirely from the score cache.
-    assert sum(len(call) for call in kwargs_seen) == 6
-    assert all(call["batch_size"] == 4 for call in kwargs_seen)
+    # batch 16 covers all 6 pairs in a single model pass on CPU.
+    assert len(kwargs_seen) == 1
+    assert all(call["batch_size"] == 16 for call in kwargs_seen)
     assert all(call["max_length"] == 1024 for call in kwargs_seen)
     assert rerank_service._rerank_score_cache().snapshot()["hits"] >= 6
     rerank_service._rerank_score_cache.cache_clear()

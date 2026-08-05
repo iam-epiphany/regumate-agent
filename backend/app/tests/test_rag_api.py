@@ -2603,7 +2603,7 @@ def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
             retrieval_filter_document_ids=set(),
             mcq_material_document_ids=set(),
         )
-        == 24
+        == 12
     )
     assert (
         rag_service._effective_rerank_candidate_limit(
@@ -2612,7 +2612,7 @@ def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
             retrieval_filter_document_ids={"DOC-TEST-0001"},
             mcq_material_document_ids=set(),
         )
-        == 20
+        == 12
     )
     mcq_aspect = QueryAspect(
         aspect_id="multiple_choice_evidence",
