@@ -42,11 +42,12 @@ export function QuestionComposer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      event.preventDefault();
-      if (!active && ready && value.trim()) {
-        onSubmit();
-      }
+    const submitShortcut = event.key === "Enter" && !event.shiftKey;
+    if (!submitShortcut) return;
+    // 回车即提问；Shift + Enter 保留换行。Ctrl/Cmd + Enter 同样提交。
+    event.preventDefault();
+    if (!active && ready && value.trim()) {
+      onSubmit();
     }
   }
 
@@ -58,7 +59,7 @@ export function QuestionComposer({
         {processingLabel ? <span className="scope-processing">{processingLabel}</span> : null}
       </div>
       <form onSubmit={submit}>
-        <label id="question-composer-title" className="field-label" htmlFor="regumate-question">
+        <label id="question-composer-title" className="field-label sr-only" htmlFor="regumate-question">
           输入需要核查的监管或报表口径问题
         </label>
         <textarea
@@ -76,7 +77,7 @@ export function QuestionComposer({
           aria-describedby="question-composer-help"
         />
         <div className="question-composer__footer">
-          <p id="question-composer-help">{active ? "当前输入已锁定；任务完成或停止后可继续提问。" : "按 Ctrl + Enter 提问。回答只使用当前知识库中的可追溯依据。"}</p>
+          <p id="question-composer-help">{active ? "当前输入已锁定；任务完成或停止后可继续提问。" : "按 Enter 提问，Shift + Enter 换行。回答只使用当前知识库中的可追溯依据。"}</p>
           <div className="question-composer__actions">
             <details className="composer-settings" onToggle={(event) => { if (active) event.currentTarget.open = false; }}>
               <summary aria-label="问答设置" aria-disabled={active}><Settings2 size={16} />设置</summary>
@@ -102,7 +103,7 @@ export function QuestionComposer({
                 type="submit"
                 disabled={!ready || !value.trim()}
                 aria-label="开始问答"
-                title="开始问答（Ctrl/Cmd + Enter）"
+                title="开始问答（Enter）"
               >
                 <SendHorizontal size={21} strokeWidth={2.2} aria-hidden="true" />
               </button>

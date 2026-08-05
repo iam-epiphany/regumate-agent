@@ -30,9 +30,11 @@ interface TaskProgressProps {
   active: boolean;
   technical: boolean;
   taskStatus: string;
+  heading?: string;
+  hint?: string;
 }
 
-export function TaskProgress({ events, answer, active, technical, taskStatus }: TaskProgressProps) {
+export function TaskProgress({ events, answer, active, technical, taskStatus, heading = "正在建立可核查的回答", hint }: TaskProgressProps) {
   const stages = technical ? TECHNICAL_STAGES : USER_STAGES;
   if (!events.length && !active && !answer) return null;
 
@@ -60,7 +62,7 @@ export function TaskProgress({ events, answer, active, technical, taskStatus }: 
     return (
       <section className="task-progress task-progress--active" aria-live="polite">
         <div className="section-heading">
-          <div><span className="section-kicker">处理过程</span><h2>正在建立可核查的回答</h2></div>
+          <div><span className="section-kicker">处理过程</span><h2>{heading}</h2>{hint ? <p className="section-heading__hint">{hint}</p> : null}</div>
         </div>
         {content}
       </section>

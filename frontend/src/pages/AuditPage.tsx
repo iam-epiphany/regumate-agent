@@ -95,7 +95,7 @@ export function AuditPage() {
           <div className="product-title-lockup">
             <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
             <h1>问答与知识库运行记录</h1>
-            <span className={errorCount ? "severity-badge error" : warningCount ? "severity-badge warning" : "severity-badge"}>
+            <span className={errorCount ? "severity-badge error" : warningCount ? "severity-badge warning" : "severity-badge ok"}>
               {errorCount ? `${errorCount} 条严重` : warningCount ? `${warningCount} 条警告` : "状态正常"}
             </span>
           </div>
@@ -348,7 +348,7 @@ function formatArchiveTime(value: string | undefined): string {
 
 function SeverityBadge({ severity }: { severity: AuditLogItem["severity"] }) {
   const label = severity === "error" ? "严重" : severity === "warning" ? "警告" : "普通";
-  const className = severity === "error" ? "severity-badge error" : severity === "warning" ? "severity-badge warning" : "severity-badge";
+  const className = severity === "error" ? "severity-badge error" : severity === "warning" ? "severity-badge warning" : "severity-badge ok";
   return <span className={className}>{label}</span>;
 }
 

@@ -29,14 +29,22 @@ describe("QuestionComposer", () => {
     expect(textarea).toHaveStyle({ height: "240px", overflowY: "auto" });
   });
 
-  it("submits with Ctrl or Command plus Enter when idle", () => {
+  it("submits with plain Enter when idle, keeps Shift+Enter for newlines", () => {
     const onSubmit = vi.fn();
     render(<QuestionComposer {...baseProps} value="监管问题" onSubmit={onSubmit} />);
 
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", metaKey: true });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
 
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", shiftKey: true });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", ctrlKey: true });
     expect(onSubmit).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", metaKey: true });
+    expect(onSubmit).toHaveBeenCalledTimes(3);
+
     const submit = screen.getByRole("button", { name: "开始问答" });
     expect(submit).toHaveClass("composer-action-button", "composer-action-button--submit");
     expect(submit).toHaveTextContent("");
