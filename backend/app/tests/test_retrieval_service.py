@@ -727,3 +727,43 @@ def test_expand_neighbor_matches_keeps_highest_role_version() -> None:
     roles = {m.metadata.get("evidence_role") for m in expanded if m.citation.chunk_id == "DOC-1-CHUNK-0006"}
     assert "mcq_exact_support" in roles
     assert "bounded_lexical_support" not in roles
+
+
+def test_referenced_clause_chunks_resolves_cross_section_citation() -> None:
+    """“第X条”引用解析：命中同文档被引条款（跨章节多跳）。"""
+    from backend.app.services.retrieval_support import _referenced_clause_chunks
+
+    anchor = _snapshot_chunk(
+        "DOC-1-CHUNK-0010",
+        "DOC-1",
+        "按照本办法第二十八条的规定执行。",
+        section_title="第十二条 定义",
+    )
+    target = _snapshot_chunk(
+        "DOC-1-CHUNK-0020",
+        "DOC-1",
+        "商业银行应按照监管并表范围披露相关信息。",
+        section_title="第二十八条 并表范围",
+    )
+    unrelated = _snapshot_chunk(
+        "DOC-1-CHUNK-0030",
+        "DOC-1",
+        "其他内容。",
+        section_title="第三十五条 过渡安排",
+    )
+    hits = _referenced_clause_chunks(anchor, [anchor, target, unrelated])
+    assert [chunk.chunk_id for chunk in hits] == ["DOC-1-CHUNK-0020"]
+
+
+def test_referenced_clause_skips_own_section_title() -> None:
+    """锚点自身的条号标题不被当作引用。"""
+    from backend.app.services.retrieval_support import _referenced_clause_chunks
+
+    anchor = _snapshot_chunk(
+        "DOC-1-CHUNK-0010",
+        "DOC-1",
+        "本条规定了报告制度。",
+        section_title="第二十八条 并表范围",
+    )
+    hits = _referenced_clause_chunks(anchor, [anchor])
+    assert hits == []

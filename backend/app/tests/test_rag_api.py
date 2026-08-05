@@ -3930,3 +3930,96 @@ def test_duplicate_suppression_keeps_cross_document_similar_clauses() -> None:
         )
     ]
     assert _is_duplicate_or_redundant(chunk, selected) is False
+
+
+def test_hyde_supplement_recovers_uncovered_aspect(monkeypatch) -> None:
+    """HyDE 补检索：未覆盖 aspect 获得假设条款候选并标记覆盖。"""
+    from backend.app.services import rag_service
+    from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
+
+    aspect = QueryAspect(
+        aspect_id="definition_gap",
+        question="“关键功能”是如何定义的？",
+        search_queries=(QuerySearchQuery("关键功能 定义", "semantic_question", ""),),
+        evidence_need="关键功能的定义",
+        keywords=("关键功能",),
+    )
+    retrieval = rag_service.AspectRetrieval(
+        aspect=aspect,
+        candidates=[],
+        diagnostics=[],
+        citation_validation={},
+        selected_chunk_ids=[],
+    )
+    monkeypatch.setattr(rag_service, "QUERY_PLANNER_ENABLED", True)
+    monkeypatch.setattr(rag_service, "QUERY_PLANNER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        rag_service,
+        "_hyde_hypothetical_clause",
+        lambda question: "关键功能是提供给第三方的关键业务或产品等金融服务。",
+    )
+    fake_candidate = RetrievalResult(
+        chunk_id="DOC-HYDE-CHUNK-1",
+        rank=1,
+        score=0.9,
+        source_doc="恢复计划示例.docx",
+        section_title="关键功能定义",
+        text="关键功能是提供给第三方的关键业务或产品等金融服务。",
+        citation_label="[1]",
+        metadata={"document_id": "DOC-HYDE"},
+    )
+    monkeypatch.setattr(rag_service, "_hyde_search_candidates", lambda db, text: [fake_candidate])
+
+    rag_service._hyde_supplement_retrieval(None, [retrieval], document_chunk_cache={})
+
+    assert retrieval.retrieval_covered is True
+    assert len(retrieval.candidates) == 1
+    assert retrieval.candidates[0].metadata["evidence_role"] == "hyde_support"
+    assert any(d.get("query_type") == "hyde_hypothetical_clause" for d in retrieval.diagnostics)
+
+
+def test_hyde_skips_covered_and_table_aspects(monkeypatch) -> None:
+    """已覆盖/表格 aspect 不触发 HyDE。"""
+    from backend.app.services import rag_service
+    from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
+
+    calls = {"n": 0}
+
+    def spying_hypothetical(question):
+        calls["n"] += 1
+        return "假设条款内容。"
+
+    monkeypatch.setattr(rag_service, "_hyde_hypothetical_clause", spying_hypothetical)
+    monkeypatch.setattr(rag_service, "QUERY_PLANNER_ENABLED", True)
+    monkeypatch.setattr(rag_service, "QUERY_PLANNER_API_KEY", "test-key")
+
+    covered = rag_service.AspectRetrieval(
+        aspect=QueryAspect(
+            aspect_id="covered_one",
+            question="已覆盖问题",
+            search_queries=(QuerySearchQuery("已覆盖", "semantic_question", ""),),
+            evidence_need="x",
+            keywords=("x",),
+        ),
+        candidates=[fake_retrieval_match()],
+        diagnostics=[],
+        citation_validation={},
+        selected_chunk_ids=[],
+    )
+    covered.retrieval_covered = True
+    table = rag_service.AspectRetrieval(
+        aspect=QueryAspect(
+            aspect_id="table_one",
+            question="表格问题",
+            search_queries=(QuerySearchQuery("表格", "semantic_question", ""),),
+            evidence_need="x",
+            keywords=("x",),
+            modality="table",
+        ),
+        candidates=[],
+        diagnostics=[],
+        citation_validation={},
+        selected_chunk_ids=[],
+    )
+    rag_service._hyde_supplement_retrieval(None, [covered, table], document_chunk_cache={})
+    assert calls["n"] == 0

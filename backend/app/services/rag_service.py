@@ -40,11 +40,20 @@ from backend.app.services.answer_generation_service import generate_answer
 from backend.app.services.document_identity_query_service import answer_document_identity_question
 from backend.app.services.prompt_builder import RAGPromptBuilder
 from backend.app.services.question_preprocessing_service import build_question_task, preprocess_qa_request
+from backend.app.services.llm_client import ChatCompletionConfig, ChatCompletionError, chat_completion_content
 from backend.app.services.query_planner_service import (
     QueryAspect,
     QueryPlan,
     QuerySearchQuery,
     plan_query,
+)
+from backend.app.core.config import (
+    QUERY_PLANNER_API_KEY,
+    QUERY_PLANNER_BASE_URL,
+    QUERY_PLANNER_ENABLED,
+    QUERY_PLANNER_MODEL,
+    QUERY_PLANNER_PROVIDER,
+    QUERY_PLANNER_TIMEOUT_SECONDS,
 )
 from backend.app.services.retrieval_metadata_filter_service import (
     build_retrieval_metadata_filter,
@@ -839,6 +848,11 @@ def _retrieve_aspects(
         aspect_retrievals,
         document_chunk_cache=document_chunk_cache,
     )
+    _hyde_supplement_retrieval(
+        db,
+        aspect_retrievals,
+        document_chunk_cache=document_chunk_cache,
+    )
     retrieval_elapsed_ms = _elapsed_ms(retrieval_started_at)
     retrieved_aspect_count = sum(1 for item in aspect_retrievals if item.retrieval_covered)
     candidate_count = sum(len(item.candidates) for item in aspect_retrievals)
@@ -960,6 +974,108 @@ def _recover_missing_aspects_from_sibling_documents(
                 "recovery_mode": "supplemented" if own_document_ids else "recovered",
             }
         )
+
+
+_HYDE_SUPPLEMENT_LIMIT = 2
+
+
+def _hyde_supplement_retrieval(
+    db: Session,
+    aspect_retrievals: list[AspectRetrieval],
+    *,
+    document_chunk_cache: dict[str, list[DocumentChunk]],
+) -> None:
+    """HyDE-style gap recovery for aspects the planner could not retrieve.
+
+    When every planner query returns nothing, the answering clause may still
+    exist in wording the vector store cannot connect to the question.  One
+    LLM call drafts the hypothetical regulatory clause that would answer the
+    question (“该问题在制度中的对应条款可能表述为…”), and that clause is
+    searched like a document-style query.  Bounded: uncovered non-table
+    aspects only, one LLM call per aspect, two aspects per request.
+    """
+
+    if not aspect_retrievals:
+        return
+    if not (QUERY_PLANNER_ENABLED and QUERY_PLANNER_API_KEY):
+        return
+    uncovered = [
+        retrieval
+        for retrieval in aspect_retrievals
+        if not retrieval.retrieval_covered
+        and retrieval.aspect.aspect_id != "multiple_choice_evidence"
+        and retrieval.aspect.modality not in {"table", "mixed"}
+    ]
+    if not uncovered:
+        return
+    for retrieval in uncovered[: _HYDE_SUPPLEMENT_LIMIT]:
+        hypothetical = _hyde_hypothetical_clause(retrieval.aspect.question)
+        if not hypothetical or len(hypothetical) < 12:
+            continue
+        candidates = _hyde_search_candidates(db, hypothetical)
+        if not candidates:
+            continue
+        for candidate in candidates:
+            candidate.metadata["evidence_role"] = "hyde_support"
+            candidate.metadata["fusion_method"] = "hyde_hypothetical"
+        retrieval.candidates = candidates + retrieval.candidates
+        retrieval.retrieval_covered = True
+        retrieval.diagnostics.append(
+            {
+                "query_type": "hyde_hypothetical_clause",
+                "search_query": hypothetical,
+                "match_count": len(candidates),
+                "recovery_mode": "supplemented",
+            }
+        )
+
+
+def _hyde_hypothetical_clause(question: str) -> str:
+    """Draft the regulatory clause that would answer the question."""
+
+    try:
+        config = ChatCompletionConfig(
+            provider=QUERY_PLANNER_PROVIDER,
+            api_key=QUERY_PLANNER_API_KEY,
+            base_url=QUERY_PLANNER_BASE_URL,
+            model=QUERY_PLANNER_MODEL,
+            timeout_seconds=min(QUERY_PLANNER_TIMEOUT_SECONDS, 8.0),
+            include_thinking=False,
+            response_format="text",
+        )
+        content = chat_completion_content(
+            config,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是银行业监管制度检索助手。根据用户问题，用监管制度条款的"
+                        "表述方式写出一句可能回答该问题的假设条款（直接陈述规则本身，"
+                        "不解释、不评价）。只输出条款正文，不超过120字。"
+                    ),
+                },
+                {"role": "user", "content": str(question or "")},
+            ],
+            temperature=0,
+            max_tokens=180,
+        )
+    except (ChatCompletionError, OSError, ValueError, KeyError, TypeError):
+        return ""
+    cleaned = re.sub(r"[【】《》'\"\s]+", "", str(content or ""))
+    return cleaned.strip().strip("。") + "。"
+
+
+def _hyde_search_candidates(db: Session, hypothetical: str) -> list[RetrievalResult]:
+    """Single-query hybrid search with the hypothetical clause."""
+
+    try:
+        embeddings = _embed_search_queries([hypothetical])
+        raw_results = _hybrid_search_many(embeddings, limit=RETRIEVAL_TOP_K)[0]
+    except (EmbeddingServiceError, VectorStoreError) as exc:
+        raise RetrievalServiceUnavailable(str(exc)) from exc
+    candidates = filter_active_candidates(raw_results)
+    candidates.sort(key=lambda candidate: candidate.score + candidate.anchor_boost, reverse=True)
+    return _to_retrieval_results(candidates[:8])
 
 
 def _report_rerank_stage_summary(

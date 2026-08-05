@@ -3080,6 +3080,13 @@ def _neighbor_candidates(
             for chunk in chunks
             if parent_number and _section_number(chunk.section_title) == parent_number
         )
+    # Regulation graph edge: “本办法第X条/第X条规定” references point at the
+    # clause the anchor relies on.  Multi-hop retrieval resolves that edge so
+    # an answer citing one clause also sees the clause it references.
+    candidates.extend(
+        (chunk, "referenced_clause")
+        for chunk in _referenced_clause_chunks(anchor, chunks)
+    )
 
     anchor_index = chunks.index(anchor)
     if anchor_index > 0:
@@ -3112,7 +3119,35 @@ def _neighbor_relevance(question: str, chunk: DocumentChunk, reason: str) -> flo
         score += 0.2
     if reason in {"previous_chunk", "next_chunk"}:
         score -= 0.05
+    if reason == "referenced_clause":
+        score += 0.1
     return score
+
+
+def _referenced_clause_chunks(anchor: DocumentChunk, chunks: list[DocumentChunk]) -> list[DocumentChunk]:
+    """Chunks whose section title is a clause referenced by the anchor text.
+
+    Regulation clauses cite each other as “第X条/本办法第X条”.  When the
+    anchor mentions such a clause number, the referenced clause is a
+    first-degree graph neighbour even if it sits far away in the document.
+    """
+
+    text = "\n".join(
+        part for part in (anchor.embedding_text or "", anchor.text or "") if part
+    )
+    numbers = set(re.findall(r"第([一二三四五六七八九十百零\d]{1,4})条", text))
+    if not numbers:
+        return []
+    hits: list[DocumentChunk] = []
+    for chunk in chunks:
+        if chunk.chunk_id == anchor.chunk_id:
+            continue
+        section = str(chunk.section_title or "")
+        for number in numbers:
+            if f"第{number}条" in section:
+                hits.append(chunk)
+                break
+    return hits
 
 
 def _question_prefers_child_section(question: str) -> bool:
