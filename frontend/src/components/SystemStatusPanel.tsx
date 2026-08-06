@@ -26,8 +26,9 @@ export function SystemStatusPanel() {
       icon: <Cpu size={15} />,
       label: "计算设备",
       value: computeLabel(health),
-      title: computeLabel(health),
-      tone: deviceFallback ? "warning" : health ? "ok" : "unknown",
+      title: computeDeviceTitle(health),
+      // GPU 与 CPU 都是受支持的健康运行方式；只有健康状态未读取时才显示灰色。
+      tone: health ? "ok" : "unknown",
     },
     {
       icon: <Layers3 size={15} />,
@@ -139,9 +140,21 @@ function computeLabel(health: RagHealthResponse | null): string {
     const loaded = health.model_runtime.embedding?.loaded || health.model_runtime.reranker?.loaded;
     return loaded ? "CUDA 推理已就绪" : "CUDA 可用";
   }
-  if (isDeviceFallback(health)) return "CUDA 异常 · 已回退至 CPU";
   if (health.performance?.selected_mode === "cpu_low_resource") return "CPU 低资源模式（实验）";
-  return "CPU 平衡模式";
+  return "CPU 可用";
+}
+
+function computeDeviceTitle(health: RagHealthResponse | null): string {
+  if (!health) return "状态未读取";
+  const device = health.model_device;
+  const base = computeLabel(health);
+  if (device.selected_device.toLowerCase().startsWith("cuda")) {
+    return device.cuda_device_name ? `${base} · ${device.cuda_device_name}` : base;
+  }
+  if (isDeviceFallback(health)) {
+    return `${base}（请求 CUDA 但当前环境不可用，已自动使用 CPU 推理）`;
+  }
+  return base;
 }
 
 function isDeviceFallback(health: RagHealthResponse | null): boolean {

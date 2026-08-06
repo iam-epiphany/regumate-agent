@@ -1456,6 +1456,44 @@ def test_extractive_fallback_keeps_one_best_chunk_per_planned_aspect(monkeypatch
     assert "股东资格" not in result.answer
 
 
+def test_extractive_fallback_drops_intent_mismatched_clauses(monkeypatch) -> None:
+    """定义/排除类问题的抽取式回退不得混入答非所问的条款。"""
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", None)
+
+    result = answer_generation_service._extractive_fallback(
+        [
+            _chunk(
+                text=(
+                    "第三条 本办法所称消费贷款是指消费金融公司向借款人发放的"
+                    "以消费为目的（不包括购买住房和汽车）的贷款。"
+                ),
+                citation_label="[1]",
+            ),
+            _chunk(
+                text=(
+                    "第六条 申请设立消费金融公司应当具备以下条件："
+                    "（一）有符合《中华人民共和国公司法》和国家金融监督管理总局规定的公司章程。"
+                ),
+                citation_label="[2]",
+            ),
+            _chunk(
+                text=(
+                    "（五）专业贷款划分为项目融资、物品融资、商品融资和产生收入的房地产贷款。"
+                ),
+                citation_label="[3]",
+            ),
+        ],
+        question="消费金融公司向个人发放的消费贷款，其范围是如何界定的？哪些用途的贷款不包括在内？",
+    )
+
+    assert "消费贷款是指" in result.answer
+    assert "不包括购买住房和汽车" in result.answer
+    # “设立条件”与“专业贷款划分”均与问题的定义/排除意图无关。
+    assert "设立消费金融公司应当具备" not in result.answer
+    assert "专业贷款划分为" not in result.answer
+    assert all(claim.citation_ids != ["[2]"] and claim.citation_ids != ["[3]"] for claim in result.claims)
+
+
 def test_extractive_fallback_keeps_condition_continuation_chunk(monkeypatch) -> None:
     monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", None)
 

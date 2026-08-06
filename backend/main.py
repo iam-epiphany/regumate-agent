@@ -167,7 +167,7 @@ def _proxy_frontend_dev_server(request: Request, full_path: str) -> Response:
         )
     except URLError:
         return PlainTextResponse(
-            f"Frontend dev server is not reachable at {FRONTEND_DEV_SERVER}. Restart docker-run.bat or docker-run.sh.",
+            f"Frontend dev server is not reachable at {FRONTEND_DEV_SERVER}. Restart scripts/launcher/docker-run.bat or docker-run.sh.",
             status_code=503,
         )
 

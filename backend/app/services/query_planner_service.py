@@ -1557,7 +1557,15 @@ def _extract_table_selectors(
         # question order (first − second): the period selectors are already in
         # text order, so no ordered-transition marker is applied.  Only the
         # explicit “从A到B” and “A比B多” forms mark a reversed direction.
+        # Transition-amount phrases (“2月当月新增”, “12月值比10月值增加”)
+        # name the period that owns the change; when that period is the
+        # second selector, the difference must be evaluated second − first.
         selectors = period_selectors
+        subject_index = _period_difference_subject_index(question, selectors)
+        if subject_index == 1:
+            selectors = [
+                {**selector, "ordered_transition": True} for selector in selectors
+            ]
     elif table_task == "calculate" and len(quoted) >= 3:
         # “row”从“column A”到“column B” means B - A.
         selectors = [
@@ -1813,6 +1821,73 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
                 selector["source_title"] = f"{period['year']}年{period['quarter']}季度{source_family}"
         selectors.append(selector)
     return selectors
+
+
+_PERIOD_TRANSITION_TERMS = ("当月新增", "本月新增", "新增加", "环比", "较上月", "新增", "增加", "增长")
+
+
+def _period_difference_subject_index(
+    question: str,
+    selectors: list[dict[str, Any]],
+) -> int | None:
+    """Selector index of the period a transition amount belongs to, if any.
+
+    Cross-period differences default to text order (first − second).  A
+    transition phrase (“2月当月新增”, “12月值比10月值增加”, “环比”) states
+    how much the subject period gained over the base period, which is not
+    necessarily the first selector — monthly tables are usually named in
+    ascending order (“《1月表》和《2月表》…当月新增” still asks for
+    2月 − 1月).  Returns the minuend selector index, or None when the
+    question is not a transition-amount difference (plain “差值/差额”).
+    """
+    compact = re.sub(r"\s+", "", str(question or ""))
+    if len(selectors) != 2:
+        return None
+    # “同比/增速/增长率” name column labels, not a period transition.
+    if "同比" in compact or "增速" in compact or "增长率" in compact:
+        return None
+    if not any(term in compact for term in _PERIOD_TRANSITION_TERMS):
+        return None
+
+    def _subject_month() -> int | None:
+        # “12月值比10月值增加” / “2月原保险保费收入较1月增加”：变化主体是
+        # “较/比”之前的月份（X − Y）。主体与“较/比”之间可间隔指标名称。
+        match = re.search(
+            r"(\d{1,2})月(?:值)?(?:比|较)(\d{1,2})月(?:值)?(?:增加|增长|新增)",
+            compact,
+        )
+        if match:
+            return int(match.group(1))
+        match = re.search(
+            r"(\d{1,2})月(?:值)?[^，。；;]{0,20}?(?:较|比)(\d{1,2})月(?:值)?(?:增加|增长|新增)",
+            compact,
+        )
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(\d{1,2})月(?:当月|本月)?(?:新增|新增加|增加|增长)", compact)
+        if match:
+            return int(match.group(1))
+        return None
+
+    subject_month = _subject_month()
+    if subject_month is not None:
+        for index, selector in enumerate(selectors):
+            if selector.get("month") == subject_month:
+                return index
+        return None
+    # “当月新增/本月新增/环比/较上月/从A到B” without an explicit subject
+    # period: the change belongs to the later period.
+    def _period_key(selector: dict[str, Any]) -> tuple[int, int, int]:
+        year = int(selector.get("year") or 0)
+        if "month" in selector:
+            return (year, 0, int(selector["month"]))
+        if "quarter" in selector:
+            return (year, 1, int(selector["quarter"]))
+        return (year, 2, 0)
+
+    if _period_key(selectors[0]) < _period_key(selectors[1]):
+        return 1
+    return None
 
 
 def extract_explicit_metadata_filters(question: str) -> dict[str, Any]:

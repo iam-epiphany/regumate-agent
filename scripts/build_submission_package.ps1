@@ -78,14 +78,10 @@ $rootFiles = @(
     'requirements.in',
     'requirements.txt',
     'docker-compose.dev.yml',
-    'rebuild-run.bat',
-    'run.bat',
-    'run.sh',
-    'stop.sh',
-    'stop.bat'
+                    'scripts/launcher/'
 )
 foreach ($file in $rootFiles) { Copy-FileToPackage $file }
-foreach ($file in @('docker-run.bat', 'docker-run.sh', 'dev-run.bat')) {
+foreach ($file in @('scripts\launcher\docker-run.bat', 'scripts\launcher\docker-run.sh')) {
     if (Test-Path -LiteralPath (Join-Path $ProjectRoot $file)) {
         Copy-FileToPackage $file
     }

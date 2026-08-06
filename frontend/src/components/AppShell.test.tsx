@@ -77,7 +77,7 @@ describe("AppShell system status", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "系统状态" })).not.toBeInTheDocument());
   });
 
-  it("shows an explicit CPU fallback warning when CUDA is unavailable", async () => {
+  it("shows CPU as a healthy device when CUDA was requested but unavailable", async () => {
     getRagHealthMock.mockResolvedValue({
       ...health,
       model_device: {
@@ -109,7 +109,11 @@ describe("AppShell system status", () => {
       </SystemStatusProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText("CUDA 异常 · 已回退至 CPU")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CPU 可用")).toBeInTheDocument());
+    // GPU 与 CPU 都是受支持的健康运行方式：设备行显示绿色而非黄色。
+    const deviceRow = screen.getByText("CPU 可用").closest(".system-status-row");
+    expect(deviceRow?.querySelector(".system-state-mark.ok")).not.toBeNull();
+    // 回退原因仍保留在基础设施详情中，不丢失排查信息。
     fireEvent.click(screen.getByText("基础设施详情"));
     expect(screen.getByText("不可用")).toBeInTheDocument();
     expect(screen.getByText("CUDA requested but unavailable")).toBeInTheDocument();
@@ -145,7 +149,7 @@ describe("AppShell system status", () => {
       </SystemStatusProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText("CPU 平衡模式")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CPU 可用")).toBeInTheDocument());
     expect(screen.queryByText("降级原因")).not.toBeInTheDocument();
   });
 

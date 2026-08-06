@@ -4,6 +4,8 @@ scripts/ —— 数据处理、入库、评测与发布校验脚本
 作用：知识库构建（解析/切分/向量化/单元格索引）、官方与自命题评测、
 反硬编码审计、发布校验与交付打包辅助。
 
+  launcher/                      启动/停止脚本（run.bat/sh、stop.bat/sh、docker-run、rebuild-run）
+
 常用脚本：
   prepare_contest_data.ps1 / upload_contest_knowledge_base.ps1
                               一键准备并入库官方 500 份监管资料

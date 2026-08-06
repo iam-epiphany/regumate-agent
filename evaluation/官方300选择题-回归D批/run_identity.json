@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "mode": "diagnostic",
+  "created_at": "2026-08-06T04:54:57.324152+00:00",
+  "git_commit": "a50741106a5d5964d0f4a715bf3a97e117d63cab",
+  "worktree_diff_sha256": "7cfff0cbbf2f5d7b1c8f86f295e5a082d3333a2bebc5d1532612cce52cae02be",
+  "qa_sha256": "bb43588e9fb45b51a57c61516bc7ff7bd33775863b0828c74212ae69c6395a51",
+  "corpus_snapshot_sha256": "41728b04ef86eccac49dee0e93f6eaa54e4b3903eba8b6e631923f1634ddc0af",
+  "evaluator_sha256": "a8c5ef356abf756fb826494f265a7b8b50e6933c06a3298821d73f3f4319982f",
+  "runner_sha256": "0d45a270eed0b2df8f62f133193ef178d36977ad30e505a9371d4528109eb37d",
+  "case_manifest_sha256": "8bf70ad3733f7daf584e1c712dbbc80f9cfd237ea14d2aae52877397b7a80b06",
+  "case_count": 300,
+  "runtime": {
+    "reachable": true,
+    "build_id": "regumate-agent-small",
+    "ready": true,
+    "qdrant": {
+      "collection": null,
+      "points": null,
+      "status": null
+    },
+    "model_device": {
+      "selected_device": "cpu",
+      "cuda_available": false,
+      "cuda_device_name": null,
+      "cuda_total_memory_gb": null
+    },
+    "performance": {
+      "selected_mode": "cpu_balanced",
+      "rerank_batch_size": 16,
+      "rerank_max_length": 1024
+    }
+  },
+  "base_url": "http://127.0.0.1:8000"
+}

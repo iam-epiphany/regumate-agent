@@ -1,0 +1,8 @@
+{
+  "old": {
+    "error": "D:\\Python\\Python3\\python.exe: Error while finding module specification for 'banking_workbench.workbench_scorer' (ModuleNotFoundError: No module named 'banking_workbench')\n"
+  },
+  "new": {
+    "error": "D:\\Python\\Python3\\python.exe: Error while finding module specification for 'banking_workbench.workbench_scorer' (ModuleNotFoundError: No module named 'banking_workbench')\n"
+  }
+}

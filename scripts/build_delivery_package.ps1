@@ -78,11 +78,7 @@ $rootFiles = @(
     'docker-compose.dev.yml',
     'docker-run.bat',
     'docker-run.sh',
-    'rebuild-run.bat',
-    'run.bat',
-    'run.sh',
-    'stop.sh',
-    'stop.bat'
+                    'scripts/launcher/'
 )
 foreach ($file in $rootFiles) { Copy-FileToDelivery $file }
 

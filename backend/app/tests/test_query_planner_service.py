@@ -427,6 +427,38 @@ def test_query_planner_builds_ordered_period_selectors_with_shared_year(monkeypa
     ]
 
 
+def test_query_planner_reverses_transition_amount_difference(monkeypatch) -> None:
+    """“当月新增/增加”的差额按后一期 − 前一期计算，不受题面表序影响。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《2026年1月保险业经营情况表》和《2026年2月保险业经营情况表》"
+        "（均按“本年累计/截至当期”口径），2026年2月当月新增加的原保险保费收入约为多少亿元？"
+    )
+
+    table = plan.aspects[0]
+    assert table.operation == "difference"
+    # 题面按表序（1月在前）列出，但“2月当月新增”的差额主体是 2 月，
+    # 计算器必须按 second − first 求值。
+    assert [selector["month"] for selector in table.selectors] == [1, 2]
+    assert all(selector.get("ordered_transition") for selector in table.selectors)
+
+
+def test_query_planner_keeps_plain_difference_in_question_order(monkeypatch) -> None:
+    """无“新增/增长”类过渡短语的跨期差值仍按文本序（先 − 后）。"""
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query(
+        "根据《2025年商业银行主要指标分机构类情况表（季度）》，"
+        "农村商业银行一季度与四季度不良贷款余额的差值是多少？"
+    )
+
+    table = plan.aspects[0]
+    assert table.operation == "difference"
+    assert [selector["quarter"] for selector in table.selectors] == [1, 4]
+    assert not any(selector.get("ordered_transition") for selector in table.selectors)
+
+
 def test_query_planner_extracts_natural_table_title_in_mixed_question(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
 

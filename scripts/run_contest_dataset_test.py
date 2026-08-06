@@ -198,7 +198,7 @@ def assert_gpu_ready(base_url: str, timeout: float, *, require_gpu: bool = True)
     if require_gpu and selected != "cuda":
         raise RuntimeError(
             "当前 ReguMate 未使用 GPU。请确认 NVIDIA 驱动、Docker Desktop GPU 支持可用，"
-            "并通过 run.bat 或 scripts/start_demo.ps1 启动。若必须使用 CPU，请显式关闭 GPU 要求。"
+            "并通过 scripts/launcher/run.bat 或 scripts/start_demo.ps1 启动。若必须使用 CPU，请显式关闭 GPU 要求。"
         )
     return health
 

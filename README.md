@@ -10,14 +10,15 @@ ReguMate 是一套面向银行监管资料的本地知识库与问答系统。
 ReguMate-Agent/
   backend/                 # FastAPI 后端，包含 API、schema、model、service、core 分层
   frontend/                # React + TypeScript + Vite 前端
-  data/                    # 上传文件、模型缓存、Qdrant/SQLite 运行数据和评测数据
-  docs/                    # 开发文档、接口说明、评测报告和交付说明
+  data/                    # 官方监管资料、官方 300 题问答集、自制 200 题评测集
+  evaluation/              # 评测区：文档解析结果 + 系统测试结果（详见第九章）
+  docs/                    # 开发文档、接口说明、交付说明
   scripts/                 # 预检、模型预热、批量上传、评测和发布校验脚本
-  outputs/                 # 评测输出和中间报告
+  outputs/                 # 关键审计产物
   docker-compose.yml       # 标准 Docker Compose 启动配置
   docker-compose.gpu.yml   # NVIDIA GPU 加速补充配置
   Dockerfile               # 应用镜像构建文件
-  run.bat / stop.bat       # Windows 快速启动和停止脚本
+  scripts/launcher/        # 启动/停止脚本（run.bat/sh、stop.bat/sh、docker-run、rebuild-run）
   README.md                # 项目使用说明
 ```
 
@@ -32,6 +33,15 @@ ReguMate-Agent/
 - 建议资源：内存 16GB 以上，磁盘空闲 25GB 以上。
 - GPU：NVIDIA GPU 可加速 embedding/rerank；无 NVIDIA GPU、macOS 或普通 CPU 机器可以使用 CPU 模式，但首次入库和评测会明显变慢。
 - 网络：首次构建和启动可能访问 Docker Hub、Debian apt、npm、PyPI、HuggingFace，以及 `.env` 中配置的大模型 API 地址。
+
+## 二·五、国内网络（无代理）安装说明
+
+以下依赖项在无 VPN 的国内网络下均可正常获取，无需代理：
+
+- **基础镜像与 Qdrant 镜像**：来自 Docker Hub，国内拉取较慢时可在 Docker Desktop 设置中配置镜像加速器（如 Docker 官方加速器或云厂商加速地址）。
+- **Python 依赖与前端依赖**：`Dockerfile` 已默认使用国内镜像源（PyPI 清华源、npm 淘宝镜像），构建时无需代理；海外环境可用 `--build-arg PIP_INDEX_URL=https://pypi.org/simple --build-arg NPM_REGISTRY=https://registry.npmjs.org` 切回官方源。
+- **本地模型（BGE-M3 / BGE reranker）**：首次预热自动从 HuggingFace 国内镜像 `hf-mirror.com` 下载（`HF_ENDPOINT` 默认已配置），无需代理；如镜像缺失可临时设置 `HF_ENDPOINT=https://huggingface.co` 并配合代理。
+- **大模型 API**：`LLM_BASE_URL` 默认指向 DeepSeek（国内服务），直连即可。
 
 ## 三、配置
 
@@ -93,6 +103,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\warmup_models.ps1
 ```
 
 预热会把 `BAAI/bge-m3` 和 `BAAI/bge-reranker-v2-m3` 下载或加载到 `data/model_cache`。这一步只需要在首次运行、清空模型缓存或更换运行环境后执行；模型已经缓存后，后续启动不需要重复预热。
+
+国内网络下载模型已默认走 HuggingFace 镜像（`HF_ENDPOINT=https://hf-mirror.com`，无需代理）；如需直连官方源，在 `.env` 中设置 `HF_ENDPOINT=https://huggingface.co`。下载模型不走 LLM 代理配置，也不要求代理软件。
 
 启动成功后打开：
 
@@ -156,9 +168,9 @@ docker compose up -d --build
 脚本只是降低 Windows 使用门槛；正式、跨平台说明以上面的 Docker 命令为准。
 
 ```powershell
-.\run.bat            # 启动完整系统；镜像不存在时自动构建
-.\rebuild-run.bat    # 依赖、Dockerfile 或前端构建产物变化后重建再启动
-.\stop.bat           # 停止服务，不删除数据
+.\scripts\launcher\run.bat            # 启动完整系统；镜像不存在时自动构建
+.\scripts\launcher\rebuild-run.bat    # 依赖、Dockerfile 或前端构建产物变化后重建再启动
+.\scripts\launcher\stop.bat           # 停止服务，不删除数据
 ```
 
 如果 Docker Desktop 未启动，先打开 Docker Desktop，等状态变为 Running 后再运行脚本。
@@ -182,7 +194,7 @@ docker compose up -d --build
 
 ### 100 题挑战集状态
 
-基于冻结 500 份官方文档构建的挑战集位于 `evaluation/trust_challenge_100/`，在线运行器只读取问题文件，离线评分器单独读取金标。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
+基于冻结 500 份官方文档构建的内部挑战集（含在线运行器与离线评分器）仅保留在开发仓库中，不随提交包分发；以下为该挑战集的内部状态记录。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
 
 首次封存运行已原样封存，结果为 42/60，未达到发布门槛；失败证据、限制和哈希见 `outputs/evaluation/trust_challenge_100/holdout_failure_report.md`。2026-07-24 Stage 5 当前代码在 60 题封存集上的质量回归为 57/60、overall 95.00%、answerable 93.33%、refusal 100%，并已在 `docs/系统评测报告.md` 中单独列示为内部封存困难集回归结果。该题集状态为 `codex_verified`，未经过银行监管专家人工复核，60 题封存集也不是第三方独立盲测；不得把该结果表述为外部专家成绩或第三方盲测成绩。
 
@@ -314,7 +326,33 @@ python scripts/score_pair_regression.py --out-dir evaluation/系统测试结果/
 
 评测问答集、金标、评分器与字段说明：`data/自命题200题评测集/README.md`。
 
-## 九、开发验证
+## 九、评测区（evaluation/）目录说明
+
+`evaluation/` 为赛题交付的评测区，分两大部分：
+
+```text
+evaluation/
+├── readme.txt                      # 本目录说明
+├── 文档解析结果/                    # 赛题交付：文档解析与索引流程产物
+│   ├── ingest_manifest.json        # 500 份文件入库清单（doc_id、路径、大小、SHA-256）
+│   ├── parse_manifest.json         # 500 份文件解析结果清单（chunk/cell 数量）
+│   └── 文档解析结果说明.md          # 知识库规模、解析方式、证据粒度与一键重建方法
+└── 系统测试结果/                    # 赛题交付：检索与生成评测报告及原始产物
+    ├── 官方300题/
+    │   ├── CPU_20260805/           # 官方 300 题 CPU 计时（300/300，avg 7.03 s）
+    │   └── GPU_20260805/           # 官方 300 题 GPU 计时（300/300，avg 0.54 s）
+    ├── 自命题200题/
+    │   ├── CPU_最终验收20260805/    # 200 题 CPU 跑测+评分（183/200，avg 28.4 s）
+    │   └── GPU_20260805/           # 200 题 GPU 跑测+评分（180/200，avg 17.9 s）
+    └── 测试报告_ReguMate可信RAG问答.md / .pdf   # 综合测试报告
+```
+
+说明：
+- **文档解析结果**：系统知识库界面点击文档名即可查看单份文件的解析内容（chunk 列表/表格摘要/章节元数据）；manifest 为全部 500 份文件的解析清单与溯源（SHA-256）。解析结果本体（SQLite/Qdrant）不随包分发，按 `文档解析结果说明.md` 中的重建命令一键生成后即可在界面查看，与评测所用知识库一致。
+- **系统测试结果**：官方 300 题（选择题）与自制 200 题（开放问答）的正确率、证据引用命中率、拒答率与 CPU/GPU 处理时间，随包提供逐题诊断与评分汇总（可复现，见第八章）。测试报告同时位于包外「ReguMate-提交文档/测评报告/」一份（防评审漏看）。
+- 其余开发期历史评测目录（如去锚100题、官方300选择题-回归* 等）不属于交付内容。
+
+## 十、开发验证
 
 后端单元测试：
 

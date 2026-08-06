@@ -2723,6 +2723,12 @@ def _extractive_fallback(
     for chunk in selected_chunks:
         aspect_question = _fallback_effective_excerpt_question(chunk, question)
         excerpt = _relevant_extractive_excerpt(chunk.text, aspect_question)
+        if not _fallback_excerpt_related(excerpt, aspect_question):
+            # 去锚问题（无引号/书名号锚点）的语义检索召回面较广，检索命中的
+            # chunk 并不都与问题实质相关。抽取式回退会把每个 chunk 的“最高
+            # 分句子”都列出来；与问题几乎无词面重叠的 chunk（例如消费贷款
+            # 题命中的“专业贷款划分”条款）会混入答案，必须在这里过滤。
+            continue
         units = [
             unit.strip()
             for unit in re.split(r"(?<=[。！？!?])\s*", excerpt)
@@ -3494,6 +3500,55 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 6
             chosen_indexes.append(0)
     excerpt = "".join(segments[index] for index in sorted(chosen_indexes)).strip()
     return excerpt if len(excerpt) <= max_chars else excerpt[:max_chars].rstrip() + "…"
+
+
+def _fallback_excerpt_related(excerpt: str, question: str) -> bool:
+    """Whether an extractive-fallback excerpt is actually about the question.
+
+    The extractive fallback prints the highest-scoring sentence of every
+    selected chunk, so semantically similar but topic-different chunks
+    (“专业贷款” vs “消费贷款”, or “设立条件” for a “范围” question) can
+    leak unrelated clauses into the answer.  Two signals separate them:
+
+    - anchored questions (quoted terms / book titles) always pass: their
+      chunks were pinned by explicit locators;
+    - questions that explicitly ask for a definition or an exclusion
+      (“范围如何界定”, “哪些…不包括”) require the answer to carry the same
+      definition/exclusion markers, which the unrelated clauses never do.
+
+    Character overlap is deliberately NOT used: semantic retrieval often
+    hits differently-worded evidence, and summary-style questions share
+    almost no surface words with their chunks.  The fallback is the last
+    recovery path, so a noisy-but-grounded extract beats a refusal.
+    """
+    source = str(excerpt or "").strip()
+    if not source:
+        return False
+    normalized_question = _normalize_evidence_text(question)
+    if len(normalized_question) < 8:
+        return True
+    anchors = _fallback_anchor_fragments(question)
+    normalized_source = _normalize_evidence_text(source)
+    if any(anchor and anchor in normalized_source for anchor in anchors):
+        return True
+    # 意图词校验：问题明确询问“定义/范围/不包括”时，答案必须携带相应的
+    # 定义或排除标记。仅靠词面重叠会把共享主体词（如“消费金融公司”）
+    # 但回答其他方面（如“设立条件”）的无关片段放过。
+    intent_definition = any(
+        marker in normalized_question for marker in ("定义", "界定", "是指", "是以", "所称")
+    )
+    if intent_definition and not any(
+        marker in normalized_source for marker in ("是指", "所称", "界定", "定义", "是以", "属于")
+    ):
+        return False
+    intent_exclusion = any(
+        marker in normalized_question for marker in ("不包括", "除外", "不含", "不包含")
+    )
+    if intent_exclusion and not any(
+        marker in normalized_source for marker in ("不包括", "除外", "不含", "不包含")
+    ):
+        return False
+    return True
 
 
 def _trusted_extractive_fallback(
