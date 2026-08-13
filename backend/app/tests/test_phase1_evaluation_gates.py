@@ -5,8 +5,17 @@ import json
 from pathlib import Path
 import sys
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+FROZEN_POLICY_PATH = (
+    PROJECT_ROOT / "docs" / "evaluation" / "legacy_exceptions" / "frozen_artifact_exceptions.v1.json"
+)
+ACCEPTANCE_ARTIFACT_PATH = (
+    PROJECT_ROOT / "data" / "evaluation" / "官方300选择题-验收基线" / "official_300_results.json"
+)
 
 
 def load_audit_module():
@@ -61,15 +70,10 @@ def test_removed_known_fact_catalog_does_not_return() -> None:
 
 
 def test_single_pre_protocol_missing_build_audit_exception_is_exactly_scoped() -> None:
+    if not FROZEN_POLICY_PATH.is_file():
+        pytest.skip("缺少冻结豁免策略文件（docs/evaluation/legacy_exceptions/），内部评测产物未随包分发")
     verifier = load_frozen_verifier()
-    policy = (
-        PROJECT_ROOT
-        / "docs"
-        / "evaluation"
-        / "legacy_exceptions"
-        / "frozen_artifact_exceptions.v1.json"
-    )
-    exceptions = json.loads(policy.read_text(encoding="utf-8"))["exceptions"]
+    exceptions = json.loads(FROZEN_POLICY_PATH.read_text(encoding="utf-8"))["exceptions"]
     lock = PROJECT_ROOT / "data" / "evaluation" / "hard_challenge_50" / "round_1" / "lock.json"
     expected = "95367c97f59830748e63ea13869b55578ab7a336e691c1e43b49cc2fc46ea217"
 
@@ -97,15 +101,10 @@ def test_single_pre_protocol_missing_build_audit_exception_is_exactly_scoped() -
 
 
 def test_legacy_exception_cannot_apply_to_current_or_future_rounds() -> None:
+    if not FROZEN_POLICY_PATH.is_file():
+        pytest.skip("缺少冻结豁免策略文件（docs/evaluation/legacy_exceptions/），内部评测产物未随包分发")
     verifier = load_frozen_verifier()
-    policy = (
-        PROJECT_ROOT
-        / "docs"
-        / "evaluation"
-        / "legacy_exceptions"
-        / "frozen_artifact_exceptions.v1.json"
-    )
-    exceptions = json.loads(policy.read_text(encoding="utf-8"))["exceptions"]
+    exceptions = json.loads(FROZEN_POLICY_PATH.read_text(encoding="utf-8"))["exceptions"]
     expected = "95367c97f59830748e63ea13869b55578ab7a336e691c1e43b49cc2fc46ea217"
     future_lock = (
         PROJECT_ROOT
@@ -139,16 +138,10 @@ def test_legacy_exception_cannot_apply_to_current_or_future_rounds() -> None:
 
 
 def test_existing_gpu_acceptance_artifact_is_verified_without_rerun() -> None:
+    if not ACCEPTANCE_ARTIFACT_PATH.is_file():
+        pytest.skip("缺少验收基线产物（data/evaluation/官方300选择题-验收基线/），内部评测产物未随包分发")
     quality_gate = load_quality_gate()
-    artifact = (
-        PROJECT_ROOT
-        / "data"
-        / "evaluation"
-        / "官方300选择题-验收基线"
-        / "official_300_results.json"
-    )
-
-    check, correct, total, details = quality_gate.official_result_gate(artifact)
+    check, correct, total, details = quality_gate.official_result_gate(ACCEPTANCE_ARTIFACT_PATH)
 
     assert check.status == "passed"
     assert (correct, total) == (300, 300)

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from qdrant_client import models
 
+from backend.app.core import config
 from backend.app.services import embedding_service, rerank_service, vector_store_service
 from backend.app.services.embedding_service import SparseEmbedding, TextEmbedding
 from backend.app.services.performance_metrics import (
@@ -67,6 +68,9 @@ def test_query_embedding_cache_batches_only_misses(monkeypatch) -> None:
 
 
 def test_reranker_uses_cpu_profile_batch_and_reuses_scores(monkeypatch) -> None:
+    # 测试自包含：不依赖外部 .env 是否设置 RERANK_BATCH_SIZE，
+    # 显式固定为生产默认值 16（CPU profile 单次模型调用覆盖 6 对证据）。
+    monkeypatch.setattr(config, "RERANK_BATCH_SIZE", 16)
     rerank_service._rerank_score_cache.cache_clear()
     kwargs_seen: list[dict] = []
 

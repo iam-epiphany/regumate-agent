@@ -1,7 +1,7 @@
 """Serial pair-batch regression runner (old 100 + new 100 questions).
 
 Usage:
-    python tmp/run_pair_regression.py --questions <public/questions.jsonl> --out <outputs.json> [--base-url http://127.0.0.1:8000]
+    python scripts/evaluation/run_pair_regression.py --questions <public/questions.jsonl> --out <outputs.json> [--base-url http://127.0.0.1:8000]
 
 Resumes an interrupted run by re-loading the existing output file.  Serial by
 design: the 4-worker container returned 503s under parallel load (stage-3

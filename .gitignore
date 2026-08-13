@@ -73,6 +73,8 @@ hf_cache/
 # Large or generated files
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 
 # External contest briefs and raw binary source material
 /docs/*.docx

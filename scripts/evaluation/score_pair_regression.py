@@ -1,7 +1,7 @@
 """Score pair-batch regression outputs against private gold (old + new).
 
 Usage:
-    python tmp/score_pair_regression.py --out-dir <dir with old_outputs.json/new_outputs.json>
+    python scripts/evaluation/score_pair_regression.py --out-dir <dir with old_outputs.json/new_outputs.json>
 """
 
 import argparse
@@ -45,8 +45,8 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     summary = {}
     batches = [
-        ("old", out_dir / "old_outputs.json", Path("data/自命题200题评测集/去锚100题/questions.jsonl"), Path("ReguMate-Eval-Private/去锚100题/accepted/gold.jsonl")),
-        ("new", out_dir / "new_outputs.json", Path("data/自命题200题评测集/去锚100题B/questions.jsonl"), Path("ReguMate-Eval-Private/去锚100题B/accepted/gold.jsonl")),
+        ("old", out_dir / "old_outputs.json", Path("data/自命题200题评测集/去锚100题/questions.jsonl"), Path("data/自命题200题评测集/去锚100题/gold.jsonl")),
+        ("new", out_dir / "new_outputs.json", Path("data/自命题200题评测集/去锚100题B/questions.jsonl"), Path("data/自命题200题评测集/去锚100题B/gold.jsonl")),
     ]
     for label, outputs, questions, gold in batches:
         if not outputs.exists():

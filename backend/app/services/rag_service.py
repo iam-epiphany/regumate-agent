@@ -1040,7 +1040,7 @@ def _hyde_hypothetical_clause(question: str) -> str:
             base_url=QUERY_PLANNER_BASE_URL,
             model=QUERY_PLANNER_MODEL,
             timeout_seconds=min(QUERY_PLANNER_TIMEOUT_SECONDS, 8.0),
-            include_thinking=False,
+            disable_thinking=False,
             response_format="text",
         )
         content = chat_completion_content(

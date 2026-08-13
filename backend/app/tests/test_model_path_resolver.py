@@ -72,6 +72,42 @@ def test_hf_hub_cache_snapshot_is_used_when_default_missing(monkeypatch, tmp_pat
     assert resolve_reranker_model_path() == str(reranker_snapshot)
 
 
+def test_invalid_explicit_path_falls_back_to_hf_cache_in_offline_mode(monkeypatch, tmp_path) -> None:
+    """显式路径配置了但目录无效时，离线解析应继续尝试 HF Cache，而不是立即失败。
+
+    覆盖健康检查场景：Compose 曾默认注入 /app/data/models/bge-m3 等不存在的路径，
+    而模型实际刚从 HF Cache 下载完成——此时 health 解析必须与运行时解析一致。
+    """
+    embedding_snapshot = make_model_dir(tmp_path / "hf" / "models--BAAI--bge-m3" / "snapshots" / "rev1")
+    reranker_snapshot = make_model_dir(
+        tmp_path / "hf" / "models--BAAI--bge-reranker-v2-m3" / "snapshots" / "rev1"
+    )
+
+    monkeypatch.setattr(config, "REGUMATE_OFFLINE_MODE", True)
+    monkeypatch.setattr(config, "EMBEDDING_MODEL_PATH", str(tmp_path / "data" / "models" / "bge-m3"))
+    monkeypatch.setattr(config, "RERANKER_MODEL_PATH", str(tmp_path / "data" / "models" / "bge-reranker-v2-m3"))
+    monkeypatch.setattr(config, "DEFAULT_EMBEDDING_MODEL_DIR", tmp_path / "missing-default" / "bge-m3")
+    monkeypatch.setattr(config, "DEFAULT_RERANKER_MODEL_DIR", tmp_path / "missing-default" / "reranker")
+    monkeypatch.setattr(config, "HF_HUB_CACHE", tmp_path / "hf")
+
+    assert resolve_embedding_model_path() == str(embedding_snapshot)
+    assert resolve_reranker_model_path() == str(reranker_snapshot)
+
+
+def test_invalid_explicit_path_and_missing_cache_raises_with_path_info(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(config, "REGUMATE_OFFLINE_MODE", True)
+    explicit = tmp_path / "data" / "models" / "bge-m3"
+    monkeypatch.setattr(config, "EMBEDDING_MODEL_PATH", str(explicit))
+    monkeypatch.setattr(config, "DEFAULT_EMBEDDING_MODEL_DIR", tmp_path / "missing" / "bge-m3")
+    monkeypatch.setattr(config, "HF_HUB_CACHE", tmp_path / "missing-cache")
+
+    with pytest.raises(ModelPathResolutionError) as exc_info:
+        resolve_embedding_model_path()
+
+    message = str(exc_info.value)
+    assert str(explicit) in message
+
+
 def test_offline_mode_raises_chinese_error_when_model_missing(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(config, "REGUMATE_OFFLINE_MODE", True)
     monkeypatch.setattr(config, "EMBEDDING_MODEL_PATH", None)

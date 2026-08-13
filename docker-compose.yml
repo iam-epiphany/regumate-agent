@@ -33,6 +33,13 @@ services:
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-regumate_chunks}
       QDRANT_AUTO_CREATE_COLLECTION: ${QDRANT_AUTO_CREATE_COLLECTION:-true}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
+      LLM_RESPONSE_FORMAT: ${LLM_RESPONSE_FORMAT:-json_object}
+      LLM_STREAM: ${LLM_STREAM:-true}
+      LLM_DISABLE_THINKING: ${LLM_DISABLE_THINKING:-false}
       QUERY_PLANNER_MODEL: ${QUERY_PLANNER_MODEL:-deepseek-v4-flash}
       ANSWER_GENERATION_MODEL: ${ANSWER_GENERATION_MODEL:-deepseek-v4-flash}
       ANSWER_GENERATION_TIMEOUT_SECONDS: ${ANSWER_GENERATION_TIMEOUT_SECONDS:-15}
@@ -74,8 +81,8 @@ services:
       HF_DATASETS_OFFLINE: ${HF_DATASETS_OFFLINE:-0}
       SENTENCE_TRANSFORMERS_HOME: /app/data/model_cache/sentence_transformers
       TORCH_HOME: /app/data/model_cache/torch
-      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/data/models/bge-m3}
-      RERANKER_MODEL_PATH: ${RERANKER_MODEL_PATH:-/app/data/models/bge-reranker-v2-m3}
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-}
+      RERANKER_MODEL_PATH: ${RERANKER_MODEL_PATH:-}
     ports:
       - "127.0.0.1:${REGUMATE_APP_PORT:-8000}:8000"
     volumes:
@@ -84,7 +91,9 @@ services:
       - ./data/models:/app/data/models:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/ready"]
+      # /api/health 为存活检查；/api/health/ready 需要知识库已导入数据，
+      # 首次导入资料前会 503，不能用于容器健康门禁。
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 15s
       timeout: 5s
       retries: 5

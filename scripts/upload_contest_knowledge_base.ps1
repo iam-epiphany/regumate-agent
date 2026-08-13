@@ -50,7 +50,9 @@ function Invoke-JsonRequest([string]$Method, [string]$Uri, [object]$Body = $null
 }
 
 function Assert-GpuReady([string]$Url) {
-    $ready = Invoke-RestMethod -Uri "$Url/api/health/ready" -TimeoutSec 30
+    # 使用 /api/health/rag：首次导入知识库前 collection 为空，
+    # /api/health/ready 会返回 503，不能作为上传前置检查。
+    $ready = Invoke-RestMethod -Uri "$Url/api/health/rag" -TimeoutSec 30
     $device = $ready.model_device
     Write-Host "Model device: selected_device=$($device.selected_device), cuda_available=$($device.cuda_available), device=$($device.cuda_device_name)"
     if ($device.selected_device -ne "cuda") {
@@ -237,7 +239,7 @@ if (-not $SkipWarmup) {
 }
 
 Write-Step "Upload contest_dataset knowledge base"
-$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/ready" -TimeoutSec 30
+$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/rag" -TimeoutSec 30
 $initialPoints = Get-QdrantPoints $ready.qdrant_collection
 $forceReindex = $false
 if ($null -ne $initialPoints) {
@@ -286,7 +288,7 @@ foreach ($file in $files) {
 Write-Host "Upload stage completed: uploaded=$uploaded, skipped=$skipped, requeued=$requeued"
 
 Wait-ContestIndexing $BaseUrl $tracked.ToArray()
-$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/ready" -TimeoutSec 30
+$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/rag" -TimeoutSec 30
 $points = Get-QdrantPoints $ready.qdrant_collection
 if ($null -ne $points) {
     Write-Host "Current Qdrant collection points=$points"

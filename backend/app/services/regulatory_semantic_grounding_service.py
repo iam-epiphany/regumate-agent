@@ -12,7 +12,7 @@ import urllib.request
 from backend.app.core.config import (
     SEMANTIC_GROUNDING_API_KEY,
     SEMANTIC_GROUNDING_BASE_URL,
-    SEMANTIC_GROUNDING_INCLUDE_THINKING,
+    SEMANTIC_GROUNDING_DISABLE_THINKING,
     SEMANTIC_GROUNDING_MODE,
     SEMANTIC_GROUNDING_MODEL,
     SEMANTIC_GROUNDING_PROVIDER,
@@ -385,7 +385,7 @@ def _verify_risky_claims(items: list[dict[str, Any]]) -> tuple[list[dict[str, An
                     base_url=SEMANTIC_GROUNDING_BASE_URL,
                     model=SEMANTIC_GROUNDING_MODEL,
                     timeout_seconds=SEMANTIC_GROUNDING_TIMEOUT_SECONDS,
-                    include_thinking=SEMANTIC_GROUNDING_INCLUDE_THINKING,
+                    disable_thinking=SEMANTIC_GROUNDING_DISABLE_THINKING,
                     response_format=SEMANTIC_GROUNDING_RESPONSE_FORMAT,
                 ),
                 messages,

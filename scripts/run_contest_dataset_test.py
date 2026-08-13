@@ -186,10 +186,13 @@ def assert_service_available(base_url: str, timeout: float) -> None:
 
 def assert_gpu_ready(base_url: str, timeout: float, *, require_gpu: bool = True) -> dict[str, Any]:
     print_header("检查 GPU 运行状态")
+    # 使用 /api/health/rag 而非 /api/health/ready：首次导入知识库前 collection
+    # 为空，/health/ready 会返回 503（ready 语义是“知识库完成初始化后可正式问答”），
+    # 而上传前置检查只需要服务可用 + 模型/GPU 状态。
     try:
-        health = request_json("GET", f"{base_url}/api/health/ready", timeout=timeout)
+        health = request_json("GET", f"{base_url}/api/health/rag", timeout=timeout)
     except Exception as exc:
-        raise RuntimeError(f"无法读取 /api/health/ready：{exc}") from exc
+        raise RuntimeError(f"无法读取 /api/health/rag：{exc}") from exc
     device = health.get("model_device") or {}
     selected = str(device.get("selected_device") or "")
     cuda_available = bool(device.get("cuda_available"))
@@ -346,7 +349,7 @@ def ensure_indexed_document_count_ready(
 
 def qdrant_collection_points(base_url: str, timeout: float) -> int | None:
     try:
-        health = request_json("GET", f"{base_url}/api/health/ready", timeout=timeout)
+        health = request_json("GET", f"{base_url}/api/health/rag", timeout=timeout)
     except Exception:
         return None
     collection = str(health.get("qdrant_collection") or "")

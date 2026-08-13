@@ -16,7 +16,7 @@ from backend.app.core.config import (
     ANSWER_GENERATION_API_KEY,
     ANSWER_GENERATION_BASE_URL,
     ANSWER_GENERATION_ENABLED,
-    ANSWER_GENERATION_INCLUDE_THINKING,
+    ANSWER_GENERATION_DISABLE_THINKING,
     ANSWER_GENERATION_MAX_TOKENS,
     ANSWER_GENERATION_MODEL,
     ANSWER_GENERATION_PROVIDER,
@@ -1032,7 +1032,7 @@ def _call_llm(
         base_url=ANSWER_GENERATION_BASE_URL,
         model=ANSWER_GENERATION_MODEL,
         timeout_seconds=ANSWER_GENERATION_TIMEOUT_SECONDS,
-        include_thinking=ANSWER_GENERATION_INCLUDE_THINKING,
+        disable_thinking=ANSWER_GENERATION_DISABLE_THINKING,
         response_format=ANSWER_GENERATION_RESPONSE_FORMAT,
     )
     stream_attempts = [ANSWER_GENERATION_STREAM]
@@ -1053,7 +1053,7 @@ def _call_llm(
         base_url=ANSWER_GENERATION_BASE_URL,
         model=ANSWER_GENERATION_MODEL,
         timeout_seconds=max(ANSWER_GENERATION_TIMEOUT_SECONDS * 2, 45.0),
-        include_thinking=ANSWER_GENERATION_INCLUDE_THINKING,
+        disable_thinking=ANSWER_GENERATION_DISABLE_THINKING,
         response_format=ANSWER_GENERATION_RESPONSE_FORMAT,
     )
     last_error: Exception | None = None

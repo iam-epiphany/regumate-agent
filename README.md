@@ -93,8 +93,12 @@ docker compose up -d --build
 docker compose ps
 docker compose logs -f app
 Invoke-RestMethod http://127.0.0.1:8000/api/health
-Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
+Invoke-RestMethod http://127.0.0.1:8000/api/health/rag
 ```
+
+> `/api/health/ready` 在知识库尚未导入资料时会返回 503（其语义是“知识库完成
+> 初始化后可以正式问答”）。首次启动先运行下方“脚本上传与评测”上传官方资料，
+> 上传完成后再用 `/api/health/ready` 确认问答入口就绪。
 
 首次启动后建议先预热本地 BGE 模型：
 
@@ -196,7 +200,7 @@ docker compose up -d --build
 
 基于冻结 500 份官方文档构建的内部挑战集（含在线运行器与离线评分器）仅保留在开发仓库中，不随提交包分发；以下为该挑战集的内部状态记录。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
 
-首次封存运行已原样封存，结果为 42/60，未达到发布门槛；失败证据、限制和哈希见 `outputs/evaluation/trust_challenge_100/holdout_failure_report.md`。2026-07-24 Stage 5 当前代码在 60 题封存集上的质量回归为 57/60、overall 95.00%、answerable 93.33%、refusal 100%，并已在 `docs/系统评测报告.md` 中单独列示为内部封存困难集回归结果。该题集状态为 `codex_verified`，未经过银行监管专家人工复核，60 题封存集也不是第三方独立盲测；不得把该结果表述为外部专家成绩或第三方盲测成绩。
+首次封存运行已原样封存，结果为 42/60，未达到发布门槛；失败证据、限制和哈希见 `outputs/evaluation/trust_challenge_100/holdout_failure_report.md`。2026-07-24 Stage 5 当前代码在 60 题封存集上的质量回归为 57/60、overall 95.00%、answerable 93.33%、refusal 100%，作为内部封存困难集回归结果记录在开发仓库评测文档中。该题集状态为 `codex_verified`，未经过银行监管专家人工复核，60 题封存集也不是第三方独立盲测；不得把该结果表述为外部专家成绩或第三方盲测成绩。
 
 ## 七、脚本上传与评测
 
@@ -306,22 +310,22 @@ python scripts/run_all_evaluations.py --base-url http://127.0.0.1:8000
 官方 300 题（选择题，计时+正确率）：
 
 ```powershell
-python scripts/run_official300_timing.py http://127.0.0.1:8000 evaluation/系统测试结果/<输出目录>
+python scripts/evaluation/run_official300_timing.py http://127.0.0.1:8000 evaluation/系统测试结果/<输出目录>
 ```
 
 自命题 200 题跑测：
 
 ```powershell
-python scripts/run_pair_regression.py --questions data/自命题200题评测集/去锚100题/questions.jsonl `
+python scripts/evaluation/run_pair_regression.py --questions data/自命题200题评测集/去锚100题/questions.jsonl `
   --out evaluation/系统测试结果/<输出目录>/old_outputs.json --base-url http://127.0.0.1:8000
-python scripts/run_pair_regression.py --questions data/自命题200题评测集/去锚100题B/questions.jsonl `
+python scripts/evaluation/run_pair_regression.py --questions data/自命题200题评测集/去锚100题B/questions.jsonl `
   --out evaluation/系统测试结果/<输出目录>/new_outputs.json --base-url http://127.0.0.1:8000
 ```
 
 确定性评分（输出逐题诊断与分类汇总）：
 
 ```powershell
-python scripts/score_pair_regression.py --out-dir evaluation/系统测试结果/<输出目录>
+python scripts/evaluation/score_pair_regression.py --out-dir evaluation/系统测试结果/<输出目录>
 ```
 
 评测问答集、金标、评分器与字段说明：`data/自命题200题评测集/README.md`。
@@ -349,7 +353,7 @@ evaluation/
 
 说明：
 - **文档解析结果**：系统知识库界面点击文档名即可查看单份文件的解析内容（chunk 列表/表格摘要/章节元数据）；manifest 为全部 500 份文件的解析清单与溯源（SHA-256）。解析结果本体（SQLite/Qdrant）不随包分发，按 `文档解析结果说明.md` 中的重建命令一键生成后即可在界面查看，与评测所用知识库一致。
-- **系统测试结果**：官方 300 题（选择题）与自制 200 题（开放问答）的正确率、证据引用命中率、拒答率与 CPU/GPU 处理时间，随包提供逐题诊断与评分汇总（可复现，见第八章）。测试报告同时位于包外「ReguMate-提交文档/测评报告/」一份（防评审漏看）。
+- **系统测试结果**：官方 300 题（选择题）与自制 200 题（开放问答）的正确率、证据引用命中率、拒答率与 CPU/GPU 处理时间，随包提供逐题诊断与评分汇总（可复现，见第八章）。测试报告同时位于包外「ReguMate-提交文档/」一份（防评审漏看）。
 - 其余开发期历史评测目录（如去锚100题、官方300选择题-回归* 等）不属于交付内容。
 
 ## 十、开发验证

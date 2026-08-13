@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$DeepSeekApiKey = $env:REGUMATE_SUBMISSION_DEEPSEEK_API_KEY
 )
 
@@ -147,9 +147,24 @@ foreach ($report in $evaluationMarkdownReports) {
     $relative = $report.FullName.Substring($ProjectRootFull.Length).TrimStart('\')
     Copy-FileToPackage $relative
 }
+# 冻结豁免策略文件：backend 测试（test_phase1_evaluation_gates.py）依赖它，
+# 必须随包分发以保证 README 的 pytest 命令在交付包内可执行。
+foreach ($frozenPolicy in @('docs\evaluation\legacy_exceptions\frozen_artifact_exceptions.v1.json')) {
+    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $frozenPolicy)) {
+        Copy-FileToPackage $frozenPolicy
+    }
+}
 Copy-Directory (Join-Path $ProjectRoot 'data\contest_dataset') (Join-Path $PackageRoot 'data\contest_dataset')
-Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $PackageRoot 'data\regulations') `
-    -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
+# 自命题 200 题评测集：README 一键测评（run_all_evaluations.py）与评分器依赖
+# 其中的 questions.jsonl 与 gold.jsonl，必须随包分发。
+Copy-Directory (Join-Path $ProjectRoot 'data\自命题200题评测集') (Join-Path $PackageRoot 'data\自命题200题评测集') `
+    -ExcludeDirs @('__pycache__') `
+    -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+# data/regulations 是可选的额外监管语料（存在则随包分发，缺失不影响构建）。
+if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\regulations')) {
+    Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $PackageRoot 'data\regulations') `
+        -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
+}
 foreach ($artifact in @(
     'data\evaluation\final\parse_manifest.json',
     'data\evaluation\final\ingest_manifest.json',
@@ -208,7 +223,7 @@ $envLines = @(
     'LLM_MODEL=deepseek-v4-flash',
     'LLM_RESPONSE_FORMAT=json_object',
     'LLM_STREAM=true',
-    'LLM_INCLUDE_THINKING=false',
+    'LLM_DISABLE_THINKING=false',
     "DEEPSEEK_API_KEY=$DeepSeekApiKey",
     'REGUMATE_BUILD_ID=regumate-agent-small',
     'REGUMATE_OFFLINE_MODE=false',
@@ -249,7 +264,7 @@ $manifest = @(
     'ReguMate-Agent small package',
     "Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))",
     '',
-    'Included contest artifacts: data/contest_dataset/dataset/nfra_page_attachments_500 and the official QA workbook under data/contest_dataset.',
+    'Included contest artifacts: data/contest_dataset/dataset/nfra_page_attachments_500, the official QA workbook under data/contest_dataset, and the self-authored 200-question evaluation set with gold answers under data/自命题200题评测集.',
     'Included validation assets: backend/frontend tests, parse/ingest manifests, source metadata audit, the locked official-document trust challenge artifacts, and the frozen hard70 round_1 artifacts.',
     'Excluded large artifacts: offline Docker image archive, data/models, data/qdrant, data/evaluation/final_runtime, frontend/node_modules, frontend/dist, historical evaluation outputs.',
     'Runtime expectation: online Docker build, online Qdrant image pull, online HuggingFace model download, contest_dataset ingestion through scripts/upload_contest_knowledge_base.ps1, QA evaluation through scripts/run_contest_qa_test.ps1.'
@@ -280,3 +295,14 @@ Remove-Item -LiteralPath $StagingRoot -Recurse -Force
 Write-Host "Package directory: $VisiblePackageRoot" -ForegroundColor Green
 Write-Host ("Directory size: {0:N2} MB" -f ($size / 1MB))
 Write-Host "Files: $fileCount"
+
+# 生成提交用 zip 归档与 SHA-256 校验文件（旧包在脚本开头已删除）。
+# 注意：此处 $PackageRoot（staging）已在上面删除，从最终目录 $VisiblePackageRoot 打包。
+$ArchiveTempPath = Join-Path $DistRoot "$PackageName.tmp.zip"
+if (Test-Path -LiteralPath $ArchiveTempPath) { Remove-Item -LiteralPath $ArchiveTempPath -Force }
+Compress-Archive -LiteralPath $VisiblePackageRoot -DestinationPath $ArchiveTempPath -CompressionLevel Optimal
+Move-Item -LiteralPath $ArchiveTempPath -Destination $ArchivePath -Force
+$hash = Get-FileHash -Algorithm SHA256 -LiteralPath $ArchivePath
+"$($hash.Hash.ToLower())  $PackageName.zip" | Set-Content -LiteralPath "$ArchivePath.sha256.txt" -Encoding utf8
+Write-Host "Archive: $ArchivePath" -ForegroundColor Green
+Write-Host "SHA256:  $($hash.Hash.ToLower())"

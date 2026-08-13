@@ -7,7 +7,7 @@ from typing import Any
 from backend.app.services.performance_metrics import measure, timed
 
 from backend.app.core.config import (
-    QUERY_PLANNER_INCLUDE_THINKING,
+    QUERY_PLANNER_DISABLE_THINKING,
     QUERY_PLANNER_API_KEY,
     QUERY_PLANNER_BASE_URL,
     QUERY_PLANNER_ENABLED,
@@ -664,7 +664,7 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     base_url=QUERY_PLANNER_BASE_URL,
                     model=QUERY_PLANNER_MODEL,
                     timeout_seconds=QUERY_PLANNER_TIMEOUT_SECONDS,
-                    include_thinking=QUERY_PLANNER_INCLUDE_THINKING,
+                    disable_thinking=QUERY_PLANNER_DISABLE_THINKING,
                     response_format=QUERY_PLANNER_RESPONSE_FORMAT,
                 ),
                 messages,

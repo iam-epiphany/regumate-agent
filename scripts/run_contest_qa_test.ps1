@@ -79,7 +79,9 @@ if ($LASTEXITCODE -ne 0) { throw "ReguMate startup failed." }
 Sync-ReguMateRuntimeUrls
 Write-Host "Using ReguMate API: $BaseUrl"
 
-$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/ready" -TimeoutSec 30
+# /api/health/rag 返回与 /api/health/ready 相同的字段但不会在知识库
+# 尚未导入资料时返回 503，评测脚本据此给出明确的“先上传”提示。
+$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/rag" -TimeoutSec 30
 $device = $ready.model_device
 Write-Host "Model device: selected_device=$($device.selected_device), cuda_available=$($device.cuda_available), device=$($device.cuda_device_name)"
 if ($device.selected_device -ne "cuda" -or -not $device.cuda_available) {

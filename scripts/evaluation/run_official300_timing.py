@@ -2,7 +2,7 @@
 """Official-300 MCQ timing runner (serial, records latency + device snapshot).
 
 Usage:
-    python tmp/run_official300_timing.py [base_url] [out_dir]
+    python scripts/evaluation/run_official300_timing.py [base_url] [out_dir]
 """
 
 import json
@@ -13,7 +13,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.evaluate_contest_qa import read_cases  # noqa: E402
 
 

@@ -25,6 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = Path(__file__).resolve().parent
+EVAL_DIR = SCRIPTS / "evaluation"
 
 
 def _run(cmd: list[str]) -> int:
@@ -57,6 +58,7 @@ def main() -> int:
         ROOT / "evaluation" / "系统测试结果" / f"一键评测_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
+    failures: list[str] = []
 
     # 1. health
     try:
@@ -74,8 +76,10 @@ def main() -> int:
 
     # 2. official 300 (MCQ)
     official_dir = out_dir / "official300"
-    rc = _run([sys.executable, str(SCRIPTS / "run_official300_timing.py"),
+    rc = _run([sys.executable, str(EVAL_DIR / "run_official300_timing.py"),
                args.base_url, str(official_dir)])
+    if rc != 0:
+        failures.append(f"official300 (rc={rc})")
     official = None
     report = official_dir / "official_300_results.json"
     if rc == 0 and report.exists():
@@ -87,12 +91,16 @@ def main() -> int:
         ("new", "data/自命题200题评测集/去锚100题B/questions.jsonl"),
     ]
     for label, questions in pairs:
-        _run([sys.executable, str(SCRIPTS / "run_pair_regression.py"),
-              "--questions", questions, "--out", str(out_dir / f"{label}_outputs.json"),
-              "--base-url", args.base_url])
+        rc = _run([sys.executable, str(EVAL_DIR / "run_pair_regression.py"),
+                   "--questions", questions, "--out", str(out_dir / f"{label}_outputs.json"),
+                   "--base-url", args.base_url])
+        if rc != 0:
+            failures.append(f"run_pair_regression({label}) rc={rc}")
 
     # 4. score
-    _run([sys.executable, str(SCRIPTS / "score_pair_regression.py"), "--out-dir", str(out_dir)])
+    rc = _run([sys.executable, str(EVAL_DIR / "score_pair_regression.py"), "--out-dir", str(out_dir)])
+    if rc != 0:
+        failures.append(f"score_pair_regression (rc={rc})")
 
     # 5. summary
     summary: dict = {"device": md.get("selected_device"), "mode": perf.get("selected_mode")}
@@ -117,6 +125,9 @@ def main() -> int:
     print("\n===== 汇总 =====", flush=True)
     print(json.dumps(summary, ensure_ascii=False, indent=1), flush=True)
     print(f"\n产物目录：{out_dir}", flush=True)
+    if failures:
+        print(f"\n[FAIL] 以下子评测未通过：{', '.join(failures)}", flush=True)
+        return 1
     return 0
 
 
