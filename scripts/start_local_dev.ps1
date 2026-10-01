@@ -146,7 +146,7 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 & $python -c "import uvicorn" *> $null
 if ($LASTEXITCODE -ne 0) {
-    throw 'Local Python environment is missing uvicorn. This legacy local script is no longer the standard path; use docker-run.bat instead.'
+    throw 'Local Python environment is missing uvicorn. This legacy local script is no longer the standard path; use scripts/launcher/docker-run.bat instead.'
 }
 
 where.exe npm.cmd *> $null

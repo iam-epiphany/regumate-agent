@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
@@ -35,6 +36,25 @@ CORE_METADATA_FIELDS = (
 )
 
 RETRIEVAL_METADATA_FIELDS = (
+    "external_doc_id",
+    "title",
+    "issuing_authority",
+    "publication_date",
+    "effective_date",
+    "expiration_date",
+    "document_number",
+    "regulatory_topic",
+    "business_domain",
+    "source_column",
+    "source_url",
+    "attachment_url",
+    "source_type",
+    "version_label",
+    "version_status",
+    "supersedes_document_id",
+)
+
+IDENTITY_METADATA_FIELDS = (
     "external_doc_id",
     "title",
     "issuing_authority",
@@ -136,7 +156,11 @@ class DocumentMetadataError(ValueError):
     pass
 
 
-def normalize_metadata_input(value: Mapping[str, Any] | None) -> dict[str, Any]:
+def normalize_metadata_input(
+    value: Mapping[str, Any] | None,
+    *,
+    allow_clear: bool = False,
+) -> dict[str, Any]:
     if not value:
         return {}
     normalized: dict[str, Any] = {}
@@ -146,6 +170,8 @@ def normalize_metadata_input(value: Mapping[str, Any] | None) -> dict[str, Any]:
             normalized[key] = raw_value
             continue
         if raw_value in (None, "", []):
+            if allow_clear:
+                normalized[key] = None
             continue
         normalized[key] = _normalize_field_value(key, raw_value)
     return normalized
@@ -157,10 +183,11 @@ def apply_document_metadata(
     *,
     source: str,
     confidence: float,
+    allow_clear: bool = False,
 ) -> dict[str, Any]:
     """Merge metadata without allowing low-trust inference to overwrite explicit values."""
 
-    incoming = normalize_metadata_input(metadata)
+    incoming = normalize_metadata_input(metadata, allow_clear=allow_clear)
     extension = _json_object(document.document_metadata)
     provenance = _json_object(document.metadata_provenance)
     priority = SOURCE_PRIORITIES.get(source, 0)
@@ -175,18 +202,21 @@ def apply_document_metadata(
         if current_value not in (None, "", []) and previous_priority > priority:
             continue
         if key in CORE_METADATA_FIELDS:
-            setattr(document, key, value)
+            setattr(document, key, "unknown" if key == "version_status" and value is None else value)
         else:
-            extension[key] = value
+            if value is None:
+                extension.pop(key, None)
+            else:
+                extension[key] = value
         provenance[key] = {
-            "source": source,
+            "source": "user_clear" if source == "user" and value is None else source,
             "confidence": max(0.0, min(float(confidence), 1.0)),
             "priority": priority,
             "updated_at": now,
         }
 
     if source in {"user", "manifest", "official_url"} and incoming:
-        document.metadata_status = "confirmed" if source == "user" else "structured"
+        document.metadata_status = "user_edited" if source == "user" else "structured"
         provenance["metadata_status"] = {
             "source": source,
             "confidence": max(0.0, min(float(confidence), 1.0)),
@@ -204,11 +234,18 @@ def apply_document_metadata(
 def infer_metadata_from_parsed(parsed: ParsedDocument, filename: str) -> dict[str, Any]:
     text = parsed.text[:12000]
     compact = " ".join(text.split())
+    header_text = _header_text(parsed, fallback=text[:4000])
+    footer_text = text[-3000:]
     filename_title = Path(filename).stem.split("_", maxsplit=1)[-1]
     title = _first_heading(parsed) or str(parsed.metadata.get("source_title") or filename_title)
-    authority = next((item for item in KNOWN_AUTHORITIES if item in compact[:4000]), None)
-    document_number_match = re.search(r"[\u4e00-\u9fffA-Za-z]+〔\d{4}〕\d+号", compact[:6000])
-    publication_date = _extract_date(compact[:5000])
+    authority = _extract_labeled_authority(header_text, footer_text)
+    document_number_match = re.search(
+        r"(?:[\u4e00-\u9fffA-Za-z]{1,18})[〔\[]\d{4}[〕\]]\d{1,6}号",
+        header_text,
+    )
+    publication_date = _extract_labeled_date(header_text + " " + footer_text, ("发布日期", "公布日期", "发布于"))
+    effective_date = _extract_labeled_date(compact, ("生效日期", "施行日期", "自"))
+    expiration_date = _extract_labeled_date(compact, ("失效日期", "废止日期", "有效期至"))
     topic = _classify(compact + " " + filename, TOPIC_RULES)
     business_domain = _classify(compact + " " + filename, BUSINESS_RULES)
     return {
@@ -217,6 +254,8 @@ def infer_metadata_from_parsed(parsed: ParsedDocument, filename: str) -> dict[st
         "issuing_authority": authority,
         "document_number": document_number_match.group(0) if document_number_match else None,
         "publication_date": publication_date,
+        "effective_date": effective_date,
+        "expiration_date": expiration_date,
         "regulatory_topic": topic,
         "business_domain": business_domain,
         "source_type": "uploaded_file",
@@ -233,6 +272,12 @@ def document_metadata_snapshot(document: Document, *, include_provenance: bool =
     result.setdefault("source_title", document.title or Path(document.filename).stem)
     result.setdefault("source_filename", document.filename)
     result.setdefault("file_sha256", document.file_sha256)
+    result["identity_review_status"] = document.identity_review_status or "unreviewed"
+    result["identity_reviewed_at"] = (
+        document.identity_reviewed_at.isoformat() if document.identity_reviewed_at else None
+    )
+    result["identity_reviewed_snapshot_hash"] = document.identity_reviewed_snapshot_hash
+    result["identity_warnings"] = identity_metadata_warnings(document)
     if include_provenance:
         result["metadata_provenance"] = _json_object(document.metadata_provenance)
     return result
@@ -251,7 +296,12 @@ def retrieval_metadata_snapshot(document: Document) -> dict[str, Any]:
     return result
 
 
-def resolve_version_relation(db: Session, document: Document) -> Document | None:
+def resolve_version_relation(
+    db: Session,
+    document: Document,
+    *,
+    strict: bool = False,
+) -> Document | None:
     reference = (document.supersedes_document_id or "").strip()
     if not reference:
         return None
@@ -260,11 +310,77 @@ def resolve_version_relation(db: Session, document: Document) -> Document | None
             or_(Document.document_id == reference, Document.external_doc_id == reference)
         )
     )
-    if previous is None or previous.document_id == document.document_id:
+    if previous is None:
+        if strict:
+            raise DocumentMetadataError("被替代文档不存在，请填写知识库中的文档编号")
+        return None
+    if previous.document_id == document.document_id:
+        if strict:
+            raise DocumentMetadataError("文档不能替代自身")
         return None
     document.supersedes_document_id = previous.document_id
     previous.version_status = "superseded"
+    provenance = _json_object(previous.metadata_provenance)
+    provenance["version_status"] = {
+        "source": "confirmed_relation" if strict else "version_relation",
+        "confidence": 1.0 if strict else 0.95,
+        "priority": SOURCE_PRIORITIES["user"] if strict else SOURCE_PRIORITIES["manifest"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "related_document_id": document.document_id,
+    }
+    previous.metadata_provenance = json.dumps(provenance, ensure_ascii=False)
+    invalidate_identity_review(previous)
     return previous
+
+
+def invalidate_identity_review(document: Document) -> None:
+    document.identity_review_status = "unreviewed"
+    document.identity_reviewed_at = None
+    document.identity_reviewed_snapshot_hash = None
+
+
+def confirm_document_identity(document: Document) -> str:
+    validate_document_identity(document)
+    reviewed_at = datetime.now(timezone.utc)
+    snapshot_hash = identity_snapshot_hash(document)
+    document.identity_review_status = "confirmed"
+    document.identity_reviewed_at = reviewed_at
+    document.identity_reviewed_snapshot_hash = snapshot_hash
+    return snapshot_hash
+
+
+def identity_snapshot_hash(document: Document) -> str:
+    payload = {
+        field_name: getattr(document, field_name, None)
+        for field_name in IDENTITY_METADATA_FIELDS
+    }
+    payload["file_sha256"] = document.file_sha256
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def validate_document_identity(document: Document) -> None:
+    if (
+        document.effective_date
+        and document.expiration_date
+        and document.expiration_date < document.effective_date
+    ):
+        raise DocumentMetadataError("失效日期不能早于生效日期")
+
+
+def identity_metadata_warnings(document: Document) -> list[str]:
+    warnings: list[str] = []
+    if (
+        document.publication_date
+        and document.effective_date
+        and document.publication_date > document.effective_date
+    ):
+        warnings.append("发布日期晚于生效日期，请人工核对")
+    if document.version_status == "current" and not document.effective_date:
+        warnings.append("已标记为现行，但生效日期未知")
+    if document.version_status == "repealed" and not document.expiration_date:
+        warnings.append("已标记为废止，但失效日期未知")
+    return warnings
 
 
 def validate_metadata_urls(metadata: Mapping[str, Any]) -> None:
@@ -316,6 +432,38 @@ def _extract_date(text: str) -> str | None:
         return date(int(match.group(1)), int(match.group(2)), int(match.group(3))).isoformat()
     except ValueError:
         return None
+
+
+def _extract_labeled_date(text: str, labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        if label == "自":
+            pattern = r"自\s*((?:20\d{2})[年./-]\d{1,2}[月./-]\d{1,2}日?)\s*起(?:施行|实施|生效)"
+        else:
+            pattern = rf"{re.escape(label)}\s*[：:]?\s*((?:20\d{{2}})[年./-]\d{{1,2}}[月./-]\d{{1,2}}日?)"
+        match = re.search(pattern, text)
+        if match:
+            return _extract_date(match.group(1))
+    return None
+
+
+def _extract_labeled_authority(header_text: str, footer_text: str) -> str | None:
+    labeled = re.search(r"(?:发文机关|发布机构|制定机关)\s*[：:]\s*([^\n；;]{2,80})", header_text)
+    if labeled:
+        candidate = labeled.group(1).strip()
+        return next((item for item in KNOWN_AUTHORITIES if item in candidate), candidate)
+    combined = f"{header_text}\n{footer_text}"
+    return next((item for item in KNOWN_AUTHORITIES if item in combined), None)
+
+
+def _header_text(parsed: ParsedDocument, *, fallback: str) -> str:
+    values: list[str] = []
+    for block in parsed.blocks[:20]:
+        value = block.text.strip()
+        if value:
+            values.append(value)
+        if sum(len(item) for item in values) >= 4000:
+            break
+    return "\n".join(values) or fallback
 
 
 def _first_heading(parsed: ParsedDocument) -> str | None:

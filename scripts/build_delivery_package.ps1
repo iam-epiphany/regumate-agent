@@ -78,11 +78,7 @@ $rootFiles = @(
     'docker-compose.dev.yml',
     'docker-run.bat',
     'docker-run.sh',
-    'rebuild-run.bat',
-    'run.bat',
-    'run.sh',
-    'stop.sh',
-    'stop.bat'
+                    'scripts/launcher/'
 )
 foreach ($file in $rootFiles) { Copy-FileToDelivery $file }
 
@@ -96,26 +92,47 @@ Copy-Directory (Join-Path $ProjectRoot 'frontend') (Join-Path $DeliveryRoot 'fro
 
 Copy-Directory (Join-Path $ProjectRoot 'scripts') (Join-Path $DeliveryRoot 'scripts') `
     -ExcludeDirs @('__pycache__') `
-    -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+    -ExcludeFiles @(
+        '*.pyc',
+        '*.pyo',
+        '*.log',
+        'audit_hard_challenge_50.py',
+        'build_hard_challenge_50.py',
+        'build_hard_challenge_50_round2.py'
+    )
+
+$IterationLogFileName = -join ([char[]](
+    0x7cfb, 0x7edf, 0x4f18, 0x5316, 0x4e0e, 0x8bc4, 0x6d4b,
+    0x8fed, 0x4ee3, 0x8bb0, 0x5f55, 0x2e, 0x6d, 0x64
+))
 
 Copy-Directory (Join-Path $ProjectRoot 'docs') (Join-Path $DeliveryRoot 'docs') `
     -ExcludeDirs @('contest_excel_100_final.json') `
-    -ExcludeFiles @('*.docx', 'legacy_doc_parsing_report.md', 'official_excel_cells_report.md')
+    -ExcludeFiles @(
+        '*.docx',
+        'legacy_doc_parsing_report.md',
+        'official_excel_cells_report.md',
+        'CODEX_*.md',
+        $IterationLogFileName
+    )
+$internalDocs = @('CODEX_OBJECTIVE.md', 'CODEX_STATUS.md', $IterationLogFileName)
+foreach ($internalDoc in $internalDocs) {
+    $internalPath = Join-Path (Join-Path $DeliveryRoot 'docs') $internalDoc
+    if (Test-Path -LiteralPath $internalPath) {
+        Remove-Item -LiteralPath $internalPath -Force
+    }
+}
 
 New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'data') | Out-Null
 Copy-Directory (Join-Path $ProjectRoot 'data\models') (Join-Path $DeliveryRoot 'data\models')
 Copy-Directory (Join-Path $ProjectRoot 'data\qdrant') (Join-Path $DeliveryRoot 'data\qdrant')
 Copy-Directory (Join-Path $ProjectRoot 'data\contest_dataset') (Join-Path $DeliveryRoot 'data\contest_dataset')
-Copy-Directory (Join-Path $ProjectRoot 'data\contest-data-self-made') (Join-Path $DeliveryRoot 'data\contest-data-self-made')
 Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $DeliveryRoot 'data\regulations') `
     -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
 Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\final_runtime') (Join-Path $DeliveryRoot 'data\evaluation\final_runtime') `
     -ExcludeDirs @('audit_archives', 'models', 'qdrant') `
     -ExcludeFiles @('*.log')
 New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'data\evaluation\final') | Out-Null
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\evaluation\self_made')) {
-    Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\self_made') (Join-Path $DeliveryRoot 'data\evaluation\self_made')
-}
 if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'outputs\evaluation')) {
     Copy-Directory (Join-Path $ProjectRoot 'outputs\evaluation') (Join-Path $DeliveryRoot 'outputs\evaluation') `
         -ExcludeDirs @('__pycache__') `

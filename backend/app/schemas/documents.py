@@ -17,6 +17,7 @@ DocumentStatus = Literal[
 DocumentTaskStatus = Literal["queued", "running", "completed", "failed"]
 DocumentStage = Literal[
     "queued",
+    "queued_rebuild",
     "parsing",
     "chunking",
     "metadata_indexing",
@@ -54,6 +55,15 @@ class DocumentMetadataUpdateResponse(BaseModel):
     document_id: str
     metadata: dict[str, Any]
     reindex_queued: bool = False
+    metadata_refreshed: bool = False
+    refresh_warning: str | None = None
+
+
+class DocumentMetadataConfirmResponse(BaseModel):
+    document_id: str
+    metadata: dict[str, Any]
+    metadata_refreshed: bool = False
+    refresh_warning: str | None = None
 
 
 class DocumentManifestImportItem(BaseModel):

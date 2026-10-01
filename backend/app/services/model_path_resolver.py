@@ -105,16 +105,9 @@ def _resolve_model_path(
         explicit_dir = Path(explicit_path)
         if _is_valid_model_dir(explicit_dir):
             return str(explicit_dir)
-        if offline_mode:
-            raise ModelPathResolutionError(
-                _missing_model_message(
-                    display_name=display_name,
-                    env_var_name=env_var_name,
-                    default_dir=default_dir,
-                    checked_paths=[explicit_dir, *expected_paths],
-                    explicit_path=explicit_dir,
-                )
-            )
+        # 显式路径无效时不要立即失败：继续尝试默认目录与 HF Cache，
+        # 兼容“配置了路径但模型尚未放置到该目录、实际模型在 Cache 中”的场景。
+        expected_paths.append(explicit_dir)
 
     if _is_valid_model_dir(default_dir):
         return str(default_dir)
@@ -132,6 +125,7 @@ def _resolve_model_path(
             env_var_name=env_var_name,
             default_dir=default_dir,
             checked_paths=expected_paths + [hub_cache_dir / hub_repo_cache_name / "snapshots"],
+            explicit_path=Path(explicit_path) if explicit_path else None,
         )
     )
 

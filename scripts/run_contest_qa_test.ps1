@@ -4,13 +4,16 @@ param(
     [ValidateRange(1, 300)]
     [int]$Limit = 20,
     [ValidateRange(5, 600)]
-    [int]$TimeoutSeconds = 60,
+    [int]$TimeoutSeconds = 180,
     [ValidateRange(1, 1440)]
     [int]$KnowledgeBaseTimeoutMinutes = 30,
     [string]$BaseUrl = "http://127.0.0.1:8000",
+    [ValidateSet("diagnostic", "acceptance", "fail-fast")]
+    [string]$RunMode = "diagnostic",
+    [string]$Output,
+    [switch]$Resume,
     [switch]$SkipWarmup,
-    [switch]$IncludeOod,
-    [switch]$AllowCpu
+    [switch]$IncludeOod
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +23,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $ProjectRoot
 $BaseUrlWasSpecified = $PSBoundParameters.ContainsKey("BaseUrl")
 $QdrantUrl = "http://127.0.0.1:6333"
+$ContainerBaseUrl = "http://127.0.0.1:8000"
 
 function Write-Step([string]$Message) {
     Write-Host ""
@@ -61,14 +65,6 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker was not found. Install and start Docker Desktop first."
 }
 
-if ($AllowCpu) {
-    $env:MODEL_DEVICE = "cpu"
-    $env:REGUMATE_TORCH_FLAVOR = "cpu"
-    if (-not $env:REGUMATE_APP_IMAGE) {
-        $env:REGUMATE_APP_IMAGE = "regumate/app:contest-cpu"
-    }
-}
-
 Write-Step "Check and start ReguMate"
 $AppImage = if ($env:REGUMATE_APP_IMAGE) { $env:REGUMATE_APP_IMAGE } else { "regumate/app:contest-v3" }
 docker image inspect $AppImage *> $null
@@ -78,16 +74,18 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { throw "ReguMate app image build failed." }
 }
 
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_demo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_demo.ps1 -RequireGpu
 if ($LASTEXITCODE -ne 0) { throw "ReguMate startup failed." }
 Sync-ReguMateRuntimeUrls
 Write-Host "Using ReguMate API: $BaseUrl"
 
-$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/ready" -TimeoutSec 30
+# /api/health/rag 返回与 /api/health/ready 相同的字段但不会在知识库
+# 尚未导入资料时返回 503，评测脚本据此给出明确的“先上传”提示。
+$ready = Invoke-RestMethod -Uri "$BaseUrl/api/health/rag" -TimeoutSec 30
 $device = $ready.model_device
 Write-Host "Model device: selected_device=$($device.selected_device), cuda_available=$($device.cuda_available), device=$($device.cuda_device_name)"
-if ($device.selected_device -ne "cuda") {
-    Write-Host "ReguMate is using CPU fallback. fallback_reason=$($device.fallback_reason)" -ForegroundColor Yellow
+if ($device.selected_device -ne "cuda" -or -not $device.cuda_available) {
+    throw "Official evaluation requires CUDA. selected_device=$($device.selected_device) fallback_reason=$($device.fallback_reason)"
 }
 $points = Get-QdrantPoints $ready.qdrant_collection
 if ($null -ne $points) {
@@ -112,7 +110,7 @@ if (-not (Test-Path -LiteralPath $qa)) {
 $caseLimit = if ($Mode -eq "Quick") { $Limit } else { 0 }
 $arguments = @(
     "compose", "exec", "-T", "app", "python", "scripts/run_contest_qa_test.py",
-    "--base-url", $BaseUrl,
+    "--base-url", $ContainerBaseUrl,
     "--contest-root", "/app/data/contest_dataset",
     "--split", "all",
     "--timeout", "$TimeoutSeconds",
@@ -123,7 +121,32 @@ $arguments = @(
     "--skip-attachment-check"
 )
 
-if ($caseLimit -gt 0) {
+if ($Mode -eq "Full") {
+    $relativeOutput = if ($Output) { $Output } else { "evaluation/系统测试结果/官方300题/contest_qa_test/$(Get-Date -Format 'yyyyMMdd_HHmmss')" }
+    if ([System.IO.Path]::IsPathRooted($relativeOutput)) {
+        throw "Output must be relative to the project root so the container can persist it: $relativeOutput"
+    }
+    $effectiveTimeout = [Math]::Min([Math]::Max($TimeoutSeconds, 5), 180)
+    $gitCommit = (git rev-parse HEAD).Trim()
+    $gitDiffHash = & python -c "import hashlib, subprocess; print(hashlib.sha256(subprocess.check_output(['git', 'diff', '--binary', 'HEAD'])).hexdigest())"
+    if ($LASTEXITCODE -ne 0 -or -not $gitDiffHash) { throw "Unable to capture the host worktree diff fingerprint." }
+    $baselineIdentity = Get-Content -LiteralPath .\docs\evaluation\baselines\phase_01_identity.json -Raw | ConvertFrom-Json
+    $corpusSnapshot = [string]$baselineIdentity.corpus.snapshot_sha256
+    if ($corpusSnapshot -notmatch '^[0-9a-f]{64}$') { throw "Baseline corpus snapshot is missing or invalid." }
+    $arguments = @(
+        "compose", "exec", "-T", "app", "python", "scripts/evaluation/run_official_qa.py",
+        "--base-url", $ContainerBaseUrl,
+        "--mode", $RunMode,
+        "--output", ("/app/" + $relativeOutput.Replace('\', '/')),
+        "--request-timeout-seconds", "$effectiveTimeout",
+        "--retries", "0",
+        "--request-delay", "0.1",
+        "--git-commit", $gitCommit,
+        "--worktree-diff-sha256", $gitDiffHash.Trim(),
+        "--corpus-snapshot-sha256", $corpusSnapshot
+    )
+    if ($Resume) { $arguments += "--resume" }
+} elseif ($caseLimit -gt 0) {
     $arguments += @("--limit", "$caseLimit")
 }
 if ($SkipWarmup) {
@@ -132,13 +155,10 @@ if ($SkipWarmup) {
 if ($IncludeOod) {
     $arguments += "--include-ood"
 }
-if ($AllowCpu) {
-    $arguments += "--allow-cpu"
-}
-
 Write-Step "Run contest_dataset QA evaluation"
-Write-Host "Mode: $Mode"
+Write-Host "Mode: $Mode; run mode: $RunMode"
 if ($Mode -eq "Quick") { Write-Host "Quick limit: $Limit" }
+if ($Mode -eq "Full") { Write-Host "Full diagnostic/acceptance runs all 300 cases and does not stop when the score can no longer reach 300/300." }
 Write-Host "This script expects the 500 contest files to be already uploaded and indexed."
 Write-Host "Results will be written under data\evaluation\contest_qa_test\<timestamp>\"
 

@@ -4,6 +4,8 @@ from scripts.evaluate_contest_qa import (
     build_ood_cases,
     extract_option,
     grounded_option,
+    format_ordered_options,
+    parse_case_ids,
     score_excel_evidence,
     score_manifest_evidence,
     score_text_evidence,
@@ -65,6 +67,19 @@ def test_extract_option_accepts_letter_and_answer_text() -> None:
 
     assert extract_option("答案为 C。", options) == "C"
     assert extract_option("根据证据，应选择流动性比例。", options) == "B"
+
+
+def test_parse_case_ids_accepts_generic_regression_subset() -> None:
+    assert parse_case_ids("Q003, Q001,Q003") == {"Q001", "Q003"}
+    assert parse_case_ids(None) == set()
+    import pytest
+
+    with pytest.raises(ValueError, match="QNNN"):
+        parse_case_ids("Q1")
+
+
+def test_format_ordered_options_preserves_order_with_selection_labels() -> None:
+    assert format_ordered_options(("first", "second")) == ["A. first", "B. second"]
 
 
 def test_extract_option_ignores_citation_numbers_and_rounding() -> None:

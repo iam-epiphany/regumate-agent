@@ -42,6 +42,8 @@ outputs/
 reports/generated/
 backend/storage/
 data/app.db
+data/app.db-shm
+data/app.db-wal
 data/audit_archives/
 data/qdrant/
 data/models/
@@ -51,7 +53,6 @@ data/documents/originals/*
 data/test_documents/parser_samples/*
 data/evaluation/
 data/contest-data/
-data/contest-data-self-made/
 data/contest_dataset/
 data/contest_staging/
 data/contest dataset/
@@ -72,6 +73,11 @@ hf_cache/
 # Large or generated files
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 
 # External contest briefs and raw binary source material
 /docs/*.docx
+
+# 私有金标(不提交)
+ReguMate-Eval-Private/

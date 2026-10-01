@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from queue import Empty, Full, Queue
 from threading import Lock, Thread
@@ -14,6 +15,9 @@ from backend.app.services.audit_service import log_action
 from backend.app.services.document_indexing_service import DocumentIndexingError, index_document
 from backend.app.services.document_processing_service import DocumentProcessingError, ensure_document_chunks
 from backend.app.services.performance_metrics import trace_operation
+
+
+logger = logging.getLogger(__name__)
 
 
 _QUEUE: Queue[str] = Queue(maxsize=max(1, INDEX_QUEUE_CAPACITY))
@@ -99,7 +103,10 @@ def _worker_loop() -> None:
             try:
                 _fill_queue_from_db()
             except Exception:
-                pass
+                # A transient DB outage must not silently starve the queue:
+                # log it and keep cycling on the timeout so recovery resumes
+                # once the database is reachable again.
+                logger.exception("index worker: failed to fill queue from database")
             continue
         retry = False
         try:
@@ -115,7 +122,7 @@ def _worker_loop() -> None:
         try:
             _fill_queue_from_db()
         except Exception:
-            pass
+            logger.exception("index worker: failed to refill queue from database")
 
 
 @trace_operation("document_index")
@@ -164,6 +171,9 @@ def _run_task(document_id: str) -> bool:
                 else "document_index_failed"
             )
             task.updated_at = _now()
+            # ``retry_count`` counts total failures and is incremented first,
+            # so INDEX_TASK_MAX_RETRIES=3 means "1 initial attempt + 3 retries"
+            # (4 total attempts), matching the config name's semantics.
             should_retry = task.retry_count <= INDEX_TASK_MAX_RETRIES
             task.status = "queued" if should_retry else "failed"
             if force_rebuild_chunks and should_retry:

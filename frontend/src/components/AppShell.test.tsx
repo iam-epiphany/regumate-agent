@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listDocuments } from "../api/documents";
 import { getRagHealth } from "../api/system";
@@ -77,7 +77,7 @@ describe("AppShell system status", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "系统状态" })).not.toBeInTheDocument());
   });
 
-  it("shows an explicit CPU fallback warning when CUDA is unavailable", async () => {
+  it("shows CPU as a healthy device when CUDA was requested but unavailable", async () => {
     getRagHealthMock.mockResolvedValue({
       ...health,
       model_device: {
@@ -109,7 +109,11 @@ describe("AppShell system status", () => {
       </SystemStatusProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText("CUDA 异常 · 已回退至 CPU")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CPU 可用")).toBeInTheDocument());
+    // GPU 与 CPU 都是受支持的健康运行方式：设备行显示绿色而非黄色。
+    const deviceRow = screen.getByText("CPU 可用").closest(".system-status-row");
+    expect(deviceRow?.querySelector(".system-state-mark.ok")).not.toBeNull();
+    // 回退原因仍保留在基础设施详情中，不丢失排查信息。
     fireEvent.click(screen.getByText("基础设施详情"));
     expect(screen.getByText("不可用")).toBeInTheDocument();
     expect(screen.getByText("CUDA requested but unavailable")).toBeInTheDocument();
@@ -145,7 +149,7 @@ describe("AppShell system status", () => {
       </SystemStatusProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText("CPU 平衡模式")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("CPU 可用")).toBeInTheDocument());
     expect(screen.queryByText("降级原因")).not.toBeInTheDocument();
   });
 
@@ -226,5 +230,46 @@ describe("AppShell system status", () => {
     await waitFor(() => expect(screen.getByText("可信问答服务已就绪")).toBeInTheDocument());
     expect(screen.getAllByText("已就绪").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("等待预热")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell collapsible sidebar", () => {
+  const storageKey = "regumate.sidebar-collapsed";
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  function renderShell(path = "/") {
+    return render(
+      <SystemStatusProvider>
+        <AppShell path={path} onNavigate={vi.fn()}><main>内容</main></AppShell>
+      </SystemStatusProvider>,
+    );
+  }
+
+  it("collapses to an icon rail and expands again, persisting the choice", () => {
+    const { container } = renderShell("/documents");
+
+    expect(screen.getByRole("button", { name: "折叠侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).not.toContain("sidebar-collapsed");
+
+    fireEvent.click(screen.getByRole("button", { name: "折叠侧边栏" }));
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).toContain("sidebar-collapsed");
+    expect(window.localStorage.getItem(storageKey)).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
+    expect(screen.getByRole("button", { name: "折叠侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).not.toContain("sidebar-collapsed");
+    expect(window.localStorage.getItem(storageKey)).toBe("0");
+  });
+
+  it("starts collapsed when the stored preference says so", () => {
+    window.localStorage.setItem(storageKey, "1");
+    const { container } = renderShell();
+
+    expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")?.className).toContain("sidebar-collapsed");
   });
 });

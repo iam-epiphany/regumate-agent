@@ -38,6 +38,11 @@ class VectorSearchResult:
     embedding_text: str
     token_count: int
     score: float
+    # Ordering-only reward for exact auditable anchors (《标题》/文号 in the
+    # query matching this candidate's source).  Kept separate from ``score``
+    # so reliability gates and diagnostics always see the raw vector score;
+    # ``score + anchor_boost`` is used only for ranking and tie-breaks.
+    anchor_boost: float = 0.0
     chunk_type: str = "paragraph"
     section_path: list[str] | None = None
     section_number: str | None = None
@@ -155,7 +160,6 @@ def upsert_chunk_embeddings(
                     "table_headers": chunk_metadata.get("table_headers") or chunk_metadata.get("headers"),
                     "row_index": chunk_metadata.get("row_index"),
                     "row_cells": chunk_metadata.get("row_cells"),
-                    "raw_table_preview": chunk_metadata.get("raw_table_preview"),
                     "index_version": INDEX_VERSION,
                 },
             )
@@ -216,6 +220,27 @@ def document_vector_chunk_ids(document_id: str) -> set[str]:
     return chunk_ids
 
 
+def get_vector_chunk_by_chunk_id(chunk_id: str) -> VectorSearchResult | None:
+    """Return one current Qdrant payload by logical chunk_id."""
+
+    if not chunk_id:
+        return None
+    ensure_vector_collection()
+    client, _models = _qdrant()
+    try:
+        points = client.retrieve(
+            collection_name=QDRANT_COLLECTION,
+            ids=[_point_id(chunk_id)],
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        raise VectorStoreError(f"读取 Qdrant chunk payload 失败：{chunk_id}") from exc
+    if not points:
+        return None
+    return _to_search_result(points[0])
+
+
 def delete_document_vectors(document_id: str, chunk_ids: list[str] | None = None) -> None:
     ensure_vector_collection()
     client, models = _qdrant()
@@ -271,19 +296,31 @@ def hybrid_search_batch(
     *,
     limit: int,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
 ) -> list[list[VectorSearchResult]]:
+    """Hybrid search for many queries in one Qdrant batch call.
+
+    ``metadata_filters``, when provided and equal in length to
+    ``query_embeddings``, applies a distinct filter per query (Qdrant supports
+    per-request prefetch filters).  ``metadata_filter`` remains the shared
+    filter applied to every query, preserving the previous behaviour.
+    """
+
     if not query_embeddings:
         return []
+    per_query_filters = _per_query_filters(query_embeddings, metadata_filter, metadata_filters)
     ensure_vector_collection()
     client, models = _qdrant()
     if not hasattr(client, "query_batch_points"):
         return [
-            hybrid_search(embedding, limit=limit, metadata_filter=metadata_filter)
-            for embedding in query_embeddings
+            hybrid_search(embedding, limit=limit, metadata_filter=per_query_filters[index])
+            for index, embedding in enumerate(query_embeddings)
         ]
     requests = [
-        models.QueryRequest(**_hybrid_query_kwargs(embedding, limit, models, metadata_filter))
-        for embedding in query_embeddings
+        models.QueryRequest(
+            **_hybrid_query_kwargs(embedding, limit, models, per_query_filters[index])
+        )
+        for index, embedding in enumerate(query_embeddings)
     ]
     try:
         with measure("qdrant.hybrid_search_batch"):
@@ -297,6 +334,18 @@ def hybrid_search_batch(
         [_to_search_result(point) for point in getattr(response, "points", response)]
         for response in responses
     ]
+
+
+def _per_query_filters(
+    query_embeddings: list[TextEmbedding],
+    metadata_filter: dict[str, Any] | None,
+    metadata_filters: list[dict[str, Any] | None] | None,
+) -> list[dict[str, Any] | None]:
+    """Resolve per-query filters, falling back to the shared filter."""
+
+    if metadata_filters is not None and len(metadata_filters) == len(query_embeddings):
+        return list(metadata_filters)
+    return [metadata_filter] * len(query_embeddings)
 
 
 def _hybrid_query_kwargs(
@@ -334,6 +383,8 @@ def refresh_document_metadata_payload(document_id: str, metadata: dict[str, Any]
     client, models = _qdrant()
     allowed = {
         "source_title",
+        "source_filename",
+        "file_sha256",
         "external_doc_id",
         "issuing_authority",
         "publication_date",
@@ -344,7 +395,10 @@ def refresh_document_metadata_payload(document_id: str, metadata: dict[str, Any]
         "business_domain",
         "source_url",
         "attachment_url",
+        "source_type",
+        "version_label",
         "version_status",
+        "supersedes_document_id",
     }
     payload = {key: metadata.get(key) for key in allowed}
     payload["version_status"] = payload.get("version_status") or "unknown"
@@ -373,7 +427,10 @@ def _qdrant_client() -> Any:
         from qdrant_client import QdrantClient
     except ImportError as exc:
         raise VectorStoreError("缺少 qdrant-client 依赖，无法连接向量数据库") from exc
-    return QdrantClient(url=QDRANT_URL)
+    # Metadata-only updates on very large spreadsheet documents can touch
+    # thousands of points.  The client's short default timeout can expire even
+    # though Qdrant completes the operation, so use a bounded long timeout.
+    return QdrantClient(url=QDRANT_URL, timeout=60)
 
 
 def _ensure_payload_indexes(client: Any, models: Any) -> None:

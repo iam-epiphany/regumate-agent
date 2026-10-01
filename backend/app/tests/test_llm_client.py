@@ -17,7 +17,7 @@ def test_openai_compatible_payload_excludes_provider_specific_thinking() -> None
             base_url="https://api.example.com/v1",
             model="model-a",
             timeout_seconds=10,
-            include_thinking=False,
+            disable_thinking=False,
             response_format="json_object",
         ),
         [{"role": "user", "content": "return json"}],
@@ -30,7 +30,7 @@ def test_openai_compatible_payload_excludes_provider_specific_thinking() -> None
     assert "thinking" not in payload
 
 
-def test_deepseek_compat_payload_can_opt_into_thinking_flag() -> None:
+def test_deepseek_compat_payload_can_disable_thinking_explicitly() -> None:
     payload = build_chat_payload(
         ChatCompletionConfig(
             provider="deepseek",
@@ -38,7 +38,7 @@ def test_deepseek_compat_payload_can_opt_into_thinking_flag() -> None:
             base_url="https://api.deepseek.com",
             model="deepseek-v4-flash",
             timeout_seconds=10,
-            include_thinking=True,
+            disable_thinking=True,
             response_format="json_object",
         ),
         [{"role": "user", "content": "return json"}],

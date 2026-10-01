@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-01T11:12:47.226122+00:00",
+  "transform_version": "open-official-v3",
+  "qa_sha256": "bb43588e9fb45b51a57c61516bc7ff7bd33775863b0828c74212ae69c6395a51",
+  "questions_sha256": "7928221c867be3f084072e6dd0242247f2634cc000125f7c2cb6a7f55eaae389",
+  "reference_sha256": "61bf7fbf059b754feb4f29f649e4939d0bca7a6555822f43c7827c0efdbe7f7b",
+  "gold_source": "data\\evaluation\\official_open_300_v3\\open_v3_gold.json",
+  "audit": {
+    "passed": true,
+    "case_count": 300,
+    "error_count": 0,
+    "errors": [],
+    "transform_version": "open-official-v3"
+  }
+}

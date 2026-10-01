@@ -19,6 +19,7 @@ from backend.app.core.database import SessionLocal
 from backend.app.models.document import Document
 from backend.app.schemas.qa import Citation
 from backend.app.services.embedding_service import EmbeddingServiceError, embed_queries, embed_texts
+from backend.app.services.performance_metrics import record_trace_event
 from backend.app.services.rerank_service import RerankServiceError, RerankedChunk, rerank_candidates
 from backend.app.services.vector_store_service import (
     VectorSearchResult,
@@ -327,16 +328,26 @@ def collect_candidates_for_queries(
 
     candidates_by_chunk_id: dict[str, VectorSearchResult] = {}
     embedding_started_at = perf_counter()
+    record_trace_event("dense_retrieval", "running", {"query_count": len(queries)})
     query_embeddings = _embed_search_queries(queries)
     diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
+    record_trace_event(
+        "dense_retrieval", "completed",
+        {"query_count": len(queries), "elapsed_ms": round(diagnostics.timings_ms["embedding"], 3)},
+    )
 
     qdrant_started_at = perf_counter()
+    record_trace_event("keyword_retrieval", "running", {"query_count": len(queries)})
     raw_results_by_query = _hybrid_search_many(
         query_embeddings,
         limit=RETRIEVAL_TOP_K,
         metadata_filter=metadata_filter,
     )
     diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+    record_trace_event(
+        "keyword_retrieval", "completed",
+        {"query_count": len(queries), "elapsed_ms": round(diagnostics.timings_ms["qdrant"], 3)},
+    )
     merge_started_at = perf_counter()
     for raw_results in raw_results_by_query:
         for candidate in raw_results:
@@ -355,6 +366,9 @@ def collect_candidates_with_query_hits(
     query_metadata: list[dict[str, Any]] | None = None,
     diagnostics: RetrievalDiagnostics | None = None,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
+    query_embeddings: list[Any] | None = None,
+    raw_results_by_query: list[list[VectorSearchResult]] | None = None,
 ) -> tuple[list[VectorSearchResult], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     diagnostics = diagnostics or RetrievalDiagnostics()
     diagnostics.query_variants = queries
@@ -367,35 +381,46 @@ def collect_candidates_with_query_hits(
     query_hits_by_chunk_id: dict[str, list[dict[str, Any]]] = {}
     per_query_diagnostics: list[dict[str, Any]] = []
 
-    embedding_started_at = perf_counter()
-    query_embeddings = _embed_search_queries(queries)
-    diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
+    if query_embeddings is None or raw_results_by_query is None:
+        # Standalone collection: embed and search this batch here.
+        embedding_started_at = perf_counter()
+        query_embeddings = _embed_search_queries(queries)
+        diagnostics.timings_ms["embedding"] = _elapsed_ms(embedding_started_at)
 
-    qdrant_started_at = perf_counter()
-    diagnostics.metadata_filter = dict(metadata_filter or {})
-    raw_results_by_query = _hybrid_search_many(
-        query_embeddings,
-        limit=RETRIEVAL_TOP_K,
-        metadata_filter=metadata_filter,
-    )
-    diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
+        qdrant_started_at = perf_counter()
+        diagnostics.metadata_filter = dict(metadata_filter or {})
+        raw_results_by_query = _hybrid_search_many(
+            query_embeddings,
+            limit=RETRIEVAL_TOP_K,
+            metadata_filter=metadata_filter,
+            metadata_filters=metadata_filters,
+        )
+        diagnostics.timings_ms["qdrant"] = _elapsed_ms(qdrant_started_at)
     merge_started_at = perf_counter()
     for query, raw_results, metadata in zip(queries, raw_results_by_query, metadata_items, strict=True):
         for candidate in raw_results:
-            candidate.score += _query_anchor_boost(query, candidate)
-        raw_results.sort(key=lambda candidate: candidate.score, reverse=True)
+            # Anchor rewards are capped per candidate (never accumulated
+            # across queries) and never mutate the raw vector score: gates and
+            # diagnostics read ``score``, ranking uses ``score + anchor_boost``.
+            candidate.anchor_boost = max(candidate.anchor_boost, _query_anchor_boost(query, candidate))
+        raw_results.sort(
+            key=lambda candidate: candidate.score + candidate.anchor_boost,
+            reverse=True,
+        )
         seen_for_query: set[str] = set()
         for rank, candidate in enumerate(raw_results, start=1):
             diagnostics.raw_candidate_count += 1
             seen_for_query.add(candidate.chunk_id)
             existing = candidates_by_chunk_id.get(candidate.chunk_id)
-            if existing is None or candidate.score > existing.score:
+            candidate_rank_score = candidate.score + candidate.anchor_boost
+            if existing is None or candidate_rank_score > existing.score + existing.anchor_boost:
                 candidates_by_chunk_id[candidate.chunk_id] = candidate
             query_hits_by_chunk_id.setdefault(candidate.chunk_id, []).append(
                 {
                     "query": query,
                     "rank": rank,
                     "vector_score": candidate.score,
+                    "anchor_boost": candidate.anchor_boost,
                     **metadata,
                 }
             )
@@ -434,6 +459,7 @@ def _hybrid_search_many(
     *,
     limit: int,
     metadata_filter: dict[str, Any] | None = None,
+    metadata_filters: list[dict[str, Any] | None] | None = None,
 ) -> list[list[VectorSearchResult]]:
     # A patched single-search hook is intentionally honored for deterministic tests.
     if hybrid_search is not _DEFAULT_HYBRID_SEARCH:
@@ -442,6 +468,7 @@ def _hybrid_search_many(
         query_embeddings,
         limit=limit,
         metadata_filter=metadata_filter,
+        metadata_filters=metadata_filters,
     )
 
 
@@ -497,12 +524,16 @@ def limit_rerank_candidates(
     candidates: list[VectorSearchResult],
     *,
     preserve_order: bool = False,
+    limit: int | None = None,
 ) -> list[VectorSearchResult]:
-    if len(candidates) <= RERANK_CANDIDATE_LIMIT:
+    candidate_limit = RERANK_CANDIDATE_LIMIT if limit is None else max(0, int(limit))
+    if len(candidates) <= candidate_limit:
         return candidates
+    if candidate_limit <= 0:
+        return []
     if preserve_order:
-        return candidates[:RERANK_CANDIDATE_LIMIT]
-    return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:RERANK_CANDIDATE_LIMIT]
+        return candidates[:candidate_limit]
+    return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:candidate_limit]
 
 
 def _limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[VectorSearchResult]:
@@ -536,20 +567,27 @@ class _AnnotatedChunk:
 def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     if not item.candidate.chunk_id or not item.candidate.text.strip():
         return False
+    # MCQ aspects blend a lexical coverage term into ``rerank_score`` for
+    # ordering; the reliability gates must evaluate the raw cross-encoder
+    # score, otherwise a strong model match can be filtered by a weak
+    # lexical term (or a weak match pushed through by a high coverage term).
+    rerank_score = (
+        item.raw_rerank_score if item.raw_rerank_score is not None else item.rerank_score
+    )
     coverage = evidence_coverage(terms, _candidate_evidence_text(item.candidate))
     strong_exact_match = (
         coverage >= DIRECT_EVIDENCE_COVERAGE
         and item.candidate.score >= 0.60
-        and item.rerank_score >= 0.0
+        and rerank_score >= 0.0
     )
-    if item.rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
+    if rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
         return False
     # The previous universal lexical-coverage gate discarded 28 official
     # Word/PDF cases even after BGE reranker had placed the expected document at
     # the top. Chinese regulatory questions and source clauses frequently use
     # paraphrases, so a strong cross-encoder match is valid semantic evidence.
     strong_semantic_match = (
-        item.rerank_score >= 0.55
+        rerank_score >= 0.55
         and item.candidate.score >= 0.05
         and coverage > 0.0
     )
@@ -581,28 +619,71 @@ def _rank_key(item: _AnnotatedChunk) -> tuple[float, float, float]:
 
 
 def _select_final_chunks(items: list[_AnnotatedChunk], question: str, limit: int) -> list[_AnnotatedChunk]:
-    if _should_enforce_diversity(question):
-        return _limit_document_repetition(items, limit=limit)
-    return items[:limit]
+    # Document coverage is always on: a multi-file question must not lose
+    # every chunk of a secondary source to one high-scoring file, while a
+    # single-file question is unchanged (round 2 refills the quota).
+    return _select_with_document_coverage(items, limit=limit)
 
 
-def _limit_document_repetition(items: list[_AnnotatedChunk], limit: int) -> list[_AnnotatedChunk]:
+def _select_with_document_coverage(items: list[_AnnotatedChunk], limit: int) -> list[_AnnotatedChunk]:
+    """Select final chunks with document coverage first.
+
+    Round 1 keeps the highest-ranked chunk of every document so an involved
+    source is never crowded out entirely; round 2 refills the remaining quota
+    in rank order, so single-file questions keep the same context.
+    """
+    if len(items) <= limit:
+        return items
     selected: list[_AnnotatedChunk] = []
-    per_document: dict[str, int] = {}
+    covered_documents: set[str] = set()
     for item in items:
-        document_id = item.candidate.document_id
-        if per_document.get(document_id, 0) >= 2 and len(items) > limit:
+        document_id = str(item.candidate.document_id or "")
+        if not document_id or document_id in covered_documents:
             continue
         selected.append(item)
-        per_document[document_id] = per_document.get(document_id, 0) + 1
+        covered_documents.add(document_id)
+        if len(selected) >= limit:
+            return selected
+    for item in items:
+        if item in selected:
+            continue
+        selected.append(item)
         if len(selected) >= limit:
             break
     return selected
 
 
-def _should_enforce_diversity(question: str) -> bool:
-    normalized = _normalize_for_match(question)
-    return any(term in normalized for term in ["综合", "总结", "对比", "比较", "区别", "关系", "不同"])
+def rerank_input_with_document_coverage(
+    candidates: list[VectorSearchResult],
+    *,
+    limit: int,
+) -> list[VectorSearchResult]:
+    """Bound the rerank input while keeping document coverage.
+
+    RRF fusion can rank one file's chunks above every chunk of a secondary
+    source, so the cross-encoder never sees the other file.  Round 1 keeps
+    the top chunk of each document, round 2 refills by rank — single-file
+    questions are unchanged.
+    """
+    if len(candidates) <= limit:
+        return candidates
+    selected: list[VectorSearchResult] = []
+    covered_documents: set[str] = set()
+    for candidate in candidates:
+        document_id = str(candidate.document_id or "")
+        if not document_id or document_id in covered_documents:
+            continue
+        selected.append(candidate)
+        covered_documents.add(document_id)
+        if len(selected) >= limit:
+            return selected
+    for candidate in candidates:
+        if candidate in selected:
+            continue
+        selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _to_citation(item: _AnnotatedChunk) -> Citation:

@@ -17,7 +17,8 @@ class ChatCompletionConfig:
     base_url: str
     model: str
     timeout_seconds: float
-    include_thinking: bool = False
+    # True 时请求体携带 thinking: disabled，显式关闭思考过程输出。
+    disable_thinking: bool = False
     response_format: str = "json_object"
 
 
@@ -104,7 +105,7 @@ def build_chat_payload(
     selected_response_format = config.response_format if response_format is None else response_format
     if selected_response_format and selected_response_format.lower() not in {"off", "none", "disabled"}:
         payload["response_format"] = {"type": selected_response_format}
-    if config.include_thinking:
+    if config.disable_thinking:
         payload["thinking"] = {"type": "disabled"}
     return payload
 

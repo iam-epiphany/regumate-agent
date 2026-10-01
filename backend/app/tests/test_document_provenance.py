@@ -13,9 +13,14 @@ from backend.app.services.document_manifest_service import (
 )
 from backend.app.services.document_metadata_service import (
     apply_document_metadata,
+    confirm_document_identity,
     document_metadata_snapshot,
+    infer_metadata_from_parsed,
+    invalidate_identity_review,
     resolve_version_relation,
+    validate_document_identity,
 )
+from backend.app.services.document_types import ParsedBlock, ParsedDocument
 from backend.app.services.retrieval_service import filter_candidates_by_metadata
 from backend.app.services.vector_store_service import VectorSearchResult
 from backend.app.services.document_url_import_service import (
@@ -60,6 +65,69 @@ def test_explicit_metadata_is_not_overwritten_by_parser_inference() -> None:
     assert document.title == "官方标题"
     assert document.source_url == "https://www.gov.cn/rule"
     assert metadata["metadata_provenance"]["title"]["source"] == "manifest"
+
+
+def test_parser_uses_labeled_dates_and_does_not_treat_first_body_date_as_publication() -> None:
+    parsed = ParsedDocument(
+        text=(
+            "银行监管统计办法\n银发〔2026〕12号\n"
+            "2024年1月31日的存量数据仅用于举例。\n"
+            "本办法自2026年7月1日起施行，有效期至2028年6月30日。\n"
+            "中国人民银行"
+        ),
+        blocks=[
+            ParsedBlock("银行监管统计办法", "heading", 0, level=1),
+            ParsedBlock("银发〔2026〕12号", "paragraph", 1),
+            ParsedBlock("2024年1月31日的存量数据仅用于举例。", "paragraph", 2),
+            ParsedBlock("本办法自2026年7月1日起施行，有效期至2028年6月30日。", "paragraph", 3),
+            ParsedBlock("中国人民银行", "paragraph", 4),
+        ],
+    )
+
+    metadata = infer_metadata_from_parsed(parsed, "统计办法.docx")
+
+    assert metadata["title"] == "银行监管统计办法"
+    assert metadata["document_number"] == "银发〔2026〕12号"
+    assert metadata["issuing_authority"] == "中国人民银行"
+    assert metadata["publication_date"] is None
+    assert metadata["effective_date"] == "2026-07-01"
+    assert metadata["expiration_date"] == "2028-06-30"
+    assert metadata["version_status"] == "unknown"
+
+
+def test_manual_clear_is_unknown_and_confirmation_accepts_incomplete_identity() -> None:
+    document = _document()
+    apply_document_metadata(
+        document,
+        {"title": "待清空标题", "publication_date": "2026-01-01"},
+        source="user",
+        confidence=1.0,
+        allow_clear=True,
+    )
+    apply_document_metadata(
+        document,
+        {"publication_date": None},
+        source="user",
+        confidence=1.0,
+        allow_clear=True,
+    )
+    invalidate_identity_review(document)
+    snapshot_hash = confirm_document_identity(document)
+
+    metadata = document_metadata_snapshot(document)
+    assert "publication_date" not in metadata
+    assert metadata["metadata_provenance"]["publication_date"]["source"] == "user_clear"
+    assert metadata["identity_review_status"] == "confirmed"
+    assert metadata["identity_reviewed_snapshot_hash"] == snapshot_hash
+
+
+def test_identity_rejects_expiration_before_effective_date() -> None:
+    document = _document()
+    document.effective_date = "2026-07-01"
+    document.expiration_date = "2026-06-30"
+
+    with pytest.raises(ValueError, match="失效日期不能早于生效日期"):
+        validate_document_identity(document)
 
 
 def test_manifest_updates_matching_document_and_rejects_qa_data() -> None:

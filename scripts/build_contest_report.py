@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the frozen ReguMate contest evaluation report.")
-    parser.add_argument("--evaluation-dir", type=Path, default=ROOT / "data" / "evaluation" / "final")
+    parser.add_argument(
+        "--evaluation-dir",
+        type=Path,
+        default=ROOT / "data" / "evaluation" / "官方300选择题-最新回归",
+    )
     parser.add_argument("--output", type=Path, default=ROOT / "docs" / "evaluation" / "final_contest_report.md")
     parser.add_argument("--all-results", type=Path, help="Canonical 300-question result JSON.")
     parser.add_argument("--ood-results", type=Path, help="Canonical 30-question OOD result JSON.")

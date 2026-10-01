@@ -4,8 +4,9 @@ from threading import Thread
 from time import monotonic, sleep
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import SessionLocal, get_db
@@ -25,24 +26,72 @@ from backend.app.services.qa_task_service import (
 )
 from backend.app.services.rag_service import answer_question, retrieve_context_package
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
+from backend.app.core.config import QA_REQUEST_TOTAL_BUDGET_SECONDS
+from backend.app.services.performance_metrics import RequestBudgetExceeded, record_trace_event, request_budget_context, request_trace_context
+from uuid import uuid4
 
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
 
 @router.post("/ask", response_model=QAResponse)
-def ask_question(payload: QARequest, db: Session = Depends(get_db)) -> QAResponse:
+def ask_question(payload: QARequest, response: Response, db: Session = Depends(get_db), x_request_id: str | None = Header(default=None)) -> QAResponse:
     """Return a deterministic table answer or a generated, grounded text answer."""
 
-    try:
-        return answer_question(
-            db,
-            payload.question,
-            options=payload.options,
-            include_debug=payload.include_debug,
+    request_id = x_request_id if x_request_id and len(x_request_id) <= 128 else uuid4().hex
+    response.headers["X-Request-ID"] = request_id
+    def progress(event: dict[str, Any]) -> None:
+        record_trace_event(
+            str(event.get("stage") or "unknown"), str(event.get("status") or "unknown"),
+            event.get("summary") if isinstance(event.get("summary"), dict) else None,
         )
+    try:
+        with request_trace_context(request_id), request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
+            record_trace_event("request_received", "started", {"question_length": len(payload.question), "option_count": len(payload.options or [])})
+            result = answer_question(
+                db, payload.question, options=payload.options,
+                include_debug=payload.include_debug, progress_reporter=progress,
+            )
+            record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
+            return result
+    except OperationalError as exc:
+        # The SQLite database on a Docker volume mount can transiently fail to
+        # open under concurrent load ("unable to open database file").  One
+        # bounded retry with a fresh session absorbs the glitch; a second
+        # failure is a real storage problem and surfaces as 500.
+        record_trace_event("request_retry", "db_transient", {"error": str(exc)[:120]})
+        sleep(1.0)
+        try:
+            with SessionLocal() as retry_db:
+                return answer_question(
+                    retry_db, payload.question, options=payload.options,
+                    include_debug=payload.include_debug, progress_reporter=progress,
+                )
+        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
+            if isinstance(retry_exc, OperationalError):
+                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
+            if isinstance(retry_exc, RetrievalServiceUnavailable):
+                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
+            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
     except RetrievalServiceUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Model-inference lock contention or a transient Qdrant hiccup under
+        # concurrent load; one bounded retry with a fresh session absorbs it.
+        record_trace_event("request_retry", "retrieval_transient", {"error": str(exc)[:120]})
+        sleep(1.0)
+        try:
+            with SessionLocal() as retry_db:
+                return answer_question(
+                    retry_db, payload.question, options=payload.options,
+                    include_debug=payload.include_debug, progress_reporter=progress,
+                )
+        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
+            if isinstance(retry_exc, OperationalError):
+                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
+            if isinstance(retry_exc, RetrievalServiceUnavailable):
+                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
+            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
+    except RequestBudgetExceeded as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
 
 
 @router.post("/tasks", response_model=QATaskCreateResponse)

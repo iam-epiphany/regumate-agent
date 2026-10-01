@@ -1,0 +1,416 @@
+{
+"filename": "138_2023年12月财产保险公司经营情况表_2023年12月财产保险公司经营情况表.xlsx",
+"title": "2023年12月财产保险公司经营情况表2023年12月财产保险公司经营情况表",
+"cells": [
+{
+"sheet": "产险公司数据(月度)",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "原保险保费收入",
+"column_label": "项目",
+"value": "原保险保费收入",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "原保险保费收入",
+"column_label": "本年累计/截至当期",
+"value": "15867.79",
+"numeric": 15867.79
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "其中：机动车辆保险",
+"column_label": "项目",
+"value": "其中：机动车辆保险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "其中：机动车辆保险",
+"column_label": "本年累计/截至当期",
+"value": "8672.6",
+"numeric": 8672.6
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "责任险",
+"column_label": "项目",
+"value": "责任险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "责任险",
+"column_label": "本年累计/截至当期",
+"value": "1268.46",
+"numeric": 1268.46
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "农业保险",
+"column_label": "项目",
+"value": "农业保险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "农业保险",
+"column_label": "本年累计/截至当期",
+"value": "1429.66",
+"numeric": 1429.66
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "健康险",
+"column_label": "项目",
+"value": "健康险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "健康险",
+"column_label": "本年累计/截至当期",
+"value": "1751.69",
+"numeric": 1751.69
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "意外险",
+"column_label": "项目",
+"value": "意外险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "意外险",
+"column_label": "本年累计/截至当期",
+"value": "509.12",
+"numeric": 509.12
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "赔款支出",
+"column_label": "项目",
+"value": "赔款支出",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "赔款支出",
+"column_label": "本年累计/截至当期",
+"value": "10694.04",
+"numeric": 10694.04
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "保险金额",
+"column_label": "项目",
+"value": "保险金额",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "保险金额",
+"column_label": "本年累计/截至当期",
+"value": "121001292",
+"numeric": 121001292.03
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "其中：机动车辆保险",
+"column_label": "项目",
+"value": "其中：机动车辆保险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "其中：机动车辆保险",
+"column_label": "本年累计/截至当期",
+"value": "8646848.86",
+"numeric": 8646848.86
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "责任险",
+"column_label": "项目",
+"value": "责任险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "责任险",
+"column_label": "本年累计/截至当期",
+"value": "48307353.54",
+"numeric": 48307353.54
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "农业保险",
+"column_label": "项目",
+"value": "农业保险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "农业保险",
+"column_label": "本年累计/截至当期",
+"value": "49828.43",
+"numeric": 49828.43
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "保单件数",
+"column_label": "项目",
+"value": "保单件数",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "保单件数",
+"column_label": "本年累计/截至当期",
+"value": "7455348.11",
+"numeric": 7455348.11
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "其中：机动车辆保险",
+"column_label": "项目",
+"value": "其中：机动车辆保险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "其中：机动车辆保险",
+"column_label": "本年累计/截至当期",
+"value": "62996.99",
+"numeric": 62996.99
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "责任险",
+"column_label": "项目",
+"value": "责任险",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "责任险",
+"column_label": "本年累计/截至当期",
+"value": "3049170.96",
+"numeric": 3049170.96
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "总资产",
+"column_label": "项目",
+"value": "总资产",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "总资产",
+"column_label": "本年累计/截至当期",
+"value": "27593.2",
+"numeric": 27593.2
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的汇总数据。",
+"column_label": "项目",
+"value": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的汇总数据。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的汇总数据。",
+"column_label": "本年累计/截至当期",
+"value": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的汇总数据。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"column_label": "项目",
+"value": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 23,
+"column": 3,
+"coord": "C23",
+"row_label": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"column_label": "本年累计/截至当期",
+"value": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "3、原保险保费收入、赔款支出、保险金额、签单数量为本年累计数，总资产为月末数据。",
+"column_label": "项目",
+"value": "3、原保险保费收入、赔款支出、保险金额、签单数量为本年累计数，总资产为月末数据。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 24,
+"column": 3,
+"coord": "C24",
+"row_label": "3、原保险保费收入、赔款支出、保险金额、签单数量为本年累计数，总资产为月末数据。",
+"column_label": "本年累计/截至当期",
+"value": "3、原保险保费收入、赔款支出、保险金额、签单数量为本年累计数，总资产为月末数据。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "4、上述数据来源于各公司报送的保险汇总数据，未经审计。",
+"column_label": "项目",
+"value": "4、上述数据来源于各公司报送的保险汇总数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "5、因部分机构目前处于风险处置阶段，从2021年6月起，财产保险公司汇总数据口径暂不包含这部分机构。",
+"column_label": "项目",
+"value": "5、因部分机构目前处于风险处置阶段，从2021年6月起，财产保险公司汇总数据口径暂不包含这部分机构。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "5、因部分机构目前处于风险处置阶段，从2021年6月起，财产保险公司汇总数据口径暂不包含这部分机构。",
+"column_label": "本年累计/截至当期",
+"value": "5、因部分机构目前处于风险处置阶段，从2021年6月起，财产保险公司汇总数据口径暂不包含这部分机构。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 27,
+"column": 2,
+"coord": "B27",
+"row_label": "6、按可比口径，行业汇总原保险保费收入同比增长6.73%，保险金额下降2.87%，赔款支出增长17.8%。",
+"column_label": "项目",
+"value": "6、按可比口径，行业汇总原保险保费收入同比增长6.73%，保险金额下降2.87%，赔款支出增长17.8%。",
+"numeric": null
+},
+{
+"sheet": "产险公司数据(月度)",
+"row": 27,
+"column": 3,
+"coord": "C27",
+"row_label": "6、按可比口径，行业汇总原保险保费收入同比增长6.73%，保险金额下降2.87%，赔款支出增长17.8%。",
+"column_label": "本年累计/截至当期",
+"value": "6、按可比口径，行业汇总原保险保费收入同比增长6.73%，保险金额下降2.87%，赔款支出增长17.8%。",
+"numeric": null
+}
+]
+}

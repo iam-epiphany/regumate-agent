@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "scorer_version": "rigorous-banking-workbench-scorer-v1",
+  "scorer_sha256": "767711cfdbbec6c92ac1c4fe791194ab208f6272faf26dada76a7e3d2f367686",
+  "created_at": "2026-08-06T08:42:37.286373+00:00",
+  "outputs_sha256": "1be0cbb575b8e0187c22123a8f08d18d8f9b4ccc679b62008ef005f566a28528",
+  "summary": {
+    "total": 5,
+    "passed": 4,
+    "pass_rate": 0.8,
+    "by_question_type": {
+      "cross_document_evidence": {
+        "passed": 0,
+        "total": 1
+      },
+      "fact_definition": {
+        "passed": 1,
+        "total": 1
+      },
+      "refusal": {
+        "passed": 1,
+        "total": 1
+      },
+      "rule_scope": {
+        "passed": 2,
+        "total": 2
+      }
+    },
+    "failure_categories": {
+      "ok": 4,
+      "answer_generation": 1
+    }
+  },
+  "diagnostic": [
+    {
+      "id": "B2-R18",
+      "question_type": "rule_scope",
+      "difficulty": "hard",
+      "answerable": true,
+      "passed": true,
+      "failure_category": "ok",
+      "facts_met": 4,
+      "facts_total": 4,
+      "source_evidence_met": true,
+      "matched_source_count": 1,
+      "citation_returned": true,
+      "latency_ms": 23825
+    },
+    {
+      "id": "B2-R03",
+      "question_type": "rule_scope",
+      "difficulty": "medium",
+      "answerable": true,
+      "passed": true,
+      "failure_category": "ok",
+      "facts_met": 2,
+      "facts_total": 2,
+      "source_evidence_met": true,
+      "matched_source_count": 1,
+      "citation_returned": true,
+      "latency_ms": 14685
+    },
+    {
+      "id": "B2-D14",
+      "question_type": "fact_definition",
+      "difficulty": "medium",
+      "answerable": true,
+      "passed": true,
+      "failure_category": "ok",
+      "facts_met": 1,
+      "facts_total": 1,
+      "source_evidence_met": true,
+      "matched_source_count": 1,
+      "citation_returned": true,
+      "latency_ms": 36613
+    },
+    {
+      "id": "B2-F17",
+      "question_type": "refusal",
+      "difficulty": "medium",
+      "answerable": false,
+      "passed": true,
+      "failure_category": "ok",
+      "facts_met": 0,
+      "facts_total": 0,
+      "source_evidence_met": false,
+      "matched_source_count": 0,
+      "citation_returned": false,
+      "latency_ms": 16
+    },
+    {
+      "id": "B2-X03",
+      "question_type": "cross_document_evidence",
+      "difficulty": "hard",
+      "answerable": true,
+      "passed": false,
+      "failure_category": "answer_generation",
+      "facts_met": 1,
+      "facts_total": 2,
+      "source_evidence_met": true,
+      "matched_source_count": 2,
+      "citation_returned": true,
+      "latency_ms": 48418
+    }
+  ]
+}

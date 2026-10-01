@@ -55,7 +55,11 @@ FRONTEND_DEV_SERVER = os.getenv("REGUMATE_FRONTEND_DEV_SERVER", "").strip().rstr
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(os.getenv("REGUMATE_DATA_DIR", PROJECT_ROOT / "data"))
-DATABASE_PATH = DATA_DIR / "app.db"
+# The SQLite database may live on a separate Docker named volume: bind mounts
+# on Docker Desktop cannot reliably serve SQLite's multi-connection locking
+# (uvicorn's worker threads open one connection per thread).
+DATABASE_DIR = Path(os.getenv("REGUMATE_DB_DIR") or DATA_DIR)
+DATABASE_PATH = DATABASE_DIR / "app.db"
 DOCUMENT_DIR = DATA_DIR / "documents" / "originals"
 QDRANT_STORAGE_DIR = DATA_DIR / "qdrant"
 AUDIT_ARCHIVE_DIR = DATA_DIR / "audit_archives"
@@ -91,7 +95,13 @@ MODEL_WARMUP_POLICY = _env_choice(
     "background",
     {"background", "lazy"},
 )
-RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 0)
+# CPU batch-4 rerank costs ~18s for 24 candidates; batch 16 halves that while
+# the 90s inference-lock wait absorbs the longer single pass.
+RERANK_BATCH_SIZE = _env_int("RERANK_BATCH_SIZE", 16)
+# Per-inference batch cap for the cross-encoder.  CPU profiles already pick
+# 4/2 so raising this only widens the GPU path (GPU profile default is 24).
+# Verified against an 8 GiB GPU: peak CUDA allocation stays far below the cap.
+RERANK_INFERENCE_BATCH_LIMIT = _env_int("RERANK_INFERENCE_BATCH_LIMIT", 24, minimum=1)
 RERANK_MAX_LENGTH = _env_int("RERANK_MAX_LENGTH", 1024, minimum=1)
 RERANK_INPUT_MODE = _env_choice(
     "RERANK_INPUT_MODE",
@@ -126,8 +136,6 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     ".txt", ".md", ".doc", ".docx", ".pdf", ".xls", ".xlsx",
     ".csv", ".jsonl", ".html", ".htm",
 }
-CHUNK_SIZE = 700
-CHUNK_OVERLAP = 100
 CHUNK_TARGET_TOKENS = 512
 CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 80
@@ -145,6 +153,11 @@ RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3"
 EMBEDDING_DIMENSION = 1024
 EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8, minimum=1)
 EMBEDDING_MAX_BATCH_SIZE = _env_int("EMBEDDING_MAX_BATCH_SIZE", 16, minimum=1)
+# Query embedding batch size.  Batching changes the fp16 forward-pass numerics
+# slightly (measured max dense delta ~2.5e-7 vs batch=1), which is enough to
+# flip a borderline retrieval ranking; the default therefore stays at 1 for
+# bit-stable retrieval, and operators can raise it for throughput.
+QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 1, minimum=1)
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24
@@ -174,19 +187,31 @@ LLM_BASE_URL = (
     or "https://api.deepseek.com"
 )
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
-LLM_INCLUDE_THINKING = _env_bool("LLM_INCLUDE_THINKING", False)
+# 语义为“显式关闭 thinking 输出”：为 True 时请求体携带 thinking: disabled
+# （部分 OpenAI 兼容 API 默认开启思考过程）。旧名 LLM_INCLUDE_THINKING 仍兼容，
+# 其语义曾与变量名相反（True 实际表示禁用），新部署请使用 LLM_DISABLE_THINKING。
+LLM_DISABLE_THINKING = _env_bool("LLM_DISABLE_THINKING", _env_bool("LLM_INCLUDE_THINKING", False))
 LLM_RESPONSE_FORMAT = os.getenv("LLM_RESPONSE_FORMAT", "json_object").strip() or "json_object"
 LLM_STREAM = _env_bool("LLM_STREAM", True)
 
+# The LLM query planner rewrites open text questions into domain-aware search
+# queries (制度原文风格), which the deterministic fallback cannot reproduce.
+# It is enabled by default; the upstream API is sampled at temperature 0 but
+# does not guarantee byte-identical outputs.  Set QUERY_PLANNER_ENABLED=false
+# to force the deterministic fallback planner (identical input always yields
+# identical search queries and evidence).
 QUERY_PLANNER_ENABLED = _env_bool("QUERY_PLANNER_ENABLED", True)
 QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", LLM_PROVIDER)
 QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or LLM_API_KEY
 QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", LLM_BASE_URL)
 QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", LLM_MODEL)
-QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 20.0, minimum=0.1)
+QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 12.0, minimum=0.1)
 QUERY_PLANNER_MAX_ASPECTS = _env_int("QUERY_PLANNER_MAX_ASPECTS", 12, minimum=1)
 QUERY_PLANNER_MAX_SEARCH_QUERIES = _env_int("QUERY_PLANNER_MAX_SEARCH_QUERIES", 3, minimum=1)
-QUERY_PLANNER_INCLUDE_THINKING = _env_bool("QUERY_PLANNER_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+QUERY_PLANNER_DISABLE_THINKING = _env_bool(
+    "QUERY_PLANNER_DISABLE_THINKING",
+    _env_bool("QUERY_PLANNER_INCLUDE_THINKING", LLM_DISABLE_THINKING),
+)
 QUERY_PLANNER_RESPONSE_FORMAT = os.getenv("QUERY_PLANNER_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 
 ANSWER_GENERATION_ENABLED = _env_bool("ANSWER_GENERATION_ENABLED", True)
@@ -195,10 +220,29 @@ ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or LLM_API_KE
 ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_URL)
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
-ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 900, minimum=1)
-ANSWER_GENERATION_INCLUDE_THINKING = _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+ANSWER_GENERATION_TOTAL_BUDGET_SECONDS = _env_float(
+    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 60.0, minimum=1.0
+)
+# Provider intermittently returns empty streams/bodies for long prompts;
+# 4 alternating attempts keep the answer pipeline resilient without
+# exceeding the generation total budget.
+ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 3, minimum=1)
+QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
+# Model passes hold the lock for seconds; 90s of waiting absorbs a cold-load
+# neighbour plus concurrent inference without failing the request.
+MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 90.0, minimum=0.1)
+# deepseek-v4-flash emits reasoning_content for long prompts and consumes the
+# token budget before any answer content; 3000 leaves room for both the
+# reasoning tail and the structured JSON answer.
+ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 3000, minimum=1)
+ANSWER_GENERATION_DISABLE_THINKING = _env_bool(
+    "ANSWER_GENERATION_DISABLE_THINKING",
+    _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_DISABLE_THINKING),
+)
 ANSWER_GENERATION_RESPONSE_FORMAT = os.getenv("ANSWER_GENERATION_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 ANSWER_GENERATION_STREAM = _env_bool("ANSWER_GENERATION_STREAM", LLM_STREAM)
+ASPECT_GATE_PRE_GENERATION = _env_bool("ASPECT_GATE_PRE_GENERATION", True)
+
 SEMANTIC_GROUNDING_MODE = _env_choice(
     "SEMANTIC_GROUNDING_MODE",
     "risk_based",
@@ -211,7 +255,10 @@ SEMANTIC_GROUNDING_MODEL = os.getenv("SEMANTIC_GROUNDING_MODEL", LLM_MODEL)
 SEMANTIC_GROUNDING_TIMEOUT_SECONDS = _env_float(
     "SEMANTIC_GROUNDING_TIMEOUT_SECONDS", 12.0, minimum=0.1
 )
-SEMANTIC_GROUNDING_INCLUDE_THINKING = _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", LLM_INCLUDE_THINKING)
+SEMANTIC_GROUNDING_DISABLE_THINKING = _env_bool(
+    "SEMANTIC_GROUNDING_DISABLE_THINKING",
+    _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", LLM_DISABLE_THINKING),
+)
 SEMANTIC_GROUNDING_RESPONSE_FORMAT = os.getenv("SEMANTIC_GROUNDING_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 MAX_UPLOAD_BYTES = _env_int("MAX_UPLOAD_BYTES", 50 * 1024 * 1024, minimum=1)
 MAX_BATCH_UPLOAD_FILES = _env_int("MAX_BATCH_UPLOAD_FILES", 20, minimum=1)
@@ -265,6 +312,7 @@ def ensure_runtime_dirs() -> None:
 
     for path in [
         DATA_DIR,
+        DATABASE_DIR,
         DOCUMENT_DIR,
         QDRANT_STORAGE_DIR,
         AUDIT_ARCHIVE_DIR,

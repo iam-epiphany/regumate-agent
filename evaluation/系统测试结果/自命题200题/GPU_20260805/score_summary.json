@@ -1,0 +1,10 @@
+{
+  "old": {
+    "passed": 88,
+    "total": 100
+  },
+  "new": {
+    "passed": 92,
+    "total": 100
+  }
+}

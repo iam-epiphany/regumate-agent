@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleStop, History, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CircleStop, History, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { CitationList } from "../components/CitationList";
@@ -51,14 +51,14 @@ export function RagPage() {
 
   return (
     <main className="page qa-page">
-      <header className="product-header">
+      <header className={hasTask ? "product-header product-header--compact" : "product-header"}>
         <div>
-          <p className="eyebrow">监管可信问答</p>
+          {!hasTask ? <p className="eyebrow">监管可信问答</p> : null}
           <div className="product-title-lockup">
             <img className="product-wordmark" src={pageHeaderWordmarkUrl} alt="ReguMate" />
-            <h1>监管制度与统计报表问答</h1>
+            {!hasTask ? <h1>监管制度与统计报表问答</h1> : null}
           </div>
-          <p className="page-lead">从已入库制度、填报说明和统计报表中查找依据；无法建立充分证据时明确说明原因。</p>
+          {!hasTask ? <p className="page-lead">从已入库制度、填报说明和统计报表中查找依据；无法建立充分证据时明确说明原因。</p> : null}
         </div>
         <button className="secondary-button" type="button" onClick={() => setHistoryOpen(true)}><History size={17} />问答历史</button>
       </header>
@@ -80,8 +80,17 @@ export function RagPage() {
 
           {active ? (
             <>
-              <TaskProgress events={qa.progressEvents} answer={answer} active technical={technicalDetails} taskStatus={qa.taskStatus} />
-              <div className="processing-note" role="status"><Loader2 size={18} className="spinning" /><div><strong>{qa.isCancelling ? "正在停止生成" : "任务正在后台处理"}</strong><p>{qa.isCancelling ? "正在保存停止状态，本次任务不会写入最终答案。" : "站内切换页面后进度仍会保留；完整刷新后可从问答历史查看后台任务。"}</p></div></div>
+              <TaskProgress
+                events={qa.progressEvents}
+                answer={answer}
+                active
+                technical={technicalDetails}
+                taskStatus={qa.taskStatus}
+                heading={qa.isCancelling ? "正在停止生成" : "任务正在后台处理"}
+                hint={qa.isCancelling
+                  ? "正在保存停止状态，本次任务不会写入最终答案。"
+                  : "站内切换页面后进度仍会保留；完整刷新后可从问答历史查看后台任务。"}
+              />
             </>
           ) : null}
 
@@ -167,10 +176,10 @@ function QuestionSummary({
 }) {
   return (
     <section className="question-summary">
-      <details>
-        <summary><span>本次问题</span><strong>{question}</strong></summary>
-        <p>{question}</p>
-      </details>
+      <div className="question-summary__main">
+        <span className="section-kicker">本次问题</span>
+        <h2>{question}</h2>
+      </div>
       <div className="question-summary__actions">
         {updatedAt ? <span>{formatDateTime(updatedAt)}</span> : null}
       </div>

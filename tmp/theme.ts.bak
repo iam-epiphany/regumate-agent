@@ -1,0 +1,36 @@
+export type ThemeName = "perplexity" | "regumate";
+
+export const THEME_STORAGE_KEY = "regumate.theme";
+
+export const THEME_LABELS: Record<ThemeName, { label: string; toggleTo: ThemeName; toggleLabel: string }> = {
+  perplexity: {
+    label: "Perplexity 风格",
+    toggleTo: "regumate",
+    toggleLabel: "切换为 ReguMate 蓝色主题",
+  },
+  regumate: {
+    label: "ReguMate 蓝色",
+    toggleTo: "perplexity",
+    toggleLabel: "切换为 Perplexity 风格主题",
+  },
+};
+
+export function readTheme(): ThemeName {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "regumate" ? "regumate" : "perplexity";
+  } catch {
+    return "perplexity";
+  }
+}
+
+export function applyTheme(theme: ThemeName): void {
+  document.documentElement.dataset.theme = theme;
+}
+
+export function writeTheme(theme: ThemeName): void {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // 存储不可用（隐私模式等）时只影响本次会话内的主题状态
+  }
+}

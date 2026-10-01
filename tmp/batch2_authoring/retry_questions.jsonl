@@ -1,0 +1,17 @@
+{"id": "B2-D03", "question": "保险公司偿付能力监管中，“最低资本”是如何定义的？", "answerable": true, "question_type": "fact_definition", "difficulty": "easy", "business_relevance": "偿付能力监管核心概念"}
+{"id": "B2-D05", "question": "信用风险内部评级法中，“中小企业风险暴露”是如何定义的？", "answerable": true, "question_type": "fact_definition", "difficulty": "easy", "business_relevance": "内部评级法风险暴露分类识别"}
+{"id": "B2-D06", "question": "信用风险内部评级法中，“专业贷款”是如何定义的？", "answerable": true, "question_type": "fact_definition", "difficulty": "medium", "business_relevance": "内部评级法公司风险暴露子类识别"}
+{"id": "B2-D10", "question": "保险公司资本监管中，“资本规划”是如何定义的？", "answerable": true, "question_type": "fact_definition", "difficulty": "medium", "business_relevance": "资本规划监管的基础概念"}
+{"id": "B2-D11", "question": "保险公司风险综合评级中，“操作风险”是如何定义的？", "answerable": true, "question_type": "fact_definition", "difficulty": "hard", "business_relevance": "分类监管中难以资本化风险的评价"}
+{"id": "B2-R05", "question": "保险公司选聘境内信用评级机构有什么要求？", "answerable": true, "question_type": "rule_scope", "difficulty": "medium", "business_relevance": "保险公司信用评级机构选聘规范"}
+{"id": "B2-R08", "question": "非集中清算衍生品交易保证金管理中，对担保品有什么禁止性规定？", "answerable": true, "question_type": "rule_scope", "difficulty": "medium", "business_relevance": "衍生品保证金合格担保品管理"}
+{"id": "B2-R09", "question": "哪些非集中清算衍生品交易可以不适用初始保证金要求？", "answerable": true, "question_type": "rule_scope", "difficulty": "medium", "business_relevance": "衍生品保证金要求豁免情形"}
+{"id": "B2-R10", "question": "商业银行采用内部评级法时，不符合各类风险暴露分类标准的资产应如何处理？", "answerable": true, "question_type": "rule_scope", "difficulty": "medium", "business_relevance": "内部评级法风险暴露分类兜底规则"}
+{"id": "B2-R19", "question": "保险公司对非基础资产进行穿透计量时，应当遵循哪些原则？", "answerable": true, "question_type": "rule_scope", "difficulty": "hard", "business_relevance": "非基础资产穿透计量原则"}
+{"id": "B2-T02", "question": "申请设立财务公司的企业集团，最近1个会计年度末的总资产应达到什么标准？", "answerable": true, "question_type": "threshold_rule", "difficulty": "easy", "business_relevance": "财务公司设立的企业集团资质要求"}
+{"id": "B2-T08", "question": "财产保险公司年度压力测试必测压力情景一（保险风险情景）包含哪些假设？", "answerable": true, "question_type": "threshold_rule", "difficulty": "hard", "business_relevance": "财产保险公司年度压力测试情景"}
+{"id": "B2-TC2", "question": "根据《2024年4季度保险业资金运用情况表》，保险公司资金运用余额与财产险公司资金运用余额的差值是多少？", "answerable": true, "question_type": "table_calculation", "difficulty": "medium", "business_relevance": "保险资金运用数据分析"}
+{"id": "B2-X01", "question": "恢复计划示例（保险公司版）和处置计划建议示例（保险公司版）对“关键共享服务”的定义是否一致？", "answerable": true, "question_type": "cross_document_evidence", "difficulty": "hard", "business_relevance": "恢复与处置计划编制中关键共享服务识别的口径一致性"}
+{"id": "B2-X04", "question": "非寿险业务与寿险业务保险风险最低资本监管规则对“保险风险”的定义是否一致？", "answerable": true, "question_type": "cross_document_evidence", "difficulty": "hard", "business_relevance": "保险风险定义在寿险与非寿险规则间的一致性"}
+{"id": "B2-F09", "question": "请比较中国银行与工商银行2025年的拨备覆盖率。", "answerable": false, "question_type": "refusal", "difficulty": "medium", "business_relevance": "拒绝个别上市银行指标对比请求"}
+{"id": "B2-F19", "question": "请评估某信托公司收购一家不良资产平台的可行性。", "answerable": false, "question_type": "refusal", "difficulty": "hard", "business_relevance": "拒绝并购可行性评估请求"}

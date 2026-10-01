@@ -1,0 +1,710 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-08-06T05:27:58.247028+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "questions_sha256": "3bde9827482a4e53bfa0c1c55d694b982ab54c1132297f55ec56f76873015668",
+  "complete": true,
+  "runtime_error_count": 100,
+  "results": [
+    {
+      "id": "B2-D01",
+      "question": "在银行业监管语境下，“企业集团财务公司”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 29.84
+    },
+    {
+      "id": "B2-D02",
+      "question": "企业集团财务公司监管中，“成员单位”包括哪些主体？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.23
+    },
+    {
+      "id": "B2-D03",
+      "question": "保险公司偿付能力监管中，“最低资本”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.07
+    },
+    {
+      "id": "B2-D04",
+      "question": "保险公司偿付能力风险中，“可资本化风险”和“难以资本化风险”分别包括哪些？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 15.04
+    },
+    {
+      "id": "B2-D05",
+      "question": "信用风险内部评级法中，“中小企业风险暴露”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.44
+    },
+    {
+      "id": "B2-D06",
+      "question": "信用风险内部评级法中，“专业贷款”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.17
+    },
+    {
+      "id": "B2-D07",
+      "question": "资本监管框架下，“中央交易对手”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.46
+    },
+    {
+      "id": "B2-D08",
+      "question": "资产管理产品风险加权资产计量中，“独立第三方”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 15.1
+    },
+    {
+      "id": "B2-D09",
+      "question": "外部评级使用中，“主动评级”和“委托评级”分别是什么？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.53
+    },
+    {
+      "id": "B2-D10",
+      "question": "保险公司资本监管中，“资本规划”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.87
+    },
+    {
+      "id": "B2-D11",
+      "question": "保险公司风险综合评级中，“操作风险”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.32
+    },
+    {
+      "id": "B2-D12",
+      "question": "信托业务分类中，“家族信托”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.36
+    },
+    {
+      "id": "B2-D13",
+      "question": "衍生品交易保证金监管中，“非集中清算衍生品交易”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 0.96
+    },
+    {
+      "id": "B2-D14",
+      "question": "保险公司偿付能力监管中，“寿险业务”是如何界定的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 24.58
+    },
+    {
+      "id": "B2-D15",
+      "question": "保险公司偿付能力监管中，“实际资本”是如何定义的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.16
+    },
+    {
+      "id": "B2-R01",
+      "question": "企业集团财务公司在业务经营上有什么禁止性规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.59
+    },
+    {
+      "id": "B2-R02",
+      "question": "财务公司名称的使用和标示有什么规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.39
+    },
+    {
+      "id": "B2-R03",
+      "question": "金融租赁公司统计融资租赁业务时，“设备类资产”的口径包括什么？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.67
+    },
+    {
+      "id": "B2-R04",
+      "question": "货币经纪公司提供数据服务有什么禁止性规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.56
+    },
+    {
+      "id": "B2-R05",
+      "question": "保险公司选聘境内信用评级机构有什么要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.41
+    },
+    {
+      "id": "B2-R06",
+      "question": "同一信用主体或债项存在多个外部评级结果时，商业银行应如何使用？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.26
+    },
+    {
+      "id": "B2-R07",
+      "question": "合格中央交易对手不再满足合格标准时，商业银行的资本计量有什么过渡要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.33
+    },
+    {
+      "id": "B2-R08",
+      "question": "非集中清算衍生品交易保证金管理中，对担保品有什么禁止性规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.86
+    },
+    {
+      "id": "B2-R09",
+      "question": "哪些非集中清算衍生品交易可以不适用初始保证金要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.17
+    },
+    {
+      "id": "B2-R10",
+      "question": "商业银行采用内部评级法时，不符合各类风险暴露分类标准的资产应如何处理？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.67
+    },
+    {
+      "id": "B2-R11",
+      "question": "商业银行无法使用穿透法和授权基础法计量资产管理产品风险加权资产时，应如何处理？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 15.42
+    },
+    {
+      "id": "B2-R12",
+      "question": "商业银行在预期信用损失法实施中有什么禁止性规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.5
+    },
+    {
+      "id": "B2-R13",
+      "question": "信托公司开展资产服务信托业务有什么禁止性要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.24
+    },
+    {
+      "id": "B2-R14",
+      "question": "保险公司资本规划的审议程序有什么要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.42
+    },
+    {
+      "id": "B2-R15",
+      "question": "保险公司进行偿付能力信息公开披露时，有什么限制？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.69
+    },
+    {
+      "id": "B2-R16",
+      "question": "保险公司偿付能力监管中，独立账户资产和负债的最低资本计提有什么规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.3
+    },
+    {
+      "id": "B2-R17",
+      "question": "人身保险公司年度压力测试必测的宏观经济风险情景包括哪些假设？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.93
+    },
+    {
+      "id": "B2-R18",
+      "question": "寿险合同负债评估折现率曲线中，“综合溢价”是如何分档设定的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.49
+    },
+    {
+      "id": "B2-R19",
+      "question": "保险公司对非基础资产进行穿透计量时，应当遵循哪些原则？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 15.05
+    },
+    {
+      "id": "B2-R20",
+      "question": "中国内地直接保险公司向合格的香港再保险机构分出再保险业务时，合格香港再保险机构应符合哪些条件？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.46
+    },
+    {
+      "id": "B2-T01",
+      "question": "申请设立企业集团财务公司，注册资本有什么最低要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.7
+    },
+    {
+      "id": "B2-T02",
+      "question": "申请设立财务公司的企业集团，最近1个会计年度末的总资产应达到什么标准？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.36
+    },
+    {
+      "id": "B2-T03",
+      "question": "第三档商业银行的最低资本要求是什么？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.86
+    },
+    {
+      "id": "B2-T04",
+      "question": "第三档商业银行信用风险加权资产计量中，“大额客户”是如何界定的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.01
+    },
+    {
+      "id": "B2-T05",
+      "question": "从事保险公司信用评级业务的境内信用评级机构，应当具备哪些基本条件？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.03
+    },
+    {
+      "id": "B2-T06",
+      "question": "合格的香港再保险机构的偿付能力充足率有什么要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.14
+    },
+    {
+      "id": "B2-T07",
+      "question": "寿险合同负债评估折现率曲线中，“终极利率”暂定为多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.35
+    },
+    {
+      "id": "B2-T08",
+      "question": "财产保险公司年度压力测试必测压力情景一（保险风险情景）包含哪些假设？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.16
+    },
+    {
+      "id": "B2-T09",
+      "question": "人身保险公司年度压力测试必测压力情景一中，新单保费收入的假设是什么？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.11
+    },
+    {
+      "id": "B2-T10",
+      "question": "家庭服务信托的设立有什么门槛要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.68
+    },
+    {
+      "id": "B2-T11",
+      "question": "商业银行预期信用损失法实施中，信用风险敞口逾期后如何划分阶段？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 13.66
+    },
+    {
+      "id": "B2-T12",
+      "question": "非上市保险公司披露偿付能力季度报告摘要有什么时限要求？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.4
+    },
+    {
+      "id": "B2-T13",
+      "question": "金融机构在集团层面交换非集中清算衍生品交易保证金时，起点金额有什么规定？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.23
+    },
+    {
+      "id": "B2-L01",
+      "question": "企业集团财务公司可以经营哪些业务？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.96
+    },
+    {
+      "id": "B2-L02",
+      "question": "保险公司的主要金融产品和服务包括哪些？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.85
+    },
+    {
+      "id": "B2-L03",
+      "question": "银保监会发布的偿付能力监管工作信息包括哪些内容？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.28
+    },
+    {
+      "id": "B2-L04",
+      "question": "保险公司公开披露偿付能力信息应当遵循哪些原则？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 12.11
+    },
+    {
+      "id": "B2-L05",
+      "question": "保险公司应当优先考虑使用哪些内源性资本补充措施？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.3
+    },
+    {
+      "id": "B2-L06",
+      "question": "金融租赁公司在确定售后回租业务限额时，可以将哪些租赁资产从售后回租业务中剔除？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.59
+    },
+    {
+      "id": "B2-L07",
+      "question": "保险公司偿付能力监管中，非基础资产通常包括哪些？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.75
+    },
+    {
+      "id": "B2-L08",
+      "question": "保险公司风险综合评级（分类监管）中，A、B、C、D四类公司是如何划分的？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.67
+    },
+    {
+      "id": "B2-TBL1",
+      "question": "根据《2024年12月保险业经营情况表》，“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.69
+    },
+    {
+      "id": "B2-TBL2",
+      "question": "根据《2024年12月保险业经营情况表》，“原保险赔付支出”在“本年累计/截至当期”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.53
+    },
+    {
+      "id": "B2-TBL3",
+      "question": "根据《2024年12月人身险公司经营情况表》，“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.31
+    },
+    {
+      "id": "B2-TBL4",
+      "question": "根据《2024年12月财产保险公司经营情况表》，“原保险保费收入”在“本年累计/截至当期”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.86
+    },
+    {
+      "id": "B2-TBL5",
+      "question": "根据《2024年4季度保险业资金运用情况表》，保险公司资金运用余额在“截至当期-账面余额”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.74
+    },
+    {
+      "id": "B2-TBL6",
+      "question": "根据《2024年4季度保险业资金运用情况表》，财产险公司资金运用余额在“截至当期-账面余额”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 16.95
+    },
+    {
+      "id": "B2-TBL7",
+      "question": "根据《2024年4季度保险业资金运用情况表》，财产险公司银行存款在“截至当期-账面余额”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.46
+    },
+    {
+      "id": "B2-TBL8",
+      "question": "根据《2024年4季度保险业资金运用情况表》，人身险公司债券在“截至当期-账面余额”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 0.91
+    },
+    {
+      "id": "B2-TBL9",
+      "question": "根据《2024年商业银行主要指标分机构类情况表（季度）》，农村商业银行四季度不良贷款余额是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 22.83
+    },
+    {
+      "id": "B2-TBL10",
+      "question": "根据《2023年12月保险业经营情况表》，“资金运用余额”在“本年累计/截至当期”口径下的数值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.11
+    },
+    {
+      "id": "B2-TC1",
+      "question": "根据《2024年12月保险业经营情况表》，原保险保费收入与赔付支出的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.6
+    },
+    {
+      "id": "B2-TC2",
+      "question": "根据《2024年4季度保险业资金运用情况表》，保险公司资金运用余额与财产险公司资金运用余额的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.72
+    },
+    {
+      "id": "B2-TC3",
+      "question": "根据《2024年4季度保险业资金运用情况表》，财产险公司资金运用余额与银行存款的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.2
+    },
+    {
+      "id": "B2-TC4",
+      "question": "根据《2024年4季度保险业资金运用情况表》，人身险公司与财产险公司资金运用余额的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.03
+    },
+    {
+      "id": "B2-TC5",
+      "question": "根据《2024年4季度保险业资金运用情况表》，财产险公司银行存款占资金运用余额的比例约为多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 25.43
+    },
+    {
+      "id": "B2-TC6",
+      "question": "根据《2024年4季度保险业资金运用情况表》，财产险公司债券占资金运用余额的比例约为多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 15.08
+    },
+    {
+      "id": "B2-TC7",
+      "question": "根据《2024年商业银行主要指标分机构类情况表（季度）》，农村商业银行一季度与四季度不良贷款余额的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.48
+    },
+    {
+      "id": "B2-TC8",
+      "question": "根据《2024年商业银行主要指标分机构类情况表（季度）》，农村商业银行二季度与三季度不良贷款余额的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 10.7
+    },
+    {
+      "id": "B2-TC9",
+      "question": "根据《2023年12月保险业经营情况表》，原保险保费收入与赔付支出的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.13
+    },
+    {
+      "id": "B2-TC10",
+      "question": "根据《2024年12月人身险公司经营情况表》和《2024年12月财产保险公司经营情况表》，人身险公司与财产险公司原保险保费收入（本年累计）的差值是多少？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 0.9
+    },
+    {
+      "id": "B2-X01",
+      "question": "恢复计划示例（保险公司版）和处置计划建议示例（保险公司版）对“关键共享服务”的定义是否一致？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 25.49
+    },
+    {
+      "id": "B2-X02",
+      "question": "恢复计划示例（商业银行版）和恢复计划示例（保险公司版）列示的“主要金融产品和服务”是否一致？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.19
+    },
+    {
+      "id": "B2-X03",
+      "question": "最低资本和风险综合评级（分类监管）监管规则对“可资本化风险”和“难以资本化风险”的构成界定是否一致？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.39
+    },
+    {
+      "id": "B2-X04",
+      "question": "非寿险业务与寿险业务保险风险最低资本监管规则对“保险风险”的定义是否一致？",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.0
+    },
+    {
+      "id": "B2-F01",
+      "question": "请计算2026年三季度银行业金融机构净息差。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 24.76
+    },
+    {
+      "id": "B2-F02",
+      "question": "请计算2027年全年全国保险业原保险赔付支出。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.24
+    },
+    {
+      "id": "B2-F03",
+      "question": "某银行2025年末净利润为50亿元、总资产为1.2万亿元，请计算该行资产利润率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.41
+    },
+    {
+      "id": "B2-F04",
+      "question": "请计算2028年一季度银行业金融机构普惠型小微企业贷款余额。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.3
+    },
+    {
+      "id": "B2-F05",
+      "question": "请计算2025年全国财产保险公司的综合成本率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.0
+    },
+    {
+      "id": "B2-F06",
+      "question": "请提供最新一期贷款市场报价利率（LPR）。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.66
+    },
+    {
+      "id": "B2-F07",
+      "question": "请提供中国农业银行2024年年度报告中的不良贷款率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.25
+    },
+    {
+      "id": "B2-F08",
+      "question": "请说明某城商行内部资金转移定价管理办法的具体要求。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.02
+    },
+    {
+      "id": "B2-F09",
+      "question": "请比较中国银行与工商银行2025年的拨备覆盖率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.34
+    },
+    {
+      "id": "B2-F10",
+      "question": "请提供当前商业银行一年期定期存款挂牌利率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 13.76
+    },
+    {
+      "id": "B2-F11",
+      "question": "请预测2026年二季度保险业原保险保费收入增速。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.68
+    },
+    {
+      "id": "B2-F12",
+      "question": "请预测未来两年商业银行净息差走势。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.23
+    },
+    {
+      "id": "B2-F13",
+      "question": "请预测利率市场化改革对银行净利差的影响幅度。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 24.3
+    },
+    {
+      "id": "B2-F14",
+      "question": "请预计某股份制银行明年资本充足率水平。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.39
+    },
+    {
+      "id": "B2-F15",
+      "question": "请预测第三档商业银行监管规定实施后小银行资本充足率的整体变化。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 11.65
+    },
+    {
+      "id": "B2-F16",
+      "question": "请判断某银行是否应新设一家科技支行。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 13.28
+    },
+    {
+      "id": "B2-F17",
+      "question": "请建议某保险公司是否应调整万能险结算利率。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.52
+    },
+    {
+      "id": "B2-F18",
+      "question": "请建议某财务公司是否应扩大同业拆借规模。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 18.64
+    },
+    {
+      "id": "B2-F19",
+      "question": "请评估某信托公司收购一家不良资产平台的可行性。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 14.5
+    },
+    {
+      "id": "B2-F20",
+      "question": "请建议某保险公司是否应调整其偿付能力充足率管理目标。",
+      "response": null,
+      "error": "RemoteDisconnected: Remote end closed connection without response",
+      "latency_ms": 1.33
+    }
+  ]
+}

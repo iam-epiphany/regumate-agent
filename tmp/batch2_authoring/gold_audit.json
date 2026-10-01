@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-04T11:04:04.090675+00:00",
+  "case_count": 100,
+  "passed_count": 100,
+  "duplicate_pairs": [],
+  "cases": [
+    {
+      "id": "B2-D01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-D15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R16",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R17",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R18",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R19",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-R20",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-T13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-L08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL2",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL3",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL4",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL5",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL6",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL7",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL8",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL9",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TBL10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC1",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC2",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC3",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC4",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC5",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC6",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC7",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC8",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC9",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-TC10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-X01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-X02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-X03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-X04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F01",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F02",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F03",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F04",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F05",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F06",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F07",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F08",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F09",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F10",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F11",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F12",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F13",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F14",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F15",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F16",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F17",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F18",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F19",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "id": "B2-F20",
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "passed": true
+}

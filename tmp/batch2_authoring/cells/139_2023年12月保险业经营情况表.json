@@ -1,0 +1,456 @@
+{
+"filename": "139_2023年12月保险业经营情况表_2023年12月保险业经营情况表.xlsx",
+"title": "2023年12月保险业经营情况表2023年12月保险业经营情况表",
+"cells": [
+{
+"sheet": "保险业经营数据(月度)",
+"row": 5,
+"column": 2,
+"coord": "B5",
+"row_label": "原保险保费收入",
+"column_label": "项目",
+"value": "原保险保费收入",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 5,
+"column": 3,
+"coord": "C5",
+"row_label": "原保险保费收入",
+"column_label": "本年累计/截至当期",
+"value": "51246.71",
+"numeric": 51246.71
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 6,
+"column": 2,
+"coord": "B6",
+"row_label": "1、财产险",
+"column_label": "项目",
+"value": "1、财产险",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 6,
+"column": 3,
+"coord": "C6",
+"row_label": "1、财产险",
+"column_label": "本年累计/截至当期",
+"value": "13606.98",
+"numeric": 13606.98
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 7,
+"column": 2,
+"coord": "B7",
+"row_label": "2、人身险",
+"column_label": "项目",
+"value": "2、人身险",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 7,
+"column": 3,
+"coord": "C7",
+"row_label": "2、人身险",
+"column_label": "本年累计/截至当期",
+"value": "37639.73",
+"numeric": 37639.73
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 8,
+"column": 2,
+"coord": "B8",
+"row_label": "原保险赔付支出",
+"column_label": "项目",
+"value": "原保险赔付支出",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 8,
+"column": 3,
+"coord": "C8",
+"row_label": "原保险赔付支出",
+"column_label": "本年累计/截至当期",
+"value": "18882.98",
+"numeric": 18882.98
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 9,
+"column": 2,
+"coord": "B9",
+"row_label": "1、财产险",
+"column_label": "项目",
+"value": "1、财产险",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 9,
+"column": 3,
+"coord": "C9",
+"row_label": "1、财产险",
+"column_label": "本年累计/截至当期",
+"value": "9171.35",
+"numeric": 9171.35
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 10,
+"column": 2,
+"coord": "B10",
+"row_label": "2、人身险",
+"column_label": "项目",
+"value": "2、人身险",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 10,
+"column": 3,
+"coord": "C10",
+"row_label": "2、人身险",
+"column_label": "本年累计/截至当期",
+"value": "9711.63",
+"numeric": 9711.63
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 11,
+"column": 2,
+"coord": "B11",
+"row_label": "资金运用余额",
+"column_label": "项目",
+"value": "资金运用余额",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 11,
+"column": 3,
+"coord": "C11",
+"row_label": "资金运用余额",
+"column_label": "本年累计/截至当期",
+"value": "276738.2367",
+"numeric": 276738.23672745
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 12,
+"column": 2,
+"coord": "B12",
+"row_label": "其中：银行存款",
+"column_label": "项目",
+"value": "其中：银行存款",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 12,
+"column": 3,
+"coord": "C12",
+"row_label": "其中：银行存款",
+"column_label": "本年累计/截至当期",
+"value": "27243.4",
+"numeric": 27243.4
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 13,
+"column": 2,
+"coord": "B13",
+"row_label": "债券",
+"column_label": "项目",
+"value": "债券",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 13,
+"column": 3,
+"coord": "C13",
+"row_label": "债券",
+"column_label": "本年累计/截至当期",
+"value": "125660.7329",
+"numeric": 125660.73288857
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 14,
+"column": 2,
+"coord": "B14",
+"row_label": "股票和证券投资基金",
+"column_label": "项目",
+"value": "股票和证券投资基金",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 14,
+"column": 3,
+"coord": "C14",
+"row_label": "股票和证券投资基金",
+"column_label": "本年累计/截至当期",
+"value": "33274.03062",
+"numeric": 33274.03061963
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 15,
+"column": 2,
+"coord": "B15",
+"row_label": "资产总额",
+"column_label": "项目",
+"value": "资产总额",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 15,
+"column": 3,
+"coord": "C15",
+"row_label": "资产总额",
+"column_label": "本年累计/截至当期",
+"value": "299573.16",
+"numeric": 299573.16
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 16,
+"column": 2,
+"coord": "B16",
+"row_label": "其中：再保险公司",
+"column_label": "项目",
+"value": "其中：再保险公司",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 16,
+"column": 3,
+"coord": "C16",
+"row_label": "其中：再保险公司",
+"column_label": "本年累计/截至当期",
+"value": "7471.49",
+"numeric": 7471.49
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 17,
+"column": 2,
+"coord": "B17",
+"row_label": "资产管理公司",
+"column_label": "项目",
+"value": "资产管理公司",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 17,
+"column": 3,
+"coord": "C17",
+"row_label": "资产管理公司",
+"column_label": "本年累计/截至当期",
+"value": "1052.13",
+"numeric": 1052.13
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 18,
+"column": 2,
+"coord": "B18",
+"row_label": "净资产",
+"column_label": "项目",
+"value": "净资产",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 18,
+"column": 3,
+"coord": "C18",
+"row_label": "净资产",
+"column_label": "本年累计/截至当期",
+"value": "27348.14",
+"numeric": 27348.14
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 19,
+"column": 2,
+"coord": "B19",
+"row_label": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的数据。",
+"column_label": "项目",
+"value": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的数据。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 19,
+"column": 3,
+"coord": "C19",
+"row_label": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的数据。",
+"column_label": "本年累计/截至当期",
+"value": "注：1、本表数据是保险业执行《关于印发<保险合同相关会计处理规定〉的通知》（财会[2009]15号）后，各保险公司按照相关口径要求报送的数据。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 20,
+"column": 2,
+"coord": "B20",
+"row_label": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"column_label": "项目",
+"value": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 20,
+"column": 3,
+"coord": "C20",
+"row_label": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"column_label": "本年累计/截至当期",
+"value": "2、原保险保费收入为按《企业会计准则（2006）》设置的统计指标，指保险企业确认的原保险合同保费收入。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 21,
+"column": 2,
+"coord": "B21",
+"row_label": "3、原保险赔付支出为按《企业会计准则（2006）》设置的统计指标，指保险企业支付的原保险合同赔付款项。",
+"column_label": "项目",
+"value": "3、原保险赔付支出为按《企业会计准则（2006）》设置的统计指标，指保险企业支付的原保险合同赔付款项。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 21,
+"column": 3,
+"coord": "C21",
+"row_label": "3、原保险赔付支出为按《企业会计准则（2006）》设置的统计指标，指保险企业支付的原保险合同赔付款项。",
+"column_label": "本年累计/截至当期",
+"value": "3、原保险赔付支出为按《企业会计准则（2006）》设置的统计指标，指保险企业支付的原保险合同赔付款项。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 22,
+"column": 2,
+"coord": "B22",
+"row_label": "4、原保险保费收入、原保险赔付支出和业务及管理费为本年累计数，银行存款、投资和资产总额为月末数据。",
+"column_label": "项目",
+"value": "4、原保险保费收入、原保险赔付支出和业务及管理费为本年累计数，银行存款、投资和资产总额为月末数据。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 22,
+"column": 3,
+"coord": "C22",
+"row_label": "4、原保险保费收入、原保险赔付支出和业务及管理费为本年累计数，银行存款、投资和资产总额为月末数据。",
+"column_label": "本年累计/截至当期",
+"value": "4、原保险保费收入、原保险赔付支出和业务及管理费为本年累计数，银行存款、投资和资产总额为月末数据。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 23,
+"column": 2,
+"coord": "B23",
+"row_label": "5、银行存款包括活期存款、定期存款、存出保证金和存出资本保证金。",
+"column_label": "项目",
+"value": "5、银行存款包括活期存款、定期存款、存出保证金和存出资本保证金。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 24,
+"column": 2,
+"coord": "B24",
+"row_label": "6、保险资产管理公司资产总额仅为自有资产。",
+"column_label": "项目",
+"value": "6、保险资产管理公司资产总额仅为自有资产。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 25,
+"column": 2,
+"coord": "B25",
+"row_label": "7、上述数据来源于各公司报送的保险数据，未经审计。",
+"column_label": "项目",
+"value": "7、上述数据来源于各公司报送的保险数据，未经审计。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 26,
+"column": 2,
+"coord": "B26",
+"row_label": "8、因部分机构目前处于风险处置阶段，从2021年6月起，行业汇总数据口径暂不包含这部分机构。",
+"column_label": "项目",
+"value": "8、因部分机构目前处于风险处置阶段，从2021年6月起，行业汇总数据口径暂不包含这部分机构。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 26,
+"column": 3,
+"coord": "C26",
+"row_label": "8、因部分机构目前处于风险处置阶段，从2021年6月起，行业汇总数据口径暂不包含这部分机构。",
+"column_label": "本年累计/截至当期",
+"value": "8、因部分机构目前处于风险处置阶段，从2021年6月起，行业汇总数据口径暂不包含这部分机构。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 27,
+"column": 2,
+"coord": "B27",
+"row_label": "9、按可比口径，行业汇总原保险保费收入同比增长9.13%，原保险赔付支出增长21.94%。",
+"column_label": "项目",
+"value": "9、按可比口径，行业汇总原保险保费收入同比增长9.13%，原保险赔付支出增长21.94%。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 27,
+"column": 3,
+"coord": "C27",
+"row_label": "9、按可比口径，行业汇总原保险保费收入同比增长9.13%，原保险赔付支出增长21.94%。",
+"column_label": "本年累计/截至当期",
+"value": "9、按可比口径，行业汇总原保险保费收入同比增长9.13%，原保险赔付支出增长21.94%。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 28,
+"column": 2,
+"coord": "B28",
+"row_label": "10、本表资金运用余额为含减值准备的期末账面价值。",
+"column_label": "项目",
+"value": "10、本表资金运用余额为含减值准备的期末账面价值。",
+"numeric": null
+},
+{
+"sheet": "保险业经营数据(月度)",
+"row": 28,
+"column": 3,
+"coord": "C28",
+"row_label": "10、本表资金运用余额为含减值准备的期末账面价值。",
+"column_label": "本年累计/截至当期",
+"value": "10、本表资金运用余额为含减值准备的期末账面价值。",
+"numeric": null
+}
+]
+}

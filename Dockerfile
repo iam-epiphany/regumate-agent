@@ -2,7 +2,10 @@ FROM node:22-bookworm-slim AS frontend-build
 
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci
+# 国内网络构建默认使用 npm 镜像源（无需代理）；海外环境可用
+# --build-arg NPM_REGISTRY=https://registry.npmjs.org 切回官方源。
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm ci --registry=$NPM_REGISTRY
 COPY frontend/ ./
 RUN npm run build
 
@@ -47,15 +50,18 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 ARG REGUMATE_TORCH_FLAVOR=cuda
+# 国内网络构建默认使用 PyPI 清华镜像源（无需代理）；海外环境可用
+# --build-arg PIP_INDEX_URL=https://pypi.org/simple 切回官方源。
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 COPY requirements.txt requirements-cuda.txt ./
 RUN set -eux; \
-    python -m pip install --upgrade pip; \
+    python -m pip install --upgrade pip -i "$PIP_INDEX_URL"; \
     if [ "$REGUMATE_TORCH_FLAVOR" = "cuda" ]; then \
-        python -m pip install -r requirements-cuda.txt; \
+        python -m pip install -i "$PIP_INDEX_URL" -r requirements-cuda.txt; \
         grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt; \
-        python -m pip install -r /tmp/requirements-no-torch.txt; \
+        python -m pip install -i "$PIP_INDEX_URL" -r /tmp/requirements-no-torch.txt; \
     elif [ "$REGUMATE_TORCH_FLAVOR" = "cpu" ]; then \
-        python -m pip install -r requirements.txt; \
+        python -m pip install -i "$PIP_INDEX_URL" -r requirements.txt; \
     else \
         echo "REGUMATE_TORCH_FLAVOR must be 'cuda' or 'cpu'." >&2; \
         exit 1; \
@@ -69,11 +75,13 @@ LABEL org.opencontainers.image.title="ReguMate Agent" \
 
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
-COPY data/regulations/ ./data/regulations/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /app/data/documents/originals /app/data/qdrant /app/data/model_cache
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# UVICORN_WORKERS controls the process count for concurrent load tests
+# (default 1: a single worker keeps model-inference and SQLite access
+# serialized and is the safest production shape on a CPU-only host).
+CMD ["sh", "-c", "python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1}"]

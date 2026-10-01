@@ -1,0 +1,1178 @@
+{
+  "schema_version": 1,
+  "gold_version": "open-v3-gold-v1",
+  "created_at": "2026-08-01T07:53:07.031159+00:00",
+  "qa_sha256": "bb43588e9fb45b51a57c61516bc7ff7bd33775863b0828c74212ae69c6395a51",
+  "db_path": "D:\\Agent-Project\\ReguMate Agent\\data\\evaluation\\final_runtime\\app.db",
+  "case_total": 33,
+  "case_success": 33,
+  "case_failed": 0,
+  "failures": [],
+  "gold": {
+    "Q035": {
+      "case_id": "Q035",
+      "expected_indicator": "资金运用余额",
+      "expected_value": 281573.609414,
+      "expected_unit": "亿元",
+      "coordinate": "B6",
+      "document_id": "DOC-20260717-C74DE2FF3AF4",
+      "sheet": "2023年4季度保险资金运用情况表",
+      "scope": "截至当期-账面余额",
+      "title": "2023年4季度保险业资金运用情况表",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": 4
+      },
+      "candidate_values": {
+        "年化综合收益率": [
+          0.0321660147974141,
+          0.0337423885317111,
+          0.0287265837066641
+        ],
+        "年化财务收益率": [
+          0.0223489054088857,
+          0.0229060905779469,
+          0.0293115645827393
+        ],
+        "资金运用余额": [
+          281573.609414449,
+          251914.165162238,
+          20200.4695774817
+        ],
+        "银行存款": [
+          21558.1319226107,
+          3653.8572398653
+        ]
+      },
+      "remarks": []
+    },
+    "Q036": {
+      "case_id": "Q036",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 8623.444514,
+      "expected_unit": "亿元、%",
+      "coordinate": "G38",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "农村商业银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "损失类贷款余额": [
+          495.528029951,
+          512.552168334,
+          625.001019498,
+          745.202459771
+        ],
+        "不良贷款余额": [
+          8017.850540383,
+          8202.058045981,
+          8123.564093925,
+          8623.444513607
+        ],
+        "可疑类贷款余额": [
+          4128.752792852,
+          4261.408147667,
+          4274.750405409,
+          4229.247515422
+        ],
+        "次级类贷款余额": [
+          3393.569717509,
+          3428.097731905,
+          3223.812667944,
+          3648.99453831
+        ]
+      },
+      "remarks": []
+    },
+    "Q037": {
+      "case_id": "Q037",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 5419.295237,
+      "expected_unit": "亿元、%",
+      "coordinate": "E27",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "城市商业银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "损失类贷款余额": [
+          905.315448796,
+          921.815766532,
+          1282.321221415,
+          1363.791600648
+        ],
+        "次级类贷款余额": [
+          3017.266496005,
+          3126.309537655,
+          3087.744038384,
+          2700.406873707
+        ],
+        "可疑类贷款余额": [
+          1226.881971579,
+          1243.561055102,
+          1049.229977152,
+          952.848283453
+        ],
+        "不良贷款余额": [
+          5149.463916382,
+          5291.686359288,
+          5419.295236944,
+          5017.046757806
+        ]
+      },
+      "remarks": []
+    },
+    "Q038": {
+      "case_id": "Q038",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 139.40457,
+      "expected_unit": "亿元、%",
+      "coordinate": "H16",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "外资银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "次级类贷款余额": [
+          55.399799383,
+          55.807596146,
+          36.195585052,
+          25.60852162
+        ],
+        "损失类贷款余额": [
+          22.685423605,
+          23.356242509,
+          42.363033676,
+          43.761718348
+        ],
+        "可疑类贷款余额": [
+          43.683337916,
+          60.240731459,
+          57.893755211,
+          50.017780647
+        ],
+        "不良贷款余额": [
+          121.768560904,
+          139.404570114,
+          136.452373939,
+          119.388020615
+        ]
+      },
+      "remarks": []
+    },
+    "Q039": {
+      "case_id": "Q039",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 13132.797502,
+      "expected_unit": "亿元、%",
+      "coordinate": "C38",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "大型商业银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "可疑类贷款余额": [
+          4502.474777383,
+          4402.244974607,
+          4616.75205068,
+          4541.492172591
+        ],
+        "不良贷款余额": [
+          12461.058486995,
+          12962.33666458,
+          13088.831309738,
+          13132.797502143
+        ],
+        "损失类贷款余额": [
+          1925.599403748,
+          2352.632934963,
+          3153.697795801,
+          3826.311205661
+        ],
+        "次级类贷款余额": [
+          6032.984305864,
+          6207.458755011,
+          5318.381463257,
+          4764.994123893
+        ]
+      },
+      "remarks": []
+    },
+    "Q040": {
+      "case_id": "Q040",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 209.036954,
+      "expected_unit": "亿元、%",
+      "coordinate": "F27",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "民营银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "可疑类贷款余额": [
+          62.263978764,
+          72.837859702,
+          68.403777379,
+          82.430474602
+        ],
+        "次级类贷款余额": [
+          90.24375778,
+          67.020070987,
+          72.909449435,
+          61.702737829
+        ],
+        "不良贷款余额": [
+          185.523031553,
+          195.145734618,
+          209.036953732,
+          199.09931048
+        ],
+        "损失类贷款余额": [
+          33.015295009,
+          55.28780393,
+          67.72372592,
+          54.966098046
+        ]
+      },
+      "remarks": []
+    },
+    "Q041": {
+      "case_id": "Q041",
+      "expected_indicator": "不良贷款余额",
+      "expected_value": 5268.331537,
+      "expected_unit": "亿元、%",
+      "coordinate": "D27",
+      "document_id": "DOC-20260717-65EFE0BA259E",
+      "sheet": "商业银行分机构类情况表",
+      "scope": "股份制商业 银行",
+      "title": "2023年商业银行主要指标分机构类情况表（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "可疑类贷款余额": [
+          1910.248647362,
+          1957.95991918,
+          1851.957015936,
+          1556.47734745
+        ],
+        "次级类贷款余额": [
+          2307.115397236,
+          2188.882922564,
+          1938.278083118,
+          1985.498555253
+        ],
+        "损失类贷款余额": [
+          1017.09779051,
+          1063.879152935,
+          1478.096437598,
+          1622.256976127
+        ],
+        "不良贷款余额": [
+          5234.461835107,
+          5210.72199468,
+          5268.331536652,
+          5164.232878831
+        ]
+      },
+      "remarks": []
+    },
+    "Q042": {
+      "case_id": "Q042",
+      "expected_indicator": "银行业金融机构合计",
+      "expected_value": 290559.07,
+      "expected_unit": "亿元",
+      "coordinate": "E5",
+      "document_id": "DOC-20260717-5ED6C894D181",
+      "sheet": "保障房贷款",
+      "scope": "年-季度",
+      "title": "2023年银行业金融机构保障性安居工程贷款情况表(季度)",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "银行业金融机构合计": [
+          259039.987564867,
+          273660.95,
+          284049.21,
+          290559.07
+        ],
+        "商业银行合计": [],
+        "大型商业银行": [
+          99357.649754622,
+          107060.73,
+          113103.88,
+          115782.91
+        ],
+        "股份制商业银行": [
+          42909.425105019,
+          44514.01,
+          45775.61,
+          46642.43,
+          2.31546645160131,
+          2.40504787037002,
+          2.47077885409164,
+          2.48229836442131
+        ]
+      },
+      "remarks": [
+        "candidates without a numeric cell: 商业银行合计"
+      ]
+    },
+    "Q043": {
+      "case_id": "Q043",
+      "expected_indicator": "银行业金融机构合计",
+      "expected_value": 290559.07,
+      "expected_unit": "亿元",
+      "coordinate": "E5",
+      "document_id": "DOC-20260717-5ED6C894D181",
+      "sheet": "普惠型小微企业贷款",
+      "scope": "年-季度",
+      "title": "2023年银行业金融机构普惠型小微企业贷款情况（季度）",
+      "period": {
+        "year": 2023,
+        "month": null,
+        "quarter": null
+      },
+      "candidate_values": {
+        "城市商业银行": [
+          35258.691501724,
+          36942.93,
+          38074.14,
+          39520.7
+        ],
+        "股份制商业银行": [
+          42909.425105019,
+          44514.01,
+          45775.61,
+          46642.43,
+          2.31546645160131,
+          2.40504787037002,
+          2.47077885409164,
+          2.48229836442131
+        ],
+        "银行业金融机构合计": [
+          259039.987564867,
+          273660.95,
+          284049.21,
+          290559.07
+        ],
+        "大型商业银行": [
+          99357.649754622,
+          107060.73,
+          113103.88,
+          115782.91
+        ]
+      },
+      "remarks": []
+    },
+    "Q044": {
+      "case_id": "Q044",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 34878.78,
+      "expected_unit": "亿元",
+      "coordinate": "C13",
+      "document_id": "DOC-20260717-D038C838AC68",
+      "sheet": "人身保险公司（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2024年9月人身险公司经营情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "原保险保费收入": [
+          34878.78
+        ],
+        "意外险": [
+          333.3
+        ],
+        "寿险": [
+          28138.86
+        ],
+        "新增保险金额": [
+          9315959.46
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '新增保险金额' (max 9.316e+06), official answer is '原保险保费收入' (max 3.488e+04); official winner kept"
+      ]
+    },
+    "Q045": {
+      "case_id": "Q045",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 47945.35,
+      "expected_unit": "亿元",
+      "coordinate": "C12",
+      "document_id": "DOC-20260717-6A0A9367E4A3",
+      "sheet": "保险业经营数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2024年9月保险业经营情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "原保险保费收入": [
+          47945.35
+        ],
+        "总资产": [
+          350023.51
+        ],
+        "人身险": [
+          37100.65,
+          10371.57
+        ],
+        "财产险": [
+          10844.7,
+          6939.25
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '总资产' (max 3.5e+05), official answer is '原保险保费收入' (max 4.795e+04); official winner kept"
+      ]
+    },
+    "Q046": {
+      "case_id": "Q046",
+      "expected_indicator": "全国合计",
+      "expected_value": 8225.18,
+      "expected_unit": "亿元",
+      "coordinate": "G4",
+      "document_id": "DOC-20260717-EA2253589019",
+      "sheet": "各地区数据（月度",
+      "scope": "健康险",
+      "title": "2024年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "全国合计": [
+          8225.18
+        ],
+        "北 京": [
+          495.59
+        ],
+        "天 津": [
+          97.37
+        ],
+        "公司本级": [
+          2.96
+        ]
+      },
+      "remarks": []
+    },
+    "Q047": {
+      "case_id": "Q047",
+      "expected_indicator": "全国合计",
+      "expected_value": 47945.35,
+      "expected_unit": "亿元",
+      "coordinate": "C4",
+      "document_id": "DOC-20260717-EA2253589019",
+      "sheet": "各地区数据（月度",
+      "scope": "合计",
+      "title": "2024年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "全国合计": [
+          47945.35
+        ],
+        "天 津": [
+          669.85
+        ],
+        "北 京": [
+          2959.86
+        ],
+        "公司本级": [
+          23.64
+        ]
+      },
+      "remarks": []
+    },
+    "Q048": {
+      "case_id": "Q048",
+      "expected_indicator": "全国合计",
+      "expected_value": 28138.87,
+      "expected_unit": "亿元",
+      "coordinate": "E4",
+      "document_id": "DOC-20260717-EA2253589019",
+      "sheet": "各地区数据（月度",
+      "scope": "寿险",
+      "title": "2024年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "全国合计": [
+          28138.87
+        ],
+        "北 京": [
+          2022.02
+        ],
+        "河 北": [
+          1146.34
+        ],
+        "天 津": [
+          434.37
+        ]
+      },
+      "remarks": []
+    },
+    "Q049": {
+      "case_id": "Q049",
+      "expected_indicator": "全国合计",
+      "expected_value": 736.61,
+      "expected_unit": "亿元",
+      "coordinate": "F4",
+      "document_id": "DOC-20260717-EA2253589019",
+      "sheet": "各地区数据（月度",
+      "scope": "意外险",
+      "title": "2024年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "公司本级": [
+          0.33
+        ],
+        "天 津": [
+          7.77
+        ],
+        "北 京": [
+          30.99
+        ],
+        "全国合计": [
+          736.61
+        ]
+      },
+      "remarks": []
+    },
+    "Q050": {
+      "case_id": "Q050",
+      "expected_indicator": "全国合计",
+      "expected_value": 10844.7,
+      "expected_unit": "亿元",
+      "coordinate": "D4",
+      "document_id": "DOC-20260717-EA2253589019",
+      "sheet": "各地区数据（月度",
+      "scope": "财产险",
+      "title": "2024年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "天 津": [
+          130.33
+        ],
+        "公司本级": [
+          20.34
+        ],
+        "全国合计": [
+          10844.7
+        ],
+        "北 京": [
+          411.26
+        ]
+      },
+      "remarks": []
+    },
+    "Q051": {
+      "case_id": "Q051",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 13066.56,
+      "expected_unit": "亿元",
+      "coordinate": "C14",
+      "document_id": "DOC-20260717-ECC86D6917E6",
+      "sheet": "产险公司数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2024年9月财产保险公司经营情况表",
+      "period": {
+        "year": 2024,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "责任险": [
+          1097.52,
+          52686724.61
+        ],
+        "原保险保费收入": [
+          13066.56
+        ],
+        "机动车辆保险": [
+          6545.53,
+          7056735.36
+        ],
+        "保险金额": [
+          125426586.62
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '保险金额' (max 1.254e+08), official answer is '原保险保费收入' (max 1.307e+04); official winner kept"
+      ]
+    },
+    "Q052": {
+      "case_id": "Q052",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 16590.18,
+      "expected_unit": "亿元",
+      "coordinate": "C13",
+      "document_id": "DOC-20260717-7C48E53CAF6C",
+      "sheet": "人身保险公司（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年3月人身险公司经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "新增保险金额": [
+          3816438.23
+        ],
+        "寿险": [
+          13832.14
+        ],
+        "原保险保费收入": [
+          16590.18
+        ],
+        "意外险": [
+          117.14
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '新增保险金额' (max 3.816e+06), official answer is '原保险保费收入' (max 1.659e+04); official winner kept"
+      ]
+    },
+    "Q053": {
+      "case_id": "Q053",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 21745.0,
+      "expected_unit": "亿元",
+      "coordinate": "C12",
+      "document_id": "DOC-20260717-1E12359F6163",
+      "sheet": "保险业经营数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年3月保险业经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "财产险": [
+          3867.0,
+          2124.55,
+          30813.0
+        ],
+        "人身险": [
+          17878.0,
+          6149.05,
+          330629.65
+        ],
+        "总资产": [
+          378425.19
+        ],
+        "原保险保费收入": [
+          21745.0
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '总资产' (max 3.784e+05), official answer is '原保险保费收入' (max 2.174e+04); official winner kept"
+      ]
+    },
+    "Q054": {
+      "case_id": "Q054",
+      "expected_indicator": "全 国",
+      "expected_value": 3781.8,
+      "expected_unit": "亿元",
+      "coordinate": "G4",
+      "document_id": "DOC-20260717-3D1EB47EA67D",
+      "sheet": "各地区数据（月度",
+      "scope": "健康险",
+      "title": "2025年3月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "北 京": [
+          224.92
+        ],
+        "全 国": [
+          3781.8
+        ],
+        "天 津": [
+          38.44
+        ],
+        "河 北": [
+          158.3
+        ]
+      },
+      "remarks": []
+    },
+    "Q055": {
+      "case_id": "Q055",
+      "expected_indicator": "全 国",
+      "expected_value": 21745.18,
+      "expected_unit": "亿元",
+      "coordinate": "C4",
+      "document_id": "DOC-20260717-3D1EB47EA67D",
+      "sheet": "各地区数据（月度",
+      "scope": "合计",
+      "title": "2025年3月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "北 京": [
+          1231.93
+        ],
+        "全 国": [
+          21745.18
+        ],
+        "河 北": [
+          890.46
+        ],
+        "天 津": [
+          268.21
+        ]
+      },
+      "remarks": []
+    },
+    "Q056": {
+      "case_id": "Q056",
+      "expected_indicator": "全 国",
+      "expected_value": 13832.14,
+      "expected_unit": "亿元",
+      "coordinate": "E4",
+      "document_id": "DOC-20260717-3D1EB47EA67D",
+      "sheet": "各地区数据（月度",
+      "scope": "寿险",
+      "title": "2025年3月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "北 京": [
+          826.26
+        ],
+        "全 国": [
+          13832.14
+        ],
+        "河 北": [
+          548.99
+        ],
+        "天 津": [
+          180.22
+        ]
+      },
+      "remarks": []
+    },
+    "Q057": {
+      "case_id": "Q057",
+      "expected_indicator": "全 国",
+      "expected_value": 264.61,
+      "expected_unit": "亿元",
+      "coordinate": "F4",
+      "document_id": "DOC-20260717-3D1EB47EA67D",
+      "sheet": "各地区数据（月度",
+      "scope": "意外险",
+      "title": "2025年3月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "河 北": [
+          9.13
+        ],
+        "全 国": [
+          264.61
+        ],
+        "天 津": [
+          2.75
+        ],
+        "北 京": [
+          12.44
+        ]
+      },
+      "remarks": []
+    },
+    "Q058": {
+      "case_id": "Q058",
+      "expected_indicator": "全 国",
+      "expected_value": 3866.63,
+      "expected_unit": "亿元",
+      "coordinate": "D4",
+      "document_id": "DOC-20260717-3D1EB47EA67D",
+      "sheet": "各地区数据（月度",
+      "scope": "财产险",
+      "title": "2025年3月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "全 国": [
+          3866.63
+        ],
+        "河 北": [
+          174.04
+        ],
+        "天 津": [
+          46.8
+        ],
+        "北 京": [
+          168.31
+        ]
+      },
+      "remarks": []
+    },
+    "Q059": {
+      "case_id": "Q059",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 5155.0,
+      "expected_unit": "亿元",
+      "coordinate": "C14",
+      "document_id": "DOC-20260717-4A3A4A9CB331",
+      "sheet": "产险公司数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年3月财产保险公司经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 3,
+        "quarter": null
+      },
+      "candidate_values": {
+        "保险金额": [
+          45933310.37
+        ],
+        "机动车辆保险": [
+          2234.09,
+          2595819.41
+        ],
+        "责任险": [
+          425.49,
+          17096683.2
+        ],
+        "原保险保费收入": [
+          5155.0
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '保险金额' (max 4.593e+07), official answer is '原保险保费收入' (max 5155); official winner kept"
+      ]
+    },
+    "Q060": {
+      "case_id": "Q060",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 38433.67,
+      "expected_unit": "亿元",
+      "coordinate": "C12",
+      "document_id": "DOC-20260717-9A74189E5246",
+      "sheet": "人身保险公司（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年9月人身险公司经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "意外险": [
+          304.39
+        ],
+        "新增保险金额": [
+          8740661.75
+        ],
+        "寿险": [
+          31707.74
+        ],
+        "原保险保费收入": [
+          38433.67
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '新增保险金额' (max 8.741e+06), official answer is '原保险保费收入' (max 3.843e+04); official winner kept"
+      ]
+    },
+    "Q061": {
+      "case_id": "Q061",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 52145.77,
+      "expected_unit": "亿元",
+      "coordinate": "C13",
+      "document_id": "DOC-20260717-0C39DB1CEE1E",
+      "sheet": "保险业经营数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年9月保险业经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "人身险": [
+          40895.45,
+          11725.37,
+          354408.62
+        ],
+        "原保险保费收入": [
+          52145.77
+        ],
+        "总资产": [
+          404005.89
+        ],
+        "财产险": [
+          11250.32,
+          6981.4,
+          31897.34
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '总资产' (max 4.04e+05), official answer is '原保险保费收入' (max 5.215e+04); official winner kept"
+      ]
+    },
+    "Q062": {
+      "case_id": "Q062",
+      "expected_indicator": "全 国",
+      "expected_value": 8426.99,
+      "expected_unit": "亿元",
+      "coordinate": "G4",
+      "document_id": "DOC-20260717-44951EF2729E",
+      "sheet": "各地区数据（月度",
+      "scope": "健康险",
+      "title": "2025年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "天 津": [
+          97.29
+        ],
+        "北 京": [
+          512.04
+        ],
+        "全 国": [
+          8426.99
+        ],
+        "河 北": [
+          342.35
+        ]
+      },
+      "remarks": []
+    },
+    "Q063": {
+      "case_id": "Q063",
+      "expected_indicator": "全 国",
+      "expected_value": 52145.77,
+      "expected_unit": "亿元",
+      "coordinate": "C4",
+      "document_id": "DOC-20260717-44951EF2729E",
+      "sheet": "各地区数据（月度",
+      "scope": "合计",
+      "title": "2025年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "北 京": [
+          3267.58
+        ],
+        "天 津": [
+          708.01
+        ],
+        "河 北": [
+          2173.36
+        ],
+        "全 国": [
+          52145.77
+        ]
+      },
+      "remarks": []
+    },
+    "Q064": {
+      "case_id": "Q064",
+      "expected_indicator": "全 国",
+      "expected_value": 31707.75,
+      "expected_unit": "亿元",
+      "coordinate": "E4",
+      "document_id": "DOC-20260717-44951EF2729E",
+      "sheet": "各地区数据（月度",
+      "scope": "寿险",
+      "title": "2025年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "天 津": [
+          464.38
+        ],
+        "北 京": [
+          2268.82
+        ],
+        "河 北": [
+          1289.28
+        ],
+        "全 国": [
+          31707.75
+        ]
+      },
+      "remarks": []
+    },
+    "Q065": {
+      "case_id": "Q065",
+      "expected_indicator": "全 国",
+      "expected_value": 760.71,
+      "expected_unit": "亿元",
+      "coordinate": "F4",
+      "document_id": "DOC-20260717-44951EF2729E",
+      "sheet": "各地区数据（月度",
+      "scope": "意外险",
+      "title": "2025年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "全 国": [
+          760.71
+        ],
+        "河 北": [
+          28.43
+        ],
+        "天 津": [
+          7.82
+        ],
+        "北 京": [
+          32.3
+        ]
+      },
+      "remarks": []
+    },
+    "Q066": {
+      "case_id": "Q066",
+      "expected_indicator": "全 国",
+      "expected_value": 11250.32,
+      "expected_unit": "亿元",
+      "coordinate": "D4",
+      "document_id": "DOC-20260717-44951EF2729E",
+      "sheet": "各地区数据（月度",
+      "scope": "财产险",
+      "title": "2025年9月全国各地区原保险保费收入情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "河 北": [
+          513.3
+        ],
+        "全 国": [
+          11250.32
+        ],
+        "天 津": [
+          138.52
+        ],
+        "北 京": [
+          454.42
+        ]
+      },
+      "remarks": []
+    },
+    "Q067": {
+      "case_id": "Q067",
+      "expected_indicator": "原保险保费收入",
+      "expected_value": 13712.1,
+      "expected_unit": "亿元",
+      "coordinate": "C14",
+      "document_id": "DOC-20260717-B440171DA163",
+      "sheet": "产险公司数据（月度",
+      "scope": "本年累计/截至当期",
+      "title": "2025年9月财产保险公司经营情况表",
+      "period": {
+        "year": 2025,
+        "month": 9,
+        "quarter": null
+      },
+      "candidate_values": {
+        "原保险保费收入": [
+          13712.1
+        ],
+        "机动车辆保险": [
+          6835.96,
+          7667887.93
+        ],
+        "保险金额": [
+          138937806.41
+        ],
+        "责任险": [
+          1148.0,
+          59737248.3
+        ]
+      },
+      "remarks": [
+        "independent numeric maximum is '保险金额' (max 1.389e+08), official answer is '原保险保费收入' (max 1.371e+04); official winner kept"
+      ]
+    }
+  }
+}

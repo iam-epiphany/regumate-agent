@@ -1,4 +1,8 @@
-﻿$ErrorActionPreference = 'Stop'
+param(
+    [switch]$RequireGpu
+)
+
+$ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $ProjectRoot
@@ -130,6 +134,9 @@ function Invoke-ReguMateCompose([string[]]$ComposeCommand) {
         Write-Host 'Docker GPU support detected; enabling docker-compose.gpu.yml.' -ForegroundColor Green
         $args += @('-f', 'docker-compose.yml', '-f', 'docker-compose.gpu.yml')
     } else {
+        if ($RequireGpu) {
+            throw 'GPU evaluation requires Docker GPU access, but CUDA is unavailable in the app image/container runtime.'
+        }
         Write-Host 'Docker GPU support was not detected; starting without GPU and letting ReguMate fall back to CPU.' -ForegroundColor Yellow
     }
     $args += $ComposeCommand
@@ -198,6 +205,9 @@ if ($selectedDevice -eq 'cuda') {
     if ($rag.model_device.fallback_reason) {
         Write-Host "Fallback reason: $($rag.model_device.fallback_reason)" -ForegroundColor Yellow
     }
+}
+if ($RequireGpu -and ($selectedDevice -ne 'cuda' -or -not $rag.model_device.cuda_available)) {
+    throw 'GPU evaluation preflight failed: the running app did not select CUDA. Do not run the official 300 on CPU.'
 }
 $allowUnready = (Get-ReguMateEnv 'REGUMATE_ALLOW_UNREADY' '') -eq '1'
 

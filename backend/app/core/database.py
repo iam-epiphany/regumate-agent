@@ -1,3 +1,5 @@
+import sqlite3
+
 from collections.abc import Generator
 from pathlib import Path, PureWindowsPath
 import unicodedata
@@ -15,8 +17,17 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 @event.listens_for(engine, "connect")
 def _configure_sqlite(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        # Docker Desktop bind mounts cannot always create the -wal/-shm
+        # sidecar files that WAL requires; fall back to the single-file
+        # rollback journal, which works reliably on every mount type.
+        cursor.execute("PRAGMA journal_mode=DELETE")
+    # The database lives on a Docker Desktop volume mount where file-lock
+    # handoff is slower than on a local disk; a longer busy timeout absorbs
+    # concurrent readers/writers instead of surfacing as 500s.
+    cursor.execute("PRAGMA busy_timeout=15000")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -73,6 +84,9 @@ def _upgrade_sqlite_schema() -> None:
         "supersedes_document_id": "ALTER TABLE documents ADD COLUMN supersedes_document_id VARCHAR(128)",
         "metadata_status": "ALTER TABLE documents ADD COLUMN metadata_status VARCHAR(30) DEFAULT 'inferred'",
         "metadata_provenance": "ALTER TABLE documents ADD COLUMN metadata_provenance TEXT",
+        "identity_review_status": "ALTER TABLE documents ADD COLUMN identity_review_status VARCHAR(30) DEFAULT 'unreviewed'",
+        "identity_reviewed_at": "ALTER TABLE documents ADD COLUMN identity_reviewed_at DATETIME",
+        "identity_reviewed_snapshot_hash": "ALTER TABLE documents ADD COLUMN identity_reviewed_snapshot_hash VARCHAR(64)",
     }
     chunk_columns = {column["name"] for column in inspector.get_columns("document_chunks")}
     chunk_migrations = {
@@ -108,6 +122,7 @@ def _upgrade_sqlite_schema() -> None:
                 "version_status",
                 "supersedes_document_id",
                 "metadata_status",
+                "identity_review_status",
             ):
                 connection.execute(
                     text(f"CREATE INDEX IF NOT EXISTS ix_documents_{field_name} ON documents({field_name})")

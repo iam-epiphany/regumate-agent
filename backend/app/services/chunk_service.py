@@ -4,9 +4,7 @@ from typing import Any
 
 from backend.app.core.config import (
     CHUNK_MAX_TOKENS,
-    CHUNK_OVERLAP,
     CHUNK_OVERLAP_TOKENS,
-    CHUNK_SIZE,
     CHUNK_TARGET_TOKENS,
     SEMANTIC_BREAK_THRESHOLD,
 )
@@ -204,6 +202,41 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
             )
             continue
 
+        if (block.metadata or {}).get("contains_formula"):
+            # Formula metadata belongs to the paragraph that contains the
+            # equation.  Merging it into the section-wide metadata copied the
+            # last equation onto every chunk in a long chapter and hid later
+            # equations from deterministic formula retrieval.  Keep each
+            # formula paragraph as an independently traceable chunk instead.
+            flush()
+            if block.section_title:
+                current_section = block.section_title
+                current_section_number = _section_number(block.section_title)
+                current_parent_section_number = _parent_section_number(current_section_number)
+                if not current_path or current_path[-1] != block.section_title:
+                    current_path = _updated_section_path(
+                        current_path,
+                        block.section_title,
+                        block.level,
+                        current_section_number,
+                    )
+            if block.page_number is not None:
+                current_page = block.page_number
+            groups.append(
+                _ChunkGroup(
+                    text=block.text,
+                    section_title=current_section,
+                    page_number=current_page,
+                    block_type="paragraph",
+                    section_path=list(current_path),
+                    section_number=current_section_number,
+                    parent_section_number=current_parent_section_number,
+                    metadata=dict(block.metadata or {}),
+                )
+            )
+            current_metadata = _without_formula_metadata(current_metadata)
+            continue
+
         if block.section_title and block.section_title != current_section and has_body:
             flush()
 
@@ -228,6 +261,16 @@ def _group_blocks(blocks: list[ParsedBlock]) -> list[_ChunkGroup]:
 
     flush()
     return groups
+
+
+def _without_formula_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    formula_keys = {
+        "contains_formula",
+        "formula_count",
+        "formulas",
+        "formula_source_type",
+    }
+    return {key: value for key, value in metadata.items() if key not in formula_keys}
 
 
 def _section_number(section_title: str | None) -> str | None:
@@ -303,24 +346,30 @@ def _split_by_semantic_breaks(paragraphs: list[str]) -> list[str]:
         vectors = []
     pieces: list[str] = []
     buffer: list[str] = []
+    # Paragraphs are joined with a "\n\n" separator, which never merges an
+    # ASCII run across the join, so the growing buffer count stays exact with
+    # an incremental counter.
+    buffer_count = _IncrementalTokenCount()
 
     for index, paragraph in enumerate(paragraphs):
         if not buffer:
             buffer.append(paragraph)
+            buffer_count.append(paragraph)
             continue
 
-        current_text = "\n\n".join(buffer)
         similarity = cosine_similarity(vectors[index - 1], vectors[index]) if index < len(vectors) else 1.0
         should_break = (
-            count_tokens(current_text) >= CHUNK_TARGET_TOKENS
+            buffer_count.count >= CHUNK_TARGET_TOKENS
             or similarity < SEMANTIC_BREAK_THRESHOLD
-            or count_tokens(f"{current_text}\n\n{paragraph}") > CHUNK_MAX_TOKENS
+            or buffer_count.candidate_count(paragraph) > CHUNK_MAX_TOKENS
         )
         if should_break:
-            pieces.append(current_text.strip())
+            pieces.append("\n\n".join(buffer).strip())
             buffer = [paragraph]
+            buffer_count = _IncrementalTokenCount(paragraph)
         else:
             buffer.append(paragraph)
+            buffer_count.append(f"\n\n{paragraph}")
 
     if buffer:
         pieces.append("\n\n".join(buffer).strip())
@@ -336,22 +385,30 @@ def _split_by_token_limit(text: str) -> list[str]:
 
     pieces: list[str] = []
     buffer = ""
+    buffer_count = _IncrementalTokenCount()
     for unit in _semantic_units(cleaned):
         if count_tokens(unit) > CHUNK_MAX_TOKENS:
             if buffer.strip():
                 pieces.append(buffer.strip())
                 buffer = ""
+                buffer_count = _IncrementalTokenCount()
             pieces.extend(_hard_split_token_units(unit))
             continue
 
         candidate = f"{buffer}{unit}" if buffer else unit.lstrip()
-        if count_tokens(candidate) <= CHUNK_MAX_TOKENS:
+        if buffer_count.candidate_count(unit) <= CHUNK_MAX_TOKENS:
             buffer = candidate
+            # ``buffer`` is never empty here: either it was already non-empty,
+            # or it was just assigned ``unit.lstrip()`` which is non-empty.
+            # ``count_tokens`` skips leading whitespace, so appending the raw
+            # unit keeps the counter aligned with the stripped buffer text.
+            buffer_count.append(unit)
             continue
 
         if buffer.strip():
             pieces.append(buffer.strip())
         buffer = unit.lstrip()
+        buffer_count = _IncrementalTokenCount(buffer)
 
     if buffer.strip():
         pieces.append(buffer.strip())
@@ -378,6 +435,76 @@ def count_tokens(text: str) -> int:
 
 def _token_units(text: str) -> list[str]:
     return re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9_]+|[^\s]", text)
+
+
+def _is_ascii_run_char(char: str | None) -> bool:
+    if char is None:
+        return False
+    return (
+        "a" <= char <= "z"
+        or "A" <= char <= "Z"
+        or "0" <= char <= "9"
+        or char == "_"
+    )
+
+
+class _IncrementalTokenCount:
+    """Exact ``count_tokens`` equivalent for a text accumulated in pieces.
+
+    ``_token_units`` only ever merges tokens across a join point when an
+    ASCII run on one side touches an ASCII run on the other without a
+    separator, so the total is the sum of the parts minus one for each such
+    touching pair.  Tracking just the head/tail characters keeps every
+    append/prepend O(len(new piece)) instead of re-tokenizing the whole
+    accumulated text (which made long-document splitting near-quadratic).
+    """
+
+    __slots__ = ("count", "_head", "_tail")
+
+    def __init__(self, text: str = "") -> None:
+        self.count = count_tokens(text)
+        self._head = text[0] if text else None
+        self._tail = text[-1] if text else None
+
+    def candidate_count(self, text: str) -> int:
+        """Exact token count of ``current_text + text`` (append at the end)."""
+
+        if not text:
+            return self.count
+        merged = (
+            1
+            if _is_ascii_run_char(self._tail) and _is_ascii_run_char(text[0])
+            else 0
+        )
+        return self.count + count_tokens(text) - merged
+
+    def append(self, text: str) -> None:
+        if not text:
+            return
+        self.count = self.candidate_count(text)
+        self._tail = text[-1]
+        if self._head is None:
+            self._head = text[0]
+
+    def prepend_candidate_count(self, text: str) -> int:
+        """Exact token count of ``text + current_text`` (prepend at the front)."""
+
+        if not text:
+            return self.count
+        merged = (
+            1
+            if _is_ascii_run_char(text[-1]) and _is_ascii_run_char(self._head)
+            else 0
+        )
+        return self.count + count_tokens(text) - merged
+
+    def prepend(self, text: str) -> None:
+        if not text:
+            return
+        self.count = self.prepend_candidate_count(text)
+        self._head = text[0]
+        if self._tail is None:
+            self._tail = text[-1]
 
 
 def _join_token_units(tokens: list[str]) -> str:
@@ -423,6 +550,18 @@ def build_contextual_embedding_text(
         labels.append(f"父条款号：{parent_section_number}")
     if page_number is not None:
         labels.append(f"页码：{page_number}")
+    if chunk_metadata.get("contains_formula"):
+        labels.append("内容类型：公式上下文")
+        labels.append("检索提示：公式、计算、变量、指标、口径")
+        formulas = chunk_metadata.get("formulas")
+        if isinstance(formulas, list):
+            formula_texts = [
+                str(item.get("text") or "").strip()
+                for item in formulas
+                if isinstance(item, dict) and str(item.get("text") or "").strip()
+            ]
+            if formula_texts:
+                labels.append("公式：" + "；".join(formula_texts[:5]))
     if chunk_type == "table":
         labels.append("内容类型：表格")
         labels.append(_table_header_label(text))
@@ -498,7 +637,6 @@ def _split_table_text(group: _ChunkGroup, *, document_id: str) -> list[_ChunkPie
     context = _table_context_text(prefix_lines)
     base_metadata = _base_table_metadata(group, document_id)
     base_metadata["table_headers"] = header_cells
-    base_metadata["raw_table_preview"] = "\n".join(table_lines[: min(len(table_lines), 6)])
     data_rows = [row for row in rows if not _is_table_separator_line(row)]
 
     if data_rows:
@@ -579,13 +717,16 @@ def _base_table_metadata(group: _ChunkGroup, document_id: str) -> dict[str, Any]
     table_index = int(source.get("table_index") or 1)
     table_id = source.get("table_id") or f"{document_id}-TABLE-{table_index:04d}"
     table_title = _metadata_text(source.get("table_title")) or _metadata_text(group.section_title) or "未命名表格"
-    raw_table_text = _metadata_text(source.get("raw_table_text")) or group.text
+    # raw_table_text / raw_table_preview / sheet_index / sheet_state /
+    # row_header_columns are write-only payload bloat: no query-time reader
+    # consumes them, so they are dropped here instead of being persisted into
+    # every row chunk's SQLite metadata and Qdrant payload.
+    for _write_only_key in ("raw_table_text", "raw_table_preview", "sheet_index", "sheet_state", "row_header_columns"):
+        source.pop(_write_only_key, None)
     return {
         **source,
         "table_id": table_id,
         "table_title": table_title,
-        "raw_table_text": raw_table_text,
-        "raw_table_preview": raw_table_text[:500],
     }
 
 
@@ -650,6 +791,9 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+_HARD_SPLIT_PREFIX_TOKENS = count_tokens("（承接上文）")
+
+
 def _hard_split_token_units(text: str) -> list[str]:
     tokens = _token_units(text)
     pieces: list[str] = []
@@ -657,7 +801,7 @@ def _hard_split_token_units(text: str) -> list[str]:
     step = max(CHUNK_MAX_TOKENS - CHUNK_OVERLAP_TOKENS, 1)
     while start < len(tokens):
         prefix = "" if start == 0 else "（承接上文）"
-        limit = CHUNK_MAX_TOKENS - count_tokens(prefix)
+        limit = CHUNK_MAX_TOKENS if start == 0 else CHUNK_MAX_TOKENS - _HARD_SPLIT_PREFIX_TOKENS
         piece = f"{prefix}{_join_token_units(tokens[start : start + limit])}".strip()
         pieces.append(piece)
         start += step
@@ -670,57 +814,12 @@ def _semantic_overlap_tail(text: str) -> str:
         return ""
 
     selected: list[str] = []
+    # Sentences are prepended to the accumulated tail, so the incremental
+    # counter tracks the head character for exact ASCII-run boundary counts.
+    tail_count = _IncrementalTokenCount()
     for sentence in reversed(sentences):
-        candidate = "".join([sentence, *selected])
-        if count_tokens(candidate) > CHUNK_OVERLAP_TOKENS:
+        if tail_count.prepend_candidate_count(sentence) > CHUNK_OVERLAP_TOKENS:
             break
         selected.insert(0, sentence)
+        tail_count.prepend(sentence)
     return "".join(selected).strip()
-
-
-def _split_by_size(text: str) -> list[str]:
-    cleaned = text.strip()
-    if not cleaned:
-        return []
-    if len(cleaned) <= CHUNK_SIZE:
-        return [cleaned]
-
-    paragraph_pieces = _split_by_paragraph(cleaned)
-    if all(len(piece) <= CHUNK_SIZE for piece in paragraph_pieces):
-        return paragraph_pieces
-    pieces: list[str] = []
-    for piece in paragraph_pieces:
-        pieces.extend(_split_long_text(piece))
-    return [piece for piece in pieces if piece]
-
-
-def _split_by_paragraph(text: str) -> list[str]:
-    paragraphs = [paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()]
-    pieces: list[str] = []
-    buffer: list[str] = []
-
-    for paragraph in paragraphs:
-        candidate = "\n\n".join([*buffer, paragraph]).strip()
-        if len(candidate) <= CHUNK_SIZE:
-            buffer.append(paragraph)
-            continue
-        if buffer:
-            pieces.append("\n\n".join(buffer).strip())
-        buffer = [paragraph]
-
-    if buffer:
-        pieces.append("\n\n".join(buffer).strip())
-    return pieces
-
-
-def _split_long_text(text: str) -> list[str]:
-    if len(text) <= CHUNK_SIZE:
-        return [text]
-
-    pieces = []
-    start = 0
-    step = max(CHUNK_SIZE - CHUNK_OVERLAP, 1)
-    while start < len(text):
-        pieces.append(text[start : start + CHUNK_SIZE].strip())
-        start += step
-    return [piece for piece in pieces if piece]

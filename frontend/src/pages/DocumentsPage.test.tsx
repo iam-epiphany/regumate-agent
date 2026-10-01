@@ -279,8 +279,10 @@ describe("DocumentsPage batch upload", () => {
     render(<DocumentsPage />);
 
     await screen.findByText("制度A.txt");
-    fireEvent.click(screen.getByLabelText("选择 制度A.txt"));
-    fireEvent.click(screen.getByLabelText("选择 制度B.txt"));
+    expect(screen.queryByLabelText("选择 制度A.txt")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
     fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
 
     expect(await screen.findByText("确认批量删除文档")).toBeInTheDocument();
@@ -289,6 +291,25 @@ describe("DocumentsPage batch upload", () => {
     await waitFor(() => expect(deleteDocumentsBulkMock).toHaveBeenCalledTimes(1));
     expect(deleteDocumentsBulkMock).toHaveBeenCalledWith(["DOC-DELETE-1", "DOC-DELETE-2"]);
     expect(await screen.findByText("已删除 2 份文档")).toBeInTheDocument();
+  });
+
+  it("keeps ledger checkboxes hidden until selection mode is enabled and supports cancelling selection", async () => {
+    listDocumentsMock.mockResolvedValue({
+      documents: [documentSummary("DOC-DELETE-1", "制度A.txt", "indexed")],
+    } as DocumentListResponse);
+
+    render(<DocumentsPage />);
+
+    await screen.findByText("制度A.txt");
+    expect(screen.queryByLabelText("选择 制度A.txt")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择" }));
+    fireEvent.click(screen.getByLabelText("选择 制度A.txt"));
+    expect(screen.getByText("已选 1 份")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+    expect(screen.queryByLabelText("选择 制度A.txt")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择" })).toBeInTheDocument();
   });
 });
 

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from qdrant_client import models
 
+from backend.app.core import config
 from backend.app.services import embedding_service, rerank_service, vector_store_service
 from backend.app.services.embedding_service import SparseEmbedding, TextEmbedding
 from backend.app.services.performance_metrics import (
@@ -58,12 +59,18 @@ def test_query_embedding_cache_batches_only_misses(monkeypatch) -> None:
     assert len(first) == 3
     assert first[0] is first[2]
     assert len(second) == 1
-    assert calls == [["同一问题", "另一个问题"]]
+    # The request-budget boundary may split misses into several bounded model
+    # calls.  It must still embed each distinct miss once and reuse the cache.
+    assert [item for call in calls for item in call] == ["同一问题", "另一个问题"]
+    assert all(len(call) <= embedding_service.QUERY_EMBEDDING_BATCH_SIZE for call in calls)
     assert embedding_service.embedding_runtime_status()["query_cache"]["hits"] >= 1
     embedding_service._query_embedding_cache.cache_clear()
 
 
 def test_reranker_uses_cpu_profile_batch_and_reuses_scores(monkeypatch) -> None:
+    # 测试自包含：不依赖外部 .env 是否设置 RERANK_BATCH_SIZE，
+    # 显式固定为生产默认值 16（CPU profile 单次模型调用覆盖 6 对证据）。
+    monkeypatch.setattr(config, "RERANK_BATCH_SIZE", 16)
     rerank_service._rerank_score_cache.cache_clear()
     kwargs_seen: list[dict] = []
 
@@ -80,9 +87,12 @@ def test_reranker_uses_cpu_profile_batch_and_reuses_scores(monkeypatch) -> None:
     second = rerank_service.rerank_candidates(question="问题", candidates=candidates, limit=6)
 
     assert len(first) == len(second) == 6
+    # Bounded rerank batches release the shared model channel between batches;
+    # a second identical request must be served entirely from the score cache.
+    # batch 16 covers all 6 pairs in a single model pass on CPU.
     assert len(kwargs_seen) == 1
-    assert kwargs_seen[0]["batch_size"] == 4
-    assert kwargs_seen[0]["max_length"] == 1024
+    assert all(call["batch_size"] == 16 for call in kwargs_seen)
+    assert all(call["max_length"] == 1024 for call in kwargs_seen)
     assert rerank_service._rerank_score_cache().snapshot()["hits"] >= 6
     rerank_service._rerank_score_cache.cache_clear()
 

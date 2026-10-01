@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$DeepSeekApiKey = $env:REGUMATE_SUBMISSION_DEEPSEEK_API_KEY
 )
 
@@ -17,7 +17,6 @@ $StagingRoot = Join-Path $DistRoot "$PackageName-staging"
 $PackageRoot = Join-Path $StagingRoot $PackageName
 $VisiblePackageRoot = Join-Path $DistRoot $PackageName
 $ArchivePath = Join-Path $DistRoot "$PackageName.zip"
-$ArchiveTempPath = Join-Path $DistRoot "$PackageName.tmp.zip"
 $ProjectRootFull = (Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\')
 
 function Ensure-InProject([string]$Path) {
@@ -58,7 +57,7 @@ function Copy-FileToPackage([string]$RelativePath) {
 }
 
 New-Item -ItemType Directory -Force -Path $DistRoot | Out-Null
-foreach ($path in @($StagingRoot, $ArchiveTempPath, "$ArchivePath.sha256.txt")) {
+foreach ($path in @($StagingRoot, $ArchivePath, "$ArchivePath.sha256.txt")) {
     if (Test-Path -LiteralPath $path) {
         $safePath = Ensure-InProject $path
         Remove-Item -LiteralPath $safePath -Recurse -Force
@@ -79,14 +78,10 @@ $rootFiles = @(
     'requirements.in',
     'requirements.txt',
     'docker-compose.dev.yml',
-    'rebuild-run.bat',
-    'run.bat',
-    'run.sh',
-    'stop.sh',
-    'stop.bat'
+                    'scripts/launcher/'
 )
 foreach ($file in $rootFiles) { Copy-FileToPackage $file }
-foreach ($file in @('docker-run.bat', 'docker-run.sh', 'dev-run.bat')) {
+foreach ($file in @('scripts\launcher\docker-run.bat', 'scripts\launcher\docker-run.sh')) {
     if (Test-Path -LiteralPath (Join-Path $ProjectRoot $file)) {
         Copy-FileToPackage $file
     }
@@ -105,19 +100,40 @@ Copy-Directory (Join-Path $ProjectRoot 'scripts') (Join-Path $PackageRoot 'scrip
         '*.pyo',
         '*.log',
         'build_delivery_package.ps1',
+        'audit_hard_challenge_50.py',
+        'build_hard_challenge_50.py',
+        'build_hard_challenge_50_round2.py',
         'build_offline_bundle.ps1',
         'build_submission_package.ps1',
         'verify_delivery.ps1'
     )
+$IterationLogFileName = -join ([char[]](
+    0x7cfb, 0x7edf, 0x4f18, 0x5316, 0x4e0e, 0x8bc4, 0x6d4b,
+    0x8fed, 0x4ee3, 0x8bb0, 0x5f55, 0x2e, 0x6d, 0x64
+))
+
 Copy-Directory (Join-Path $ProjectRoot 'docs') (Join-Path $PackageRoot 'docs') `
     -ExcludeDirs @('evaluation', 'contest_excel_100_final.json') `
-    -ExcludeFiles @('*.docx', '*report*.json', '*report*.md')
+    -ExcludeFiles @(
+        '*.docx',
+        '*report*.json',
+        '*report*.md',
+        'CODEX_*.md',
+        $IterationLogFileName
+    )
+$internalDocs = @('CODEX_OBJECTIVE.md', 'CODEX_STATUS.md', $IterationLogFileName)
+foreach ($internalDoc in $internalDocs) {
+    $internalPath = Join-Path (Join-Path $PackageRoot 'docs') $internalDoc
+    if (Test-Path -LiteralPath $internalPath) {
+        Remove-Item -LiteralPath $internalPath -Force
+    }
+}
 foreach ($report in @(
-    'docs\evaluation\final_contest_report.md',
-    'docs\evaluation\final_contest_report.json',
-    'docs\evaluation\performance_baseline_20260718.md',
-    'docs\evaluation\performance_experiments\phase1-engineering.md',
-    'docs\evaluation\performance_experiments\indexing-baseline.md'
+    'docs\evaluation\archive\reports\final_contest_report.md',
+    'docs\evaluation\archive\reports\final_contest_report.json',
+    'docs\evaluation\archive\reports\performance_baseline_20260718.md',
+    'docs\evaluation\archive\reports\performance_experiments\phase1-engineering.md',
+    'docs\evaluation\archive\reports\performance_experiments\indexing-baseline.md'
 )) {
     if (Test-Path -LiteralPath (Join-Path $ProjectRoot $report)) {
         Copy-FileToPackage $report
@@ -131,19 +147,27 @@ foreach ($report in $evaluationMarkdownReports) {
     $relative = $report.FullName.Substring($ProjectRootFull.Length).TrimStart('\')
     Copy-FileToPackage $relative
 }
-$officialPdfReports = Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'docs\evaluation') -File -Filter 'ReguMate_*.pdf' -ErrorAction SilentlyContinue
-foreach ($report in $officialPdfReports) {
-    $relative = $report.FullName.Substring($ProjectRootFull.Length).TrimStart('\')
-    Copy-FileToPackage $relative
+# 冻结豁免策略文件：backend 测试（test_phase1_evaluation_gates.py）依赖它，
+# 必须随包分发以保证 README 的 pytest 命令在交付包内可执行。
+foreach ($frozenPolicy in @('docs\evaluation\legacy_exceptions\frozen_artifact_exceptions.v1.json')) {
+    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $frozenPolicy)) {
+        Copy-FileToPackage $frozenPolicy
+    }
 }
 Copy-Directory (Join-Path $ProjectRoot 'data\contest_dataset') (Join-Path $PackageRoot 'data\contest_dataset')
-Copy-Directory (Join-Path $ProjectRoot 'data\contest-data-self-made') (Join-Path $PackageRoot 'data\contest-data-self-made')
-Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $PackageRoot 'data\regulations') `
-    -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
+# 自命题 200 题评测集：README 一键测评（run_all_evaluations.py）与评分器依赖
+# 其中的 questions.jsonl 与 gold.jsonl，必须随包分发。
+Copy-Directory (Join-Path $ProjectRoot 'data\自命题200题评测集') (Join-Path $PackageRoot 'data\自命题200题评测集') `
+    -ExcludeDirs @('__pycache__') `
+    -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+# data/regulations 是可选的额外监管语料（存在则随包分发，缺失不影响构建）。
+if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\regulations')) {
+    Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $PackageRoot 'data\regulations') `
+        -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
+}
 foreach ($artifact in @(
     'data\evaluation\final\parse_manifest.json',
     'data\evaluation\final\ingest_manifest.json',
-    'data\evaluation\trust_challenge_60.jsonl',
     'data\evaluation\source_metadata_audit_current.json',
     'data\evaluation\official_metadata_audit_current.json',
     'data\evaluation\evaluation_isolation_current.json'
@@ -152,13 +176,33 @@ foreach ($artifact in @(
         Copy-FileToPackage $artifact
     }
 }
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\evaluation\self_made')) {
-    Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\self_made') (Join-Path $PackageRoot 'data\evaluation\self_made')
-}
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'outputs\evaluation')) {
-    Copy-Directory (Join-Path $ProjectRoot 'outputs\evaluation') (Join-Path $PackageRoot 'outputs\evaluation') `
+if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\evaluation\trust_challenge_100')) {
+    Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\trust_challenge_100') `
+        (Join-Path $PackageRoot 'data\evaluation\trust_challenge_100') `
         -ExcludeDirs @('__pycache__') `
         -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+}
+if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'data\evaluation\hard_challenge_70\round_1')) {
+    Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\hard_challenge_70\round_1') `
+        (Join-Path $PackageRoot 'data\evaluation\hard_challenge_70\round_1') `
+        -ExcludeDirs @('__pycache__') `
+        -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+}
+foreach ($artifact in @(
+    'outputs\evaluation\document_identity_backfill_500.json',
+    'outputs\evaluation\vector_index_audit_after_formula_reindex.json',
+    'outputs\evaluation\trust_challenge_100\holdout_first_run.json',
+    'outputs\evaluation\trust_challenge_100\holdout_first_report.json',
+    'outputs\evaluation\trust_challenge_100\holdout_first_run_seal.json',
+    'outputs\evaluation\trust_challenge_100\post_holdout_delivery_changes.json',
+    'outputs\evaluation\trust_challenge_100\holdout_failure_report.md',
+    'outputs\evaluation\hard_challenge_70\round_1\run.json',
+    'outputs\evaluation\hard_challenge_70\round_1\report.json',
+    'outputs\evaluation\hard_challenge_70\round_1\failure_summary.md'
+)) {
+    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $artifact)) {
+        Copy-FileToPackage $artifact
+    }
 }
 $latestRelease = Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'data\evaluation') -Directory -Filter 'release_*' -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTimeUtc | Select-Object -Last 1
@@ -179,7 +223,7 @@ $envLines = @(
     'LLM_MODEL=deepseek-v4-flash',
     'LLM_RESPONSE_FORMAT=json_object',
     'LLM_STREAM=true',
-    'LLM_INCLUDE_THINKING=false',
+    'LLM_DISABLE_THINKING=false',
     "DEEPSEEK_API_KEY=$DeepSeekApiKey",
     'REGUMATE_BUILD_ID=regumate-agent-small',
     'REGUMATE_OFFLINE_MODE=false',
@@ -216,43 +260,49 @@ $bad = Get-ChildItem -LiteralPath $PackageRoot -Recurse -Force | Where-Object {
 } | Select-Object -First 1
 if ($bad) { throw "Unexpected excluded file in submission package: $($bad.FullName)" }
 
-$fileCount = (Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Force | Measure-Object).Count
-$size = (Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Force | Measure-Object Length -Sum).Sum
 $manifest = @(
     'ReguMate-Agent small package',
     "Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))",
-    "Files: $fileCount",
-    ("Uncompressed size: {0:N2} MB" -f ($size / 1MB)),
     '',
-    'Included contest artifacts: data/contest_dataset/dataset/nfra_page_attachments_500 and the official QA workbook under data/contest_dataset.',
-    'Included self-made artifacts: data/contest-data-self-made, data/evaluation/self_made, and PDF reports under docs/evaluation/ReguMate_*.pdf.',
-    'Included validation assets: backend/frontend tests, parse/ingest manifests, source metadata audit, self-made reports, and the isolated 60-case trust challenge set.',
+    'Included contest artifacts: data/contest_dataset/dataset/nfra_page_attachments_500, the official QA workbook under data/contest_dataset, and the self-authored 200-question evaluation set with gold answers under data/自命题200题评测集.',
+    'Included validation assets: backend/frontend tests, parse/ingest manifests, source metadata audit, the locked official-document trust challenge artifacts, and the frozen hard70 round_1 artifacts.',
     'Excluded large artifacts: offline Docker image archive, data/models, data/qdrant, data/evaluation/final_runtime, frontend/node_modules, frontend/dist, historical evaluation outputs.',
     'Runtime expectation: online Docker build, online Qdrant image pull, online HuggingFace model download, contest_dataset ingestion through scripts/upload_contest_knowledge_base.ps1, QA evaluation through scripts/run_contest_qa_test.ps1.'
 )
 $manifest | Set-Content -LiteralPath (Join-Path $PackageRoot 'SUBMISSION_CONTENTS.txt') -Encoding utf8
 
-Compress-Archive -LiteralPath $PackageRoot -DestinationPath $ArchiveTempPath -CompressionLevel Optimal
-$archiveSize = (Get-Item -LiteralPath $ArchiveTempPath).Length
-if ($archiveSize -gt 500MB) {
-    Remove-Item -LiteralPath $ArchiveTempPath -Force
-    throw ("Package archive is {0:N2} MB, exceeding 500MB." -f ($archiveSize / 1MB))
+$fileManifestPath = Join-Path $PackageRoot 'FILE_MANIFEST.sha256'
+$hashLines = foreach ($file in Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Force | Sort-Object FullName) {
+    if ($file.FullName -eq $fileManifestPath) { continue }
+    $relative = $file.FullName.Substring($PackageRoot.Length).TrimStart('\').Replace('\', '/')
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLower()
+    "$hash  $relative"
 }
+$hashLines | Set-Content -LiteralPath $fileManifestPath -Encoding utf8
+
+$fileCount = (Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Force | Measure-Object).Count
+$size = (Get-ChildItem -LiteralPath $PackageRoot -Recurse -File -Force | Measure-Object Length -Sum).Sum
+
+if ($size -gt 500MB) {
+    throw ("Package directory is {0:N2} MB, exceeding 500MB." -f ($size / 1MB))
+}
+
+if (Test-Path -LiteralPath $VisiblePackageRoot) {
+    Remove-Item -LiteralPath $VisiblePackageRoot -Recurse -Force
+}
+Copy-Directory $PackageRoot $VisiblePackageRoot
+Remove-Item -LiteralPath $StagingRoot -Recurse -Force
+Write-Host "Package directory: $VisiblePackageRoot" -ForegroundColor Green
+Write-Host ("Directory size: {0:N2} MB" -f ($size / 1MB))
+Write-Host "Files: $fileCount"
+
+# 生成提交用 zip 归档与 SHA-256 校验文件（旧包在脚本开头已删除）。
+# 注意：此处 $PackageRoot（staging）已在上面删除，从最终目录 $VisiblePackageRoot 打包。
+$ArchiveTempPath = Join-Path $DistRoot "$PackageName.tmp.zip"
+if (Test-Path -LiteralPath $ArchiveTempPath) { Remove-Item -LiteralPath $ArchiveTempPath -Force }
+Compress-Archive -LiteralPath $VisiblePackageRoot -DestinationPath $ArchiveTempPath -CompressionLevel Optimal
 Move-Item -LiteralPath $ArchiveTempPath -Destination $ArchivePath -Force
 $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $ArchivePath
 "$($hash.Hash.ToLower())  $PackageName.zip" | Set-Content -LiteralPath "$ArchivePath.sha256.txt" -Encoding utf8
-
-try {
-    if (Test-Path -LiteralPath $VisiblePackageRoot) {
-        Remove-Item -LiteralPath $VisiblePackageRoot -Recurse -Force
-    }
-    Copy-Directory $PackageRoot $VisiblePackageRoot
-    Write-Host "Package directory: $VisiblePackageRoot" -ForegroundColor Green
-} catch {
-    Write-Warning "Archive was generated successfully, but the expanded package directory could not be refreshed: $($_.Exception.Message)"
-    Write-Host "Staging package directory: $PackageRoot" -ForegroundColor Yellow
-}
-Write-Host "Package archive: $ArchivePath" -ForegroundColor Green
-Write-Host ("Directory size: {0:N2} MB" -f ($size / 1MB))
-Write-Host ("Archive size: {0:N2} MB" -f ($archiveSize / 1MB))
-Write-Host "Files: $fileCount"
+Write-Host "Archive: $ArchivePath" -ForegroundColor Green
+Write-Host "SHA256:  $($hash.Hash.ToLower())"

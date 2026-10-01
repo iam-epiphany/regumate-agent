@@ -142,7 +142,7 @@ else { Warn 'DEEPSEEK_API_KEY is missing; text QA will use extractive degradatio
 
 $configuredAppImage = Get-ReguMateEnv 'REGUMATE_APP_IMAGE' 'regumate/app:contest-v3'
 $appImage = docker image inspect $configuredAppImage --format '{{.Id}}' 2>$null
-if ($LASTEXITCODE -ne 0) { Warn "$configuredAppImage is missing; run.bat will build it from source." }
+if ($LASTEXITCODE -ne 0) { Warn "$configuredAppImage is missing; scripts/launcher/run.bat will build it from source." }
 else {
     Pass 'ReguMate app image is present'
     if (Test-DockerGpuAvailable) {

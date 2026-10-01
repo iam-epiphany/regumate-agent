@@ -2,15 +2,16 @@ import math
 import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
+from time import perf_counter, sleep
 from typing import Any
 
 from backend.app.core import config
-from backend.app.core.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MAX_BATCH_SIZE
+from backend.app.core.config import EMBEDDING_BATCH_SIZE, EMBEDDING_MAX_BATCH_SIZE, QUERY_EMBEDDING_BATCH_SIZE
 from backend.app.core.performance_profile import resolve_performance_profile
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
 from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
-from backend.app.services.performance_metrics import ByteLRUCache, measure
+from backend.app.services.performance_metrics import ByteLRUCache, check_request_budget, measure
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -65,8 +66,13 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
     safe_batch_size = min(max(int(batch_size or 1), 1), EMBEDDING_MAX_BATCH_SIZE)
 
     try:
+        check_request_budget("embedding")
+        # Model acquisition stays outside the inference lock: the first load
+        # takes tens of seconds on CPU and the lru_cache serializes concurrent
+        # loaders anyway.  Holding the inference lock across a cold load makes
+        # every concurrent request time out while waiting for the lock.
+        model = _get_bge_m3_model()
         with MODEL_INFERENCE_LOCK:
-            model = _get_bge_m3_model()
             with measure("embedding.inference"):
                 encoded = model.encode(
                     cleaned,
@@ -75,12 +81,35 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
                     return_sparse=True,
                     return_colbert_vecs=False,
                 )
+        check_request_budget("embedding")
+    except TimeoutError:
+        # Lock contention under concurrent load: retry within the request
+        # budget instead of failing the whole retrieval as a 503.
+        retry_deadline = perf_counter() + _LOCK_RETRY_BUDGET_SECONDS
+        while True:
+            check_request_budget("embedding.lock_retry")
+            if perf_counter() >= retry_deadline:
+                raise EmbeddingServiceError("BGE-M3 embedding 生成失败（推理锁等待超时）") from None
+            try:
+                model = _get_bge_m3_model()
+                with MODEL_INFERENCE_LOCK:
+                    with measure("embedding.inference"):
+                        encoded = model.encode(
+                            cleaned,
+                            batch_size=safe_batch_size,
+                            return_dense=True,
+                            return_sparse=True,
+                            return_colbert_vecs=False,
+                        )
+                break
+            except TimeoutError:
+                sleep(0.5)
     except Exception as exc:
         if selected_model_device() == "cuda" and is_cuda_failure(exc):
             _fallback_embedding_to_cpu(exc)
             try:
+                model = _get_bge_m3_model()
                 with MODEL_INFERENCE_LOCK:
-                    model = _get_bge_m3_model()
                     with measure("embedding.inference"):
                         encoded = model.encode(
                             cleaned,
@@ -142,7 +171,16 @@ def embed_queries(texts: list[str]) -> list[TextEmbedding]:
         profile = resolve_performance_profile(selected_model_device())
         missing_keys = list(missing_by_key)
         missing_texts = [missing_by_key[key][0] for key in missing_keys]
-        embedded = embed_texts(missing_texts, batch_size=profile.embedding_batch_size)
+        # Query plans can contain option statements with very different token
+        # lengths. Keep each forward pass bounded and independently observable
+        # so one pathological query cannot retain the shared model lock for an
+        # entire multi-query retrieval plan.  QUERY_EMBEDDING_BATCH_SIZE>1
+        # trades that isolation for throughput.
+        query_batch_size = min(profile.embedding_batch_size, QUERY_EMBEDDING_BATCH_SIZE)
+        embedded: list[TextEmbedding] = []
+        for offset in range(0, len(missing_texts), max(1, query_batch_size)):
+            check_request_budget("query_embedding")
+            embedded.extend(embed_texts(missing_texts[offset: offset + query_batch_size], batch_size=query_batch_size))
         for key, value in zip(missing_keys, embedded, strict=True):
             cache.put(key, value)
             for position in missing_by_key[key][1]:

@@ -103,7 +103,67 @@ export interface DocumentUploadResponse {
   size: number;
   chunk_count: number;
   uploaded_at: string;
-  metadata: Record<string, unknown>;
+  metadata: DocumentMetadata;
+}
+
+export type DocumentVersionStatus = "unknown" | "current" | "future" | "repealed" | "superseded" | "draft";
+
+export interface MetadataProvenanceEntry {
+  source?: string;
+  confidence?: number;
+  priority?: number;
+  updated_at?: string;
+  related_document_id?: string;
+}
+
+export interface DocumentMetadata extends Record<string, unknown> {
+  external_doc_id?: string;
+  title?: string;
+  issuing_authority?: string;
+  publication_date?: string;
+  effective_date?: string;
+  expiration_date?: string;
+  document_number?: string;
+  regulatory_topic?: string;
+  business_domain?: string;
+  source_column?: string;
+  source_url?: string;
+  attachment_url?: string;
+  source_type?: string;
+  version_label?: string;
+  version_status?: DocumentVersionStatus;
+  supersedes_document_id?: string;
+  source_filename?: string;
+  file_sha256?: string;
+  metadata_status?: string;
+  metadata_provenance?: Record<string, MetadataProvenanceEntry>;
+  identity_review_status?: "unreviewed" | "confirmed";
+  identity_reviewed_at?: string | null;
+  identity_reviewed_snapshot_hash?: string | null;
+  identity_warnings?: string[];
+}
+
+export interface DocumentMetadataPatch {
+  title?: string | null;
+  issuing_authority?: string | null;
+  publication_date?: string | null;
+  effective_date?: string | null;
+  expiration_date?: string | null;
+  document_number?: string | null;
+  regulatory_topic?: string | null;
+  business_domain?: string | null;
+  source_url?: string | null;
+  version_label?: string | null;
+  version_status?: DocumentVersionStatus | null;
+  supersedes_document_id?: string | null;
+}
+
+export interface DocumentMetadataUpdateResponse {
+  document_id: string;
+  metadata: DocumentMetadata;
+  reindex_queued?: boolean;
+  metadata_refreshed: boolean;
+  refresh_warning: string | null;
 }
 
 export interface DocumentBatchUploadItem {
@@ -176,7 +236,7 @@ export interface DocumentSummary {
   status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
-  metadata: Record<string, unknown>;
+  metadata: DocumentMetadata;
 }
 
 export interface DocumentListResponse {
@@ -228,7 +288,7 @@ export interface DocumentDetailResponse {
   status: DocumentStatus;
   index_version: string | null;
   index_error: string | null;
-  metadata: Record<string, unknown>;
+  metadata: DocumentMetadata;
   chunks: ChunkSummary[];
   chunk_total: number;
   chunk_offset: number;

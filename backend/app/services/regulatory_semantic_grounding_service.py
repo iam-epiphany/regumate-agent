@@ -12,7 +12,7 @@ import urllib.request
 from backend.app.core.config import (
     SEMANTIC_GROUNDING_API_KEY,
     SEMANTIC_GROUNDING_BASE_URL,
-    SEMANTIC_GROUNDING_INCLUDE_THINKING,
+    SEMANTIC_GROUNDING_DISABLE_THINKING,
     SEMANTIC_GROUNDING_MODE,
     SEMANTIC_GROUNDING_MODEL,
     SEMANTIC_GROUNDING_PROVIDER,
@@ -20,6 +20,7 @@ from backend.app.core.config import (
     SEMANTIC_GROUNDING_TIMEOUT_SECONDS,
 )
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
+from backend.app.services.json_utils import extract_json as _extract_json
 from backend.app.services.llm_client import (
     ChatCompletionConfig,
     ChatCompletionError,
@@ -158,7 +159,13 @@ def validate_regulatory_semantics(
                 }
             )
     verdicts.sort(key=lambda item: int(item.get("claim_index") or 0))
-    passed = all(item.get("verdict") == "supported" for item in verdicts)
+    # Only a verified contradiction blocks the answer.  "insufficient" means
+    # the verifier could not confirm the claim against the excerpted
+    # evidence, not that the claim is wrong; the deterministic base checks
+    # (citations, entities, required-aspect coverage) already passed, so an
+    # uncertain verdict must not turn a well-grounded answer into a degraded
+    # extract.  Insufficient verdicts stay visible in claim_verdicts.
+    passed = all(item.get("verdict") != "contradicted" for item in verdicts)
     return {
         "semantic_passed": passed,
         "semantic_mode": selected_mode,
@@ -284,8 +291,16 @@ def semantic_risk_codes(
     return risks
 
 
-def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: int = 1) -> str:
-    """Focus semantic checks on the cited statement, not unrelated rules in the same chunk."""
+def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: int | None = None) -> str:
+    """Focus semantic checks on the cited statement, not unrelated rules in the same chunk.
+
+    Every sentence that substantially overlaps the claim is kept (not just
+    the single closest one): a multi-case claim such as “下列两种情形中的
+    较早发生者：(1)…；(2)…” covers several evidence sentences, and dropping
+    the others would remove their subjects/objects and falsely flag
+    subject_scope_expanded.  Unrelated sentences stay excluded so the chunk's
+    other rules cannot interfere with the claim's frame.
+    """
 
     sentences = [
         sentence.strip()
@@ -309,10 +324,12 @@ def select_relevant_evidence(claim_text: str, evidence: str, *, max_sentences: i
         scored.append((overlap, -index, sentence))
     if not scored:
         return str(evidence or "")
-    selected = sorted(scored, reverse=True)[:max_sentences]
-    selected_indexes = sorted(-item[1] for item in selected if item[0] > 0)
-    if not selected_indexes:
+    relevant = [item for item in scored if item[0] >= 0.5]
+    if not relevant:
         return str(evidence or "")
+    if max_sentences is not None:
+        relevant = sorted(relevant, key=lambda item: (-item[0], item[1]))[:max_sentences]
+    selected_indexes = sorted(-item[1] for item in relevant)
     return "".join(sentences[index] for index in selected_indexes)
 
 
@@ -368,7 +385,7 @@ def _verify_risky_claims(items: list[dict[str, Any]]) -> tuple[list[dict[str, An
                     base_url=SEMANTIC_GROUNDING_BASE_URL,
                     model=SEMANTIC_GROUNDING_MODEL,
                     timeout_seconds=SEMANTIC_GROUNDING_TIMEOUT_SECONDS,
-                    include_thinking=SEMANTIC_GROUNDING_INCLUDE_THINKING,
+                    disable_thinking=SEMANTIC_GROUNDING_DISABLE_THINKING,
                     response_format=SEMANTIC_GROUNDING_RESPONSE_FORMAT,
                 ),
                 messages,
@@ -402,13 +419,6 @@ def _sentences_with_markers(text: str, markers: tuple[str, ...]) -> tuple[str, .
 
 def _without_text(item: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in item.items() if key not in {"claim", "evidence", "risk_codes"}}
-
-
-def _extract_json(content: str) -> str:
-    start, end = content.find("{"), content.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("semantic verifier did not return JSON")
-    return content[start : end + 1]
 
 
 _VERIFIER_CACHE: dict[str, list[dict[str, Any]]] = {}
