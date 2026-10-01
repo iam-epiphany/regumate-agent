@@ -146,3 +146,33 @@ def test_normalize_definition_term_unifies_width_and_case() -> None:
         "资本管理办法"
     )
     assert normalize_definition_term("资本（试行）办法") == "资本(试行)办法"
+
+
+def test_clause_index_from_text_start_beats_title_heuristic(db_session) -> None:
+    """正文条款块（text 以“第X条”开头）进入条款索引；章标题不误报。"""
+    document = _add_document_with_chunks(
+        db_session,
+        document_id="DOC-CLAUSE-TEXT",
+        chunks=[
+            {
+                "text": "第五条 保险期限一年及以下的意外险保单最低现金价值按照未满期净保费计算。",
+                "section_title": "二、现金价值",
+            },
+            {
+                "text": "保险公司应于每年末开展意外险业务回溯工作。",
+                "section_title": "第十二条 回溯",  # 章标题含条号的真实形态也应命中
+            },
+            {"text": "第五条 这一条与第一条共用块去重校验。", "section_title": None},
+        ],
+    )
+    _definition_count, clause_count = rebuild_document_structure_index(
+        db_session, document
+    )
+    numbers = list(
+        db_session.scalars(
+            select(DocumentClause.clause_number).order_by(DocumentClause.id)
+        )
+    )
+    assert clause_count == len(numbers)
+    # 两个“第五条”开头块各占一行；同一块内 text-start 与 title 不重复
+    assert numbers == [5, 12, 5]

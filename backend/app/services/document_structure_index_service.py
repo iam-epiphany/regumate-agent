@@ -158,6 +158,19 @@ def clause_labels_in_title(section_title: Any) -> list[str]:
     return list(_CLAUSE_LABEL_RE.findall(str(section_title or "")))
 
 
+def clause_labels_at_text_start(text: Any) -> list[str]:
+    """Return the bare clause numeral when a chunk text *starts* with "第X条".
+
+    In the regulatory corpus, clause bodies are chunked so the clause number
+    opens the text ("第十条 保险公司应…"); section titles carry chapter
+    headings instead.  This is the primary clause-block signal, the title
+    scan is the fallback.
+    """
+
+    match = re.match(r"\s*第([一二三四五六七八九十百零\d]{1,4})条", str(text or ""))
+    return [match.group(1)] if match else []
+
+
 def rebuild_document_structure_index(
     db: Session,
     document: Document,
@@ -209,10 +222,18 @@ def rebuild_document_structure_index(
                 )
             )
             definition_count += 1
-        for label in clause_labels_in_title(chunk.section_title):
+        # A chunk can be a clause body (text opens with "第X条") and/or carry
+        # a clause-number title; one chunk counts once per clause number.
+        clause_labels: list[str] = []
+        if text:
+            clause_labels.extend(clause_labels_at_text_start(text))
+        clause_labels.extend(clause_labels_in_title(chunk.section_title))
+        seen_clauses: set[int] = set()
+        for label in clause_labels:
             number = clause_number_from_label(label)
-            if number is None:
+            if number is None or number in seen_clauses:
                 continue
+            seen_clauses.add(number)
             db.add(
                 DocumentClause(
                     document_id=document.document_id,
