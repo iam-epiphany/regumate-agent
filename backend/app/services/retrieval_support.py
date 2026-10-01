@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, load_only
 
+from backend.app.core import config as runtime_config
 from backend.app.core.config import (
     DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS,
     DOCUMENT_SNAPSHOT_CACHE_TTL_SECONDS,
@@ -84,6 +85,27 @@ RRF_K = 60
 # visible to the deterministic choice recovery (official 300 hard gate).
 CONSTRAINED_RERANK_CANDIDATE_LIMIT = 12
 MCQ_RERANK_CANDIDATE_LIMIT = 24
+
+
+def _open_question_rerank_candidate_limit() -> int:
+    """Rerank input cap for open questions: device-aware, env-overridable.
+
+    GPU cross-encoder inference is cheap (24 candidates ~0.3-0.5s, measured
+    2026-10), so the full MCQ-size input is affordable there; CPU keeps the
+    tighter cap that bounds its ~1.3s-per-pair cost.  Set
+    RERANK_OPEN_CANDIDATE_LIMIT to force a value on any device.
+    """
+
+    configured = int(runtime_config.RERANK_OPEN_CANDIDATE_LIMIT or 0)
+    if configured > 0:
+        return configured
+    from backend.app.services.model_device_service import selected_model_device
+
+    if selected_model_device() == "cuda":
+        return MCQ_RERANK_CANDIDATE_LIMIT
+    return CONSTRAINED_RERANK_CANDIDATE_LIMIT
+
+
 QUERY_TYPE_WEIGHTS = {
     "semantic_question": 1.0,
     "document_style_statement": 1.15,
@@ -1059,11 +1081,11 @@ def _effective_rerank_candidate_limit(
     retrieval_filter_document_ids: set[str],
     mcq_material_document_ids: set[str],
 ) -> int:
-    if len(candidates) <= CONSTRAINED_RERANK_CANDIDATE_LIMIT:
+    if len(candidates) <= _open_question_rerank_candidate_limit():
         return len(candidates)
     if aspect.aspect_id == "multiple_choice_evidence" or mcq_material_document_ids:
         return min(len(candidates), MCQ_RERANK_CANDIDATE_LIMIT)
-    return CONSTRAINED_RERANK_CANDIDATE_LIMIT
+    return _open_question_rerank_candidate_limit()
 
 
 def _document_style_evidence_score(candidate: Any, aspect: QueryAspect) -> float:

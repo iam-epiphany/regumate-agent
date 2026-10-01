@@ -161,6 +161,9 @@ QUERY_EMBEDDING_BATCH_SIZE = _env_int("QUERY_EMBEDDING_BATCH_SIZE", 1, minimum=1
 RETRIEVAL_TOP_K = 50
 RERANK_TOP_K = 20
 RERANK_CANDIDATE_LIMIT = 24
+# Open-question rerank input cap; 0 = auto (24 on CUDA, 12 on CPU, where each
+# cross-encoder pair costs ~1.3s regardless of batching).
+RERANK_OPEN_CANDIDATE_LIMIT = _env_int("RERANK_OPEN_CANDIDATE_LIMIT", 0, minimum=0)
 MAX_PROMPT_CHUNKS = 12
 MAX_PROMPT_TOKENS = _env_int("MAX_PROMPT_TOKENS", 3600, minimum=1)
 MIN_PROMPT_CHUNKS = 0
