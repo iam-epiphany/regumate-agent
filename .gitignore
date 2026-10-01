@@ -66,9 +66,9 @@ ReguMate-Agent-Delivery*/
 *.tar
 .agents/
 .cache/
-models/
-model_cache/
-hf_cache/
+/models/
+/model_cache/
+/hf_cache/
 
 # Large or generated files
 *.sqlite3
