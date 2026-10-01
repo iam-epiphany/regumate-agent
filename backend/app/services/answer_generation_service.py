@@ -3339,6 +3339,43 @@ def _fallback_definition_bonus(normalized_text: str, anchors: list[str]) -> floa
 _EXTRACTIVE_FALLBACK_NEGATIONS = ("不符合", "不满足", "未达到", "未符合", "无法")
 _EXTRACTIVE_FALLBACK_ACTIONS = ("处理", "处置", "对待", "纳入", "视为", "比照")
 
+# 软锚点：问题中长度 ≥4 的实义片段。句子与问题共享多个长片段时加分，
+# 替代早期针对具体题面（"折现率曲线"等）的专项加分分支——共现信号完全
+# 由问题自身派生，不绑定任何固定词表或题目。
+_EXTRACTIVE_SOFT_ANCHOR_TRIM = "的了是与和及或在对按根据关于如何是什么哪些怎样多少其中中里内"
+_EXTRACTIVE_SOFT_ANCHOR_SPLIT_RE = re.compile(
+    # 标点 + 通用功能词（多字优先）都视作片段边界；单字功能词"的/与/和/及/或/
+    # 在/对/按/是"直接切断，避免"负债评估的折现率曲线"这类长片段被整段丢弃。
+    r"是如何|如何构成|如何|怎样|什么|哪些|多少|是否|以及|或者|根据|关于|其中"
+    r"|应当|不得|可以|需要|进行|适用"
+    r"|[，。；、？！：:,;?!（）()\[\]{}\"'\s的与和及或在对按是]"
+)
+_EXTRACTIVE_SOFT_ANCHOR_MIN = 4
+_EXTRACTIVE_SOFT_ANCHOR_MAX = 16
+
+
+def _question_soft_anchors(question: str) -> tuple[str, ...]:
+    # Split on the raw question (punctuation is the boundary signal) and
+    # normalize each fragment afterwards.
+    anchors: list[str] = []
+    for fragment in _EXTRACTIVE_SOFT_ANCHOR_SPLIT_RE.split(str(question or "")):
+        trimmed = _normalize_evidence_text(fragment).strip(_EXTRACTIVE_SOFT_ANCHOR_TRIM)
+        if (
+            _EXTRACTIVE_SOFT_ANCHOR_MIN <= len(trimmed) <= _EXTRACTIVE_SOFT_ANCHOR_MAX
+            and trimmed not in anchors
+        ):
+            anchors.append(trimmed)
+    return tuple(anchors)
+
+
+def _soft_anchor_score(normalized_segment: str, soft_anchors: tuple[str, ...]) -> float:
+    if len(soft_anchors) < 2:
+        return 0.0
+    hits = sum(1 for anchor in soft_anchors if anchor in normalized_segment)
+    # Only multi-fragment co-occurrence earns the bonus; a single shared
+    # fragment is already covered by bigram overlap.
+    return 4.0 * (hits - 1) if hits >= 2 else 0.0
+
 
 def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 650) -> str:
     source = str(text or "").strip()
@@ -3363,6 +3400,7 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 6
         normalized_question[index : index + 2]
         for index in range(max(len(normalized_question) - 1, 0))
     }
+    soft_anchors = _question_soft_anchors(question)
 
     def score(segment: str) -> tuple[float, int]:
         normalized = _normalize_evidence_text(segment)
@@ -3378,11 +3416,7 @@ def _relevant_extractive_excerpt(text: str, question: str, *, max_chars: int = 6
             marker in normalized for marker in ("期限", "频率", "工作日", "年度", "季度", "半年")
         ):
             semantic_score += 4.0
-        if "折现率曲线" in normalized_question:
-            if "现金流现值" in normalized and "折现率曲线" in normalized:
-                semantic_score += 10.0
-            if "基础利率曲线" in normalized and "综合溢价" in normalized:
-                semantic_score += 12.0
+        semantic_score += _soft_anchor_score(normalized, soft_anchors)
         # “不符合/不满足…标准的…如何处理”由兜底条款回答（“对不符合…的…，
         # 应纳入…处理/视为…/比照…”）。问题含否定词+处理动词时，给同含两者的
         # 句子高权重，避免只选中一般性分类/流程条款。
