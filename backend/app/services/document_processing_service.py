@@ -17,6 +17,7 @@ from backend.app.services.document_metadata_service import (
     retrieval_metadata_snapshot,
 )
 from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
+from backend.app.services.document_structure_index_service import rebuild_document_structure_index
 from backend.app.services.performance_metrics import measure
 
 
@@ -106,6 +107,7 @@ def ensure_document_chunks(
             db.flush()
 
             rebuild_spreadsheet_cell_index(db, document, chunk_models)
+            rebuild_document_structure_index(db, document, chunk_models)
             db.commit()
         _report(
             stage_reporter,

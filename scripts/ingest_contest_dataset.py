@@ -38,6 +38,7 @@ from backend.app.services.chunk_service import build_chunks_from_parsed  # noqa:
 from backend.app.services.document_indexing_service import DocumentIndexingError, index_document  # noqa: E402
 from backend.app.services.document_parser import DocumentParseError, parse_document  # noqa: E402
 from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index  # noqa: E402
+from backend.app.services.document_structure_index_service import rebuild_document_structure_index
 from backend.app.services.qdrant_admin_service import (  # noqa: E402
     collection_status,
     delete_collection_if_exists,
@@ -205,6 +206,7 @@ def main() -> int:
                         db.add(chunk)
                     db.flush()
                     rebuild_spreadsheet_cell_index(db, document, chunks)
+                    rebuild_document_structure_index(db, document, chunks)
                     if args.parse_only and source.suffix.lower() in {".xls", ".xlsx"}:
                         document.status = "table_indexed"
                         for chunk in chunks:

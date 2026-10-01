@@ -128,6 +128,66 @@ class SpreadsheetCell(Base):
     formula: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class DocumentDefinition(Base):
+    """Persisted term -> chunk definition dictionary (additive lookup index).
+
+    Rows are extracted at ingest time from definition sentences ("所称X…是指 /
+    X是指 / （简称X）"). Chunk text remains the source of evidence shown to
+    users; this table only lets the definition retrieval channel resolve a
+    quoted term without a full-corpus LIKE scan.
+    """
+
+    __tablename__ = "document_definitions"
+    __table_args__ = (
+        Index("ix_doc_definitions_term", "term_norm"),
+        Index("ix_doc_definitions_document", "document_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("documents.document_id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("document_chunks.chunk_id", ondelete="CASCADE"), index=True
+    )
+    term: Mapped[str] = mapped_column(String(255))
+    term_norm: Mapped[str] = mapped_column(String(255), index=True)
+    pattern_kind: Mapped[str] = mapped_column(String(16))
+    snippet: Mapped[str] = mapped_column(Text, default="")
+    section_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    section_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_file: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class DocumentClause(Base):
+    """Persisted "第X条" clause-number -> chunk mapping (additive lookup index).
+
+    A row exists for every chunk whose section title carries a clause number,
+    so clause references ("本办法第X条" and cross-document "《Y》第X条") can
+    resolve against a table instead of re-deriving the mapping from section
+    titles on every request.
+    """
+
+    __tablename__ = "document_clauses"
+    __table_args__ = (
+        Index("ix_doc_clauses_document_number", "document_id", "clause_number"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("documents.document_id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("document_chunks.chunk_id", ondelete="CASCADE"), index=True
+    )
+    clause_number: Mapped[int] = mapped_column(Integer)
+    clause_label: Mapped[str] = mapped_column(String(32))
+    section_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_file: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
 class DocumentIndexTask(Base):
     """Persistent state for the bounded in-process indexing queue."""
 

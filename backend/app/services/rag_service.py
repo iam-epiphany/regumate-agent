@@ -38,6 +38,7 @@ from backend.app.schemas.qa import (
 from backend.app.services.audit_service import record_event
 from backend.app.services.answer_generation_service import generate_answer
 from backend.app.services.document_identity_query_service import answer_document_identity_question
+from backend.app.services.document_structure_index_service import resolve_document_ids_by_titles
 from backend.app.services.prompt_builder import RAGPromptBuilder
 from backend.app.services.question_preprocessing_service import build_question_task, preprocess_qa_request
 from backend.app.services.llm_client import ChatCompletionConfig, ChatCompletionError, chat_completion_content
@@ -878,6 +879,13 @@ def _retrieve_aspects(
     return aspect_retrievals
 
 
+# Chunk text often cites another regulation by bracketed title; such titles
+# seed the bounded sibling-document scope below.  Capped so one request adds
+# at most two cited documents beyond the already-retrieved scope.
+_EVIDENCE_CITED_TITLE_RE = re.compile(r"《([^》\n]{2,50})》")
+_EVIDENCE_CITED_DOCUMENT_LIMIT = 2
+
+
 def _recover_missing_aspects_from_sibling_documents(
     db: Session,
     aspect_retrievals: list[AspectRetrieval],
@@ -919,6 +927,22 @@ def _recover_missing_aspects_from_sibling_documents(
                 break
         if len(request_document_ids) >= 12:
             break
+    # Evidence-driven scope extension: chunks often cite another document
+    # ("依据《XX办法》第X条…").  Those cited documents are legitimate sibling
+    # targets even when no aspect retrieved them — resolved by title, capped,
+    # and still without any corpus-wide scan.
+    cited_titles: list[str] = []
+    for retrieval in aspect_retrievals:
+        for candidate in retrieval.candidates:
+            for title in _EVIDENCE_CITED_TITLE_RE.findall(str(getattr(candidate, "text", "") or "")):
+                if title not in cited_titles:
+                    cited_titles.append(title)
+    if cited_titles:
+        for document_id in resolve_document_ids_by_titles(
+            db, cited_titles, max_documents=_EVIDENCE_CITED_DOCUMENT_LIMIT
+        ).values():
+            if document_id not in request_document_ids:
+                request_document_ids.append(document_id)
     if not request_document_ids:
         return
     for retrieval, own_document_ids in zip(aspect_retrievals, documents_by_aspect, strict=True):

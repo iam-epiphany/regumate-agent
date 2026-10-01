@@ -29,7 +29,7 @@ from backend.app.core.config import (
     RERANK_TOP_K,
     RETRIEVAL_TOP_K,
 )
-from backend.app.models.document import Document, DocumentChunk
+from backend.app.models.document import Document, DocumentChunk, DocumentClause
 from backend.app.schemas.qa import Citation, RetrievalResult
 from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
 from backend.app.services.retrieval_metadata_filter_service import build_retrieval_metadata_filter
@@ -53,6 +53,12 @@ from backend.app.services.retrieval_service import (
     question_terms,
     reset_retrieval_diagnostics,
     retrieve_citations,
+)
+from backend.app.services.document_structure_index_service import (
+    clause_number_from_label,
+    lookup_definition_chunks,
+    normalize_document_title,
+    resolve_document_ids_by_titles,
 )
 from backend.app.services.embedding_service import EmbeddingServiceError
 from backend.app.services.model_device_service import get_model_device_info
@@ -1560,6 +1566,12 @@ def _definition_clause_support_matches(
         return []
     found = _definition_clause_chunks(db, patterns, scope_document_ids, document_chunk_cache)
     if not found:
+        # Persisted definition dictionary (ingest-time extraction): corpus-wide
+        # term lookup without the bounded LIKE scan.  Falls through to the LIKE
+        # scan when the dictionary has no rows for the term (e.g. before the
+        # one-off backfill, or when the definition phrase spans two chunks).
+        found = lookup_definition_chunks(db, quoted, None)
+    if not found:
         found = _definition_clause_chunks(db, patterns, None, document_chunk_cache)
     if not found:
         return []
@@ -2980,6 +2992,42 @@ def _expand_neighbor_matches(
             if added_neighbors >= 2:
                 break
 
+        # Cross-document graph edge: "《title》第X条" citations resolve to the
+        # referenced clause inside another document.  Shares the per-anchor
+        # neighbour budget, so anchors without such citations behave exactly
+        # as before.
+        if added_neighbors < 2:
+            anchor_chunk = next(
+                (c for c in document_chunks if c.chunk_id == match.citation.chunk_id), None
+            )
+            anchor_text = "\n".join(
+                part
+                for part in (
+                    (anchor_chunk.embedding_text or "") if anchor_chunk else "",
+                    (anchor_chunk.text or "") if anchor_chunk else "",
+                    match.citation.excerpt or "",
+                )
+                if part
+            )
+            for target_chunk, target_chunks in _cross_document_referenced_chunks(
+                db, anchor_text, document_chunk_cache
+            ):
+                if target_chunk.chunk_id in selected_chunk_ids:
+                    continue
+                selected.append(
+                    _match_from_chunk(
+                        target_chunk,
+                        match,
+                        "cross_document_referenced_clause",
+                        target_chunks,
+                        question,
+                    )
+                )
+                selected_chunk_ids.add(target_chunk.chunk_id)
+                added_neighbors += 1
+                if added_neighbors >= 2:
+                    break
+
     return selected[: max(MAX_PROMPT_CHUNKS * 3, MAX_PROMPT_CHUNKS)]
 
 
@@ -3148,6 +3196,81 @@ def _referenced_clause_chunks(anchor: DocumentChunk, chunks: list[DocumentChunk]
                 hits.append(chunk)
                 break
     return hits
+
+
+# "《商业银行资本管理办法》第十条" style citations point at another document's
+# clause — a cross-document graph edge the same-document pass cannot resolve.
+_CROSS_DOCUMENT_REFERENCE_RE = re.compile(r"《([^》\n]{2,50})》第([一二三四五六七八九十百零\d]{1,4})条")
+# Budget: resolving documents by title is cheap, but loading foreign chunk
+# lists is not free, so one expansion pass touches at most two target docs.
+_CROSS_DOCUMENT_REFERENCE_DOC_LIMIT = 2
+
+
+def _cross_document_referenced_chunks(
+    db: Session,
+    anchor_text: str,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> list[tuple[DocumentChunk, list[DocumentChunk]]]:
+    """Resolve "《title》第X条" citations to (chunk, target document chunks).
+
+    Clause lookup prefers the persisted document_clauses index (robust to
+    Chinese-numeral vs digit spelling differences) and falls back to the raw
+    numeral-in-section-title scan used by the same-document channel.
+    """
+
+    if not hasattr(db, "scalars"):
+        return []
+    references = _CROSS_DOCUMENT_REFERENCE_RE.findall(anchor_text or "")
+    if not references:
+        return []
+    titles: list[str] = []
+    for title, _numeral in references:
+        if title not in titles:
+            titles.append(title)
+    resolved = resolve_document_ids_by_titles(
+        db, titles, max_documents=_CROSS_DOCUMENT_REFERENCE_DOC_LIMIT
+    )
+    if not resolved:
+        return []
+    target_chunks_by_document = _chunks_by_document(
+        db,
+        set(resolved.values()),
+        document_chunk_cache=document_chunk_cache,
+    )
+    results: list[tuple[DocumentChunk, list[DocumentChunk]]] = []
+    seen_chunk_ids: set[str] = set()
+    for title, numeral in references:
+        document_id = resolved.get(normalize_document_title(title))
+        if not document_id:
+            continue
+        document_chunks = target_chunks_by_document.get(document_id, [])
+        if not document_chunks:
+            continue
+        target = None
+        number = clause_number_from_label(numeral)
+        if number is not None:
+            clause_chunk_ids = db.scalars(
+                select(DocumentClause.chunk_id)
+                .where(
+                    DocumentClause.document_id == document_id,
+                    DocumentClause.clause_number == number,
+                )
+                .order_by(DocumentClause.id.asc())
+                .limit(1)
+            ).all()
+            if clause_chunk_ids:
+                target = next(
+                    (c for c in document_chunks if c.chunk_id == clause_chunk_ids[0]), None
+                )
+        if target is None:
+            target = next(
+                (c for c in document_chunks if f"第{numeral}条" in str(c.section_title or "")),
+                None,
+            )
+        if target is not None and target.chunk_id not in seen_chunk_ids:
+            seen_chunk_ids.add(target.chunk_id)
+            results.append((target, document_chunks))
+    return results
 
 
 def _question_prefers_child_section(question: str) -> bool:
