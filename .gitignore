@@ -81,3 +81,7 @@ hf_cache/
 
 # 私有金标(不提交)
 ReguMate-Eval-Private/
+
+# ZCode 会话状态与一次性评测产物（保留在磁盘，不入库）
+.zcode/
+tmp/

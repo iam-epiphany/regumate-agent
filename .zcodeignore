@@ -1,0 +1,112 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.tsbuildinfo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.run-state/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.example
+
+# PyCharm
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Outputs
+outputs/
+reports/generated/
+backend/storage/
+data/app.db
+data/app.db-shm
+data/app.db-wal
+data/audit_archives/
+data/qdrant/
+data/models/
+data/model_cache/
+data/documents/originals/*
+!data/documents/originals/.gitkeep
+data/test_documents/parser_samples/*
+data/evaluation/
+data/contest-data/
+data/contest_dataset/
+data/contest_staging/
+data/contest dataset/
+data/dev_runtime/
+dist-delivery/
+delivery/
+release/
+ReguMate-Agent-Delivery*/
+*.zip
+*.7z
+*.tar
+.agents/
+.cache/
+models/
+model_cache/
+hf_cache/
+
+# Large or generated files
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# External contest briefs and raw binary source material
+/docs/*.docx
+
+# 私有金标(不提交)
+ReguMate-Eval-Private/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+site-packages/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

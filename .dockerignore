@@ -20,6 +20,7 @@ data/models/
 data/model_cache/
 data/test_documents/parser_samples/
 data/contest dataset/
+data/contest_dataset/
 data/contest_staging/
 data/evaluation/
 dist-delivery/
