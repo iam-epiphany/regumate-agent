@@ -355,6 +355,11 @@ def _hybrid_query_kwargs(
     metadata_filter: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     compiled_filter = _retrieval_filter(models, metadata_filter)
+    from backend.app.core.rag_features import features, event
+    event("retrieval", hybrid=features().hybrid, limit=limit)
+    if not features().hybrid:
+        return {"query": query_embedding.dense, "using": QDRANT_DENSE_VECTOR_NAME,
+                "limit": limit, "filter": compiled_filter, "with_payload": True}
     return {
         "prefetch": [
             models.Prefetch(

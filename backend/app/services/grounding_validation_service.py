@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, capture_question, capture_validation, event
 
 import math
 import re
@@ -35,6 +36,7 @@ ORGANIZATION_PATTERN = re.compile(
 )
 
 
+@capture_validation
 @timed("grounding.validation")
 def validate_grounded_answer(
     answer: str,
@@ -100,6 +102,21 @@ def validate_grounded_answer(
                     "entities": unsupported,
                 }
             )
+    derived_number_waiver = False
+    if not features().calculation and any(
+        chunk.metadata.get("calculation_operand_only") for chunk in context_chunks
+    ):
+        # Numeric membership is not an arithmetic correctness test: a derived
+        # value need not occur verbatim in a source. Keep citation/entity checks,
+        # but leave arithmetic accuracy to the independent experiment scorer.
+        numeric = lambda value: bool(re.fullmatch(r"-?\d+(?:\.\d+)?%?", value))
+        derived_number_waiver = True
+        unsupported_entities = [v for v in unsupported_entities if not numeric(v)]
+        unsupported_claim_entities = [
+            {**item, "entities": [v for v in item["entities"] if not numeric(v)]}
+            for item in unsupported_claim_entities
+            if any(not numeric(v) for v in item["entities"])
+        ]
     base_passed = (
         not invalid_citation_ids
         and not invalid_answer_citation_ids
@@ -119,6 +136,7 @@ def validate_grounded_answer(
         "missing_inline_citation_ids": missing_inline_citation_ids,
         "unsupported_entities": unsupported_entities,
         "unsupported_claim_entities": unsupported_claim_entities,
+        **({"derived_number_membership_waived": True} if derived_number_waiver else {}),
         "missing_claims": missing_claims,
         "missing_claim_citations": missing_claim_citations,
         **semantic_validation,

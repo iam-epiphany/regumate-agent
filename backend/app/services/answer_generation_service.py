@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, event
 
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -184,7 +185,7 @@ def _generate_answer_impl(
             grounding_validation={"passed": True, "reason": "related_context_only"},
         )
 
-    if ASPECT_GATE_PRE_GENERATION and required_aspect_ids and not normalized_options:
+    if features().coverage_gate and ASPECT_GATE_PRE_GENERATION and required_aspect_ids and not normalized_options:
         # Evidence-side pre-gate: if the selected context does not cover every
         # required aspect, refuse before spending LLM calls on a generation
         # that the post-generation coverage check would reject anyway.  The
@@ -796,6 +797,8 @@ def _deterministic_table_answer(
     options: list[str],
     option_labels: list[str | None],
 ) -> GeneratedAnswer | None:
+    if any(chunk.metadata.get("calculation_operand_only") for chunk in context_chunks):
+        return None
     chunk = next(
         (
             item
@@ -914,6 +917,7 @@ def _comparison_winner_label(metadata: dict[str, Any]) -> str:
     return re.sub(r"^\d+[、.．]\s*", "", label) or "该项目"
 
 
+@feature_gate("calculation", empty="none")
 def _deterministic_formula_answer(
     question: str,
     context_chunks: list[RetrievalResult],
@@ -1351,6 +1355,7 @@ def _read_streaming_llm_content(
         iterator = iter(response)
     except TypeError:
         body = json.loads(response.read().decode("utf-8"))
+        event("llm_usage", usage=body.get("usage"))
         return str(body["choices"][0]["message"]["content"])
 
     content = ""
@@ -1377,6 +1382,8 @@ def _read_streaming_llm_content(
         if data == "[DONE]":
             break
         chunk = json.loads(data)
+        if chunk.get("usage") is not None:
+            event("llm_usage", usage=chunk["usage"])
         choices = chunk.get("choices") or []
         if not choices:
             continue
@@ -3706,6 +3713,8 @@ def _deterministic_mixed_table_answer(
 ) -> GeneratedAnswer | None:
     table_result = _deterministic_table_answer(context_chunks, [], [])
     if table_result is None or table_result.refused:
+        return None
+    if any(chunk.metadata.get("calculation_operand_only") for chunk in context_chunks):
         return None
     table_chunk = next(
         (

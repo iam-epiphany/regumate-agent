@@ -1,0 +1,18 @@
+{
+  "ready": true,
+  "qdrant_collection": "regumate_chunks",
+  "completed_document_index_tasks": 500,
+  "model_device": {
+    "requested_device": "cuda",
+    "selected_device": "cuda",
+    "torch_version": "2.11.0+cu128",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+    "cuda_total_memory_gb": 7.96,
+    "cuda_free_memory_gb": 6.83,
+    "fallback_reason": null
+  },
+  "experiment_container": "stopped",
+  "temporary_system_awake": "released"
+}

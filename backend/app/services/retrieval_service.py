@@ -503,8 +503,12 @@ def matches_from_reranked(
     diagnostics.timings_ms["filter"] = _elapsed_ms(filter_started_at)
     diagnostics.reliable_count = len(reliable)
     diagnostics.filtered_count = max(diagnostics.reranked_count - len(reliable), 0)
-    reliable.sort(key=_rank_key, reverse=True)
-    selected = _select_final_chunks(reliable, question, limit=limit)
+    from backend.app.core.rag_features import features
+    if features().rerank:
+        reliable.sort(key=_rank_key, reverse=True)
+        selected = _select_final_chunks(reliable, question, limit=limit)
+    else:
+        selected = reliable[:limit]
     diagnostics.selected_count = len(selected)
     return [
         RetrievalMatch(
@@ -567,6 +571,9 @@ class _AnnotatedChunk:
 def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     if not item.candidate.chunk_id or not item.candidate.text.strip():
         return False
+    from backend.app.core.rag_features import features
+    if not features().rerank:
+        return True  # Retrieval scores are not cross-encoder probabilities.
     # MCQ aspects blend a lexical coverage term into ``rerank_score`` for
     # ordering; the reliability gates must evaluate the raw cross-encoder
     # score, otherwise a strong model match can be filtered by a weak
@@ -665,6 +672,9 @@ def rerank_input_with_document_coverage(
     the top chunk of each document, round 2 refills by rank — single-file
     questions are unchanged.
     """
+    from backend.app.core.rag_features import features
+    if not features().rerank:
+        return candidates[:limit]
     if len(candidates) <= limit:
         return candidates
     selected: list[VectorSearchResult] = []

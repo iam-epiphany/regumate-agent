@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features
 
 from dataclasses import asdict, dataclass
 import hashlib
@@ -73,7 +74,7 @@ def validate_regulatory_semantics(
     *,
     mode: str | None = None,
 ) -> dict[str, Any]:
-    selected_mode = (mode or SEMANTIC_GROUNDING_MODE).lower()
+    selected_mode = (mode or SEMANTIC_GROUNDING_MODE).lower() if features().semantic else "off"
     if selected_mode == "off":
         return {
             "semantic_passed": True,

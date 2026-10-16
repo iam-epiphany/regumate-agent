@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from dotenv import load_dotenv
 
 
@@ -13,3 +15,18 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 # Dedicated semantic-grounding tests invoke risk_based mode explicitly and
 # replace the verifier boundary with deterministic fixtures.
 os.environ.setdefault("SEMANTIC_GROUNDING_MODE", "off")
+
+
+@pytest.fixture(autouse=True)
+def offline_retrieval_advisor():
+    # The new advisor has its own boundary. Tests that exercise model output
+    # replace it explicitly; all other tests exercise the production fallback.
+    from backend.app.services import retrieval_advisor_service as advisor
+    from backend.app.services.llm_client import ChatCompletionError
+
+    def offline(*args, **kwargs):
+        raise ChatCompletionError("Offline test advisor")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(advisor, "chat_completion_content", offline)
+        yield

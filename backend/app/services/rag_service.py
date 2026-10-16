@@ -1,3 +1,4 @@
+from backend.app.core.rag_features import features, feature_gate, capture_question, capture_validation, event
 from collections import OrderedDict
 from dataclasses import dataclass
 import json
@@ -60,6 +61,7 @@ from backend.app.services.retrieval_metadata_filter_service import (
     build_retrieval_metadata_filter,
 )
 from backend.app.services import retrieval_support as _retrieval_support
+from backend.app.services.retrieval_advisor_service import with_advice_budget
 
 # Re-export the extracted retrieval-support module so callers and tests that
 # referenced ``rag_service.<name>`` keep working unchanged.
@@ -202,6 +204,7 @@ class AspectRetrieval:
     covered: bool = False
 
 
+@capture_question
 @trace_operation("qa")
 def answer_question(
     db: Session,
@@ -527,6 +530,7 @@ def build_context_package(
     )
     context_chunks, prompt_selection = _select_prompt_chunks(question, query_plan, aspect_retrievals)
     context_chunks = _expand_condition_preamble_prompt_chunks(db, context_chunks, query_plan)
+    event("context", chunks=context_chunks, query_plan=query_plan.to_debug_dict())
     _sync_aspect_coverage_from_prompt(context_chunks, aspect_retrievals)
     prompt_selection["final_prompt_chunks"] = len(context_chunks)
     prompt_selection["final_prompt_chunk_ids"] = [chunk.chunk_id for chunk in context_chunks]
@@ -647,6 +651,7 @@ def _empty_context_package(question: str) -> LLMContextPackage:
     )
 
 
+@with_advice_budget
 def _retrieve_aspects(
     db: Session,
     query_plan: QueryPlan,
@@ -711,9 +716,15 @@ def _retrieve_aspects(
             raise RetrievalServiceUnavailable(str(exc)) from exc
         rerank_questions: list[str] = []
         rerank_inputs: list[list[Any]] = []
-        for (aspect, prepared), (candidates, _hits, _per_query) in zip(
+        for (aspect, prepared), (candidates, hits, _per_query) in zip(
             prepared_items, collected, strict=True
         ):
+            if not features().rerank:
+                candidates.sort(key=lambda candidate: sum(
+                    QUERY_TYPE_WEIGHTS.get(str(hit.get("query_type") or "semantic_question"), 1.0)
+                    / (RRF_K + int(hit.get("rank") or 1))
+                    for hit in hits.get(candidate.chunk_id, [])
+                ), reverse=True)
             effective = _effective_rerank_candidate_limit(
                 aspect,
                 candidates,
@@ -886,6 +897,7 @@ _EVIDENCE_CITED_TITLE_RE = re.compile(r"《([^》\n]{2,50})》")
 _EVIDENCE_CITED_DOCUMENT_LIMIT = 2
 
 
+@feature_gate("supplements", empty="none")
 def _recover_missing_aspects_from_sibling_documents(
     db: Session,
     aspect_retrievals: list[AspectRetrieval],
@@ -937,7 +949,7 @@ def _recover_missing_aspects_from_sibling_documents(
             for title in _EVIDENCE_CITED_TITLE_RE.findall(str(getattr(candidate, "text", "") or "")):
                 if title not in cited_titles:
                     cited_titles.append(title)
-    if cited_titles:
+    if features().references and cited_titles:
         for document_id in resolve_document_ids_by_titles(
             db, cited_titles, max_documents=_EVIDENCE_CITED_DOCUMENT_LIMIT
         ).values():
@@ -1003,6 +1015,7 @@ def _recover_missing_aspects_from_sibling_documents(
 _HYDE_SUPPLEMENT_LIMIT = 2
 
 
+@feature_gate("hyde", empty="none")
 def _hyde_supplement_retrieval(
     db: Session,
     aspect_retrievals: list[AspectRetrieval],
@@ -1033,10 +1046,12 @@ def _hyde_supplement_retrieval(
     if not uncovered:
         return
     for retrieval in uncovered[: _HYDE_SUPPLEMENT_LIMIT]:
+        event("hyde_trigger", aspect_id=retrieval.aspect.aspect_id)
         hypothetical = _hyde_hypothetical_clause(retrieval.aspect.question)
         if not hypothetical or len(hypothetical) < 12:
             continue
         candidates = _hyde_search_candidates(db, hypothetical)
+        event("hyde_recovery", aspect_id=retrieval.aspect.aspect_id, candidates=len(candidates))
         if not candidates:
             continue
         for candidate in candidates:
@@ -1246,6 +1261,24 @@ def _select_prompt_chunks(
     query_plan: QueryPlan,
     aspect_retrievals: list[AspectRetrieval],
 ) -> tuple[list[RetrievalResult], dict[str, Any]]:
+    if not features().coverage_gate:
+        # Rank-based selection, with the same final chunk/token budget. No
+        # gap-driven promotions or cross-encoder thresholds on dense scores.
+        ranked = sorted(
+            (chunk for item in aspect_retrievals for chunk in item.candidates),
+            key=lambda chunk: (chunk.rank or 999, -chunk.score),
+        )
+        selected = []
+        seen = set()
+        for chunk in ranked:
+            if chunk.chunk_id not in seen:
+                seen.add(chunk.chunk_id)
+                selected.append(chunk)
+        selected = _apply_prompt_token_budget(selected[:MAX_PROMPT_CHUNKS])
+        _renumber_context_chunks(selected)
+        _sync_aspect_coverage_from_prompt(selected, aspect_retrievals)
+        return selected, _prompt_selection_summary(len(ranked), selected, query_plan,
+            aspect_retrievals, {item.aspect.aspect_id for item in aspect_retrievals if item.covered})
     selected: list[RetrievalResult] = []
     candidate_count = len(
         {
@@ -1512,6 +1545,7 @@ def _select_prompt_chunks(
     )
 
 
+@feature_gate("neighbors", passthrough="context_chunks")
 def _expand_condition_preamble_prompt_chunks(
     db: Session,
     context_chunks: list[RetrievalResult],
@@ -2221,6 +2255,8 @@ def _chunk_matches_query_aspect(chunk: RetrievalResult, aspect: QueryAspect) -> 
 
 
 def _passes_prompt_score(chunk: RetrievalResult, top_score: float) -> bool:
+    if not features().rerank:
+        return True
     score = _prompt_score(chunk)
     if score < RERANK_PROMPT_THRESHOLD:
         return False
@@ -2588,6 +2624,8 @@ def _confidence_from_results(results: list[RetrievalResult]) -> float:
 
 
 def _required_aspect_ids(retrieval_summary: dict[str, Any]) -> list[str]:
+    if not features().coverage_gate:
+        return []
     aspects = retrieval_summary.get("query_plan", {}).get("aspects", [])
     return [
         str(item.get("aspect_id"))

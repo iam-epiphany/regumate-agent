@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import event
 
 from dataclasses import dataclass
 import json
@@ -49,6 +50,7 @@ def chat_completion_content(
     try:
         with (opener or urllib.request.urlopen)(request, timeout=config.timeout_seconds) as response:
             body = json.loads(response.read().decode("utf-8"))
+            event("llm_usage", model=config.model, usage=body.get("usage"))
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise ChatCompletionError("LLM chat completion request failed") from exc
     try:
@@ -111,6 +113,8 @@ def build_chat_payload(
 
 
 def build_chat_request(config: ChatCompletionConfig, payload: dict[str, Any]) -> urllib.request.Request:
+    event("llm_call", model=config.model, stream=bool(payload.get("stream")),
+          temperature=payload.get("temperature"), max_tokens=payload.get("max_tokens"))
     return urllib.request.Request(
         _chat_completions_endpoint(config.base_url),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

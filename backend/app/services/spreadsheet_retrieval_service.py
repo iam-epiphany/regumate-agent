@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, capture_question, capture_validation, event
 
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ def get_last_spreadsheet_diagnostic() -> dict[str, Any]:
     return dict(current or {})
 
 
+@feature_gate("structured_index")
 def retrieve_spreadsheet_matches(db: Session, aspect: Any, *, limit: int = 5) -> list[RetrievalMatch]:
     _set_last_diagnostic(match_status="not_run", refusal_reason=None)
     filters = dict(getattr(aspect, "table_filters", {}) or {})
@@ -70,6 +72,8 @@ def retrieve_spreadsheet_matches(db: Session, aspect: Any, *, limit: int = 5) ->
         return [_to_match(comparison, aspect, table_task, operation)] if comparison else []
 
     if table_task == "calculate" and operation in {"difference", "sum", "ratio"}:
+        if not features().calculation:
+            return _operand_matches(candidates, aspect)
         calculation = _calculation_match(candidates, aspect, operation)
         return [calculation] if calculation else []
 
@@ -271,6 +275,8 @@ def _indexed_spreadsheet_matches(
             if selectors
             else _unique_numeric_candidates(candidates)[:2]
         )
+        if not features().calculation and selected:
+            return _operand_matches(selected, aspect)
         calculation = _calculation_match_from_selected(
             selected,
             aspect,
@@ -517,6 +523,8 @@ def _transposed_spreadsheet_matches(
                 break
             selected.append(chosen)
         if len(selected) == len(selectors):
+            if not features().calculation:
+                return _operand_matches(selected, aspect)
             calculation = _calculation_match_from_selected(
                 selected,
                 aspect,
@@ -1651,3 +1659,14 @@ def _missing_row_reason(filters: dict[str, Any]) -> str:
     if status == "source_not_found":
         return "指定文件或报表标题未在知识库中找到。"
     return "未检索到可用表格候选。"
+
+
+def _operand_matches(candidates: list[SpreadsheetCandidate], aspect: Any) -> list[RetrievalMatch]:
+    """Expose original cells, never compute or inject the answer in this path."""
+    matches = [_to_match(item, aspect, "lookup", "none", match_status="valid_cell")
+               for item in candidates]
+    for match in matches:
+        match.metadata["calculation_operand_only"] = True
+    _set_valid_diagnostic(matches)
+    event("calculation", enabled=False, operands=len(matches))
+    return matches

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, capture_question, capture_validation, event
 
 import re
 
@@ -21,6 +22,7 @@ _IDENTITY_TERMS = (
 )
 
 
+@feature_gate("structured_index", empty="none")
 def answer_document_identity_question(db: Session, question: str) -> QAResponse | None:
     """Answer explicit identity/version questions from the identity ledger, not RAG prose.
 

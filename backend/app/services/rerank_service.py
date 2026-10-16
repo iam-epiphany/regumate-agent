@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from backend.app.core.rag_features import features, event
 from functools import lru_cache
 import hashlib
 from time import perf_counter, sleep
@@ -69,6 +70,11 @@ def rerank_candidates(
     if not candidates:
         return []
 
+    if not features().rerank:
+        event("rerank", enabled=False, candidates=len(candidates))
+        return [RerankedChunk(candidate=item, rerank_score=float(item.score)) for item in candidates[:limit]]
+    event("rerank", enabled=True, candidates=len(candidates))
+
     limited_candidates = candidates[: max(limit * 2, limit)]
     texts = [_rerank_text(candidate) for candidate in limited_candidates]
     cache = _rerank_score_cache()
@@ -119,6 +125,10 @@ def rerank_candidate_groups(
 
     if not questions or len(questions) != len(candidate_groups) or len(questions) != len(limits):
         raise RerankServiceError("questions, candidate_groups and limits must be equally sized")
+    if not features().rerank:
+        return [rerank_candidates(question=q, candidates=c, limit=n)
+                for q, c, n in zip(questions, candidate_groups, limits, strict=True)]
+    event("rerank", enabled=True, groups=len(questions), candidates=sum(map(len, candidate_groups)))
     cache = _rerank_score_cache()
     scored: list[list[tuple[float, VectorSearchResult]]] = []
     missing_pairs: list[list[str]] = []

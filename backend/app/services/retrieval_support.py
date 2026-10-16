@@ -9,6 +9,7 @@ rag_service imports its public entries from here.
 """
 
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, capture_question, capture_validation, event
 
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -75,6 +76,10 @@ from backend.app.services.spreadsheet_retrieval_service import (
     retrieve_spreadsheet_matches,
 )
 from backend.app.services.vector_store_service import VectorStoreError
+from backend.app.services.retrieval_advisor_service import review_coverage
+from backend.app.services.reference_resolver_service import (
+    ResolvedReference, fallback_references, recognize_references, resolve_references,
+)
 
 CONTEXT_CHUNK_CHAR_LIMIT = 1200
 ASPECT_QUERY_FUSION_METHOD = "aspect_query_rrf_then_bge_rerank"
@@ -181,7 +186,7 @@ def _prepare_aspect_retrieval(
 
     table_matches: list[RetrievalMatch] = []
     table_diagnostics: list[dict[str, Any]] = []
-    if aspect.modality in {"table", "mixed"}:
+    if features().structured_index and aspect.modality in {"table", "mixed"}:
         table_started_at = perf_counter()
         table_matches = retrieve_spreadsheet_matches(db, aspect, limit=FINAL_CITATION_LIMIT)
         spreadsheet_diagnostic = get_last_spreadsheet_diagnostic()
@@ -490,6 +495,8 @@ def _finish_aspect_matches(
     # ``candidates`` is already ordered by weighted RRF above.  Re-sorting it
     # by one raw vector score here would undo multi-query fusion and starve
     # exact option/statement hits in long documents before cross-encoding.
+    if not features().rerank:
+        candidates.sort(key=lambda item: fusion_scores.get(item.chunk_id, 0.0), reverse=True)
     if rerank_input is None:
         effective_rerank_limit = _effective_rerank_candidate_limit(
             aspect,
@@ -1120,6 +1127,7 @@ def _normalize_document_anchor(value: str) -> str:
     return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", normalized)
 
 
+@feature_gate("supplements")
 def _exact_anchor_support_matches(
     db: Session,
     aspect: QueryAspect,
@@ -1339,6 +1347,7 @@ _LIST_COMPLETENESS_MARKERS = (
 _LIST_COMPLETENESS_LIMIT = 6
 
 
+@feature_gate("crag")
 def _intent_gap_supplement(
     db: Session,
     aspect: QueryAspect,
@@ -1346,7 +1355,7 @@ def _intent_gap_supplement(
     *,
     document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
 ) -> list[RetrievalMatch]:
-    """Deterministic clause recovery for keywords missing from the evidence.
+    """Model-assisted gap review with deterministic, document-scoped recovery.
 
     Generic and bounded by the already-recalled documents: a term the user or
     the planner named (aspect keywords, quoted phrases) that is absent from
@@ -1358,6 +1367,14 @@ def _intent_gap_supplement(
     if not hasattr(db, "scalars") or not matches:
         return []
     question = str(aspect.question or "")
+    review, review_mode = review_coverage(question, [str(match.evidence_text or "") for match in matches])
+    event("crag_review", aspect_id=aspect.aspect_id, mode=review_mode,
+          status=review.status if review else "uncertain")
+    for match in matches:
+        match.metadata["crag_review"] = {
+            "mode": review_mode, "status": review.status if review else "uncertain",
+            "scope_terms": [term.strip() for term in review.scope_terms] if review else [],
+        }
     terms: set[str] = set()
     for keyword in aspect.keywords:
         cleaned = re.sub(r"\s+", "", str(keyword or ""))
@@ -1384,8 +1401,6 @@ def _intent_gap_supplement(
             if negation in question:
                 terms.add(negation)
                 fallback_terms.add(negation)
-    if not terms:
-        return []
     evidence_text = "\n".join(str(match.evidence_text or "") for match in matches[:24])
     normalized_evidence = _normalize_exact_support_text(evidence_text)
     missing = [
@@ -1393,8 +1408,15 @@ def _intent_gap_supplement(
         for term in sorted(terms)
         if _normalize_exact_support_text(term) not in normalized_evidence
     ]
+    # Keep the rule budget intact; advisory terms get a separate bounded tail.
+    missing = missing[:_INTENT_GAP_PATTERN_LIMIT]
+    if review and review.status != "sufficient":
+        missing.extend(term.strip() for term in review.missing_terms
+                       if term.strip() not in missing
+                       and _normalize_exact_support_text(term) not in normalized_evidence)
     if not missing:
         return []
+    event("crag_trigger", function="intent_gap", aspect_id=aspect.aspect_id)
     scope_document_ids = {
         str(match.citation.document_id or "")
         for match in matches
@@ -1410,9 +1432,10 @@ def _intent_gap_supplement(
     existing_ids = {match.citation.chunk_id for match in matches}
     supplements: list[RetrievalMatch] = []
     matched_patterns: set[str] = set()
-    for term in missing[: _INTENT_GAP_PATTERN_LIMIT]:
+    for term in missing:
         normalized_term = _normalize_exact_support_text(term)
         is_fallback_term = term in fallback_terms
+        model_term = term not in terms
         for document_chunks in chunks_by_document.values():
             for chunk in document_chunks:
                 if chunk.index_status != "indexed" or chunk.chunk_id in existing_ids:
@@ -1420,6 +1443,16 @@ def _intent_gap_supplement(
                 searchable = str(chunk.text or chunk.embedding_text or "")
                 if normalized_term not in _normalize_exact_support_text(searchable):
                     continue
+                if model_term and review and review.scope_terms:
+                    data = _chunk_metadata(chunk)
+                    scoped_text = "\n".join(str(value or "") for value in (
+                        searchable, chunk.source_file, chunk.section_title,
+                        data.get("source_title"), data.get("source_filename"), data.get("title"),
+                    ))
+                    normalized_scope = _normalize_exact_support_text(scoped_text)
+                    if not all(_normalize_exact_support_text(scope) in normalized_scope
+                               for scope in review.scope_terms):
+                        continue
                 if is_fallback_term and not any(
                     action in searchable for action in _INTENT_GAP_FALLBACK_ACTIONS
                 ):
@@ -1437,6 +1470,11 @@ def _intent_gap_supplement(
                 match.metadata["evidence_role"] = "intent_gap_support"
                 match.metadata["fusion_method"] = "intent_gap_lexical"
                 match.metadata["intent_gap_term"] = term
+                match.metadata["intent_gap_term_source"] = "model" if model_term else "rule"
+                match.metadata["crag_review"] = {
+                    "mode": review_mode, "status": review.status if review else "uncertain",
+                    "scope_terms": [scope.strip() for scope in review.scope_terms] if review else [],
+                }
                 supplements.append(match)
                 existing_ids.add(chunk.chunk_id)
                 matched_patterns.add(term)
@@ -1444,6 +1482,7 @@ def _intent_gap_supplement(
     return supplements
 
 
+@feature_gate("crag")
 def _list_completeness_supplement(
     db: Session,
     aspect: QueryAspect,
@@ -1474,6 +1513,7 @@ def _list_completeness_supplement(
             topic_terms.append(cleaned)
     if not topic_terms:
         return []
+    event("crag_trigger", function="list_completeness", aspect_id=aspect.aspect_id)
     scope_document_ids = {
         str(match.citation.document_id or "")
         for match in matches
@@ -1536,6 +1576,7 @@ def _looks_like_enumeration_clause(text: str) -> bool:
     return circled_items >= 3
 
 
+@feature_gate("supplements")
 def _definition_clause_support_matches(
     db: Session,
     aspect: QueryAspect,
@@ -1712,6 +1753,7 @@ def _definition_clause_chunks(
     return found
 
 
+@feature_gate("supplements")
 def _bounded_document_lexical_support_matches(
     db: Session,
     aspect: QueryAspect,
@@ -1831,6 +1873,7 @@ def _bounded_document_lexical_support_matches(
     return [item[2] for item in supplements[:6]]
 
 
+@feature_gate("supplements")
 def _condition_continuation_support_matches(
     anchor_chunk: Any,
     document_chunks: list[Any],
@@ -2114,6 +2157,7 @@ def _bounded_required_numeric_terms(aspect: QueryAspect) -> list[str]:
     return list(dict.fromkeys(terms))
 
 
+@feature_gate("supplements")
 def _bounded_formula_support_matches(
     db: Session,
     aspect: QueryAspect,
@@ -2211,6 +2255,7 @@ def _critical_lexical_terms(text: str) -> list[str]:
     return list(dict.fromkeys(term for term in terms if len(_normalize_exact_support_text(term)) >= 2))
 
 
+@feature_gate("supplements")
 def _mcq_exact_support_matches(
     db: Session,
     aspect: QueryAspect,
@@ -2956,6 +3001,7 @@ def _normalize_for_dedupe(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
+@feature_gate("neighbors", passthrough="matches")
 def _expand_neighbor_matches(
     db: Session,
     question: str,
@@ -2993,6 +3039,16 @@ def _expand_neighbor_matches(
     selected: list[RetrievalMatch] = []
     selected_chunk_ids: set[str] = set()
 
+    # Inspect actual reranked hits once, rather than calling a model for each
+    # neighbour. Dynamic spreadsheet evidence keeps its deterministic path.
+    anchors_by_id = {
+        chunk.chunk_id: chunk for chunks in chunks_by_document.values() for chunk in chunks
+    }
+    anchors = [anchors_by_id[match.citation.chunk_id] for match in matches
+               if match.citation.chunk_id in anchors_by_id and not match.metadata.get("dynamic_table_evidence")
+               and match.citation.chunk_type not in {"table_cell", "table_calculation"}]
+    hints_by_id = recognize_references(anchors) if features().references else {}
+
     for match in matches:
         if match.metadata.get("dynamic_table_evidence") or match.citation.chunk_type in {"table_cell", "table_calculation"}:
             selected.append(match)
@@ -3004,11 +3060,23 @@ def _expand_neighbor_matches(
         selected_chunk_ids.add(match.citation.chunk_id)
 
         document_chunks = chunks_by_document.get(match.citation.document_id, [])
+        anchor = anchors_by_id.get(match.citation.chunk_id)
+        reference_edges = (resolve_references(anchor, document_chunks, hints_by_id.get(anchor.chunk_id, []))
+                           if anchor is not None and features().references else [])
+        edges_by_id = {edge.chunk.chunk_id: edge for edge in reference_edges}
         added_neighbors = 0
-        for chunk, reason in _neighbor_candidates(match.citation.chunk_id, document_chunks, question):
+        for chunk, reason in _neighbor_candidates(match.citation.chunk_id, document_chunks, question, reference_edges):
             if chunk.chunk_id in selected_chunk_ids:
                 continue
-            selected.append(_match_from_chunk(chunk, match, reason, document_chunks, question))
+            expanded = _match_from_chunk(chunk, match, reason, document_chunks, question)
+            if reason.startswith("referenced_") and chunk.chunk_id in edges_by_id:
+                edge = edges_by_id[chunk.chunk_id]
+                expanded.metadata["reference_resolution"] = {
+                    **edge.hint.model_dump(exclude_none=True), "method": edge.method,
+                    "source_chunk_id": anchor.chunk_id, "target_chunk_id": chunk.chunk_id,
+                    "document_id": chunk.document_id,
+                }
+            selected.append(expanded)
             selected_chunk_ids.add(chunk.chunk_id)
             added_neighbors += 1
             if added_neighbors >= 2:
@@ -3128,6 +3196,7 @@ def _neighbor_candidates(
     anchor_chunk_id: str,
     chunks: list[DocumentChunk],
     question: str,
+    reference_edges: list[ResolvedReference] | None = None,
 ) -> list[tuple[DocumentChunk, str]]:
     by_chunk_id = {chunk.chunk_id: chunk for chunk in chunks}
     anchor = by_chunk_id.get(anchor_chunk_id)
@@ -3150,12 +3219,11 @@ def _neighbor_candidates(
             for chunk in chunks
             if parent_number and _section_number(chunk.section_title) == parent_number
         )
-    # Regulation graph edge: “本办法第X条/第X条规定” references point at the
-    # clause the anchor relies on.  Multi-hop retrieval resolves that edge so
-    # an answer citing one clause also sees the clause it references.
+    if reference_edges is None:
+        reference_edges = (resolve_references(anchor, chunks, fallback_references(anchor.text or ""))
+                           if features().references else [])
     candidates.extend(
-        (chunk, "referenced_clause")
-        for chunk in _referenced_clause_chunks(anchor, chunks)
+        (edge.chunk, f"referenced_{edge.hint.kind}") for edge in reference_edges
     )
 
     anchor_index = chunks.index(anchor)
@@ -3170,7 +3238,8 @@ def _neighbor_candidates(
         if chunk.chunk_id != anchor_chunk_id
     ]
     scored = [item for item in scored if item[2] > 0 or item[1] in {"child_section", "parent_section"}]
-    scored.sort(key=lambda item: (item[2], item[1] in {"child_section", "parent_section"}), reverse=True)
+    scored.sort(key=lambda item: (item[1].startswith("referenced_"), item[2],
+                                 item[1] in {"child_section", "parent_section"}), reverse=True)
 
     deduped: list[tuple[DocumentChunk, str]] = []
     seen: set[str] = set()
@@ -3189,35 +3258,16 @@ def _neighbor_relevance(question: str, chunk: DocumentChunk, reason: str) -> flo
         score += 0.2
     if reason in {"previous_chunk", "next_chunk"}:
         score -= 0.05
-    if reason == "referenced_clause":
+    if reason.startswith("referenced_"):
         score += 0.1
     return score
 
 
+@feature_gate("references")
 def _referenced_clause_chunks(anchor: DocumentChunk, chunks: list[DocumentChunk]) -> list[DocumentChunk]:
-    """Chunks whose section title is a clause referenced by the anchor text.
-
-    Regulation clauses cite each other as “第X条/本办法第X条”.  When the
-    anchor mentions such a clause number, the referenced clause is a
-    first-degree graph neighbour even if it sits far away in the document.
-    """
-
-    text = "\n".join(
-        part for part in (anchor.embedding_text or "", anchor.text or "") if part
-    )
-    numbers = set(re.findall(r"第([一二三四五六七八九十百零\d]{1,4})条", text))
-    if not numbers:
-        return []
-    hits: list[DocumentChunk] = []
-    for chunk in chunks:
-        if chunk.chunk_id == anchor.chunk_id:
-            continue
-        section = str(chunk.section_title or "")
-        for number in numbers:
-            if f"第{number}条" in section:
-                hits.append(chunk)
-                break
-    return hits
+    """Compatibility entry; new callers use the typed reference resolver."""
+    return [edge.chunk for edge in resolve_references(anchor, chunks, fallback_references(anchor.text or ""))
+            if edge.hint.kind == "clause"]
 
 
 # "《商业银行资本管理办法》第十条" style citations point at another document's
@@ -3228,6 +3278,7 @@ _CROSS_DOCUMENT_REFERENCE_RE = re.compile(r"《([^》\n]{2,50})》第([一二三
 _CROSS_DOCUMENT_REFERENCE_DOC_LIMIT = 2
 
 
+@feature_gate("references")
 def _cross_document_referenced_chunks(
     db: Session,
     anchor_text: str,
