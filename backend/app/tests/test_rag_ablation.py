@@ -6,14 +6,16 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.core import rag_features as rf
-from backend.app.tests.test_spreadsheet_retrieval_service import db_session, _add_table_row, _aspect
+from backend.app.tests.test_spreadsheet_retrieval_service import _add_table_row, _aspect
+from backend.app.tests.test_spreadsheet_retrieval_service import db_session as db_session
 
 
 @pytest.fixture(autouse=True)
 def clear_features():
-    rf.features.cache_clear()
+    cached_features = rf.features
+    cached_features.cache_clear()
     yield
-    rf.features.cache_clear()
+    cached_features.cache_clear()
 
 
 def test_default_is_full_and_requires_no_experiment_settings(monkeypatch):
@@ -45,13 +47,11 @@ def test_invalid_feature_configuration_is_rejected(monkeypatch, values):
 
 def test_disabled_reexports_do_not_touch_database(monkeypatch):
     from backend.app.services import rag_service, retrieval_support, spreadsheet_retrieval_service
-    selected = replace(rf.RagFeatures(), supplements=False, crag=False, hyde=False,
+    selected = replace(rf.RagFeatures(), supplements=False,
                        references=False, structured_index=False)
     monkeypatch.setattr(rf, "features", lambda: selected)
-    assert rag_service._recover_missing_aspects_from_sibling_documents(None, [], document_chunk_cache={}) is None
-    assert rag_service._hyde_supplement_retrieval(None, [], document_chunk_cache={}) is None
-    assert retrieval_support._intent_gap_supplement(None, None, []) == []
-    assert retrieval_support._referenced_clause_chunks(None, None) == []
+    assert not hasattr(rag_service, "_hyde_supplement_retrieval")
+    assert not hasattr(rag_service, "_recover_missing_aspects_from_sibling_documents")
     assert retrieval_support._cross_document_referenced_chunks(None, None, None) == []
     assert spreadsheet_retrieval_service.retrieve_spreadsheet_matches(None, None) == []
 

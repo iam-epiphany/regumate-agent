@@ -1,0 +1,219 @@
+{
+  "baseline_git": "98fe15f",
+  "removed_service_entries": [
+    {
+      "module": "backend/app/services/answer_generation_service.py",
+      "removed": [
+        "_StreamingClaimExtractor",
+        "_align_claim_aspect_ids",
+        "_claim_chunk_bigram_overlap",
+        "_claim_is_verified",
+        "_covered_aspect_is_denied_by_insufficient_sentence",
+        "_deterministic_aspect_refusal",
+        "_deterministic_mixed_table_answer",
+        "_evidence_bound_regeneration",
+        "_expand_fallback_condition_continuations",
+        "_extract_partial_claims",
+        "_extract_selected_option",
+        "_extractive_fallback",
+        "_failed_claim_indexes",
+        "_fallback_anchor_fragment_variants",
+        "_fallback_anchor_fragments",
+        "_fallback_anchor_hit_sort_key",
+        "_fallback_chunk_anchor_hits",
+        "_fallback_chunk_aspect_ids",
+        "_fallback_chunk_identity",
+        "_fallback_chunk_relevance",
+        "_fallback_chunks_by_aspect",
+        "_fallback_companion_repeats_selected_anchor_coverage",
+        "_fallback_condition_continuation_candidates",
+        "_fallback_condition_marker_score",
+        "_fallback_definition_bonus",
+        "_fallback_effective_excerpt_question",
+        "_fallback_excerpt_related",
+        "_fallback_has_numbered_continuation",
+        "_fallback_has_open_condition_lead",
+        "_fallback_is_primary_core_chunk",
+        "_fallback_needs_condition_continuation",
+        "_fallback_source_title_relevance",
+        "_format_option_evidence_matrix",
+        "_generated_answer_covers_required_aspects",
+        "_has_structured_table_evidence",
+        "_is_aspect_only_failure",
+        "_is_table_context_chunk",
+        "_labelled_answer_part",
+        "_missing_mixed_modalities",
+        "_partial_refused",
+        "_question_soft_anchors",
+        "_read_streaming_llm_content",
+        "_recover_generated_answer_from_partial_content",
+        "_recover_supported_refusal_with_extracts",
+        "_relevant_extractive_excerpt",
+        "_repair_extractive_fallback_by_validation",
+        "_repair_inline_citation_format",
+        "_repair_misaligned_citations",
+        "_report_verified_claims",
+        "_requires_evidence_boundary",
+        "_selected_option_label_present",
+        "_selection_metadata_only_failure",
+        "_soft_anchor_score",
+        "_trusted_extractive_fallback",
+        "_validate_generated_answer",
+        "_validate_mixed_answer",
+        "_validate_no_false_insufficient_aspect_claims",
+        "_validate_required_aspect_coverage",
+        "_validate_selected_option",
+        "_validate_selected_option_format",
+        "append",
+        "is_option_selection_question",
+        "trim_leading_unrelated_clause"
+      ]
+    },
+    {
+      "module": "backend/app/services/query_planner_service.py",
+      "removed": [
+        "_split_merged_llm_aspects"
+      ]
+    },
+    {
+      "module": "backend/app/services/rag_service.py",
+      "removed": [
+        "AspectRetrieval",
+        "QuestionAspect",
+        "_aspect_lexical_score",
+        "_best_non_duplicate_candidate",
+        "_best_shared_candidate",
+        "_chunk_explicit_source_match",
+        "_chunk_match_text",
+        "_chunk_matches_query_aspect",
+        "_chunk_question_coverage",
+        "_condition_continuation_phrases",
+        "_covered_aspect_ids",
+        "_evidence_fit_bonus",
+        "_expand_condition_preamble_prompt_chunks",
+        "_expected_aspects",
+        "_filter_prompt_relevance",
+        "_first_non_duplicate_candidate",
+        "_has_normative_or_definition_marker",
+        "_hyde_hypothetical_clause",
+        "_hyde_search_candidates",
+        "_hyde_supplement_retrieval",
+        "_is_appendix_test_chunk",
+        "_is_duplicate_or_redundant",
+        "_is_structural_support",
+        "_looks_like_condition_preamble",
+        "_looks_like_orphan_condition_continuation",
+        "_match_chunk_to_aspects",
+        "_mcq_prompt_document_coverage_priority",
+        "_normalized_prefix_overlap",
+        "_passes_prompt_score",
+        "_previous_condition_preamble_chunk",
+        "_prompt_aspect_coverage_terms",
+        "_prompt_chunk_covers_aspect",
+        "_prompt_expansion_result_from_chunk",
+        "_query_asks_appendix_test_set",
+        "_recover_missing_aspects_from_sibling_documents",
+        "_section_sort_key",
+        "_sort_prompt_chunks",
+        "_split_compound_coverage_term",
+        "sort_key"
+      ]
+    },
+    {
+      "module": "backend/app/services/regulatory_semantic_grounding_service.py",
+      "removed": [
+        "RegulatorySemanticFrame",
+        "_character_ngrams",
+        "_is_evidence_scope_commentary",
+        "_present",
+        "_semantic_match_text",
+        "_sentences_with_markers",
+        "_substantive_actions",
+        "_verify_risky_claims",
+        "_without_text",
+        "claim_requires_semantic_verifier",
+        "deterministic_semantic_conflicts",
+        "extract_regulatory_semantic_frame",
+        "select_relevant_evidence",
+        "semantic_risk_codes",
+        "to_dict",
+        "validate_regulatory_semantics"
+      ]
+    },
+    {
+      "module": "backend/app/services/retrieval_advisor_service.py",
+      "removed": [
+        "CoverageReview",
+        "_AdviceBudget",
+        "request_advice",
+        "review_coverage",
+        "with_advice_budget",
+        "wrapped"
+      ]
+    },
+    {
+      "module": "backend/app/services/retrieval_service.py",
+      "removed": [
+        "_expanded_domain_terms"
+      ]
+    },
+    {
+      "module": "backend/app/services/retrieval_support.py",
+      "removed": [
+        "_bounded_formula_support_matches",
+        "_exact_anchor_support_matches",
+        "_intent_gap_supplement",
+        "_list_completeness_supplement",
+        "_looks_like_enumeration_clause",
+        "_mcq_reliability_question",
+        "_referenced_clause_chunks",
+        "_retrieve_aspect_matches"
+      ]
+    },
+    {
+      "module": "backend/app/services/spreadsheet_parser.py",
+      "removed": [
+        "_infer_report_type"
+      ]
+    },
+    {
+      "module": "backend/app/services/spreadsheet_retrieval_service.py",
+      "removed": [
+        "_comparable_metric_candidates",
+        "_metric_family"
+      ]
+    }
+  ],
+  "removed_configurations": [
+    "ANSWER_GENERATION_MAX_ATTEMPTS",
+    "ANSWER_GENERATION_STREAM",
+    "ANSWER_GENERATION_TIMEOUT_SECONDS",
+    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS",
+    "ASPECT_GATE_PRE_GENERATION",
+    "LLM_STREAM",
+    "QA_TASK_MAX_RETRIES",
+    "QUERY_PLANNER_TIMEOUT_SECONDS",
+    "RETRIEVAL_ADVISOR_ENABLED",
+    "RETRIEVAL_ADVISOR_MAX_CALLS",
+    "RETRIEVAL_ADVISOR_TIMEOUT_SECONDS",
+    "RETRIEVAL_ADVISOR_TOTAL_BUDGET_SECONDS",
+    "SEMANTIC_GROUNDING_MODE",
+    "SEMANTIC_GROUNDING_TIMEOUT_SECONDS"
+  ],
+  "replaced_controls": [
+    "固定主题加分",
+    "选择题专用业务词组和事实关系特判",
+    "固定银行拒答名单",
+    "固定报表名称和指标分项扩展",
+    "词面否决语义候选",
+    "另一套上下文覆盖判断",
+    "拒答转成功摘录",
+    "重复生成修复与引用重定向",
+    "按固定指标名排除最大比较候选",
+    "把季度标签固定绑定到列号",
+    "固定业务规划示例及其专用方面消息",
+    "固定报表名称元数据表"
+  ],
+  "evaluation_rules_changed": false,
+  "new_multi_agent_framework": false
+}

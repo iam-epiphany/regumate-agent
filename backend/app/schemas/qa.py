@@ -105,6 +105,53 @@ class RetrievalResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EvidenceRequirement(BaseModel):
+    requirement_id: str
+    question: str
+    intent: str = "lookup"
+    target_terms: list[str] = Field(default_factory=list)
+    source_titles: list[str] = Field(default_factory=list)
+    subject_scope: list[str] = Field(default_factory=list)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    selectors: list[dict[str, Any]] = Field(default_factory=list)
+    parent_id: str | None = None
+    selector_index: int | None = None
+
+
+class EvidenceDecision(BaseModel):
+    chunk_id: str
+    requirement_id: str
+    stage: Literal["filtered", "not_selected", "selected", "missing"]
+    reason: str
+
+
+class EvidenceBundle(BaseModel):
+    requirements: list[EvidenceRequirement] = Field(default_factory=list)
+    evidence: list[RetrievalResult] = Field(default_factory=list)
+    coverage: dict[str, list[str]] = Field(default_factory=dict)
+    missing_requirements: list[str] = Field(default_factory=list)
+    decisions: list[EvidenceDecision] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def complete(self) -> bool:
+        return bool(self.requirements) and not self.missing_requirements
+
+
+class ValidationReport(BaseModel):
+    status: Literal["passed", "failed", "not_run", "error"] = "not_run"
+    task_complete: bool = False
+    citation_integrity: bool = False
+    facts_supported: bool = False
+    missing_requirements: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    method: str = "none"
+
+    @property
+    def passed(self) -> bool:
+        return self.status == "passed" and self.task_complete and self.citation_integrity and self.facts_supported
+
+
 class LLMContextPackage(BaseModel):
     query: str
     mode: str = "rag_context"

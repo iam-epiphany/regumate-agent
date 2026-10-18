@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.services import retrieval_support
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -17,11 +18,6 @@ from backend.app.services.answer_generation_service import (
     generate_answer,
 )
 from backend.app.services.document_identity_query_service import answer_document_identity_question
-from backend.app.services.regulatory_semantic_grounding_service import (
-    deterministic_semantic_conflicts,
-    extract_regulatory_semantic_frame,
-    validate_regulatory_semantics,
-)
 from backend.app.services.retrieval_service import RetrievalDiagnostics, filter_candidates_by_metadata
 from backend.app.services.rerank_service import RerankedChunk
 from backend.app.services.retrieval_metadata_filter_service import build_retrieval_metadata_filter
@@ -29,20 +25,16 @@ from backend.app.services.query_planner_service import QueryAspect, QueryPlan, Q
 from backend.app.services.rag_service import (
     AspectRetrieval,
     _audit_citation_payload,
-    _best_non_duplicate_candidate,
-    _best_shared_candidate,
+    _select_prompt_chunks,
+)
+from backend.app.services.retrieval_support import _normalize_exact_support_text
+from backend.app.services.retrieval_support import (
     _bounded_document_lexical_support_matches,
     _bounded_lexical_phrases,
-    _chunk_matches_query_aspect,
-    _exact_anchor_support_matches,
     _mcq_exact_support_matches,
     _mcq_matches_from_reranked,
-    _mcq_reliability_question,
     _mcq_required_exact_terms,
     _mcq_seed_document_ids,
-    _normalize_exact_support_text,
-    _recover_missing_aspects_from_sibling_documents,
-    _select_prompt_chunks,
     _vector_metadata_filter_inputs,
 )
 from backend.app.services.formula_parser_service import (
@@ -119,51 +111,6 @@ def test_explicit_filter_zero_match_never_becomes_unscoped() -> None:
     assert compiled.qdrant_filter()["document_ids"] == []
 
 
-def test_exact_anchor_support_recovers_heading_inside_resolved_document() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    document_id = "DOC-EXACT-ANCHOR"
-    aspect = QueryAspect(
-        aspect_id="approval_heading",
-        question="根据《申请材料目录》，请说明与“中资商业银行分行筹建审批”相关的规定。",
-        search_queries=(QuerySearchQuery("分行筹建审批", "keyword_anchor"),),
-        evidence_need="机构设立事项",
-        keywords=("分行筹建审批",),
-        table_filters={"source_title": "申请材料目录"},
-        explicit_filter_keys=("source_title",),
-    )
-    with Session(engine) as db:
-        db.add(_document(document_id, "申请材料目录", "国家金融监督管理总局"))
-        db.add_all(
-            [
-                DocumentChunk(
-                    chunk_id=f"{document_id}-CHUNK-0001",
-                    document_id=document_id,
-                    text="一、机构设立。1.3 中资商业银行分行筹建审批。",
-                    embedding_text="机构设立 分行筹建审批",
-                    source_file="申请材料目录.pdf",
-                    index_status="indexed",
-                ),
-                DocumentChunk(
-                    chunk_id=f"{document_id}-CHUNK-0002",
-                    document_id=document_id,
-                    text="其他行政许可事项。",
-                    source_file="申请材料目录.pdf",
-                    index_status="indexed",
-                ),
-            ]
-        )
-        db.commit()
-        matches = _exact_anchor_support_matches(
-            db,
-            aspect,
-            [],
-            document_ids={document_id},
-            document_chunk_cache={},
-        )
-
-    assert [match.citation.chunk_id for match in matches] == [f"{document_id}-CHUNK-0001"]
-    assert matches[0].metadata["fusion_method"] == "bounded_document_exact_anchor"
 
 
 def test_bounded_lexical_support_recovers_each_clause_only_inside_resolved_document() -> None:
@@ -342,112 +289,6 @@ def test_bounded_lexical_phrases_extract_unknown_threshold_relation_anchors() ->
     assert "一级资本净额" in phrases
 
 
-def test_sibling_document_recovery_supplements_weak_nonempty_aspect() -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    wrong_document_id = "DOC-WEAK-EXPOSURE"
-    shared_document_id = "DOC-SIBLING-DIRECT"
-    target_chunk_id = f"{shared_document_id}-CHUNK-0001"
-    sibling_chunk_id = f"{shared_document_id}-CHUNK-0002"
-    weak_chunk_id = f"{wrong_document_id}-CHUNK-0001"
-    target_statement = (
-        "大额风险暴露是指商业银行对单一客户或一组关联客户超过其一级资本净额2.5%的风险暴露"
-    )
-    with Session(engine) as db:
-        db.add_all(
-            [
-                _document(wrong_document_id, "风险暴露分类材料", "监管机关"),
-                _document(shared_document_id, "恢复和处置计划示例", "监管机关"),
-                DocumentChunk(
-                    chunk_id=weak_chunk_id,
-                    document_id=wrong_document_id,
-                    text="小微企业风险暴露不得超过规定限额。",
-                    source_file="风险暴露分类材料.pdf",
-                    index_status="indexed",
-                ),
-                DocumentChunk(
-                    chunk_id=target_chunk_id,
-                    document_id=shared_document_id,
-                    text=target_statement,
-                    source_file="恢复和处置计划示例.pdf",
-                    index_status="indexed",
-                ),
-                DocumentChunk(
-                    chunk_id=sibling_chunk_id,
-                    document_id=shared_document_id,
-                    text="处置策略建议应坚持自救为本的基本原则。",
-                    source_file="恢复和处置计划示例.pdf",
-                    index_status="indexed",
-                ),
-            ]
-        )
-        db.commit()
-        threshold_aspect = QueryAspect(
-            aspect_id="threshold",
-            question="商业银行大额风险暴露的门槛是多少？",
-            search_queries=(
-                QuerySearchQuery(
-                    "商业银行大额风险暴露相对一级资本净额的门槛是多少",
-                    "semantic_question",
-                ),
-            ),
-            evidence_need="大额风险暴露门槛",
-            keywords=("大额风险暴露", "一级资本净额"),
-        )
-        strategy_aspect = QueryAspect(
-            aspect_id="strategy",
-            question="处置策略基本原则是什么？",
-            search_queries=(QuerySearchQuery("处置策略建议应坚持自救为本", "semantic_question"),),
-            evidence_need="处置策略原则",
-            keywords=("处置策略", "自救为本"),
-        )
-        retrievals = [
-            AspectRetrieval(
-                aspect=threshold_aspect,
-                candidates=[
-                    RetrievalResult(
-                        chunk_id=weak_chunk_id,
-                        rank=1,
-                        source_doc="风险暴露分类材料.pdf",
-                        text="小微企业风险暴露不得超过规定限额。",
-                        citation_label="[1]",
-                        score=0.8,
-                        metadata={"document_id": wrong_document_id},
-                    )
-                ],
-                diagnostics=[],
-                citation_validation={"checked_chunks": 1, "valid_chunks": 1, "invalid_chunks": 0, "invalid_chunk_ids": []},
-                selected_chunk_ids=[],
-                retrieval_covered=True,
-            ),
-            AspectRetrieval(
-                aspect=strategy_aspect,
-                candidates=[
-                    RetrievalResult(
-                        chunk_id=sibling_chunk_id,
-                        rank=1,
-                        source_doc="恢复和处置计划示例.pdf",
-                        text="处置策略建议应坚持自救为本的基本原则。",
-                        citation_label="[1]",
-                        score=0.9,
-                        metadata={"document_id": shared_document_id},
-                    )
-                ],
-                diagnostics=[],
-                citation_validation={"checked_chunks": 1, "valid_chunks": 1, "invalid_chunks": 0, "invalid_chunk_ids": []},
-                selected_chunk_ids=[],
-                retrieval_covered=True,
-            ),
-        ]
-
-        _recover_missing_aspects_from_sibling_documents(
-            db,
-            retrievals,
-            document_chunk_cache={},
-        )
-
-    assert retrievals[0].candidates[0].chunk_id == target_chunk_id
-    assert retrievals[0].diagnostics[-1]["recovery_mode"] == "supplemented"
 
 
 def test_mcq_lexical_seed_recovers_literal_option_when_vector_matches_are_empty() -> None:
@@ -628,27 +469,6 @@ def test_multiple_choice_evaluator_accepts_common_explicit_label_phrasings(answe
     assert detail["actual_label"] == label
 
 
-def test_mcq_reliability_gate_uses_public_option_facts_instead_of_generic_stem() -> None:
-    aspect = QueryAspect(
-        aspect_id="multiple_choice_evidence",
-        question="关于第三支柱补充披露，下列哪项完整列出了材料要求？",
-        search_queries=(
-            QuerySearchQuery("关于第三支柱补充披露", "keyword_anchor"),
-            QuerySearchQuery(
-                "要求真实性、准确性、完整性、一致性和可比性",
-                "document_style_statement",
-            ),
-            QuerySearchQuery("要求及时性、盈利性和保密性", "document_style_statement"),
-        ),
-        evidence_need="选项事实核验",
-        keywords=("第三支柱",),
-    )
-
-    reliability_question = _mcq_reliability_question(aspect)
-
-    assert "真实性、准确性、完整性、一致性和可比性" in reliability_question
-    assert "及时性、盈利性和保密性" in reliability_question
-    assert "哪项完整列出" not in reliability_question
 
 
 def test_mcq_reliability_gate_evaluates_cross_document_option_facts_separately() -> None:
@@ -799,7 +619,7 @@ def test_mcq_prompt_selection_preserves_cross_document_option_evidence() -> None
 
 
 def test_mcq_required_exact_terms_reject_cross_family_application_material() -> None:
-    statement = "申请书 内容包括但不限于 拟设立中资商业银行 名称 拟设地 注册资本 股权结构 业务范围 基本信息"
+    statement = "申请书 内容包括但不限于 拟设立“中资商业银行” 名称 拟设地 注册资本 股权结构 业务范围 基本信息"
     nonbank_text = "拟设立金融租赁公司名称、拟设地、注册资本、股权结构、业务范围等。"
     bank_text = "拟设立中资商业银行的名称、拟设地、注册资本、股权结构、业务范围等基本信息。"
 
@@ -816,7 +636,7 @@ def test_mcq_required_exact_terms_reject_cross_family_application_material() -> 
     )
 
 
-def test_mcq_required_exact_terms_inherit_family_from_sibling_option_alias() -> None:
+def test_mcq_sibling_options_cannot_inject_subject_scope() -> None:
     aspect = QueryAspect(
         aspect_id="multiple_choice_evidence",
         question="行政许可申请材料选择题",
@@ -833,7 +653,7 @@ def test_mcq_required_exact_terms_inherit_family_from_sibling_option_alias() -> 
 
     required = _mcq_required_exact_terms("申请书列名称、拟设地、注册资本、股权结构和业务范围", aspect)
 
-    assert "中资商业银行" in required
+    assert required == []
 
 
 def test_source_title_filter_normalizes_insurance_alias_and_optional_situation_token() -> None:
@@ -1029,27 +849,6 @@ def test_evaluator_requires_each_item_in_an_includes_conclusion() -> None:
     assert complete["matched"] is True
 
 
-def test_prompt_selection_reuses_one_chunk_for_two_explicit_aspects() -> None:
-    shared = RetrievalResult(
-        chunk_id="C1",
-        rank=1,
-        source_doc="制度.pdf",
-        text="不得以市场事件为由转换账簿；除非产品性质变化，否则账簿转换不可撤销。",
-        citation_label="[1]",
-        score=0.8,
-        metadata={"rerank_score": 0.9},
-    )
-    aspect = QueryAspect(
-        aspect_id="condition_2",
-        question="请说明与“除非产品性质变化，否则账簿转换不可撤销”相关的规定。",
-        search_queries=(QuerySearchQuery("账簿转换不可撤销", "keyword_anchor"),),
-        evidence_need="转换例外",
-        keywords=("账簿转换不可撤销",),
-    )
-
-    reused = _best_shared_candidate([shared], [shared], aspect)
-
-    assert reused is shared
 
 
 def test_mixed_table_locator_does_not_filter_regulation_vectors() -> None:
@@ -1074,7 +873,7 @@ def test_mixed_table_locator_does_not_filter_regulation_vectors() -> None:
     assert set(table_scoped) == {"source_title", "year"}
 
 
-def test_exact_support_normalization_unifies_common_insurance_aliases() -> None:
+def test_exact_support_normalization_does_not_encode_business_aliases() -> None:
     left = _normalize_exact_support_text(
         "万能险、投连险、变额年金及中短存续期产品"
     )
@@ -1082,7 +881,7 @@ def test_exact_support_normalization_unifies_common_insurance_aliases() -> None:
         "万能保险、投资连结保险、变额年金及中短存续期保险产品"
     )
 
-    assert left == right
+    assert left != right
 
 
 def test_prompt_aspect_gate_preserves_bounded_lexical_support() -> None:
@@ -1105,7 +904,8 @@ def test_prompt_aspect_gate_preserves_bounded_lexical_support() -> None:
         metadata={"evidence_role": "bounded_lexical_support"},
     )
 
-    assert _chunk_matches_query_aspect(chunk, aspect)
+    assert _select_prompt_chunks(aspect.question, QueryPlan(aspect.question, (aspect,), "test"),
+        [AspectRetrieval(aspect, [chunk], [], {}, [])])[0] == [chunk]
 
 
 @dataclass
@@ -1147,70 +947,10 @@ def test_qdrant_filter_applies_same_scope_to_prefetch() -> None:
     assert "index_version" in conditions
 
 
-def test_semantic_frames_reject_negation_and_modality_changes() -> None:
-    negated_claim = extract_regulatory_semantic_frame("商业银行不得报送该项目。")
-    positive_evidence = extract_regulatory_semantic_frame("商业银行应当报送该项目。")
-    assert "polarity_conflict" in deterministic_semantic_conflicts(negated_claim, positive_evidence)
-
-    mandatory_claim = extract_regulatory_semantic_frame("商业银行必须提交说明。")
-    permissive_evidence = extract_regulatory_semantic_frame("商业银行可以提交说明。")
-    assert "modality_strengthened" in deterministic_semantic_conflicts(mandatory_claim, permissive_evidence)
 
 
-def test_semantic_validation_focuses_on_relevant_cited_sentence() -> None:
-    claim = AnswerClaim(
-        text="消费金融公司可以在全国范围内开展业务。[1]",
-        citation_ids=["[1]"],
-        role="conclusion",
-        aspect_ids=["multiple_choice_evidence"],
-    )
-    evidence = RetrievalResult(
-        chunk_id="RULE-FOCUS",
-        rank=1,
-        source_doc="rule.pdf",
-        text=(
-            "消费金融公司应当建立风险管理制度。"
-            "第十四条 消费金融公司可以在全国范围内开展业务。"
-            "符合条件的公司可以申请经营其他人民币业务。"
-        ),
-        citation_label="[1]",
-    )
-
-    result = validate_regulatory_semantics([claim], [evidence], mode="risk_based")
-
-    assert result["semantic_passed"] is True
-    verdict = result["claim_verdicts"][0]
-    assert verdict["verdict"] == "supported"
-    assert "第十四条" in verdict["evidence_focus"]
-    assert "建立风险管理制度" not in verdict["evidence_focus"]
 
 
-def test_multiple_choice_evidence_scope_commentary_is_not_a_regulatory_claim(monkeypatch) -> None:
-    from backend.app.services import regulatory_semantic_grounding_service as service
-
-    monkeypatch.setattr(
-        service,
-        "_verify_risky_claims",
-        lambda _items: (_ for _ in ()).throw(AssertionError("verifier should not be called")),
-    )
-    claim = AnswerClaim(
-        text="其他选项在知识库中无相关证据，无法判断其正确性。[1]",
-        citation_ids=["[1]"],
-        role="explanation",
-        aspect_ids=["multiple_choice_evidence"],
-    )
-    evidence = RetrievalResult(
-        chunk_id="RULE-SCOPE",
-        rank=1,
-        source_doc="rule.pdf",
-        text="银行业金融机构应当在十个工作日内回函。",
-        citation_label="[1]",
-    )
-
-    result = validate_regulatory_semantics([claim], [evidence], mode="risk_based")
-
-    assert result["semantic_passed"] is True
-    assert result["claim_verdicts"][0]["validation_mode"] == "deterministic_scope_commentary"
 
 
 def test_active_document_metadata_repairs_legacy_vector_payload(monkeypatch) -> None:
@@ -1293,53 +1033,16 @@ def test_document_snapshot_cache_reuses_and_invalidates_chunk_snapshot() -> None
     rag_service.clear_document_snapshot_cache()
     db = _DB([chunk])
 
-    first = rag_service._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
-    second = rag_service._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
+    first = retrieval_support._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
+    second = retrieval_support._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
     assert db.calls == 1
     assert first["DOC-CACHE"][0].chunk_id == second["DOC-CACHE"][0].chunk_id
 
     rag_service.clear_document_snapshot_cache({"DOC-CACHE"})
-    rag_service._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
+    retrieval_support._chunks_by_document(db, {"DOC-CACHE"}, document_chunk_cache={})
     assert db.calls == 2
 
 
-def test_risk_claim_uses_one_structured_verifier_call(monkeypatch) -> None:
-    from backend.app.services import regulatory_semantic_grounding_service as service
-
-    calls = []
-
-    def fake_verify(items):
-        calls.append(items)
-        return (
-            [
-                {
-                    "claim_index": 1,
-                    "verdict": "supported",
-                    "reason_codes": [],
-                    "evidence_snippet": "仅当完成审批时方可办理",
-                    "reason": "claim保留了条件",
-                }
-            ],
-            "completed",
-        )
-
-    monkeypatch.setattr(service, "_verify_risky_claims", fake_verify)
-    claim = AnswerClaim(
-        text="仅当完成审批时方可办理。[1]",
-        citation_ids=["[1]"],
-        role="conclusion",
-    )
-    evidence = RetrievalResult(
-        chunk_id="RISK-1",
-        rank=1,
-        source_doc="rule.pdf",
-        text="仅当完成审批时方可办理，但特定情形除外。",
-        citation_label="[1]",
-    )
-    result = validate_regulatory_semantics([claim], [evidence], mode="risk_based")
-    assert result["semantic_passed"] is True
-    assert result["verifier_status"] == "completed"
-    assert len(calls) == 1
 
 
 def test_mixed_answer_does_not_take_table_only_early_exit(monkeypatch) -> None:
@@ -1393,7 +1096,7 @@ def test_mixed_answer_does_not_take_table_only_early_exit(monkeypatch) -> None:
     )
     assert result.answer_type == "mixed_grounded"
     assert not result.refused
-    assert result.grounding_validation["mixed_evidence_complete"] is True
+    assert result.grounding_validation["task_complete"] is True
 
 
 def test_answer_claim_remains_backward_compatible() -> None:
@@ -1510,71 +1213,3 @@ def test_source_title_filter_ignores_human_readable_file_format_suffix() -> None
         )
 
     assert compiled.document_ids == ("DOC-1",)
-
-
-def test_prompt_core_prefers_explicit_condition_match_over_generic_higher_score() -> None:
-    aspect = QueryAspect(
-        aspect_id="audit_requirement",
-        question="请说明与“商业银行应每年对划分政策和程序开展内部审计”相关的规定。",
-        search_queries=(QuerySearchQuery("内部审计", "keyword_anchor", "test"),),
-        evidence_need="内部审计频率和留档要求",
-        keywords=("商业银行", "内部审计", "留档备查"),
-    )
-    generic = RetrievalResult(
-        chunk_id="GENERIC",
-        rank=1,
-        score=0.99,
-        source_doc="rules.pdf",
-        text="商业银行应建立内部审计制度并完善治理机制。",
-        citation_label="[1]",
-        metadata={},
-    )
-    exact = RetrievalResult(
-        chunk_id="EXACT",
-        rank=2,
-        score=0.8,
-        source_doc="rules.pdf",
-        text="商业银行应每年对划分政策和程序开展内部审计，内部审计结果需留档备查。",
-        citation_label="[2]",
-        metadata={},
-    )
-
-    selected = _best_non_duplicate_candidate([generic, exact], [], aspect)
-
-    assert selected is exact
-
-
-def test_select_relevant_evidence_keeps_all_related_sentences() -> None:
-    """多情形 claim 的相关证据句全部保留（不能只留最相关 1 句）。"""
-    from backend.app.services.regulatory_semantic_grounding_service import select_relevant_evidence
-
-    claim = (
-        "无法生存触发事件指下列两种情形中的较早发生者："
-        "（1）国家金融监督管理总局认定若不进行减记或转股，该商业银行将无法生存；"
-        "（2）相关部门认定若不进行公共部门注资或提供同等效力的支持，该商业银行将无法生存。"
-    )
-    evidence = (
-        "（六）持续经营触发事件和无法生存触发事件。"
-        "无法生存触发事件是指下列两种情形中的较早发生者："
-        "1.国家金融监督管理总局认定若不进行减记或转股，该商业银行将无法生存；"
-        "2.相关部门认定若不进行公共部门注资或提供同等效力的支持，该商业银行将无法生存。"
-    )
-    focused = select_relevant_evidence(claim, evidence)
-    assert "国家金融监督管理总局认定" in focused
-    assert "相关部门认定" in focused
-
-
-def test_select_relevant_evidence_still_excludes_unrelated_sentences() -> None:
-    """同 chunk 的无关规则句仍被排除（聚焦语义保持）。"""
-    from backend.app.services.regulatory_semantic_grounding_service import select_relevant_evidence
-
-    claim = "消费金融公司应当建立风险管理制度。"
-    evidence = (
-        "消费金融公司应当建立风险管理制度。"
-        "第十四条 消费金融公司可以在全国范围内开展业务。"
-        "符合条件的公司可以申请经营其他人民币业务。"
-    )
-    focused = select_relevant_evidence(claim, evidence)
-    assert "建立风险管理制度" in focused
-    assert "开展业务" not in focused
-    assert "申请经营其他人民币业务" not in focused

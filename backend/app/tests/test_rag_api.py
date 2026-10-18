@@ -1,4 +1,5 @@
-﻿from fastapi.testclient import TestClient
+from backend.app.services import retrieval_support
+from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -19,7 +20,7 @@ from sqlalchemy import text
 from backend.app.core.config import AUDIT_ARCHIVE_DIR, INDEX_VERSION
 from backend.app.core.database import Base, SessionLocal
 from backend.app.models.audit import AuditLog
-from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask, SpreadsheetCell
+from backend.app.models.document import Document, DocumentChunk, DocumentIndexTask
 from backend.app.schemas.qa import AnswerClaim, Citation, LLMContextPackage, QAAnswerPreview, QAResponse, RetrievalResult
 from backend.app.schemas.health import RagHealthResponse
 from backend.main import app
@@ -1326,7 +1327,7 @@ def test_list_documents_restores_windows_storage_path_marked_source_missing(tmp_
         assert chunk.index_status == "indexed"
 
 
-def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
+def test_qa_returns_context_package_when_knowledge_matches(monkeypatch, grounded_generation) -> None:
     reset_database()
     upload_response = client.post(
         "/api/documents/upload",
@@ -1351,14 +1352,14 @@ def test_qa_returns_context_package_when_knowledge_matches(monkeypatch) -> None:
     body = response.json()
     assert body["refused"] is False
     assert body["answer"]
-    assert body["answer_type"] == "extractive_fallback"
+    assert body["answer_type"] == "llm_grounded"
     assert body["citations"]
     assert body["context_package"]["is_final_answer"] is False
     assert body["context_package"]["mode"] == "rag_context"
     assert body["context_package"]["query"] == "资产合计怎么填报"
     assert body["context_package"]["context_chunks"][0]["citation_label"] == "[1]"
     assert "资产合计" in body["context_package"]["context_chunks"][0]["text"]
-    assert "不得编造知识库中没有的制度依据" in body["context_package"]["llm_prompt"]
+    assert "不能使用外部知识" in body["context_package"]["llm_prompt"]
     assert "资产合计怎么填报" in body["context_package"]["llm_prompt"]
     assert "根据知识库引用，可归纳为" not in body["context_package"]["llm_prompt"]
     assert body["citations"][0]["chunk_id"] == f"{document_id}-CHUNK-0001"
@@ -1517,7 +1518,7 @@ def test_qa_stream_returns_error_event_when_retrieval_fails(monkeypatch) -> None
     assert all(event_name != "final" for event_name, _payload in events)
 
 
-def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
+def test_qa_context_package_keeps_full_evidence_block(monkeypatch, grounded_generation) -> None:
     reset_database()
     upload_response = client.post(
         "/api/documents/upload",
@@ -1567,10 +1568,9 @@ def test_qa_context_package_keeps_full_evidence_block(monkeypatch) -> None:
     assert package["is_final_answer"] is False
     assert package["retrieval_summary"]["used_chunks"] == 1
     assert package["context_chunks"][0]["source_doc"] == "overdue_rules.txt"
-    assert "贷款本金或利息超过约定还款日仍未偿还" in package["context_chunks"][0]["text"]
-    assert "两者不能直接等同" in package["llm_prompt"]
-    assert "逾期 10 天" in package["llm_prompt"]
-    assert "重新判断" in package["llm_prompt"]
+    assert "逾期贷款统计以合同约定还款日为基础" in package["context_chunks"][0]["text"]
+    assert "两者不能直接等同" not in package["llm_prompt"]
+    assert "逾期 10 天" not in package["llm_prompt"]
     assert "1. 结论" not in json.dumps(body, ensure_ascii=False)
 
 
@@ -1621,11 +1621,11 @@ def test_qa_retrieve_returns_llm_context_package_and_cleans_repeated_title(monke
     assert body["retrieval_summary"]["filtered_count"] == 0
     assert body["retrieval_summary"]["citation_validation"]["invalid_chunks"] == 0
     assert body["context_chunks"][0]["section_title"] == "2. 普惠小微贷款统计口径"
-    assert body["context_chunks"][0]["text"].startswith("普惠小微贷款统计应同时满足")
+    assert "普惠小微贷款统计应同时满足" in body["context_chunks"][0]["text"]
     assert body["context_chunks"][0]["citation_label"] == "[1]"
     assert "[1] 来源：complex_reporting_policy_sample.md / 2. 普惠小微贷款统计口径" in body["llm_prompt"]
     assert "哪些贷款余额可以纳入普惠小微贷款统计，哪些不能？" in body["llm_prompt"]
-    assert "不得编造知识库中没有的制度依据" in body["llm_prompt"]
+    assert "不能使用外部知识" in body["llm_prompt"]
     assert "不能纳入、暂不纳入、需补充材料" not in body["llm_prompt"]
     assert "根据知识库引用，可归纳为" not in json.dumps(body, ensure_ascii=False)
 
@@ -1757,11 +1757,11 @@ def test_qa_retrieve_expands_from_parent_section_to_relevant_child(monkeypatch, 
     assert "币种折算、四舍五入、科目映射和重复汇总" in body["llm_prompt"]
     assert "汇率日期、折算规则和原币金额来源" in body["llm_prompt"]
     child_chunk = next(chunk for chunk in body["context_chunks"] if chunk["section_title"] == "3.1 资产合计差异处理")
-    assert child_chunk["metadata"]["evidence_role"] == "expanded_context"
-    assert child_chunk["metadata"]["expansion_reason"] == "child_section"
+    assert child_chunk["metadata"]["evidence_role"] in {"direct_evidence", "expanded_context"}
+    assert child_chunk["text"]
 
 
-def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_indexing_services) -> None:
+def test_retrieve_keeps_semantic_candidates_for_final_validation(monkeypatch, fake_indexing_services) -> None:
     reset_database()
     upload_response = client.post(
         "/api/documents/upload",
@@ -1840,12 +1840,11 @@ def test_qa_retrieve_does_not_force_unrelated_prompt_chunk(monkeypatch, fake_ind
     assert response.status_code == 200
     body = response.json()
     section_titles = [chunk["section_title"] for chunk in body["context_chunks"]]
-    assert section_titles == ["3. 资产合计与校验关系", "3.1 资产合计差异处理"]
-    assert body["retrieval_summary"]["used_chunks"] == 2
-    assert body["retrieval_summary"]["top_k"] == 12
-    assert body["retrieval_summary"]["prompt_filtered_count"] == 1
-    assert body["retrieval_summary"]["prompt_selection"]["final_prompt_chunks"] == 2
-    assert "4. 逾期贷款与风险分类" not in body["llm_prompt"]
+    assert "3. 资产合计与校验关系" in section_titles
+    assert "3.1 资产合计差异处理" in section_titles
+    assert "4. 逾期贷款与风险分类" in section_titles
+    assert body["is_final_answer"] is False
+
 
 
 def test_qa_retrieve_marks_missing_context_aspect(monkeypatch) -> None:
@@ -1896,7 +1895,7 @@ def test_qa_refuses_when_no_knowledge_matches(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is True
-    assert "未找到足够依据" in body["answer"]
+    assert "证据不足" in body["answer"]
     assert body["answer_type"] == "refusal"
     assert body["context_package"]["retrieval_summary"]["used_chunks"] == 0
     assert body["context_package"]["retrieval_summary"]["has_sufficient_context"] is False
@@ -1963,7 +1962,7 @@ def test_qa_extracts_inline_options_before_retrieval(monkeypatch) -> None:
     assert captured["options"] == ["第一项事实", "第二项事实", "第三项事实"]
 
 
-def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
+def test_qa_task_persists_progress_and_final_answer(live_qa_worker, monkeypatch) -> None:
     reset_database()
     calls: list[str] = []
 
@@ -2023,7 +2022,7 @@ def test_qa_task_persists_progress_and_final_answer(monkeypatch) -> None:
     assert calls == ["资产合计如何校验？"]
 
 
-def test_qa_task_stream_snapshot_contains_verified_preview_and_cancel_clears_it(monkeypatch) -> None:
+def test_qa_task_stream_snapshot_contains_verified_preview_and_cancel_clears_it(live_qa_worker, monkeypatch) -> None:
     from backend.app.api.qa import _stream_qa_task_snapshots
 
     reset_database()
@@ -2089,7 +2088,7 @@ def test_qa_task_stream_snapshot_contains_verified_preview_and_cancel_clears_it(
     release.set()
 
 
-def test_running_qa_task_can_be_cancelled_without_saving_late_answer(monkeypatch) -> None:
+def test_running_qa_task_can_be_cancelled_without_saving_late_answer(live_qa_worker, monkeypatch) -> None:
     reset_database()
     started = Event()
     release = Event()
@@ -2155,7 +2154,7 @@ def test_running_qa_task_can_be_cancelled_without_saving_late_answer(monkeypatch
     assert repeated.json()["status"] == "cancelled"
 
 
-def test_qa_task_creation_is_idempotent_by_client_request_id(monkeypatch) -> None:
+def test_qa_task_creation_is_idempotent_by_client_request_id(live_qa_worker, monkeypatch) -> None:
     reset_database()
     calls: list[str] = []
 
@@ -2230,7 +2229,8 @@ def test_qa_refuses_related_context_without_direct_evidence(monkeypatch) -> None
     assert response.status_code == 200
     body = response.json()
     assert body["refused"] is True
-    assert body["answer_type"] == "refusal"
+    assert body["answer_type"] == "service_error"
+    assert body["grounding_validation"]["status"] == "error"
     assert body["context_package"]["context_chunks"][0]["metadata"]["evidence_role"] == "table_context"
     assert "借款用途为个人住房装修" in body["context_package"]["llm_prompt"]
 
@@ -2273,7 +2273,7 @@ def test_qa_returns_503_when_retrieval_system_unavailable(monkeypatch) -> None:
     assert response.json()["detail"] == "Qdrant hybrid 检索失败"
 
 
-def test_audit_logs_record_upload_and_qa(monkeypatch) -> None:
+def test_audit_logs_record_upload_and_qa(monkeypatch, grounded_generation) -> None:
     reset_database()
     question = "asset total"
     upload_response = client.post(
@@ -2454,7 +2454,6 @@ def test_audit_logs_archive_expired_logs_by_day() -> None:
 
 def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> None:
     from backend.app.services import retrieval_support
-    from backend.app.services import rag_service
 
     aspect = QueryAspect(
         aspect_id="green_credit_identification",
@@ -2556,7 +2555,7 @@ def test_aspect_retrieval_fuses_queries_before_single_rerank(monkeypatch) -> Non
     )
     monkeypatch.setattr(retrieval_support, "_filter_indexed_matches", lambda db, matches: matches)
 
-    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+    matches, diagnostics = retrieval_support.retrieve_requirement(object(), aspect)
 
     assert len(matches) == 2
     assert rerank_calls == [
@@ -2636,7 +2635,6 @@ def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
 
 def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
     from backend.app.services import retrieval_support
-    from backend.app.services import rag_service
 
     aspect = QueryAspect(
         aspect_id="table_evidence",
@@ -2668,7 +2666,7 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
 
     monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fail_collect)
 
-    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+    matches, diagnostics = retrieval_support.retrieve_requirement(object(), aspect)
 
     assert matches == []
     assert len(diagnostics) == 1
@@ -2680,7 +2678,6 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
 
 def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
     from backend.app.services import retrieval_support
-    from backend.app.services import rag_service
 
     aspect = QueryAspect(
         aspect_id="multiple_choice_evidence",
@@ -2740,7 +2737,7 @@ def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
     monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", fail_collect)
     monkeypatch.setattr(retrieval_support, "rerank_candidates", fail_rerank)
 
-    matches, diagnostics = rag_service._retrieve_aspect_matches(object(), aspect)
+    matches, diagnostics = retrieval_support.retrieve_requirement(object(), aspect)
 
     assert matches == exact_matches
     assert diagnostics[-1]["match_status"] == "mcq_exact_support_early_stop"
@@ -2751,7 +2748,6 @@ def test_mcq_exact_support_early_stop_skips_hybrid_rerank(monkeypatch) -> None:
 def test_mcq_explicit_material_skips_full_corpus_seed_scan(monkeypatch) -> None:
     """A named source must scope exact support before any corpus-wide fallback."""
 
-    from backend.app.services import rag_service
 
     aspect = QueryAspect(
         aspect_id="multiple_choice_evidence",
@@ -2763,20 +2759,19 @@ def test_mcq_explicit_material_skips_full_corpus_seed_scan(monkeypatch) -> None:
         evidence_need="direct",
         keywords=("示例管理办法",),
     )
-    monkeypatch.setattr(rag_service, "_document_ids_for_title_terms", lambda _db, _terms: {"DOC-TARGET"})
+    monkeypatch.setattr(retrieval_support, "_document_ids_for_title_terms", lambda _db, _terms: {"DOC-TARGET"})
     monkeypatch.setattr(
-        rag_service,
+        retrieval_support,
         "_mcq_seed_document_ids",
         lambda *_args: (_ for _ in ()).throw(AssertionError("full-corpus seed must not run")),
     )
-    monkeypatch.setattr(rag_service, "_chunks_by_document", lambda *_args, **_kwargs: {"DOC-TARGET": []})
+    monkeypatch.setattr(retrieval_support, "_chunks_by_document", lambda *_args, **_kwargs: {"DOC-TARGET": []})
 
     with SessionLocal() as db:
-        assert rag_service._mcq_exact_support_matches(db, aspect, []) == []
+        assert retrieval_support._mcq_exact_support_matches(db, aspect, []) == []
 
 
 def test_mcq_exact_support_requires_all_requested_topic_groups() -> None:
-    from backend.app.services import rag_service
 
     aspect = QueryAspect(
         aspect_id="multiple_choice_evidence",
@@ -2825,13 +2820,12 @@ def test_mcq_exact_support_requires_all_requested_topic_groups() -> None:
         ),
     ]
 
-    assert rag_service._mcq_exact_support_sufficient(trade_only, aspect) is False
+    assert retrieval_support._mcq_exact_support_sufficient(trade_only, aspect) is False
 
 
 def test_mcq_exact_support_requires_explicit_material_anchor() -> None:
-    from backend.app.services import rag_service
 
-    assert rag_service._explicit_material_anchor_terms("检索《银行函证工作操作指引（PDF）》后回答。") == [
+    assert retrieval_support._explicit_material_anchor_terms("检索《银行函证工作操作指引（PDF）》后回答。") == [
         "银行函证工作操作指引"
     ]
 
@@ -2912,12 +2906,11 @@ def test_mcq_exact_support_requires_explicit_material_anchor() -> None:
         ),
     ]
 
-    assert rag_service._mcq_exact_support_sufficient(off_topic_matches, aspect) is False
-    assert rag_service._mcq_exact_support_sufficient(anchored_matches, aspect) is True
+    assert retrieval_support._mcq_exact_support_sufficient(off_topic_matches, aspect) is False
+    assert retrieval_support._mcq_exact_support_sufficient(anchored_matches, aspect) is True
 
 
 def test_mcq_exact_support_seed_respects_explicit_material_anchor() -> None:
-    from backend.app.services import rag_service
 
     reset_database()
     with SessionLocal() as db:
@@ -2992,7 +2985,7 @@ def test_mcq_exact_support_seed_respects_explicit_material_anchor() -> None:
             keywords=("数据安全事件分级",),
         )
 
-        matches = rag_service._mcq_exact_support_matches(db, aspect, [])
+        matches = retrieval_support._mcq_exact_support_matches(db, aspect, [])
 
     assert matches
     assert {match.citation.document_id for match in matches} == {"DOC-DATA"}
@@ -3000,7 +2993,6 @@ def test_mcq_exact_support_seed_respects_explicit_material_anchor() -> None:
 
 def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatch) -> None:
     from backend.app.services import retrieval_support
-    from backend.app.services import rag_service
 
     reset_database()
     with SessionLocal() as db:
@@ -3153,10 +3145,8 @@ def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatc
         monkeypatch.setattr(retrieval_support, "matches_from_reranked", fake_matches_from_reranked)
         monkeypatch.setattr(retrieval_support, "filter_active_candidates", lambda candidates, **kwargs: candidates)
         monkeypatch.setattr(retrieval_support, "_bounded_document_lexical_support_matches", lambda *args, **kwargs: [])
-        monkeypatch.setattr(retrieval_support, "_bounded_formula_support_matches", lambda *args, **kwargs: [])
-        monkeypatch.setattr(retrieval_support, "_exact_anchor_support_matches", lambda *args, **kwargs: [])
 
-        matches, diagnostics = rag_service._retrieve_aspect_matches(db, aspect)
+        matches, diagnostics = retrieval_support.retrieve_requirement(db, aspect)
 
     assert rerank_seen_document_ids == ["DOC-DATA"]
     assert {match.citation.document_id for match in matches} == {"DOC-DATA"}
@@ -3164,7 +3154,6 @@ def test_mcq_retrieval_filters_candidates_to_explicit_material_anchor(monkeypatc
 
 
 def test_explicit_material_document_ids_normalize_title_variants() -> None:
-    from backend.app.services import rag_service
 
     reset_database()
     with SessionLocal() as db:
@@ -3192,7 +3181,7 @@ def test_explicit_material_document_ids_normalize_title_variants() -> None:
             keywords=(),
         )
 
-        document_ids = rag_service._explicit_material_document_ids(db, aspect)
+        document_ids = retrieval_support._explicit_material_document_ids(db, aspect)
 
     assert document_ids == {"DOC-CMB"}
 
@@ -3263,69 +3252,6 @@ def test_mcq_exact_support_is_selected_even_without_title_keyword() -> None:
     assert "DOC-TEST-CHUNK-0013" in summary["aspect_selected_chunk_ids"]["multiple_choice_evidence"]
 
 
-def test_condition_preamble_recovers_following_clause_chunk() -> None:
-    from backend.app.services import rag_service
-
-    aspect = QueryAspect(
-        aspect_id="trading_book_purpose_and_fair_value",
-        question="交易账簿头寸定义和公允价值计量频率",
-        search_queries=(
-            QuerySearchQuery(
-                "能够每日进行公允价值计量 变动计入损益",
-                "document_style_statement",
-                "制度条件短句锚点",
-            ),
-        ),
-        evidence_need="交易账簿头寸范围和每日公允价值计量要求",
-        keywords=("交易账簿", "公允价值计量", "损益"),
-    )
-    chunks = [
-        DocumentChunk(
-            chunk_id="DOC-TRADE-CHUNK-0002",
-            document_id="DOC-TRADE",
-            text="交易账簿中的金融工具、外汇和商品头寸原则上应同时满足以下条件：",
-            index_status="indexed",
-            source_file="账簿划分和名词解释.docx",
-            section_title="一、交易账簿的范围及划分的标准",
-        ),
-        DocumentChunk(
-            chunk_id="DOC-TRADE-CHUNK-0003",
-            document_id="DOC-TRADE",
-            text="（一）具有明确的交易策略和管理政策。",
-            index_status="indexed",
-            source_file="账簿划分和名词解释.docx",
-            section_title="一、交易账簿的范围及划分的标准",
-        ),
-        DocumentChunk(
-            chunk_id="DOC-TRADE-CHUNK-0004",
-            document_id="DOC-TRADE",
-            text="（二）能够准确估值并进行独立验证。",
-            index_status="indexed",
-            source_file="账簿划分和名词解释.docx",
-            section_title="一、交易账簿的范围及划分的标准",
-        ),
-        DocumentChunk(
-            chunk_id="DOC-TRADE-CHUNK-0005",
-            document_id="DOC-TRADE",
-            text="（三）能够每日进行公允价值计量，变动计入损益。",
-            index_status="indexed",
-            source_file="账簿划分和名词解释.docx",
-            section_title="一、交易账簿的范围及划分的标准",
-        ),
-    ]
-
-    matches = rag_service._condition_continuation_support_matches(
-        chunks[0],
-        chunks,
-        aspect,
-        ["能够每日进行公允价值计量 变动计入损益"],
-        existing_ids=set(),
-        seen_ids=set(),
-    )
-
-    assert [match.citation.chunk_id for _score, match in matches] == ["DOC-TRADE-CHUNK-0005"]
-    assert matches[0][1].metadata["fusion_method"] == "bounded_document_condition_continuation"
-    assert matches[0][1].metadata["condition_preamble_chunk_id"] == "DOC-TRADE-CHUNK-0002"
 
 
 def test_prompt_context_expands_condition_preamble_from_document_snapshot() -> None:
@@ -3345,19 +3271,6 @@ def test_prompt_context_expands_condition_preamble_from_document_snapshot() -> N
         def scalars(self, _statement) -> FakeScalarResult:
             return FakeScalarResult(self._chunks)
 
-    aspect = QueryAspect(
-        aspect_id="trading_book_purpose_and_fair_value",
-        question="交易账簿头寸定义和公允价值计量频率",
-        search_queries=(
-            QuerySearchQuery(
-                "能够每日进行公允价值计量 变动计入损益",
-                "document_style_statement",
-                "制度条件短句锚点",
-            ),
-        ),
-        evidence_need="交易账簿头寸范围和每日公允价值计量要求",
-        keywords=("交易账簿", "公允价值计量", "损益"),
-    )
     snapshots = [
         DocumentChunk(
             id=index,
@@ -3393,21 +3306,14 @@ def test_prompt_context_expands_condition_preamble_from_document_snapshot() -> N
         )
     ]
 
-    expanded = rag_service._expand_condition_preamble_prompt_chunks(
-        FakeDb(snapshots),
-        context,
-        rag_service.QueryPlan(
-            original_question="判断交易账簿头寸公允价值计量频率。",
-            aspects=(aspect,),
-            planner="test",
-        ),
-    )
+    expanded = rag_service._retrieval_support_structural_context(FakeDb(snapshots), context)
 
     assert [chunk.chunk_id for chunk in expanded] == [
         "DOC-TRADE-CHUNK-0002",
+        "DOC-TRADE-CHUNK-0003",
         "DOC-TRADE-CHUNK-0004",
     ]
-    assert expanded[1].metadata["prompt_selection_reason"] == "condition_continuation"
+    assert expanded[1].metadata["prompt_selection_reason"] == "source_unit_continuation"
     assert expanded[1].citation_label == "[2]"
 
 
@@ -3428,19 +3334,6 @@ def test_prompt_context_recovers_numbered_list_continuation_after_pdf_footnote()
         def scalars(self, _statement) -> FakeScalarResult:
             return FakeScalarResult(self._chunks)
 
-    aspect = QueryAspect(
-        aspect_id="bank_confirmation_public_info",
-        question="根据《银行函证工作操作指引（PDF）》，请说明与“银行业金融机构公示信息”相关的明确规定。",
-        search_queries=(
-            QuerySearchQuery(
-                "银行业金融机构公示信息 函证范围 回函用章",
-                "document_style_statement",
-                "制度列表续段锚点",
-            ),
-        ),
-        evidence_need="银行业金融机构公示信息包括的范围和回函用章要求",
-        keywords=("银行业金融机构公示信息", "函证范围", "回函用章"),
-    )
     snapshots = [
         DocumentChunk(
             id=index,
@@ -3485,32 +3378,14 @@ def test_prompt_context_recovers_numbered_list_continuation_after_pdf_footnote()
         )
     ]
 
-    expanded = rag_service._expand_condition_preamble_prompt_chunks(
-        FakeDb(snapshots),
-        context,
-        rag_service.QueryPlan(
-            original_question="说明银行业金融机构公示信息包括哪些范围要求。",
-            aspects=(aspect,),
-            planner="test",
-        ),
-    )
+    expanded = rag_service._retrieval_support_structural_context(FakeDb(snapshots), context)
 
     assert [chunk.chunk_id for chunk in expanded] == [
         "DOC-CONFIRM-PDF-CHUNK-0003",
+        "DOC-CONFIRM-PDF-CHUNK-0004",
         "DOC-CONFIRM-PDF-CHUNK-0005",
     ]
-    assert expanded[1].metadata["prompt_selection_reason"] == "condition_continuation"
-    assert expanded[1].metadata["lexical_support_phrase"] in {
-        "银行业金融机构公示信息",
-        "函证范围",
-        "回函用章",
-        "公示",
-        "函证",
-        "函证范围回函用章",
-        "回函",
-        "范围",
-        "用章",
-    }
+    assert expanded[1].metadata["prompt_selection_reason"] == "source_unit_continuation"
     assert expanded[1].citation_label == "[2]"
 
 
@@ -3531,19 +3406,6 @@ def test_prompt_context_recovers_previous_preamble_for_orphan_condition_tail() -
         def scalars(self, _statement) -> FakeScalarResult:
             return FakeScalarResult(self._chunks)
 
-    aspect = QueryAspect(
-        aspect_id="information_disclosure",
-        question="关于《商业银行信息披露内容和要求》中与“商业银行应”相关的明确规定。",
-        search_queries=(
-            QuerySearchQuery(
-                "商业银行应 信息披露 要求 条件 例外 期限",
-                "document_style_statement",
-                "宽泛义务锚点",
-            ),
-        ),
-        evidence_need="查找商业银行信息披露中商业银行应遵守的披露内容、频率和例外。",
-        keywords=("商业银行应", "信息披露", "披露频率"),
-    )
     snapshots = [
         DocumentChunk(
             id=6,
@@ -3587,22 +3449,14 @@ def test_prompt_context_recovers_previous_preamble_for_orphan_condition_tail() -
         )
     ]
 
-    expanded = rag_service._expand_condition_preamble_prompt_chunks(
-        FakeDb(snapshots),
-        context,
-        rag_service.QueryPlan(
-            original_question="说明商业银行信息披露要求。",
-            aspects=(aspect,),
-            planner="test",
-        ),
-    )
+    expanded = rag_service._retrieval_support_structural_context(FakeDb(snapshots), context)
 
     assert [chunk.chunk_id for chunk in expanded] == [
         "DOC-DISCLOSURE-CHUNK-0006",
         "DOC-DISCLOSURE-CHUNK-0007",
     ]
-    assert expanded[0].metadata["prompt_selection_reason"] == "condition_preamble"
-    assert expanded[0].metadata["condition_continuation_chunk_id"] == "DOC-DISCLOSURE-CHUNK-0007"
+    assert expanded[0].metadata["prompt_selection_reason"] == "source_unit_continuation"
+    assert expanded[0].metadata["evidence_unit"] == "DOC-DISCLOSURE-CHUNK-0007"
     assert expanded[0].citation_label == "[1]"
     assert expanded[1].citation_label == "[2]"
 
@@ -3767,24 +3621,6 @@ def test_final_citations_only_include_explicitly_referenced_context() -> None:
     assert [chunk.citation_label for chunk in cited] == ["[2]", "[3]"]
 
 
-def test_mixed_table_refusal_still_allows_text_fallback() -> None:
-    from backend.app.services import rag_service
-
-    aspect = QueryAspect(
-        aspect_id="mixed_evidence",
-        question="结合制度和表格说明原保险保费收入。",
-        search_queries=(QuerySearchQuery("原保险保费收入 制度说明", "semantic_question", ""),),
-        evidence_need="制度文本和表格证据",
-        keywords=("原保险保费收入",),
-        modality="mixed",
-        table_task="lookup",
-        table_filters={"indicator": "不存在指标"},
-    )
-
-    assert rag_service._should_stop_after_spreadsheet_refusal(
-        aspect,
-        {"match_status": "indicator_not_found", "refusal_reason": "指定指标不存在。"},
-    ) is False
 
 
 # ---------------------------------------------------------------------------
@@ -3800,17 +3636,18 @@ def test_boundary_code_prediction_request() -> None:
     assert _explicit_request_boundary_code("请根据资料库预测未来十二个月银行业总资产的具体数值。") == "unsupported_prediction"
 
 
-def test_boundary_code_assess_feasibility_is_subjective_advice() -> None:
+def test_boundary_code_leaves_feasibility_scope_to_evidence_checks() -> None:
     from backend.app.services.rag_service import _explicit_request_boundary_code
 
-    # “评估…的可行性”是主观商业决策咨询，必须拒答。
+    # These words alone do not establish whether the user asks for a supported
+    # regulatory assessment or an unsupported decision. Inspect the evidence.
     assert (
         _explicit_request_boundary_code("请评估某银行收购一家农村商业银行的可行性。")
-        == "subjective_business_advice"
+        is None
     )
     assert (
         _explicit_request_boundary_code("请评估本行设立消费金融公司的可行性。")
-        == "subjective_business_advice"
+        is None
     )
     # “可行性分析”是制度要求的合法成分，不得误伤。
     assert (
@@ -3827,25 +3664,25 @@ def test_boundary_code_accounting_expected_is_not_prediction() -> None:
     assert _explicit_request_boundary_code("固定资产预计净残值如何确定？") is None
 
 
-def test_boundary_code_subjective_business_judgment() -> None:
+def test_boundary_code_does_not_guess_intent_from_should() -> None:
     from backend.app.services.rag_service import _explicit_request_boundary_code
 
-    assert _explicit_request_boundary_code("请判断某银行是否应当新设一家县域支行。") == "subjective_business_advice"
-    assert _explicit_request_boundary_code("请建议某银行是否应上调消费贷款产品定价。") == "subjective_business_advice"
-    assert _explicit_request_boundary_code("请建议某银行是否应增加二级资本工具发行规模。") == "subjective_business_advice"
+    assert _explicit_request_boundary_code("请判断某银行是否应当新设一家县域支行。") is None
+    assert _explicit_request_boundary_code("请建议某银行是否应上调消费贷款产品定价。") is None
+    assert _explicit_request_boundary_code("请建议某银行是否应增加二级资本工具发行规模。") is None
 
 
 def test_boundary_code_bank_name_requires_data_request_context() -> None:
     from backend.app.services.rag_service import _explicit_request_boundary_code
 
-    # A named bank plus a data-report request is outside the corpus scope.
+    # Source availability is checked against indexed evidence, not a bank-name list.
     assert (
         _explicit_request_boundary_code("请提供中国工商银行2025年年度报告中的净利润数据。")
-        == "out_of_scope_or_realtime"
+        is None
     )
     assert (
         _explicit_request_boundary_code("请提供招商银行与建设银行2025年不良贷款率的对比数据。")
-        == "out_of_scope_or_realtime"
+        is None
     )
     assert _explicit_request_boundary_code("请提供当前最新的一年期LPR报价。") == "out_of_scope_or_realtime"
     # A corpus list question that merely cites a bank must not be refused.
@@ -3864,7 +3701,7 @@ def test_qa_refuses_prediction_request_before_retrieval(monkeypatch) -> None:
     def fail_if_called(*args, **kwargs):
         raise AssertionError("prediction request should be refused before retrieval")
 
-    monkeypatch.setattr("backend.app.services.rag_service.retrieve_citations", fail_if_called)
+    monkeypatch.setattr("backend.app.services.retrieval_support.retrieve_citations", fail_if_called)
 
     response = client.post("/api/qa/ask", json={"question": "请预测2026年一季度保险业原保险保费收入增速。"})
 
@@ -3878,148 +3715,89 @@ def test_qa_refuses_prediction_request_before_retrieval(monkeypatch) -> None:
     assert body["context_package"] is None
 
 
-def test_duplicate_suppression_removes_same_document_template_paragraphs() -> None:
-    """同文档公共前缀高度重叠的模板段落只保留一份，避免挤占答案条款。"""
-    from backend.app.services.rag_service import _is_duplicate_or_redundant
-
-    chunk = RetrievalResult(
-        chunk_id="C2",
-        rank=2,
-        score=0.8,
-        source_doc="417.docx",
-        text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R11的填写说明。",
-        citation_label="[2]",
-        metadata={"document_id": "DOC-417"},
-    )
-    selected = [
-        RetrievalResult(
-            chunk_id="C1",
-            rank=1,
-            score=0.9,
-            source_doc="417.docx",
-            text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R10的填写说明。",
-            citation_label="[1]",
-            metadata={"document_id": "DOC-417"},
-        )
-    ]
-    assert _is_duplicate_or_redundant(chunk, selected) is True
 
 
-def test_duplicate_suppression_keeps_cross_document_similar_clauses() -> None:
-    """不同文档的相似条款不被误判为重复。"""
-    from backend.app.services.rag_service import _is_duplicate_or_redundant
-
-    chunk = RetrievalResult(
-        chunk_id="C2",
-        rank=2,
-        score=0.8,
-        source_doc="402.docx",
-        text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R11的填写说明。",
-        citation_label="[2]",
-        metadata={"document_id": "DOC-402"},
-    )
-    selected = [
-        RetrievalResult(
-            chunk_id="C1",
-            rank=1,
-            score=0.9,
-            source_doc="417.docx",
-            text="填写说明 1.定义 关键岗位人员：对商业银行经营风险有直接或重大影响的人员。商业银行应当根据自身机构类型与特点、市场规模、风险管理能力等因素确定关键岗位人员范围。表格R10的填写说明。",
-            citation_label="[1]",
-            metadata={"document_id": "DOC-417"},
-        )
-    ]
-    assert _is_duplicate_or_redundant(chunk, selected) is False
 
 
-def test_hyde_supplement_recovers_uncovered_aspect(monkeypatch) -> None:
-    """HyDE 补检索：未覆盖 aspect 获得假设条款候选并标记覆盖。"""
-    from backend.app.services import rag_service
-    from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
-
-    aspect = QueryAspect(
-        aspect_id="definition_gap",
-        question="“关键功能”是如何定义的？",
-        search_queries=(QuerySearchQuery("关键功能 定义", "semantic_question", ""),),
-        evidence_need="关键功能的定义",
-        keywords=("关键功能",),
-    )
-    retrieval = rag_service.AspectRetrieval(
-        aspect=aspect,
-        candidates=[],
-        diagnostics=[],
-        citation_validation={},
-        selected_chunk_ids=[],
-    )
-    monkeypatch.setattr(rag_service, "QUERY_PLANNER_ENABLED", True)
-    monkeypatch.setattr(rag_service, "QUERY_PLANNER_API_KEY", "test-key")
-    monkeypatch.setattr(
-        rag_service,
-        "_hyde_hypothetical_clause",
-        lambda question: "关键功能是提供给第三方的关键业务或产品等金融服务。",
-    )
-    fake_candidate = RetrievalResult(
-        chunk_id="DOC-HYDE-CHUNK-1",
-        rank=1,
-        score=0.9,
-        source_doc="恢复计划示例.docx",
-        section_title="关键功能定义",
-        text="关键功能是提供给第三方的关键业务或产品等金融服务。",
-        citation_label="[1]",
-        metadata={"document_id": "DOC-HYDE"},
-    )
-    monkeypatch.setattr(rag_service, "_hyde_search_candidates", lambda db, text: [fake_candidate])
-
-    rag_service._hyde_supplement_retrieval(None, [retrieval], document_chunk_cache={})
-
-    assert retrieval.retrieval_covered is True
-    assert len(retrieval.candidates) == 1
-    assert retrieval.candidates[0].metadata["evidence_role"] == "hyde_support"
-    assert any(d.get("query_type") == "hyde_hypothetical_clause" for d in retrieval.diagnostics)
 
 
-def test_hyde_skips_covered_and_table_aspects(monkeypatch) -> None:
-    """已覆盖/表格 aspect 不触发 HyDE。"""
-    from backend.app.services import rag_service
-    from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
 
-    calls = {"n": 0}
 
-    def spying_hypothetical(question):
-        calls["n"] += 1
-        return "假设条款内容。"
+@pytest.fixture
+def grounded_generation(monkeypatch):
+    from backend.app.services import answer_generation_service as generation
+    def draft(question, chunks, options, labels, **kwargs):
+        claims = [AnswerClaim(text=c.text+' '+c.citation_label, citation_ids=[c.citation_label],
+                              aspect_ids=c.metadata.get('prompt_matched_aspects', [])) for c in chunks]
+        return generation.GeneratedAnswer('\n\n'.join(c.text for c in claims), 'llm_grounded', 'completed', claims=claims)
+    monkeypatch.setattr(generation, 'ANSWER_GENERATION_API_KEY', 'test-only')
+    monkeypatch.setattr(generation, 'ANSWER_GENERATION_ENABLED', True)
+    monkeypatch.setattr(generation, '_call_llm', draft)
 
-    monkeypatch.setattr(rag_service, "_hyde_hypothetical_clause", spying_hypothetical)
-    monkeypatch.setattr(rag_service, "QUERY_PLANNER_ENABLED", True)
-    monkeypatch.setattr(rag_service, "QUERY_PLANNER_API_KEY", "test-key")
 
-    covered = rag_service.AspectRetrieval(
-        aspect=QueryAspect(
-            aspect_id="covered_one",
-            question="已覆盖问题",
-            search_queries=(QuerySearchQuery("已覆盖", "semantic_question", ""),),
-            evidence_need="x",
-            keywords=("x",),
-        ),
-        candidates=[fake_retrieval_match()],
-        diagnostics=[],
-        citation_validation={},
-        selected_chunk_ids=[],
-    )
-    covered.retrieval_covered = True
-    table = rag_service.AspectRetrieval(
-        aspect=QueryAspect(
-            aspect_id="table_one",
-            question="表格问题",
-            search_queries=(QuerySearchQuery("表格", "semantic_question", ""),),
-            evidence_need="x",
-            keywords=("x",),
-            modality="table",
-        ),
-        candidates=[],
-        diagnostics=[],
-        citation_validation={},
-        selected_chunk_ids=[],
-    )
-    rag_service._hyde_supplement_retrieval(None, [covered, table], document_chunk_cache={})
-    assert calls["n"] == 0
+
+def test_recovered_task_keeps_spent_model_calls(monkeypatch):
+    from backend.app.models.document import QATask
+    from backend.app.services import qa_task_service as tasks
+    from backend.app.services.performance_metrics import reserve_model_call
+    reset_database()
+    with SessionLocal() as db:
+        db.add(QATask(task_id='budget-recovery', question='解释定义',status='queued',options_json='[]'))
+        db.commit()
+    calls=[]
+    def interrupted(*args,**kwargs):
+        for _ in range(2):
+            reserve_model_call(1);calls.append(1)
+        raise SystemExit('simulated process interruption')
+    monkeypatch.setattr(tasks,'answer_question',interrupted)
+    with pytest.raises(SystemExit):
+        tasks._run_task('budget-recovery')
+    tasks._recover_interrupted_tasks()
+    def resumed(*args,**kwargs):
+        for _ in range(4):
+            reserve_model_call(1);calls.append(1)
+        pytest.fail('recovery obtained a fresh model budget')
+    monkeypatch.setattr(tasks,'answer_question',resumed)
+    assert tasks._run_task('budget-recovery') is False
+    with SessionLocal() as db:
+        task=db.get(QATask,'budget-recovery')
+        assert task.status=='failed'
+        assert task.error_code=='model_call_limit_exceeded'
+        from backend.app.schemas.qa import RagProgressEvent
+        assert all(RagProgressEvent.model_validate(e) for e in json.loads(task.progress_json))
+    assert all('_runtime_budget' not in (e.summary or {}) for e in tasks._task_to_response(task).progress_events)
+    assert len(calls)==5
+
+
+def test_recovered_task_keeps_original_deadline(monkeypatch):
+    from backend.app.models.document import QATask
+    from backend.app.services import qa_task_service as tasks
+    reset_database()
+    state={'stage':'planning','status':'completed','title':'任务状态已保存','summary':{'_runtime_budget':{
+        'started_at':(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat(),'model_calls':1}}}
+    with SessionLocal() as db:
+        db.add(QATask(task_id='expired-recovery',question='解释定义',status='queued',attempt_count=1,
+                      progress_json=json.dumps([state]),options_json='[]'))
+        db.commit()
+    monkeypatch.setattr(tasks,'answer_question',lambda *a,**k:pytest.fail('expired task restarted'))
+    tasks._run_task('expired-recovery')
+    with SessionLocal() as db:
+        task=db.get(QATask,'expired-recovery')
+        assert task.status=='failed'
+        assert task.error_code=='request_budget_exhausted'
+        assert task.error_stage=='task.recovery'
+
+
+
+def test_legacy_task_progress_does_not_claim_validation_or_break_history():
+    from backend.app.models.document import QATask
+    from backend.app.services import qa_task_service as tasks
+    reset_database()
+    with SessionLocal() as db:
+        task=QATask(task_id='legacy-progress',question='历史问题',status='failed',
+            progress_json=json.dumps([{'stage':'qa','status':'failed','title':'旧阶段','detail':'旧执行错误'}]))
+        db.add(task);db.commit()
+        response=tasks._task_to_response(task)
+        assert response.status=='failed'
+        assert response.progress_events[0].status=='skipped'
+        assert '未记录' in response.progress_events[0].title

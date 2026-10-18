@@ -23,8 +23,6 @@ class RagFeatures:
     rerank: bool = True
     structured_index: bool = True
     supplements: bool = True
-    crag: bool = True
-    hyde: bool = True
     neighbors: bool = True
     references: bool = True
     coverage_gate: bool = True

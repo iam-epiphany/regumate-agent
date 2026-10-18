@@ -1,9 +1,13 @@
 from dataclasses import dataclass, field, replace
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import re
 import urllib.error
 import urllib.request
 from typing import Any
+from backend.app.schemas.qa import EvidenceRequirement
+from backend.app.services.evidence_contract_service import requirements_for_plan, target_terms
 from backend.app.services.performance_metrics import measure, timed
 
 from backend.app.core.config import (
@@ -16,7 +20,7 @@ from backend.app.core.config import (
     QUERY_PLANNER_MODEL,
     QUERY_PLANNER_PROVIDER,
     QUERY_PLANNER_RESPONSE_FORMAT,
-    QUERY_PLANNER_TIMEOUT_SECONDS,
+    QA_REQUEST_TOTAL_BUDGET_SECONDS,
 )
 from backend.app.services.llm_client import (
     ChatCompletionConfig,
@@ -26,6 +30,10 @@ from backend.app.services.llm_client import (
 
 
 class QueryPlannerError(RuntimeError):
+    pass
+
+
+class QueryNeedsClarification(QueryPlannerError):
     pass
 
 
@@ -45,35 +53,51 @@ TABLE_ONLY_FILTER_KEYS = {
     "quarter",
 }
 
-COMMON_TABLE_INDICATORS = [
-    "现金及存放同业",
-    "贷款余额",
-    "证券投资",
-    "其他资产",
-    "资产合计",
-    "不良贷款余额",
-    "损失类贷款余额",
-    "可疑类贷款余额",
-    "次级类贷款余额",
-    "资金运用余额",
-    "普惠小微贷款余额",
-    "绿色信贷余额",
-    "原保险保费收入",
-    "资本充足率",
-    # Insurance-fund asset classes and income/expense lines (composite row
-    # labels like "财产险公司/银行存款" need the asset term itself).
-    "银行存款",
-    "债券",
-    "股票",
-    "证券投资基金",
-    "长期股权投资",
-    "保户投资款新增交费",
-    "投连险独立账户新增交费",
-    "赔付支出",
-    "总资产",
-    "净资产",
-    "净利润",
-]
+_TABLE_VOCABULARY: ContextVar[tuple[str, ...]] = ContextVar('table_vocabulary', default=())
+_TABLE_SOURCES: ContextVar[tuple[str, ...]] = ContextVar('table_sources', default=())
+_TABLE_ROWS: ContextVar[tuple[str, ...]] = ContextVar('table_rows', default=())
+_TABLE_COLUMNS: ContextVar[tuple[str, ...]] = ContextVar('table_columns', default=())
+
+
+@contextmanager
+def table_schema_context(db, question: str):
+    """Read actual indexed labels once, instead of maintaining indicator lists."""
+    from sqlalchemy import select
+    from backend.app.models.document import SpreadsheetCell
+    labels = ()
+    sources = ()
+    row_labels = ()
+    column_labels = ()
+    if _has_explicit_table_marker(question) or re.search(r'20\d{2}年', question):
+        from backend.app.models.document import Document
+        from backend.app.services.evidence_contract_service import title_key
+        documents = db.execute(select(Document.document_id, Document.filename).where(Document.document_id.in_(
+            select(SpreadsheetCell.document_id).distinct()))).all()
+        sources = tuple(row[1] for row in documents)
+        statement = select(SpreadsheetCell.row_label, SpreadsheetCell.column_label).distinct()
+        titles = re.findall(r'《([^》]+)》', question)
+        if titles:
+            document_ids = [doc_id for doc_id, filename in documents
+                            if any(title_key(title) in title_key(filename) for title in titles)]
+            statement = statement.where(SpreadsheetCell.document_id.in_(document_ids))
+        values = db.execute(statement).all()
+        def axis_parts(value):
+            return [re.sub(r'^(?:其中\s*[:：]?|[0-9一二三四五六七八九十]+[、.．])\s*', '', part.strip())
+                    for part in re.split(r'[/／]', str(value or '')) if 2 <= len(part.strip()) <= 80]
+        row_labels = tuple(dict.fromkeys(part for row in values for part in axis_parts(row[0])))
+        column_labels = tuple(dict.fromkeys(part for row in values for part in axis_parts(row[1])))
+        labels = tuple(dict.fromkeys([*row_labels, *column_labels]))
+    token = _TABLE_VOCABULARY.set(labels)
+    source_token = _TABLE_SOURCES.set(sources)
+    row_token = _TABLE_ROWS.set(row_labels)
+    column_token = _TABLE_COLUMNS.set(column_labels)
+    try:
+        yield
+    finally:
+        _TABLE_VOCABULARY.reset(token)
+        _TABLE_SOURCES.reset(source_token)
+        _TABLE_ROWS.reset(row_token)
+        _TABLE_COLUMNS.reset(column_token)
 
 # Terms that describe a table's measurement scope rather than a queried row.
 TABLE_SCOPE_TERMS = {
@@ -120,6 +144,20 @@ class QueryAspect:
     selectors: tuple[dict[str, Any], ...] = ()
     expected_unit: str | None = None
     explicit_filter_keys: tuple[str, ...] = ()
+    subject_scope: tuple[str, ...] = ()
+    intent: str = field(default='', init=False)
+    targets: tuple[str, ...] = field(default=(), init=False)
+
+    def __post_init__(self) -> None:
+        if not self.targets:
+            quoted = re.findall(r'[“\"‘\']([^”\"’\']{2,80})[”\"’\']', self.question)
+            object.__setattr__(self, 'targets', tuple(quoted or target_terms(self.question)))
+        if not self.intent:
+            intent_text = re.sub(r'《[^》]+》', '', self.question)
+            intent = ('calculate' if self.operation != 'none' else
+                      'define' if re.search(r'定义|是什么|含义|界定', intent_text) else
+                      'list' if re.search(r'哪些|列出|包括', intent_text) else 'lookup')
+            object.__setattr__(self, 'intent', intent)
 
     @property
     def expected_evidence_type(self) -> str:
@@ -138,6 +176,9 @@ class QueryAspect:
             "selectors": list(self.selectors),
             "expected_unit": self.expected_unit,
             "explicit_filter_keys": list(self.explicit_filter_keys),
+            "subject_scope": list(self.subject_scope),
+            "intent": self.intent,
+            "targets": list(self.targets),
             "search_queries": [query.to_debug_dict() for query in self.search_queries],
             "keywords": list(self.keywords),
         }
@@ -152,6 +193,12 @@ class QueryPlan:
     error: str | None = None
     budget: dict[str, Any] | None = None
     question_mode: str = "open"
+    requirements: tuple[EvidenceRequirement, ...] = ()
+    clarification_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.requirements:
+            object.__setattr__(self, "requirements", tuple(requirements_for_plan(self)))
 
     def to_debug_dict(self) -> dict[str, Any]:
         return {
@@ -162,6 +209,8 @@ class QueryPlan:
             "budget": self.budget or {},
             "question_mode": self.question_mode,
             "aspects": [aspect.to_debug_dict() for aspect in self.aspects],
+            "requirements": [item.model_dump() for item in self.requirements],
+            "clarification_reason": self.clarification_reason,
         }
 
 
@@ -186,6 +235,26 @@ class QueryBudget:
 
 @timed("query_planner.total")
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
+    plan = _plan_query_impl(question, options)
+    if (plan.budget or {}).get('capacity_limited'):
+        return replace(plan, aspects=(), requirements=(),
+                       clarification_reason='问题包含较多独立事项，请分批提问或明确本次优先回答的事项。')
+    aspects = []
+    for aspect in plan.aspects:
+        titles = list(dict.fromkeys(re.findall(r"《([^》]+)》", aspect.question)))
+        if aspect.modality == "text" and len(titles) > 1:
+            body = re.sub(r"《[^》]+》", "", aspect.question)
+            for index, title in enumerate(titles, 1):
+                aspects.append(replace(aspect, aspect_id=f"{aspect.aspect_id}_source{index}",
+                    question=f"根据《{title}》：{body}",
+                    table_filters={**aspect.table_filters, "source_title": title},
+                    explicit_filter_keys=tuple(set(aspect.explicit_filter_keys) | {"source_title"})))
+        else:
+            aspects.append(aspect)
+    return replace(plan, aspects=tuple(aspects), requirements=())
+
+
+def _plan_query_impl(question: str, options: list[str] | None = None) -> QueryPlan:
     cleaned_question = question.strip()
     question_mode = "choice" if any(str(option or "").strip() for option in options or []) else "open"
     if not cleaned_question:
@@ -254,7 +323,6 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
         try:
                 aspects, omitted_or_merged_items = _plan_with_llm(cleaned_question, budget)
                 if aspects:
-                    aspects = _split_merged_llm_aspects(aspects, budget)
                     budget = _budget_with_omissions(budget, omitted_or_merged_items)
                     return QueryPlan(
                         original_question=cleaned_question,
@@ -264,6 +332,9 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
                         budget=budget.to_debug_dict(),
                         question_mode=question_mode,
                 )
+        except QueryNeedsClarification as exc:
+            return QueryPlan(cleaned_question, (), 'clarification',
+                             question_mode=question_mode, clarification_reason=str(exc))
         except QueryPlannerError as exc:
             fallback = _fallback_aspects(cleaned_question, budget)
             return QueryPlan(
@@ -361,68 +432,6 @@ def _explicit_requested_aspect_count(question: str) -> int:
     return min(explicit, QUERY_PLANNER_MAX_ASPECTS)
 
 
-def _split_merged_llm_aspects(
-    aspects: list[QueryAspect],
-    budget: QueryBudget,
-) -> list[QueryAspect]:
-    """Restore clearly coordinated requirements merged by the remote planner.
-
-    The split is intentionally narrow: strong “以及” coordination, or an
-    “说明 A 和 B” construction where both sides name requirement categories.
-    It never exceeds the deterministic budget and does not use answer data.
-    """
-
-    split_limit = max(budget.max_aspects, budget.system_max_aspects)
-    if len(aspects) >= split_limit:
-        return aspects
-    result: list[QueryAspect] = []
-    for aspect in aspects:
-        remaining_capacity = split_limit - len(result)
-        document_titles = _dedupe(re.findall(r"《([^》]{2,120})》", aspect.question))
-        if (
-            len(document_titles) >= 2
-            and remaining_capacity >= len(document_titles)
-            and any(marker in aspect.question for marker in ("分别依据", "分别根据", "各自", "两份文件"))
-        ):
-            for index, title in enumerate(document_titles, start=1):
-                split_question = f"请依据《{title}》相关条款，列出该文件的核心监管要求并明确来源。"
-                split_filters = {
-                    **aspect.table_filters,
-                    "source_title": title,
-                }
-                result.append(
-                    replace(
-                        aspect,
-                        aspect_id=f"{aspect.aspect_id}_document_{index}",
-                        question=split_question,
-                        search_queries=_fallback_search_queries(split_question),
-                        evidence_need=f"《{title}》中可直接支持核心监管要求的原文",
-                        keywords=tuple(_keywords_from_text(split_question)),
-                        table_filters=split_filters,
-                        explicit_filter_keys=tuple(
-                            _dedupe([*aspect.explicit_filter_keys, "source_title"])
-                        ),
-                    )
-                )
-            continue
-        split_questions = _coordinated_aspect_questions(aspect.question)
-        if len(split_questions) <= 1 or remaining_capacity < len(split_questions):
-            result.append(aspect)
-            continue
-        for index, question in enumerate(split_questions, start=1):
-            result.append(
-                replace(
-                    aspect,
-                    aspect_id=f"{aspect.aspect_id}_part_{index}",
-                    question=question,
-                    search_queries=_fallback_search_queries(question),
-                    evidence_need=f"与“{question}”直接对应的制度事实、条件或例外",
-                    keywords=tuple(_keywords_from_text(question)),
-                )
-            )
-    return result[:split_limit]
-
-
 def _coordinated_aspect_questions(question: str) -> list[str]:
     text = str(question or "").strip()
     prefix_match = re.match(r"^(.*?(?:说明|概括|回答|列出|判断|核验|比较))", text)
@@ -499,13 +508,11 @@ def _coordinated_aspect_questions(question: str) -> list[str]:
         right = _inherit_left_subject(left, right)
         return [f"{left}{suffix}", f"{right}{suffix}"]
     principle_pair = re.match(
-        r"^(.{2,30}?(?:风险暴露|资本|工具|策略|计划|要求|定义))(?:与|和)(.{2,20}?原则)(.*)$",
+        r"^(.{2,30}?)(?:与|和)(.{2,20}?原则)(.*)$",
         text,
     )
     if principle_pair:
         left, right, suffix = principle_pair.groups()
-        if "自救" in right and "风险暴露" in left and "处置" not in left:
-            left = f"处置计划建议示例中的{left}"
         return [f"{left}{suffix}", f"{right}{suffix}"]
     return [text]
 
@@ -548,13 +555,11 @@ def _split_compact_enumerated_part(part: str) -> list[str]:
         right = _inherit_left_subject(left, right)
         return [f"{left}{suffix}", f"{right}{suffix}"]
     principle_pair = re.match(
-        r"^(.{2,30}?(?:风险暴露|资本|工具|策略|计划|要求|定义))(?:与|和)(.{2,20}?原则)(.*)$",
+        r"^(.{2,30}?)(?:与|和)(.{2,20}?原则)(.*)$",
         part,
     )
     if principle_pair:
         left, right, suffix = principle_pair.groups()
-        if "自救" in right and "风险暴露" in left and "处置" not in left:
-            right = f"处置策略建议的{right}"
         return [f"{left}{suffix}", f"{right}{suffix}"]
     return [part]
 
@@ -564,7 +569,7 @@ def _inherit_left_subject(left: str, right: str) -> str:
         return right
     if not re.search(r"(?:定义|概念|含义)$", left):
         return right
-    if re.search(r"(?:保费|保险费|资本|账簿|回函|函证|披露|催收|贷款|风险暴露)", right):
+    if not re.match(r"^.{0,6}(?:范围|条件|要求|期限|程序|职责|例外|原则|流程|边界)", right):
         return right
     bare_subject = re.sub(r"(?:的)?(?:定义|概念|含义)$", "", left).strip()
     bare_subject = re.sub(r"^(?:说明|概括|回答|列出|判断|核验|比较)", "", bare_subject).strip()
@@ -610,7 +615,7 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                 "role": "user",
                 "content": (
                     "请按本次预算把下面问题拆成 1 到 "
-                    f"{budget.max_aspects} 个 aspect，系统安全上限为 {budget.system_max_aspects}。每个 aspect 包含："
+                    f"{budget.system_max_aspects} 个 aspect。按实际需要拆分，不必填满上限。每个 aspect 包含："
                     "aspect_id、question、evidence_need、search_queries、keywords、modality、table_task、table_filters、operation。"
                     "如果用户明确枚举了多个处理对象，一般每个处理对象单独成为一个 aspect；"
                     "如果因为预算必须合并或遗漏项目，把项目名称写入 omitted_or_merged_items。"
@@ -630,27 +635,10 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     "优先生成可能出现在制度文档/填报说明中的自然语言证据查询，禁止只输出关键词串。"
                     "evidence_need 描述要找章节定义、填报口径、处理流程、例外条件或留痕依据。"
                     "如果问题只有一个主题，也返回一个 aspect。"
-                    "示例输入：资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？"
-                    "示例输出：{\"aspects\":["
-                    "{\"aspect_id\":\"asset_total_difference_check\","
-                    "\"question\":\"资产合计差异应该优先排查哪些问题？\","
-                    "\"evidence_need\":\"资产合计差异处理流程、优先排查原因或校验规则\","
-                    "\"search_queries\":["
-                    "{\"query\":\"资产合计与分项合计存在差异时应优先检查哪些原因\",\"query_type\":\"semantic_question\",\"rationale\":\"贴近用户意图\"},"
-                    "{\"query\":\"资产合计校验差异处理流程 币种折算 四舍五入 科目映射 重复汇总\",\"query_type\":\"document_style_statement\",\"rationale\":\"贴近填报说明证据句\"},"
-                    "{\"query\":\"资产合计 差异 币种折算 四舍五入 科目映射 重复汇总\",\"query_type\":\"keyword_anchor\",\"rationale\":\"术语兜底\"}],"
-                    "\"keywords\":[\"资产合计\",\"差异\",\"币种折算\",\"四舍五入\",\"科目映射\",\"重复汇总\"]},"
-                    "{\"aspect_id\":\"foreign_currency_evidence\","
-                    "\"question\":\"如果差异来自外币折算，需要保留什么依据？\","
-                    "\"evidence_need\":\"外币折算差异的留痕依据、支持材料或填报说明\","
-                    "\"search_queries\":["
-                    "{\"query\":\"外币折算导致资产合计差异时需要保留哪些支持材料\",\"query_type\":\"semantic_question\",\"rationale\":\"贴近用户意图\"},"
-                    "{\"query\":\"外币折算差异 留痕依据 汇率日期 折算规则 原币金额来源\",\"query_type\":\"document_style_statement\",\"rationale\":\"贴近制度材料表述\"},"
-                    "{\"query\":\"外币折算 汇率日期 折算规则 原币金额来源\",\"query_type\":\"keyword_anchor\",\"rationale\":\"术语兜底\"}],"
-                    "\"keywords\":[\"外币折算\",\"留痕依据\",\"汇率日期\",\"折算规则\",\"原币金额来源\"]}"
-                    "]}\n"
                     f"本次规则识别到的用户处理对象：{json.dumps(list(budget.detected_items), ensure_ascii=False)}\n"
-                    "输出格式：{\"aspects\":[...],\"omitted_or_merged_items\":[]}\n\n"
+                    "每个aspect可填写subject_scope数组，仅允许逐字来自用户问题的主体或业务范围限定。"
+                    "若用户目标存在无法消除的歧义，返回clarification说明需要补充的信息，禁止猜测。"
+                    "输出格式：{\"aspects\":[...],\"clarification\":null,\"omitted_or_merged_items\":[]}\n\n"
                     f"用户问题：{question}"
                 ),
             },
@@ -663,7 +651,7 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     api_key=QUERY_PLANNER_API_KEY,
                     base_url=QUERY_PLANNER_BASE_URL,
                     model=QUERY_PLANNER_MODEL,
-                    timeout_seconds=QUERY_PLANNER_TIMEOUT_SECONDS,
+                    timeout_seconds=QA_REQUEST_TOTAL_BUDGET_SECONDS,
                     disable_thinking=QUERY_PLANNER_DISABLE_THINKING,
                     response_format=QUERY_PLANNER_RESPONSE_FORMAT,
                 ),
@@ -690,6 +678,8 @@ def _aspects_from_payload(
     payload: dict[str, Any],
     max_aspects: int | None = None,
 ) -> list[QueryAspect]:
+    if payload.get('clarification'):
+        raise QueryNeedsClarification(str(payload['clarification']))
     raw_aspects = payload.get("aspects")
     if not isinstance(raw_aspects, list):
         raise QueryPlannerError("LLM query planner 未返回 aspects")
@@ -717,8 +707,7 @@ def _aspects_from_payload(
             search_queries = [QuerySearchQuery(query=sub_question, query_type="fallback", rationale="LLM 未返回检索查询")]
         if not keywords:
             keywords = _keywords_from_text(" ".join([sub_question, *[query.query for query in search_queries]]))
-        planner_filters = _clean_table_filters(raw_aspect.get("table_filters"))
-        explicit_filters = extract_explicit_metadata_filters(sub_question)
+        explicit_filters = dict(question_explicit_filters)
         # A table title, sheet and period stated in the user's question are
         # hard locators.  They must win over an LLM plan even when the plan
         # guessed a different period (for example confusing "3季度" with a
@@ -727,7 +716,6 @@ def _aspects_from_payload(
         # The original user question is more authoritative than an LLM's
         # decomposed sub-question, which may itself have introduced a period
         # or title not present in the request.
-        explicit_filters = {**explicit_filters, **question_explicit_filters}
         original_titles = _dedupe(re.findall(r"《([^》]{2,120})》", question))
         sub_question_titles = _dedupe(re.findall(r"《([^》]{2,120})》", sub_question))
         if len(original_titles) >= 2 and len(sub_question_titles) == 1:
@@ -737,11 +725,7 @@ def _aspects_from_payload(
                 # original multi-title question.  Preserve that explicit title
                 # instead of applying the first title globally to every aspect.
                 explicit_filters["source_title"] = sub_title
-        if "quarter" in explicit_filters and "month" not in explicit_filters:
-            planner_filters.pop("month", None)
-        if "month" in explicit_filters and "quarter" not in explicit_filters:
-            planner_filters.pop("quarter", None)
-        merged_filters = {**planner_filters, **explicit_filters}
+        merged_filters = dict(explicit_filters)
         modality = _clean_modality(raw_aspect.get("modality"))
         table_task = _clean_table_task(raw_aspect.get("table_task"))
         operation = _clean_operation(raw_aspect.get("operation"))
@@ -787,6 +771,7 @@ def _aspects_from_payload(
                 table_filters=merged_filters,
                 operation=operation,
                 explicit_filter_keys=tuple(explicit_filters),
+                subject_scope=tuple(x for x in _clean_string_list(raw_aspect.get('subject_scope')) if x in question),
             )
         )
 
@@ -824,7 +809,7 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
         aspects,
         max_aspects=max(budget.max_aspects, budget.system_max_aspects),
     )
-    return _split_merged_llm_aspects(expanded, budget)
+    return expanded
 
 
 def _explicit_document_anchor_aspects(
@@ -987,13 +972,14 @@ def _fallback_mcq_aspect(question: str, options: list[str] | None = None) -> Que
     ]
     return QueryAspect(
         aspect_id="multiple_choice_evidence",
-        question=anchor_question,
+        question=question,
         search_queries=tuple(_dedupe_search_queries(search_queries)),
         evidence_need="在指定材料中核对候选项并找到直接支持或否定证据",
         keywords=tuple(_dedupe([anchor_question, *title_candidates])[:8]),
         modality="text",
-        table_filters={"file_type": requested_format} if requested_format else {},
-        explicit_filter_keys=("file_type",) if requested_format else (),
+        table_filters={**({"file_type": requested_format} if requested_format else {}),
+                       **({"source_title": title_candidates[0]} if len(re.findall(r"《([^》]+)》", question)) == 1 else {})},
+        explicit_filter_keys=tuple((["file_type"] if requested_format else []) + (["source_title"] if len(re.findall(r"《([^》]+)》", question)) == 1 else [])),
     )
 
 
@@ -1024,11 +1010,6 @@ def _mcq_option_evidence_statements(options: list[str]) -> list[str]:
 
 
 def _split_question_parts(question: str) -> list[str]:
-    question = re.sub(
-        r"请完整给出材料明确写明的条件[、，,]范围[、，,]期限或例外[。.]?",
-        "",
-        question,
-    )
     return [
         part.strip()
         for part in re.split(r"[？?。；;]|如果|若|以及|并且|同时|，且", question)
@@ -1152,12 +1133,7 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         # retrieval so the deterministic formula executor receives formula
         # chunks instead of SpreadsheetCell candidates.
         return None
-    table_actions = [
-        "数值", "金额", "余额", "是多少", "多少", "最高", "最低", "最大", "最小",
-        "差值", "差额", "相差", "取数", "读取", "查询", "计算", "增加额", "减少额",
-    ]
     explicit_table = _has_explicit_table_marker(question)
-    numerical_intent = any(action in normalized for action in table_actions)
     statistical_table_intent = _looks_like_statistical_table_question(normalized)
     if not explicit_table and not statistical_table_intent:
         return None
@@ -1202,7 +1178,7 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         # A title + row + column is a complete cell locator. Period tokens may
         # legitimately live inside a hierarchical row/column label and must not
         # become independent hard filters against sparse legacy metadata.
-        source_title = str(filters.get("source_title") or "")
+        axis_labels = str(filters.get('row_label') or '') + ' ' + str(filters.get('column_label') or '')
         period_tokens = {
             "year": (f"{filters.get('year')}年",),
             "month": (f"{filters.get('month')}月",),
@@ -1215,7 +1191,7 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
             ),
         }
         for period_key, tokens in period_tokens.items():
-            if not any(token and token in source_title for token in tokens):
+            if any(token and token in axis_labels for token in tokens):
                 filters.pop(period_key, None)
     if table_task == "calculate" and selectors:
         # Calculation operands carry their own columns.  A global column filter
@@ -1288,6 +1264,11 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         filters.pop("year", None)
         filters.pop("month", None)
         filters.pop("quarter", None)
+        if len({s.get('source_title') for s in selectors if s.get('source_title')}) >= 2:
+            filters.pop('source_title', None)
+    common_columns = {s.get('column_label') for s in selectors if s.get('column_label')}
+    if table_task == 'compare' and len(common_columns) == 1 and all(s.get('column_label') for s in selectors):
+        filters['column_label'] = next(iter(common_columns))
     # “在某口径下取数” is still a pure table lookup. Only explicit requests to
     # combine a regulation/explanation with table data should trigger the
     # slower mixed vector path.
@@ -1495,11 +1476,11 @@ def _question_for_single_anchor(question: str, anchor: str) -> str:
     title_match = re.search(r"《([^》]+)》", question)
     title_prefix = f"根据《{title_match.group(1)}》，" if title_match else ""
     quoted_matches = list(re.finditer(r"[“‘\"]([^”’\"]+)[”’\"]", question))
-    if not title_match and len(quoted_matches) >= 2:
+    if quoted_matches:
         prefix = question[: quoted_matches[0].start()].rstrip("，,、和与及")
         suffix = question[quoted_matches[-1].end() :].lstrip("，,、和与及")
         return f"{prefix}“{anchor}”{suffix}".strip()
-    return f"{title_prefix}请说明与“{anchor}”相关的明确规定，并完整给出条件、范围、期限或例外。"
+    return f"{title_prefix}{question}（目标：{anchor}）"
 
 
 def _extract_table_selectors(
@@ -1518,11 +1499,6 @@ def _extract_table_selectors(
             if value.strip()
         ]
     )
-    if "四类贷款余额" in re.sub(r"\s+", "", question):
-        return [
-            {"label": label}
-            for label in ("损失类贷款余额", "不良贷款余额", "可疑类贷款余额", "次级类贷款余额")
-        ]
     reconciliation_selectors = _reconciliation_source_selectors(question) if table_task == "calculate" else []
     if reconciliation_selectors:
         return reconciliation_selectors
@@ -1589,9 +1565,6 @@ def _extract_table_selectors(
                 {"row_or_indicator": metric, "source_title": title}
                 for metric, title in zip(metrics, source_titles)
             ]
-        elif any(term in normalized for term in ["分项之和", "分项合计", "四个分项"]):
-            component_order = ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
-            selectors = [{"row_or_indicator": item} for item in component_order]
         elif len(indicators) >= 2:
             # “占…比例/比重”与“…的多少倍”是 ratio 句式；其中的“比”字不能与
             # “A比B多|少”的差值句式混淆（“比例”的“比”+“多少”的“多”），
@@ -1733,8 +1706,8 @@ def _comparison_labels(text: str) -> list[str]:
     if not 2 <= len(parts) <= 8:
         return []
     # Shared-tail enumeration: “损失类、不良、可疑类和次级类贷款余额”.
-    tail_match = re.search(r"(贷款余额|保费收入|账面余额|健康险|合计)$", parts[-1])
-    tail = tail_match.group(1) if tail_match else ""
+    tails = [label for label in _TABLE_VOCABULARY.get() if parts[-1].endswith(label) and label != parts[-1]]
+    tail = max(tails, key=len, default='')
     labels: list[str] = []
     for part in parts:
         cleaned = re.sub(r"^(?:在|按|以)", "", part)
@@ -1781,32 +1754,20 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
     indicators = _mentioned_table_indicators(question)
     row_label = indicators[0] if indicators else ""
     column_label = ""
-    if "本年累计" in compact or "截至当期" in compact:
+    value_text = re.sub(r'《[^》]+》', '', compact)
+    actual_columns = [x for x in _TABLE_COLUMNS.get() if x in value_text and x not in TABLE_SCOPE_TERMS
+                      and not re.fullmatch(r'20\d{2}年|\d{1,2}月', x)]
+    actual_columns.sort(key=len, reverse=True)
+    if actual_columns:
+        column_label = actual_columns[0]
+        scope = compact.replace(column_label, "")
+        scoped_rows = [r for r in _TABLE_ROWS.get() if r not in actual_columns and r in scope]
+        if len(scoped_rows) == 1:
+            row_label = scoped_rows[0]
+    if not column_label and ("本年累计" in compact or "截至当期" in compact):
         column_label = "本年累计"
-    elif "账面值" in compact or "账面余额" in compact:
+    elif not column_label and ("账面值" in compact or "账面余额" in compact):
         column_label = "账面余额"
-    if "全国各地区原保险保费收入" in compact and "健康险" in compact:
-        row_label = "全国合计" if "全国健康险合计" in compact or "全国合计" in compact else row_label
-        column_label = "健康险"
-    source_family_match = re.search(
-        r"(人身险公司(?:原保险保费收入)?经营(?:情况)?表|财产(?:险|保险)公司(?:原保险保费收入)?经营(?:情况)?表|保险业资金运用情况表|保险业经营(?:情况)?表|全国各地区原保险保费收入(?:情况)?表)",
-        compact,
-    )
-    source_family = source_family_match.group(1) if source_family_match else ""
-    if source_family:
-        if "人身险公司" in source_family:
-            source_family = "人身险公司经营情况表"
-        elif "财产险公司" in source_family or "财产保险公司" in source_family:
-            source_family = "财产保险公司经营情况表"
-        elif source_family == "保险业经营表":
-            source_family = "保险业经营情况表"
-        elif source_family == "全国各地区原保险保费收入表":
-            source_family = "全国各地区原保险保费收入情况表"
-    if not source_family:
-        if "人身险公司" in compact and "原保险保费收入" in compact:
-            source_family = "人身险公司经营情况表"
-        elif ("财产险公司" in compact or "财产保险公司" in compact) and "原保险保费收入" in compact:
-            source_family = "财产保险公司经营情况表"
     selectors: list[dict[str, Any]] = []
     for period in unique_periods:
         selector: dict[str, Any] = {
@@ -1814,11 +1775,9 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
             **({"row_label": row_label} if row_label else {}),
             **({"column_label": column_label} if column_label else {}),
         }
-        if source_family:
-            if period.get("month"):
-                selector["source_title"] = f"{period['year']}年{period['month']}月{source_family}"
-            elif period.get("quarter"):
-                selector["source_title"] = f"{period['year']}年{period['quarter']}季度{source_family}"
+        title = _indexed_source_for_question(question, period)
+        if title:
+            selector["source_title"] = title
         selectors.append(selector)
     return selectors
 
@@ -1936,9 +1895,9 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     all_titles = [m.group(1).strip() for m in re.finditer(r"《([^》]+)》", question)]
     if len(all_titles) >= 2:
         filters["source_titles"] = all_titles[:2]
-    else:
+    elif title_match is None:
         natural_title = re.search(
-            r"(20\d{2}年(?:\d{1,2}月|[一二三四1-4]季度)?[^，。；：:]{2,45}?(?:经营情况表|原保险保费收入表|贷款表|指标分机构类表))",
+            r"(20\d{2}年(?:\d{1,2}月|[一二三四1-4]季度)?[^，。；：:]{2,45}?(?:情况表|统计表|报表|表))",
             question,
         )
         if natural_title:
@@ -1948,12 +1907,8 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
                 # Cross-period selectors below carry one concrete title per
                 # period.  A composite phrase is not a real document title.
                 pass
-            elif "保障房贷款表" in value:
-                filters["sheet"] = "保障房贷款"
-            elif "商业银行主要指标分机构类表" in value:
-                filters["source_title"] = value.removesuffix("表")
             else:
-                filters["source_title"] = value
+                filters["source_title"] = _indexed_source_for_question(question, {}) or value
     document_number_match = re.search(r"[\u4e00-\u9fffA-Za-z]+〔\d{4}〕\d+号", question)
     if document_number_match:
         filters["document_number"] = document_number_match.group(0)
@@ -1998,17 +1953,10 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     month_match = re.search(r"(?:20\d{2}年)?(\d{1,2})月", compact_question)
     if month_match:
         filters["month"] = int(month_match.group(1))
-    if "source_title" not in filters and filters.get("year") and filters.get("month"):
-        year = int(filters["year"])
-        month = int(filters["month"])
-        if "财产险表" in compact_question or "财产保险公司经营" in compact_question:
-            filters["source_title"] = f"{year}年{month}月财产保险公司经营情况表"
-        elif "人身险表" in compact_question or "人身保险公司经营" in compact_question:
-            filters["source_title"] = f"{year}年{month}月人身险公司经营情况表"
-        elif "保险业经营表" in compact_question or "保险业经营情况表" in compact_question:
-            filters["source_title"] = f"{year}年{month}月保险业经营情况表"
-        elif "全国各地区" in compact_question and "原保险保费收入" in compact_question:
-            filters["source_title"] = f"{year}年{month}月全国各地区原保险保费收入情况表"
+    if "source_title" not in filters:
+        title = _indexed_source_for_question(question, {k: filters[k] for k in ('year', 'month', 'quarter') if k in filters})
+        if title:
+            filters['source_title'] = title
     quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", compact_question)
     if quarter_match:
         value = quarter_match.group(1) or quarter_match.group(2)
@@ -2046,21 +1994,29 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
             filters["indicator"] = non_scope_terms[0]
             if len(non_scope_terms) > 1:
                 filters["column_label"] = non_scope_terms[-1]
-    indicators = _mentioned_table_indicators(question)
+    # Source and worksheet labels locate the table. Their words do not request
+    # an indicator or institution row in that table.
+    value_question = re.sub(r"《[^》]+》", "", question)
+    if sheet_match:
+        value_question = value_question.replace(sheet_match.group(0), "")
+    indicators = _mentioned_table_indicators(value_question)
     if indicators and "indicator" not in filters:
         filters["indicator"] = indicators[0]
         # The row label stays the bare indicator: composite corpus rows carry
         # the institution as a separate segment ("其中：财产险公司 / 其中：
         # 银行存款"), which is not a contiguous substring, and the institution
         # qualifier is already rewarded by the token-overlap scoring.
-        filters["row_label"] = indicators[0]
-    scope_text = re.split(r"(?:请比较|请对比|比较|对比)", question, maxsplit=1)[0]
+        if indicators[0] in _TABLE_COLUMNS.get() and indicators[0] not in _TABLE_ROWS.get():
+            filters.setdefault('column_label', indicators[0])
+        else:
+            filters["row_label"] = indicators[0]
+    scope_text = re.split(r"(?:请比较|请对比|比较|对比)", value_question, maxsplit=1)[0]
     # A position word right after the title (“《…情况表》中保险公司…”) belongs
     # to the title fragment, not to the institution name.
     scope_text = re.sub(r"《[^》]+》[中里内下于的]?", "", scope_text)
     if explicit_row is None:
         matched_label = False
-        for label in ["全国合计", "全  国", "北京", "上海", "江苏", "浙江", "广东", "大型商业银行", "城市商业银行", "农村商业银行", "股份制商业银行", "民营银行", "外资银行"]:
+        for label in sorted(_TABLE_ROWS.get(), key=len, reverse=True):
             if label.replace(" ", "") in re.sub(r"\s+", "", scope_text):
                 filters["row_label"] = label
                 matched_label = True
@@ -2080,6 +2036,19 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
             if institution_terms:
                 current_row_label = str(filters.get("row_label") or "").strip()
                 filters["row_label"] = f"{institution_terms[0]} {current_row_label}".strip()
+    if "column_label" not in filters:
+        column_terms = [c for c in _TABLE_COLUMNS.get() if c in value_question and c not in TABLE_SCOPE_TERMS
+                        and not re.fullmatch(r'20\d{2}年|\d{1,2}月', c)]
+        column_terms.sort(key=len, reverse=True)
+        if column_terms:
+            filters['column_label'] = column_terms[0]
+    # An institution and a metric may be separate segments of one indexed row.
+    # Preserve both rather than replacing the metric with its parent category.
+    institution_terms = _institution_row_terms(value_question, str(filters.get('indicator') or ''))
+    if len(institution_terms) == 1 and institution_terms[0] != filters.get('column_label'):
+        metric = str(filters.get('indicator') or '')
+        if metric and institution_terms[0] not in metric:
+            filters['row_label'] = institution_terms[0] + ' ' + metric
     row_scoped_phrase = False
     # Quoted column scope first: the quotes are an exact boundary, so
     # '截至当期-账面余额'口径下 extracts cleanly while an institution term in
@@ -2187,19 +2156,7 @@ def _looks_like_statistical_table_question(question: str) -> bool:
     )
     if not has_period:
         return False
-    source_or_indicator = any(
-        term in compact
-        for term in (
-            *COMMON_TABLE_INDICATORS,
-            "人身险公司",
-            "财产险公司",
-            "财产保险公司",
-            "保险业合计",
-            "全国各地区",
-            "全国健康险",
-            "本年累计值",
-        )
-    )
+    source_or_indicator = bool(_mentioned_table_indicators(question))
     action = any(
         term in compact
         for term in ("读取", "取数", "查询", "比较", "对比", "最高", "最低", "最大", "最小", "计算", "差额", "差值", "是多少", "多少")
@@ -2227,66 +2184,53 @@ def _mixed_table_question_part(question: str) -> str:
 
 
 def _reconciliation_source_selectors(question: str) -> list[dict[str, Any]]:
+    from backend.app.services.retrieval_metadata_filter_service import _normalize_title
     compact = re.sub(r"\s+", "", question)
-    if not all(term in compact for term in ("保险业合计", "人身险", "财产险")):
+    expression = re.search(r'(?:计算|差额)[：:]?([^，。；]+[－—-][^，。；]+)', compact)
+    if not expression:
         return []
-    if not ("勾稽差额" in compact or re.search(r"计算.*保险业合计[－—-]人身险[－—-]财产险", compact)):
+    subjects = re.split(r'[－—-]', re.split(r'[:：]', expression.group(1))[-1])
+    subjects = [re.sub(r'^(?:勾稽|差额|计算|合计)[：:]?|合计$', '', x) for x in subjects]
+    indicators = _mentioned_table_indicators(question)
+    if not indicators or len(subjects) < 2:
         return []
-    period = re.search(r"(20\d{2})年(\d{1,2})月", compact)
-    if not period:
-        return []
-    year, month = int(period.group(1)), int(period.group(2))
-    common = {"year": year, "month": month, "row_label": "原保险保费收入", "column_label": "本年累计"}
-    return [
-        {**common, "source_title": f"{year}年{month}月保险业经营情况表"},
-        {**common, "source_title": f"{year}年{month}月人身险公司经营情况表"},
-        {**common, "source_title": f"{year}年{month}月财产保险公司经营情况表"},
-    ]
+    period = re.search(r'(20\d{2})年(\d{1,2})月', compact)
+    year, month = (int(period[1]), int(period[2])) if period else (None, None)
+    result = []
+    for subject in subjects:
+        titles = [title for title in _TABLE_SOURCES.get() if subject and _normalize_title(subject) in _normalize_title(title) and
+                  (year is None or f'{year}年{month}月' in title)]
+        if len(titles) != 1:
+            return []
+        selector = {'source_title': re.sub(r'^(?:\d+_)|\.xlsx?$', '', titles[0]),
+                    'row_label': indicators[-1]}
+        if year is not None:
+            selector.update(year=year, month=month)
+        if '累计' in compact:
+            columns = [x for x in _TABLE_VOCABULARY.get() if x.endswith('累计')]
+            if len(columns) == 1:
+                selector['column_label'] = columns[0]
+        result.append(selector)
+    return result
 
 
 def _regional_metric_comparison_selectors(question: str) -> list[dict[str, Any]]:
     compact = re.sub(r"\s+", "", question)
-    # Prefer a bounded catalogue of report columns.  A free-form ``...险``
-    # expression is too greedy for questions such as ``2024年9月全国健康险的...``
-    # and used to turn the month/title prefix into the column label.
-    metric_names = (
-        "机动车辆保险", "意外伤害保险", "人寿保险", "健康保险",
-        "责任保险", "农业保险", "信用保险", "保证保险",
-        "健康险", "意外险", "寿险", "财产险", "人身险",
-    )
-    metric_pattern = "|".join(re.escape(value) for value in metric_names)
-    metric_match = re.search(rf"(?P<metric>{metric_pattern})(?:的|中|口径)", compact)
-    if not metric_match:
-        return []
-    metric = metric_match.group("metric")
-    # Only inspect the enumeration governed by this metric.  Looking across the
-    # whole question incorrectly treated the ``全国`` in ``全国健康险`` as a row.
-    region_segment = compact[metric_match.end():]
-    region_segment = re.split(r"(?:，?给出|。?最后|；|。)", region_segment, maxsplit=1)[0]
-    region_names = (
-        "全国合计", "公司本级", "全国", "北京", "天津", "河北", "山西", "内蒙古",
-        "辽宁", "吉林", "黑龙江", "上海", "江苏", "浙江", "安徽", "福建", "江西",
-        "山东", "河南", "湖北", "湖南", "广东", "广西", "海南", "重庆", "四川",
-        "贵州", "云南", "西藏", "陕西", "甘肃", "青海", "宁夏", "新疆",
-    )
-    positions = [
-        (region_segment.find(region), region)
-        for region in region_names
-        if region_segment.find(region) >= 0
-    ]
-    positions.sort(key=lambda item: item[0])
-    regions: list[str] = []
-    for _, region in positions:
-        if region == "全国" and "全国合计" in region_segment:
+    labels = sorted(_TABLE_VOCABULARY.get(), key=len, reverse=True)
+    for metric in labels:
+        marker = re.search(re.escape(metric)+r'(?:的|中|口径)', compact)
+        if not marker:
             continue
-        if region not in regions:
-            regions.append(region)
-    if len(regions) < 2:
-        return []
-    return [
-        {"label": region, "column_label": metric}
-        for region in regions
-    ]
+        segment = re.split(r'(?:，?给出|。?最后|；|。)', compact[marker.end():], maxsplit=1)[0]
+        pieces = re.split(r'[、,，]|以及|与|和|及', segment)
+        rows = []
+        for piece in pieces:
+            matches = [label for label in labels if label in piece and label != metric]
+            if matches:
+                rows.append(matches[0])
+        if len(rows) >= 2:
+            return [{'label': row, 'column_label': metric} for row in dict.fromkeys(rows)]
+    return []
 
 
 def _is_execution_instruction_aspect(question: str) -> bool:
@@ -2327,8 +2271,25 @@ def _should_force_text_aspect(question: str, sub_question: str, modality: str) -
 
 
 def _mentioned_table_indicators(question: str) -> list[str]:
-    normalized = re.sub(r"\s+", "", question)
-    matches = [indicator for indicator in COMMON_TABLE_INDICATORS if indicator in normalized]
+    normalized = re.sub(r"《[^》]+》", "", question)
+    normalized = re.sub(r"工作表\s*[：:]\s*.+?(?=）\s*[，,]|[，。；;]|$)", "", normalized)
+    normalized = re.sub(r"工作表\s*[“\"‘']([^”\"’']+)[”\"’']", "", normalized)
+    normalized = re.sub(r"20\d{2}年|[一二三四1-4]季度|\d{1,2}月", "", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+    matches = [indicator for indicator in _TABLE_VOCABULARY.get() if indicator in normalized]
+    matches = [value for value in matches if value not in TABLE_SCOPE_TERMS]
+    # A category name embedded in an institution name is a scope, not an
+    # independent operand (for example, a row named X in "X公司收入").
+    matches = [value for value in matches if not re.search(re.escape(value) + r'(?:公司|银行|机构)', normalized)]
+    if any(not re.search(r'(?:公司|银行|机构)$', value) for value in matches):
+        matches = [value for value in matches if not re.search(r'(?:公司|银行|机构)$', value)]
+    # A user may name only the distinguishing part of an indexed label.
+    # Keep the user's quantity phrase when an actual label contains it.
+    phrases = re.findall(r'[\u4e00-\u9fff]{0,12}(?:余额|金额|收入|支出|总额|费用|合计|总量|数量|净额|比例|比率|占比|率)', normalized)
+    phrases = [re.split(r'公司|银行|以及|与|和|及|中|的|查询|计算|给出|读取', value)[-1] for value in phrases]
+    matches.extend(value for value in phrases if len(value) >= 2 and
+                   (not _TABLE_VOCABULARY.get() or any(value in label for label in _TABLE_VOCABULARY.get())))
+    matches = list(dict.fromkeys(matches))
     matches.sort(key=lambda item: normalized.find(item))
     # Substring overlap: “不良贷款余额” also contains “贷款余额”.  A longer
     # indicator already covers its own shorter substring, so drop any match
@@ -2383,6 +2344,7 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
         tail = re.split(r"(?:其中：|以及|与|和|及|或)", word)[-1]
         if tail:
             word = tail
+        word = re.sub(r'^.*?表[的中里内下]', '', word)
         # 标题/时间粘连（如 "…情况表中保险公司…"）可能把位置/时间词吞进机构名；
         # 剥掉通用前缀。 "中国" 是机构名合法前缀（中国银行/中国人寿），保留。
         word = re.sub(
@@ -2392,7 +2354,9 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
         )
         if word and word not in candidates:
             candidates.append(word)
-    for label in ("保险业合计", "全国合计"):
+    for label in _TABLE_VOCABULARY.get():
+        if not label.endswith("合计"):
+            continue
         if label in compact and label not in candidates:
             candidates.append(label)
     # 机构词必须与指标词同分句且紧邻（指标词起点在机构词后 12 字符内），
@@ -2492,3 +2456,31 @@ def _infer_evidence_type(text: str) -> str:
     if any(term in normalized for term in ["哪些", "情形", "条件", "口径"]):
         return "分类条件或填报口径"
     return "相关制度依据"
+
+
+def _indexed_source_for_question(question: str, period: dict[str, Any]) -> str | None:
+    from backend.app.services.retrieval_metadata_filter_service import _normalize_title
+    def key(value):
+        value = _normalize_title(value)
+        value = re.sub(r'^\d+_|20\d{2}年|\d{1,2}月|[一二三四1-4]季度|\.(?:xlsx?|csv)$', '', value)
+        return re.sub(r'情况|公司经营|[《》\s]', '', value)
+    if not period:
+        periods = re.findall(r'(20\d{2})年(\d{1,2})月', question)
+        months = re.findall(r'(\d{1,2})月', question)
+        if len(set(periods)) == 1 and len(set(months)) == 1:
+            period = {'year': int(periods[0][0]), 'month': int(periods[0][1])}
+    normalized_question = key(question)
+    matches = []
+    for title in _TABLE_SOURCES.get():
+        if period.get('year') and f"{period['year']}年" not in title:
+            continue
+        if period.get('month') and not re.search(rf"(?<!\d){period['month']}月", title):
+            continue
+        if period.get('quarter') and not re.search(rf"{period['quarter']}季度", title):
+            continue
+        stem = key(title)
+        if stem and stem in normalized_question:
+            matches.append(title)
+    if len(matches) != 1:
+        return None
+    return re.sub(r'^(?:\d+_)|\.(?:xlsx?|csv)$', '', matches[0])

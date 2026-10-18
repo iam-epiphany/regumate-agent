@@ -5,9 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.services import reference_resolver_service as resolver
-from backend.app.services import retrieval_advisor_service as advisor
 from backend.app.services import retrieval_support as support
-from backend.app.services.llm_client import ChatCompletionError
 from backend.app.services.retrieval_service import RetrievalMatch
 from backend.app.core.rag_features import RagFeatures
 from backend.app.schemas.qa import Citation
@@ -45,35 +43,8 @@ def test_compound_locator_requires_both_page_and_printed_table_number():
     assert resolved(anchor, [wrong_page, wrong_number, ingest_ordinal]) == []
 
 
-def test_model_recognizes_implicit_reference_and_batches_sources(monkeypatch):
-    anchors = [chunk("a", "操作依照后面给出的流程示意办理。"), chunk("b", "没有引用。")]
-    calls = []
-
-    def model(instruction, payload):
-        calls.append(payload)
-        return {"sources": [{"source": 0, "references": [{"kind": "figure", "quote": "后面给出的流程示意",
-                                                          "direction": "next"}]}]}
-
-    monkeypatch.setattr(resolver, "request_advice", model)
-    hints = resolver.recognize_references(anchors)
-    figure = chunk("figure", "图2 办理流程")
-    assert resolved(anchors[0], [chunk("paragraph", "普通正文"), figure], hints["a"])[0].chunk == figure
-    assert len(calls) == 1 and len(calls[0]) == 2
-    assert hints["b"] == []
 
 
-@pytest.mark.parametrize("response", [
-    {}, {"sources": "invalid"}, {"sources": [{"source": 20, "references": []}]},
-    {"sources": [{"source": 0, "references": [{"kind": "table", "quote": "原文没有的引用", "number": "3"}]}]},
-    {"sources": [{"source": 0, "references": [{"kind": "table", "quote": "见下表", "number": "3"}]}]},
-    {"sources": [{"source": 0, "references": [{"kind": "table", "quote": "见下表", "target_chunk_id": "invented"}]}]},
-])
-def test_invalid_model_output_keeps_explicit_fallback(monkeypatch, response):
-    anchor = chunk("a", "见下表，另见第十条。")
-    monkeypatch.setattr(resolver, "request_advice", lambda *args: response)
-    hints = resolver.recognize_references([anchor])["a"]
-    assert any(h.kind == "clause" and h.number == "十" for h in hints)
-    assert not any(h.number == "3" for h in hints)
 
 
 def test_ambiguous_or_missing_objects_and_foreign_documents_are_not_guessed():
@@ -121,7 +92,7 @@ def test_split_attachment_across_pages_and_merged_inline_table():
 def test_dynamic_spreadsheet_evidence_skips_model(monkeypatch):
     def unexpected(*args):
         pytest.fail("spreadsheet fast path called the reference model")
-    monkeypatch.setattr(resolver, "request_advice", unexpected)
+    monkeypatch.setattr(support, "recognize_references", unexpected)
     anchor = chunk("a", "单元格=100", table_id="t")
     citation = Citation(document_id="document", chunk_id="a", filename="source.xlsx", excerpt=anchor.text,
                         chunk_type="table_cell")
@@ -158,72 +129,16 @@ def test_reference_feature_switch_skips_model_and_edges(monkeypatch):
     support._expand_neighbor_matches(None, "目标", [match], {"document": [anchor, target]})
 
 
-@pytest.mark.parametrize("response", [{}, {"status": "sufficient", "missing_terms": ["x"]},
-                                      {"status": "wrong", "missing_terms": []}])
-def test_bad_crag_review_falls_back(monkeypatch, response):
-    monkeypatch.setattr(advisor, "request_advice", lambda *args: response)
-    assert advisor.review_coverage("如何办理", ["证据"])[1] == "rule_fallback"
 
 
-def test_crag_model_terms_recover_only_real_same_document_evidence(monkeypatch):
-    from backend.app.tests.test_retrieval_service import _intent_gap_aspect, _base_match, _fake_db_for_support, _snapshot_chunk
-    monkeypatch.setattr(advisor, "request_advice", lambda *args: {"status": "insufficient", "missing_terms": ["办理流程"]})
-    target = _snapshot_chunk("DOC-1-target", "DOC-1", text="办理流程应经过申请和审批。", section_title="流程")
-    supplements = support._intent_gap_supplement(_fake_db_for_support(), _intent_gap_aspect(),
-                                                [_base_match(evidence_text="一般规定")],
-                                                document_chunk_cache={"DOC-1": [target]})
-    assert any(item.citation.chunk_id == target.chunk_id for item in supplements)
-    assert advisor.review_coverage("如何办理", ["一般规定"])[0].status == "insufficient"
 
 
-def test_advisor_timeout_and_invalid_json_fall_back(monkeypatch):
-    def unavailable(*args, **kwargs):
-        raise ChatCompletionError("timeout")
-    monkeypatch.setattr(advisor, "request_advice", unavailable)
-    assert advisor.review_coverage("问题", ["证据"])[1] == "rule_fallback"
 
 
-def test_advisor_request_uses_shared_client_with_bounds(monkeypatch):
-    from backend.app.core import config
-    captured = []
-    def model(connection, messages, **kwargs):
-        captured.append((connection, messages, kwargs))
-        return '{"status":"sufficient","missing_terms":[]}'
-    monkeypatch.setattr(config, "RETRIEVAL_ADVISOR_ENABLED", True)
-    monkeypatch.setattr(advisor, "chat_completion_content", model)
-    assert advisor.request_advice("inspect", {"text": "data"})["status"] == "sufficient"
-    connection, messages, options = captured[0]
-    assert connection.timeout_seconds == config.RETRIEVAL_ADVISOR_TIMEOUT_SECONDS
-    assert connection.disable_thinking is True
-    assert options == {"temperature": 0, "max_tokens": 1800}
-    assert messages[0]["role"] == "system" and messages[1]["role"] == "user"
-    monkeypatch.setattr(advisor, "chat_completion_content", lambda *args, **kwargs: "not JSON")
-    assert advisor.review_coverage("问题", ["证据"])[1] == "rule_fallback"
 
 
-def test_request_budget_is_shared_and_reset_after_retrieval(monkeypatch):
-    from backend.app.core import config
-    calls = []
-    monkeypatch.setattr(config, "RETRIEVAL_ADVISOR_ENABLED", True)
-    monkeypatch.setattr(config, "RETRIEVAL_ADVISOR_MAX_CALLS", 1)
-    monkeypatch.setattr(advisor, "chat_completion_content", lambda *args, **kwargs: calls.append(1) or '{}')
-
-    @advisor.with_advice_budget
-    def retrieve():
-        advisor.request_advice("first aspect", {})
-        with pytest.raises(ChatCompletionError, match="budget exhausted"):
-            advisor.request_advice("second aspect", {})
-
-    retrieve()
-    retrieve()
-    assert calls == [1, 1]
 
 
-def test_scope_terms_must_be_verbatim_from_question(monkeypatch):
-    monkeypatch.setattr(advisor, "request_advice", lambda *args: {
-        "status": "insufficient", "missing_terms": ["办理流程"], "scope_terms": ["问题没有这个限定"],
-    })
-    assert advisor.review_coverage("申请如何办理", ["办理规定"])[1] == "rule_fallback"
 
 
 def test_unindexed_adjacent_context_is_not_skipped_to_farther_chunk():

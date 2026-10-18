@@ -17,15 +17,16 @@ export function AnswerResult({ answer, options, onSelectCitation, onCopy, onReru
   const conclusion = normalizeConclusion(paragraphs[0] ?? (answer.refused ? "当前依据不足，无法给出确定结论。" : "当前未生成回答正文。"));
   const explanation = paragraphs.slice(1);
   const tableCitations = answer.citations.filter((citation) => citation.chunk_type === "table" || citation.evidence_role === "table_evidence");
+  const verified = answer.grounding_validation.status === "passed" && answer.grounding_validation.task_complete === true && answer.grounding_validation.passed === true;
 
   return (
     <section className={answer.refused ? "answer-document answer-document--refused" : "answer-document"}>
       <header className="answer-document__head">
         <div className="answer-document__title">
-          <span className="answer-document__seal">{answer.refused ? <ShieldAlert size={20} /> : <ShieldCheck size={20} />}</span>
+          <span className="answer-document__seal">{verified ? <ShieldCheck size={20} /> : <ShieldAlert size={20} />}</span>
           <div>
             <span className="section-kicker">核查结果</span>
-            <h2>{answer.refused ? "当前无法给出确定结论" : answerTitle(answer)}</h2>
+            <h2>{answer.answer_type === "service_error" ? "问答服务暂不可用" : answer.answer_type === "clarification" ? "需要补充问题信息" : answer.refused ? "当前无法给出确定结论" : answerTitle(answer)}</h2>
           </div>
         </div>
         <div className="trust-summary" aria-label="答案可信状态">
@@ -105,7 +106,7 @@ function RefusalNotice({ answer }: { answer: QAResponse }) {
       <h3>为什么无法判断</h3>
       <p>{refusalReasonLabel(answer.refusal_reason)}</p>
       {missingAspects.length ? <p><strong>缺少的关键依据：</strong>{missingAspects.join("；")}</p> : null}
-      <p><strong>可以继续：</strong>补充更具体的制度文件、填报说明、报表期间、指标名称或完整选项后重新提问。</p>
+      <p><strong>可以继续：</strong>{answer.answer_type === "service_error" ? "稍后重试。" : "补充更具体的制度文件、填报说明、报表期间、指标名称或完整选项后重新提问。"}</p>
     </section>
   );
 }
@@ -134,25 +135,30 @@ function answerTitle(answer: QAResponse): string {
     extractive_fallback: "可核验的原文摘录",
     clarification: "需要补充问题信息",
   };
-  return labels[answer.answer_type] ?? "可信回答";
+  return labels[answer.answer_type] ?? "回答结果";
 }
 
 function contextLabel(answer: QAResponse): string {
+  if (answer.answer_type === "service_error") return "服务异常";
+  if (answer.answer_type === "clarification") return "待澄清";
   if (answer.refused || answer.context_package?.retrieval_summary.has_sufficient_context === false) return "依据不足";
-  if (answer.confidence >= 0.8) return "依据较充分";
-  if (answer.confidence >= 0.6) return "依据一般";
-  return "依据较弱";
+  return answer.grounding_validation.status === "passed" && answer.grounding_validation.task_complete === true
+    ? "问题已完整回答" : "完整性未确认";
 }
 
 function validationLabel(answer: QAResponse): string {
-  const passed = answer.grounding_validation?.passed;
-  if (passed === true) return "依据核对通过";
-  if (passed === false) return "依据核对未通过";
-  return "未提供核对结果";
+  const validation = answer.grounding_validation;
+  if (validation.status === "passed" && validation.task_complete === true && validation.passed === true) return "依据核对通过";
+  if (validation.status === "failed") return "依据核对未通过";
+  if (validation.status === "error") return "核对服务异常";
+  if (validation.status === "not_run") return "尚未完成核对";
+  return "未记录核对状态";
 }
 
 function refusalReasonLabel(reason: string | null): string {
   const labels: Record<string, string> = {
+    generation_unavailable: "答案生成服务暂不可用，请稍后重试。",
+    validation_service_unavailable: "答案核对服务暂不可用，当前没有输出未经确认的结论。",
     insufficient_context: "当前知识库没有检索到足够的直接依据。",
     related_context_only: "只找到相关背景，缺少能够直接回答问题的证据。",
     grounding_validation_failed: "生成内容中的关键事实没有通过引用依据核对。",

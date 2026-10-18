@@ -12,6 +12,7 @@ from backend.app.services.chunk_service import build_chunks_from_parsed
 from backend.app.services.document_parser import DocumentParseError, parse_document
 from backend.app.services.vector_store_service import (
     VectorStoreError,
+    count_document_vectors,
     delete_document_vectors,
     document_vector_chunk_ids,
 )

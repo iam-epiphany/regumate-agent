@@ -83,6 +83,41 @@ def test_spreadsheet_retrieval_supports_max_compare(db_session) -> None:
     assert matches[0].citation.metadata["value"] == "18.8"
 
 
+@pytest.mark.parametrize("largest_label", ["新增保险金额", "授权额度"])
+def test_compare_keeps_every_requested_metric_in_same_unit(db_session, largest_label) -> None:
+    labels = ("收入", "支出", largest_label)
+    for index, (label, value) in enumerate(zip(labels, (12, 7, 900)), start=5):
+        _add_table_row(db_session, chunk_id=f"DOC-METRIC-{index}", row_label=label,
+                       value=value, coordinate=f"C{index}", column_label="数值")
+    matches = retrieve_spreadsheet_matches(db_session, _aspect(
+        "比较各项数值，哪项最高？", table_task="compare", operation="max",
+        selectors=tuple({"row_label": label, "column_label": "数值"} for label in labels),
+    ))
+    assert len(matches) == 1
+    assert matches[0].metadata["row_label"] == largest_label
+    assert len(matches[0].metadata["comparison_cells"]) == 3
+
+
+@pytest.mark.parametrize("coordinates", [("F8", "J8"), ("K12", "N12")])
+def test_unspecified_period_transition_uses_actual_table_order(db_session, coordinates) -> None:
+    for index, (coordinate, value, period) in enumerate(zip(coordinates, (20, 35), ("一季度", "四季度"))):
+        _add_table_row(db_session, chunk_id=f"DOC-PERIOD-{index}", row_label="记录值",
+                       value=value, coordinate=coordinate, column_label=period)
+    _add_table_row(db_session, chunk_id="DOC-MONTH", row_label="记录值", value=999,
+                   coordinate="Z30", column_label="12月")
+    _add_table_row(db_session, chunk_id="DOC-OTHER-ROW", row_label="记录值", value=777,
+                   coordinate="Z31", column_label="四季度")
+    matches = retrieve_spreadsheet_matches(db_session, _aspect(
+        "记录值从年季度到季度的变化", table_task="calculate", operation="difference",
+        selectors=({"row_label": "记录值", "column_label": "年-季度", "ordered_transition": True},
+                   {"row_label": "记录值", "column_label": "季度"}),
+    ))
+    assert len(matches) == 1
+    assert matches[0].metadata["calculation_result"] == 15
+    assert [item["cell"] for item in matches[0].metadata["calculation_cells"]] == list(coordinates)
+    assert len(matches[0].metadata["selection_assumptions"]) == 2
+
+
 def test_indexed_cell_score_keeps_row_total_separate_from_total_column() -> None:
     from types import SimpleNamespace
 
@@ -395,6 +430,7 @@ def test_spreadsheet_retrieval_supports_difference_calculation(db_session) -> No
         "北京和上海的原保险保费收入差值是多少？",
         table_task="calculate",
         operation="difference",
+        selectors=({"row_label": "北京"}, {"row_label": "上海"}),
         table_filters={"column_label": "本年累计 / 原保险保费收入", "indicator": "原保险保费收入"},
     )
 
@@ -562,6 +598,9 @@ def _add_table_row(
             },
         ],
     }
+    from openpyxl.utils.cell import coordinate_to_tuple
+    for cell in metadata["cells"]:
+        cell["row"], cell["column"] = coordinate_to_tuple(cell["coordinate"])
     db_session.add(
         DocumentChunk(
             chunk_id=chunk_id,
@@ -944,3 +983,14 @@ def test_cross_table_calculation_returns_operand_table_evidence(db_session) -> N
         m for m in matches if m.citation.metadata.get("calculation_result") is not None
     )
     assert calculation.citation.metadata["calculation_result"] == pytest.approx(26054.21)
+
+
+
+def test_missing_third_operand_never_becomes_a_two_operand_sum(db_session):
+    _add_table_row(db_session, chunk_id='novel-A', row_label='甲项目', value=11, coordinate='C5')
+    _add_table_row(db_session, chunk_id='novel-B', row_label='乙项目', value=17, coordinate='C6')
+    aspect = _aspect('计算甲、乙、丙三个项目之和', table_task='calculate', operation='sum',
+        selectors=({'label':'甲项目'},{'label':'乙项目'},{'label':'丙项目'}),
+        table_filters={'column_label':'本年累计 / 原保险保费收入'})
+    assert retrieve_spreadsheet_matches(db_session, aspect) == []
+    assert get_last_spreadsheet_diagnostic()['match_status'] != 'valid_calculation'

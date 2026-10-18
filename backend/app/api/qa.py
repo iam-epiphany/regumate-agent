@@ -1,6 +1,6 @@
 import json
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 from time import monotonic, sleep
 from typing import Any, Iterator
 
@@ -19,6 +19,7 @@ from backend.app.schemas.qa import (
     QATaskStatusResponse,
 )
 from backend.app.services.qa_task_service import (
+    QATaskCancelled,
     cancel_qa_task,
     create_qa_task,
     get_qa_task_status,
@@ -55,41 +56,9 @@ def ask_question(payload: QARequest, response: Response, db: Session = Depends(g
             record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
             return result
     except OperationalError as exc:
-        # The SQLite database on a Docker volume mount can transiently fail to
-        # open under concurrent load ("unable to open database file").  One
-        # bounded retry with a fresh session absorbs the glitch; a second
-        # failure is a real storage problem and surfaces as 500.
-        record_trace_event("request_retry", "db_transient", {"error": str(exc)[:120]})
-        sleep(1.0)
-        try:
-            with SessionLocal() as retry_db:
-                return answer_question(
-                    retry_db, payload.question, options=payload.options,
-                    include_debug=payload.include_debug, progress_reporter=progress,
-                )
-        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
-            if isinstance(retry_exc, OperationalError):
-                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
-            if isinstance(retry_exc, RetrievalServiceUnavailable):
-                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
-            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
+        raise HTTPException(status_code=503, detail="数据库暂不可用，请稍后重试。") from exc
     except RetrievalServiceUnavailable as exc:
-        # Model-inference lock contention or a transient Qdrant hiccup under
-        # concurrent load; one bounded retry with a fresh session absorbs it.
-        record_trace_event("request_retry", "retrieval_transient", {"error": str(exc)[:120]})
-        sleep(1.0)
-        try:
-            with SessionLocal() as retry_db:
-                return answer_question(
-                    retry_db, payload.question, options=payload.options,
-                    include_debug=payload.include_debug, progress_reporter=progress,
-                )
-        except (OperationalError, RetrievalServiceUnavailable, RequestBudgetExceeded) as retry_exc:
-            if isinstance(retry_exc, OperationalError):
-                raise HTTPException(status_code=500, detail="数据库临时不可用，请稍后重试。") from retry_exc
-            if isinstance(retry_exc, RetrievalServiceUnavailable):
-                raise HTTPException(status_code=503, detail=str(retry_exc)) from retry_exc
-            raise HTTPException(status_code=504, detail=str(retry_exc)) from retry_exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RequestBudgetExceeded as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
 
@@ -172,6 +141,11 @@ def _stream_qa_events(
     include_debug: bool = False,
 ) -> Iterator[str]:
     events: Queue[tuple[str, dict[str, Any]] | None] = Queue()
+    disconnected = Event()
+
+    def check_cancellation() -> None:
+        if disconnected.is_set():
+            raise QATaskCancelled('Streaming client disconnected')
 
     def progress_reporter(event: dict[str, Any]) -> None:
         events.put(("progress", event))
@@ -185,8 +159,11 @@ def _stream_qa_events(
                 options=options,
                 include_debug=include_debug,
                 progress_reporter=progress_reporter,
+                cancellation_checker=check_cancellation,
             )
             events.put(("final", response.model_dump(mode="json")))
+        except QATaskCancelled:
+            db.rollback()
         except RetrievalServiceUnavailable as exc:
             events.put(
                 (
@@ -200,6 +177,12 @@ def _stream_qa_events(
                 )
             )
             events.put(("error", {"detail": str(exc)}))
+        except RequestBudgetExceeded as exc:
+            events.put(('error', {'detail': str(exc), 'code': exc.code,
+                                  'stage': exc.stage, 'retryable': False}))
+        except OperationalError:
+            events.put(('error', {'detail': '数据库暂不可用，请稍后重试。', 'code': 'database_unavailable',
+                                  'stage': 'database', 'retryable': False}))
         except Exception as exc:
             events.put(
                 (
@@ -219,12 +202,15 @@ def _stream_qa_events(
 
     Thread(target=run_qa, daemon=True).start()
 
-    while True:
-        item = events.get()
-        if item is None:
-            break
-        event_name, payload = item
-        yield _sse_frame(event_name, payload)
+    try:
+        while True:
+            item = events.get()
+            if item is None:
+                break
+            event_name, payload = item
+            yield _sse_frame(event_name, payload)
+    finally:
+        disconnected.set()
 
 
 def _sse_frame(event_name: str, payload: dict[str, Any]) -> str:

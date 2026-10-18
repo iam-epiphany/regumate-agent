@@ -195,7 +195,6 @@ LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 # 其语义曾与变量名相反（True 实际表示禁用），新部署请使用 LLM_DISABLE_THINKING。
 LLM_DISABLE_THINKING = _env_bool("LLM_DISABLE_THINKING", _env_bool("LLM_INCLUDE_THINKING", False))
 LLM_RESPONSE_FORMAT = os.getenv("LLM_RESPONSE_FORMAT", "json_object").strip() or "json_object"
-LLM_STREAM = _env_bool("LLM_STREAM", True)
 
 # The LLM query planner rewrites open text questions into domain-aware search
 # queries (制度原文风格), which the deterministic fallback cannot reproduce.
@@ -208,7 +207,6 @@ QUERY_PLANNER_PROVIDER = os.getenv("QUERY_PLANNER_PROVIDER", LLM_PROVIDER)
 QUERY_PLANNER_API_KEY = os.getenv("QUERY_PLANNER_API_KEY") or LLM_API_KEY
 QUERY_PLANNER_BASE_URL = os.getenv("QUERY_PLANNER_BASE_URL", LLM_BASE_URL)
 QUERY_PLANNER_MODEL = os.getenv("QUERY_PLANNER_MODEL", LLM_MODEL)
-QUERY_PLANNER_TIMEOUT_SECONDS = _env_float("QUERY_PLANNER_TIMEOUT_SECONDS", 12.0, minimum=0.1)
 QUERY_PLANNER_MAX_ASPECTS = _env_int("QUERY_PLANNER_MAX_ASPECTS", 12, minimum=1)
 QUERY_PLANNER_MAX_SEARCH_QUERIES = _env_int("QUERY_PLANNER_MAX_SEARCH_QUERIES", 3, minimum=1)
 QUERY_PLANNER_DISABLE_THINKING = _env_bool(
@@ -217,53 +215,28 @@ QUERY_PLANNER_DISABLE_THINKING = _env_bool(
 )
 QUERY_PLANNER_RESPONSE_FORMAT = os.getenv("QUERY_PLANNER_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 
-# Advisory retrieval calls share the planner connection, without changing its credentials.
-RETRIEVAL_ADVISOR_ENABLED = _env_bool("RETRIEVAL_ADVISOR_ENABLED", True)
-RETRIEVAL_ADVISOR_TIMEOUT_SECONDS = _env_float("RETRIEVAL_ADVISOR_TIMEOUT_SECONDS", 8.0, minimum=0.1)
-RETRIEVAL_ADVISOR_MAX_CALLS = _env_int("RETRIEVAL_ADVISOR_MAX_CALLS", 4, minimum=1)
-RETRIEVAL_ADVISOR_TOTAL_BUDGET_SECONDS = _env_float("RETRIEVAL_ADVISOR_TOTAL_BUDGET_SECONDS", 16.0, minimum=0.1)
-
 ANSWER_GENERATION_ENABLED = _env_bool("ANSWER_GENERATION_ENABLED", True)
 ANSWER_GENERATION_PROVIDER = os.getenv("ANSWER_GENERATION_PROVIDER", LLM_PROVIDER)
 ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or LLM_API_KEY
 ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_URL)
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
-ANSWER_GENERATION_TIMEOUT_SECONDS = _env_float("ANSWER_GENERATION_TIMEOUT_SECONDS", 18.0, minimum=0.1)
-ANSWER_GENERATION_TOTAL_BUDGET_SECONDS = _env_float(
-    "ANSWER_GENERATION_TOTAL_BUDGET_SECONDS", 60.0, minimum=1.0
-)
-# Provider intermittently returns empty streams/bodies for long prompts;
-# 4 alternating attempts keep the answer pipeline resilient without
-# exceeding the generation total budget.
-ANSWER_GENERATION_MAX_ATTEMPTS = _env_int("ANSWER_GENERATION_MAX_ATTEMPTS", 3, minimum=1)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
 # Model passes hold the lock for seconds; 90s of waiting absorbs a cold-load
 # neighbour plus concurrent inference without failing the request.
 MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 90.0, minimum=0.1)
-# deepseek-v4-flash emits reasoning_content for long prompts and consumes the
-# token budget before any answer content; 3000 leaves room for both the
-# reasoning tail and the structured JSON answer.
-ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 3000, minimum=1)
+# The existing model's reasoning tokens share this bounded output allowance.
+# A small cap can truncate before the structured answer starts.
+ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 8192, minimum=1)
 ANSWER_GENERATION_DISABLE_THINKING = _env_bool(
     "ANSWER_GENERATION_DISABLE_THINKING",
     _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_DISABLE_THINKING),
 )
 ANSWER_GENERATION_RESPONSE_FORMAT = os.getenv("ANSWER_GENERATION_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
-ANSWER_GENERATION_STREAM = _env_bool("ANSWER_GENERATION_STREAM", LLM_STREAM)
-ASPECT_GATE_PRE_GENERATION = _env_bool("ASPECT_GATE_PRE_GENERATION", True)
 
-SEMANTIC_GROUNDING_MODE = _env_choice(
-    "SEMANTIC_GROUNDING_MODE",
-    "risk_based",
-    {"off", "risk_based", "all"},
-)
 SEMANTIC_GROUNDING_PROVIDER = os.getenv("SEMANTIC_GROUNDING_PROVIDER", LLM_PROVIDER)
 SEMANTIC_GROUNDING_API_KEY = os.getenv("SEMANTIC_GROUNDING_API_KEY") or LLM_API_KEY
 SEMANTIC_GROUNDING_BASE_URL = os.getenv("SEMANTIC_GROUNDING_BASE_URL", LLM_BASE_URL)
 SEMANTIC_GROUNDING_MODEL = os.getenv("SEMANTIC_GROUNDING_MODEL", LLM_MODEL)
-SEMANTIC_GROUNDING_TIMEOUT_SECONDS = _env_float(
-    "SEMANTIC_GROUNDING_TIMEOUT_SECONDS", 12.0, minimum=0.1
-)
 SEMANTIC_GROUNDING_DISABLE_THINKING = _env_bool(
     "SEMANTIC_GROUNDING_DISABLE_THINKING",
     _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", LLM_DISABLE_THINKING),
@@ -274,7 +247,6 @@ MAX_BATCH_UPLOAD_FILES = _env_int("MAX_BATCH_UPLOAD_FILES", 20, minimum=1)
 INDEX_QUEUE_CAPACITY = _env_int("INDEX_QUEUE_CAPACITY", 8, minimum=1)
 INDEX_TASK_MAX_RETRIES = _env_int("INDEX_TASK_MAX_RETRIES", 3)
 QA_QUEUE_CAPACITY = _env_int("QA_QUEUE_CAPACITY", 16, minimum=1)
-QA_TASK_MAX_RETRIES = _env_int("QA_TASK_MAX_RETRIES", 1)
 MAX_OOXML_ENTRIES = _env_int("MAX_OOXML_ENTRIES", 20_000, minimum=1)
 MAX_OOXML_UNCOMPRESSED_BYTES = _env_int(
     "MAX_OOXML_UNCOMPRESSED_BYTES", 500 * 1024 * 1024, minimum=1

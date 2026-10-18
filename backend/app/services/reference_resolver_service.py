@@ -15,8 +15,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.rag_features import event
 from backend.app.services.document_structure_index_service import clause_number_from_label
-from backend.app.services.llm_client import ChatCompletionError
-from backend.app.services.retrieval_advisor_service import request_advice
 
 MAX_SOURCES = 8
 MAX_REFERENCES = 6
@@ -85,42 +83,8 @@ def _grounded_hint(hint: ReferenceHint, text: str) -> bool:
 
 
 def recognize_references(anchors: list[Any]) -> dict[str, list[ReferenceHint]]:
-    """One batch per expansion, with explicit citations retained on model failure."""
-    result = {anchor.chunk_id: fallback_references(_text(anchor)) for anchor in anchors}
-    selected = anchors[:MAX_SOURCES]
-    if not selected:
-        return result
-    try:
-        batch = ReferenceBatch.model_validate(request_advice(
-            '识别每个候选文本中真实存在的引用（不要把自身标题当引用）。返回 '
-            '{"sources":[{"source":0,"references":[{"kind":"clause|page|table|attachment|figure|context|section",'
-            '"quote":"原文中的完整引用短语","number":"目标编号或null","page_number":18,'
-            '"title":null,"direction":"previous|next或null","document_title":null}]}]}。'
-            'quote必须逐字来自输入。复合引用如“第18页表3”用table+number=3+page_number=18；'
-            '“下表/上图/上述章节”用对应类型和direction；纯上下文引用用context。'
-            '跨文档引用填原文书名。不得输出目标chunk或编造内容。每个文本最多6项。',
-            [{"source": index, "text": _text(anchor)[:2400]} for index, anchor in enumerate(selected)],
-        ))
-        model_hints: dict[str, list[ReferenceHint]] = {}
-        for source in batch.sources:
-            if source.source >= len(selected):
-                continue
-            anchor = selected[source.source]
-            for hint in source.references:
-                if not _grounded_hint(hint, _text(anchor)[:2400]):
-                    continue
-                # An external book title cannot become a same-document edge.
-                if "《" in hint.quote and not hint.document_title:
-                    continue
-                model_hints.setdefault(anchor.chunk_id, [])
-                if hint not in model_hints[anchor.chunk_id]:
-                    model_hints[anchor.chunk_id].append(hint)
-        for key, hints in model_hints.items():
-            result[key] = hints + [hint for hint in result[key] if hint not in hints]
-        event("reference_recognition", status="model", sources=len(selected))
-    except (ChatCompletionError, ValueError, TypeError):
-        event("reference_recognition", status="rule_fallback", sources=len(selected))
-    return {key: hints[:MAX_REFERENCES] for key, hints in result.items()}
+    """Resolve explicit references only; no model or recursive expansion."""
+    return {anchor.chunk_id: fallback_references(_text(anchor)) for anchor in anchors}
 
 
 def fallback_references(text: str) -> list[ReferenceHint]:

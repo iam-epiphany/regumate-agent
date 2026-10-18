@@ -1,0 +1,600 @@
+[
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_chunks_by_aspect_prefers_new_document_for_next_aspect",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_prefers_exact_definition_over_generic_core_chunk",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_sum_equality_answer_cites_table_and_regulation",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_fallback_keeps_multiple_regulatory_aspects_and_relevant_tail",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_fallback_keeps_condition_continuation_chunk",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_fallback_does_not_let_one_regulatory_aspect_crowd_out_another",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_answer_uses_actual_table_citation_when_not_first",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_answer_excludes_spreadsheet_rows_from_regulatory_basis",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_answer_prefers_question_anchor_hit_over_stale_aspect_question",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_answer_uses_question_anchor_for_long_chunk_excerpt",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_uses_question_anchor_for_long_chunk_excerpt",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_table_fallback_extracts_two_conditions_from_one_shared_chunk",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_mixed_sum_equality_recovers_when_llm_validation_fails",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_choice_question_without_options_uses_open_answer_path",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_normal_question_without_options_is_not_treated_as_choice_question",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_non_formula_question_is_not_hijacked_by_formula_candidate",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_selects_query_relevant_sentence_not_chunk_prefix",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_excerpt_removes_unrelated_negative_clause_from_short_chunk",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_excerpt_keeps_list_continuation_after_anchored_heading",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_excerpt_trims_negative_clause_before_anchor_in_same_segment",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_creates_atomic_claims_for_multi_sentence_excerpt",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_uses_section_heading_with_clause_prefix",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_excerpt_question_prefers_chunk_specific_aspect_over_generic_global_anchor",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_excerpt_ignores_generic_anchor_contained_in_specific_anchor",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_evidence_boundary_detection_covers_common_compliance_wording",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_keeps_one_best_chunk_per_planned_aspect",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_drops_intent_mismatched_clauses",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_keeps_condition_continuation_chunk",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_does_not_add_generic_guess_after_core_evidence",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_covers_distinct_quoted_anchors_in_same_aspect",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_covers_distinct_anchors_even_with_multiple_aspects",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_extractive_excerpt_keeps_exception_when_question_requests_exceptions",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_extractive_excerpt_keeps_discount_curve_definition",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_trusted_extractive_fallback_drops_failed_claim_and_revalidates",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_validation_flags_directory_only_false_insufficient_answer",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_does_not_add_second_bounded_chunk_when_multiple_aspects",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_prefers_effective_communication_clause",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_prioritizes_bounded_direct_support",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_prefers_core_direct_evidence_over_generic_bounded_guess",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_prefers_complete_metadata_anchor_over_generic_definition",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_uses_quoted_predicate_fragments",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_prefers_definition_clause_for_quoted_term",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_uses_classification_subject_anchor",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_uses_elided_prohibition_predicate",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_fallback_relevance_uses_elided_ability_predicate",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_relevant_extractive_excerpt_keeps_leading_normative_sentence",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_api_unavailable_uses_extractive_fallback",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_deepseek_sse_reports_only_complete_verified_claims",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_generated_answer_fails_validation_when_a_required_aspect_is_omitted",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_aspect_only_failure_triage_depends_on_retrieval_coverage",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_required_aspect_validation_does_not_count_chunk_aspect_for_tagged_claim",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_generated_answer_fails_when_covered_aspect_is_marked_insufficient",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_fallback_prefers_same_document_for_sibling_aspect",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_deepseek_sse_does_not_publish_unsupported_number",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_call_llm_recovers_partial_claims_after_stream_parse_failure",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_open_question_uses_extractive_fallback_when_generation_validation_fails",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_supported_model_refusal_recovers_to_extractive_fallback",
+    "reason": "retired automatic excerpt/mixed recovery or partial-JSON acceptance; replaced by refusal, service-error and bounded-repair tests",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_option_evidence_validation_rejects_partially_supported_choice",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_unlabeled_choice_rejects_invented_option_label",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_labeled_choice_requires_full_option_text",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_streaming_extractor_key_discovery_across_chunk_boundary",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_streaming_extractor_claim_object_spans_chunk_boundary",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_invented_claim_aspect_ids_aligned_to_required",
+    "reason": "removed private excerpt, streaming-draft or repair mechanism; replaced by final-validation invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_invented_claim_aspect_ids_keeps_valid_labels",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_excerpt_prefers_fallback_clause",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_extractive_excerpt_ignores_fallback_boost_for_plain_questions",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_repair_misaligned_citations_redirects_to_matching_chunk",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "test": "test_repair_misaligned_citations_keeps_correct_citations",
+    "reason": "removed streaming draft decoder; final answers are published after task validation",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_exact_anchor_support_recovers_heading_inside_resolved_document",
+    "reason": "removed selection/recovery helper; replaced by evidence-bundle invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_sibling_document_recovery_supplements_weak_nonempty_aspect",
+    "reason": "removed selection/recovery helper; replaced by evidence-bundle invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_mcq_reliability_gate_uses_public_option_facts_instead_of_generic_stem",
+    "reason": "removed selection/recovery helper; replaced by evidence-bundle invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_prompt_selection_reuses_one_chunk_for_two_explicit_aspects",
+    "reason": "removed selection/recovery helper; replaced by evidence-bundle invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_prompt_core_prefers_explicit_condition_match_over_generic_higher_score",
+    "reason": "removed selection/recovery helper; replaced by evidence-bundle invariants",
+    "replacement": "test_mainline_contract.py"
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_model_recognizes_implicit_reference_and_batches_sources",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_invalid_model_output_keeps_explicit_fallback",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_bad_crag_review_falls_back",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_crag_model_terms_recover_only_real_same_document_evidence",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_advisor_timeout_and_invalid_json_fall_back",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_advisor_request_uses_shared_client_with_bounds",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_request_budget_is_shared_and_reset_after_retrieval",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_reference_resolver.py",
+    "case": "test_scope_terms_must_be_verbatim_from_question",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "case": "_assert_streaming_extractor_equals_reference",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_answer_generation_service.py",
+    "case": "test_streaming_extractor_matches_full_scan_for_all_split_points",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_rag_api.py",
+    "case": "test_hyde_supplement_recovers_uncovered_aspect",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_rag_api.py",
+    "case": "test_hyde_skips_covered_and_table_aspects",
+    "reason": "Removed model-advisor, implicit-model-reference or unvalidated streaming mechanism. See new contract and deterministic reference tests."
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_referenced_clause_skips_own_section_title",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_referenced_clause_chunks_resolves_cross_section_citation",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_intent_gap_fallback_requires_treatment_verb",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_intent_gap_fallback_clause_for_unclassified_assets",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_list_completeness_skips_non_list_questions",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_list_completeness_promotes_enumeration_chunk",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_intent_gap_prohibition_adds_institution_clause",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_intent_gap_extracts_quoted_terms",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_retrieval_service.py",
+    "test": "test_enumeration_clause_detector_styles",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_cross_document_references.py",
+    "test": "test_sibling_recovery_scope_includes_cited_documents",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_rag_api.py",
+    "test": "test_duplicate_suppression_keeps_cross_document_similar_clauses",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_rag_api.py",
+    "test": "test_duplicate_suppression_removes_same_document_template_paragraphs",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_rag_api.py",
+    "test": "test_mixed_table_refusal_still_allows_text_fallback",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_rag_api.py",
+    "test": "test_condition_preamble_recovers_following_clause_chunk",
+    "reason": "Removed private repeated-recovery mechanism; replacement source-unit and shared-contract invariants in test_mainline_contract.py and test_reference_resolver.py"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_semantic_frames_reject_negation_and_modality_changes",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_semantic_validation_focuses_on_relevant_cited_sentence",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_multiple_choice_evidence_scope_commentary_is_not_a_regulatory_claim",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_risk_claim_uses_one_structured_verifier_call",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_select_relevant_evidence_keeps_all_related_sentences",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  },
+  {
+    "file": "test_trust_enhancements.py",
+    "test": "test_select_relevant_evidence_still_excludes_unrelated_sentences",
+    "reason": "Consolidated legacy risk/frame verifier into final task validation; replacement tests check failed, error and incomplete outcomes"
+  }
+]
