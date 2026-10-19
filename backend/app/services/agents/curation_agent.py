@@ -45,7 +45,7 @@ class CurationAgent(SpecialistAgent):
         context_chunks, prompt_selection = rag_service._select_prompt_chunks(
             question, query_plan, aspect_retrievals
         )
-        context_chunks = rag_service._retrieval_support_structural_context(board.db, context_chunks)
+        context_chunks = rag_service._retrieval_support_structural_context(board.db, context_chunks, question=question)
         from backend.app.services.evidence_contract_service import build_evidence_bundle
         bundle = build_evidence_bundle(list(query_plan.requirements), context_chunks,
                                       list({c.chunk_id: c for c in
@@ -115,6 +115,7 @@ class CurationAgent(SpecialistAgent):
         retrieval_summary["evidence_bundle"] = bundle.model_dump(exclude={'evidence', 'diagnostics'})
         retrieval_summary["has_sufficient_context"] = bool(context_chunks) and bundle.complete
         retrieval_summary["missing_requirements"] = bundle.missing_requirements
+        retrieval_summary["missing_optional_requirements"] = bundle.missing_optional_requirements
         bundle.diagnostics = retrieval_summary
         return AgentResult(
             output=bundle,
@@ -122,6 +123,7 @@ class CurationAgent(SpecialistAgent):
                 "selected_chunks": len(context_chunks),
                 "complete": bool(bundle.complete),
                 "missing_requirements": list(bundle.missing_requirements),
+                "missing_optional_requirements": list(bundle.missing_optional_requirements),
             },
         )
 

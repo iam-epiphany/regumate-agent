@@ -39,6 +39,17 @@ VerifiedClaimReporter = Callable[[AnswerClaim], None]
 CancellationChecker = Callable[[], None]
 
 
+class GenerationParseError(ValueError):
+    """A structured-generation failure with a stable diagnostic category."""
+
+    def __init__(self, message: str, *, kind: str, raw_length: int | None = None,
+                 finish_reason: str | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.raw_length = raw_length
+        self.finish_reason = finish_reason
+
+
 @dataclass
 class GeneratedAnswer:
     answer: str | None
@@ -172,7 +183,11 @@ def prepare_generation(
 ) -> GenerationContext | GeneratedAnswer:
     """Run every pre-generation gate and resolve the deterministic candidate."""
 
-    required = [r.requirement_id for r in requirements] if requirements is not None else required_aspect_ids or []
+    if requirements is not None:
+        requirements = [r for r in requirements if bool(getattr(r, 'mandatory', True))]
+        required = [r.requirement_id for r in requirements]
+    else:
+        required = required_aspect_ids or []
     if not context_chunks or not has_sufficient_context:
         return refusal_answer('insufficient_context', validation={'missing_requirements': required})
     missing = _missing_aspects_in_context(context_chunks, required)
@@ -249,6 +264,39 @@ def verify_draft(ctx: GenerationContext, generated: GeneratedAnswer) -> dict[str
         requirement_details=ctx.requirements)
 
 
+def _repair_correction(ctx: GenerationContext, generated: GeneratedAnswer,
+                       validation: dict[str, Any]) -> str:
+    cited = {ref for claim in generated.claims for ref in claim.citation_ids}
+    evidence = []
+    for chunk in ctx.context_chunks:
+        if cited and chunk.citation_label not in cited:
+            continue
+        evidence.append({
+            'citation_id': chunk.citation_label,
+            'source': chunk.source_doc,
+            'text': (chunk.text or '')[:1200],
+        })
+        if len(evidence) >= 6:
+            break
+    payload = {
+        'validation': validation,
+        'draft': {
+            'answer': (generated.answer or '')[:4000],
+            'claims': [claim.model_dump() for claim in generated.claims],
+        },
+        'required_requirements': [
+            {
+                'requirement_id': requirement.requirement_id,
+                'question': requirement.question,
+                'source_titles': requirement.source_titles,
+            }
+            for requirement in ctx.requirements or []
+        ],
+        'evidence': evidence,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def judge_draft(
     ctx: GenerationContext,
     generated: GeneratedAnswer,
@@ -264,8 +312,9 @@ def judge_draft(
     if validation['status'] == 'not_run':
         return "refuse", refusal_answer('validation_not_run', validation=validation)
     if validation['status'] == 'error':
-        return "refuse", refusal_answer('validation_service_unavailable', validation=validation, unavailable=True)
-    return "repair", json.dumps(validation, ensure_ascii=False)
+        reason = str(validation.get('validation_error_code') or 'validation_service_unavailable')
+        return "refuse", refusal_answer(reason, validation=validation, unavailable=True)
+    return "repair", _repair_correction(ctx, generated, validation)
 
 
 def _exact_support_repair_prompt(ctx: GenerationContext) -> str | None:
@@ -424,6 +473,8 @@ def run_generation_loop(
     """The unchanged two-attempt draft/verify/repair control flow."""
 
     correction = None
+    format_repair_attempted = False
+    semantic_repair_attempted = False
     for attempt in range(2):
         if ctx.cancellation_checker:
             ctx.cancellation_checker()
@@ -456,22 +507,78 @@ def run_generation_loop(
                                                  'reason': 'model_refusal', 'failure_stage': 'generation'}
                 return generated
             validation = verify(ctx, generated)
-            generated.grounding_validation = {**generated.grounding_validation, **validation, 'repair_attempted': bool(attempt)}
+            generated.grounding_validation = {
+                **generated.grounding_validation, **validation,
+                'repair_attempted': bool(attempt),
+                'format_repair_attempted': format_repair_attempted,
+                'semantic_repair_attempted': semantic_repair_attempted,
+            }
             decision, payload = judge(ctx, generated, validation, attempt)
             if decision == "accept":
                 return generated
             if decision == "refuse":
                 return payload
+            semantic_repair_attempted = True
             correction = payload
-        except (ValueError, KeyError, TypeError):
-            if attempt == 0:
-                correction = '输出不是有效的结构化答案。请按要求重新输出JSON，并填写引用与claims。'
-                continue
-            return refusal_answer('invalid_generation_response', validation={'status': 'failed', 'failure_stage': 'generation'})
         except RequestBudgetExceeded:
             raise
-        except (OSError, ChatCompletionError):
-            return refusal_answer('generation_unavailable', unavailable=True)
+        except GenerationParseError as exc:
+            diagnostic = {
+                'status': 'failed', 'failure_stage': 'generation',
+                'error_type': exc.kind, 'raw_length': exc.raw_length,
+                'finish_reason': exc.finish_reason,
+                'format_repair_attempted': True,
+            }
+            if attempt == 0:
+                format_repair_attempted = True
+                correction = (
+                    '上次输出不是有效的结构化JSON（诊断：'
+                    + exc.kind
+                    + '）。请严格输出包含 refused、refusal_reason、claims 的JSON，'
+                      '每条claim填写text、citation_ids、aspect_ids。'
+                )
+                continue
+            return refusal_answer('generation_format_failure', unavailable=True, validation=diagnostic)
+        except ChatCompletionError as exc:
+            diagnostic = {
+                'status': 'error', 'failure_stage': 'generation',
+                'error_type': f'chat_{exc.kind}',
+                'finish_reason': exc.finish_reason,
+            }
+            if exc.kind in {'transport', 'timeout'} and attempt == 0:
+                correction = '上次模型调用发生临时传输故障，请重新输出结构化JSON。'
+                continue
+            if exc.kind == 'truncated' and attempt == 0:
+                format_repair_attempted = True
+                correction = (
+                    '上次输出在JSON结束前被截断。请压缩claims，只保留结论和必要依据，'
+                    '不要重复原文，确保输出是完整、可解析的JSON。'
+                )
+                continue
+            reason = (
+                'generation_truncated' if exc.kind == 'truncated'
+                else 'generation_format_failure' if exc.kind in {'response_json', 'response_schema'}
+                else 'generation_unavailable'
+            )
+            return refusal_answer(reason, unavailable=True, validation=diagnostic)
+        except OSError as exc:
+            return refusal_answer('generation_unavailable', unavailable=True, validation={
+                'status': 'error', 'failure_stage': 'generation',
+                'error_type': type(exc).__name__,
+            })
+        except (ValueError, KeyError, TypeError) as exc:
+            diagnostic = {
+                'status': 'failed', 'failure_stage': 'generation',
+                'error_type': type(exc).__name__,
+                'format_repair_attempted': True,
+            }
+            if attempt == 0:
+                format_repair_attempted = True
+                correction = (
+                    '输出不是有效的结构化答案。请按要求重新输出JSON，并填写引用与claims。'
+                )
+                continue
+            return refusal_answer('generation_format_failure', unavailable=True, validation=diagnostic)
     return refusal_answer('grounding_validation_failed', validation=generated.grounding_validation)
 
 
@@ -828,9 +935,24 @@ def _parse_generated_answer_content(
     option_labels: list[str | None],
     answer_mode: str,
 ) -> GeneratedAnswer:
-    parsed = json.loads(_extract_json(content))
-    if not isinstance(parsed, dict) or type(parsed.get('refused')) is not bool or not isinstance(parsed.get('claims', []), list):
-        raise ValueError('invalid structured answer')
+    if not str(content or '').strip():
+        raise GenerationParseError('empty generation content', kind='empty', raw_length=0)
+    try:
+        extracted = _extract_json(content)
+    except (ValueError, TypeError) as exc:
+        raise GenerationParseError('generation content contains no JSON object',
+                                   kind='no_json', raw_length=len(str(content or ''))) from exc
+    try:
+        parsed = json.loads(extracted)
+    except json.JSONDecodeError as exc:
+        raise GenerationParseError('generation JSON is invalid', kind='invalid_json',
+                                   raw_length=len(str(content or ''))) from exc
+    if not isinstance(parsed, dict):
+        raise GenerationParseError('generation JSON is not an object', kind='schema_error',
+                                   raw_length=len(str(content or '')))
+    if type(parsed.get('refused')) is not bool or not isinstance(parsed.get('claims', []), list):
+        raise GenerationParseError('generation JSON does not match the answer schema',
+                                   kind='schema_error', raw_length=len(str(content or '')))
     refused = bool(parsed.get("refused"))
     claims = [
         AnswerClaim(

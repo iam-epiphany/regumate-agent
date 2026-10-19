@@ -25,7 +25,10 @@ class ChatCompletionConfig:
 
 
 class ChatCompletionError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, kind: str = "transport", finish_reason: str | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.finish_reason = finish_reason
 
 
 def chat_completion_content(
@@ -38,7 +41,7 @@ def chat_completion_content(
     opener: UrlOpen | None = None,
 ) -> str:
     if not config.api_key:
-        raise ChatCompletionError("LLM API key is not configured")
+        raise ChatCompletionError("LLM API key is not configured", kind="config")
     payload = build_chat_payload(
         config,
         messages,
@@ -53,13 +56,29 @@ def chat_completion_content(
         with measure('llm.transport'), (opener or urllib.request.urlopen)(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
             event("llm_usage", model=config.model, usage=body.get("usage"))
-    except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise ChatCompletionError("LLM chat completion request failed") from exc
+    except (TimeoutError, urllib.error.URLError) as exc:
+        raise ChatCompletionError("LLM chat completion request timed out or was unreachable",
+                                  kind="timeout" if isinstance(exc, TimeoutError) else "transport") from exc
+    except OSError as exc:
+        raise ChatCompletionError("LLM chat completion transport failed", kind="transport") from exc
+    except json.JSONDecodeError as exc:
+        raise ChatCompletionError("LLM chat completion response body is not JSON",
+                                  kind="response_json") from exc
     check_request_budget('llm.response')
     try:
-        return str(body["choices"][0]["message"]["content"])
+        choice = body["choices"][0]
+        finish_reason = choice.get("finish_reason")
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise ChatCompletionError("LLM chat completion response is not parseable") from exc
+        raise ChatCompletionError("LLM chat completion response is not parseable",
+                                  kind="response_schema") from exc
+    if finish_reason == "length":
+        raise ChatCompletionError("LLM chat completion was truncated", kind="truncated",
+                                  finish_reason=finish_reason)
+    if not isinstance(content, str) or not content.strip():
+        raise ChatCompletionError("LLM chat completion returned empty content",
+                                  kind="response_schema", finish_reason=finish_reason)
+    return content
 
 
 def open_chat_completion(
@@ -73,7 +92,7 @@ def open_chat_completion(
     opener: UrlOpen | None = None,
 ) -> Any:
     if not config.api_key:
-        raise ChatCompletionError("LLM API key is not configured")
+        raise ChatCompletionError("LLM API key is not configured", kind="config")
     payload = build_chat_payload(
         config,
         messages,
@@ -86,8 +105,11 @@ def open_chat_completion(
     timeout = reserve_model_call(config.timeout_seconds)
     try:
         return (opener or urllib.request.urlopen)(request, timeout=timeout)
-    except (OSError, TimeoutError, urllib.error.URLError) as exc:
-        raise ChatCompletionError("LLM chat completion request failed") from exc
+    except (TimeoutError, urllib.error.URLError) as exc:
+        raise ChatCompletionError("LLM chat completion request timed out or was unreachable",
+                                  kind="timeout" if isinstance(exc, TimeoutError) else "transport") from exc
+    except OSError as exc:
+        raise ChatCompletionError("LLM chat completion transport failed", kind="transport") from exc
 
 
 def build_chat_payload(

@@ -379,10 +379,12 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
             bool(c.metadata.get('source_section_scope')),
             c.metadata.get('evidence_role') in {'mcq_exact_support', 'definition_clause', 'exact_anchor_support'},
             _prompt_score(c)), reverse=True)
-        groups.append((item, group))
-    # Round-robin reserves space for every source before adding more from one.
-    for index in range(max((len(g) for _, g in groups), default=0)):
-        for item, group in groups:
+        groups.append((item, group, bool(getattr(item.aspect, 'mandatory', True))))
+    # Required aspects reserve prompt space first; planner-only research
+    # aspects may use the remaining capacity but cannot crowd out the answer.
+    ordered_groups = [entry for entry in groups if entry[2]] + [entry for entry in groups if not entry[2]]
+    for index in range(max((len(g) for _, g, _ in ordered_groups), default=0)):
+        for item, group, _mandatory in ordered_groups:
             if index >= len(group) or len(selected) >= MAX_PROMPT_CHUNKS:
                 continue
             chunk = group[index]
@@ -411,8 +413,14 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
         query_plan, aspect_retrievals, {x.aspect.aspect_id for x in aspect_retrievals if x.covered})
 
 
-def _retrieval_support_structural_context(db: Session, selected: list[RetrievalResult]) -> list[RetrievalResult]:
-    """Select complete source units, reserving one unit for every requirement."""
+def _retrieval_support_structural_context(db: Session, selected: list[RetrievalResult],
+                                          question: str | None = None) -> list[RetrievalResult]:
+    """Select complete source units, reserving one unit for every requirement.
+
+    ``question`` lets the unit expander distinguish a user-requested complete
+    list from an ordinary numbered definition.  Existing callers that omit it
+    retain the historical behaviour.
+    """
     from backend.app.services.retrieval_support import _chunks_by_document, _chunk_metadata, _table_row_source_unit
     if not selected or not hasattr(db, 'scalars'):
         return selected
@@ -457,8 +465,26 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
                     indices.insert(0, i)
                     if not re.match(enumeration, prev.text):
                         break
-            open_list = bool(re.search(r'[:：]\s*$|下列|以下|包括[:：]', current[-250:]) or
-                             re.match(enumeration, current))
+            list_lead = bool(re.search(r'[:：]\s*$|下列|以下|包括[:：]|分为[:：]|列明', current[-250:]))
+            starts_enumeration = bool(re.match(enumeration, current))
+            previous_is_lead = False
+            if position is not None and position > 0:
+                previous_is_lead = bool(re.search(
+                    r'[:：]\s*$|下列|以下|包括[:：]|分为[:：]|列明',
+                    source[position - 1].text.strip()[-250:]))
+            if question is None:
+                open_list = list_lead or starts_enumeration
+            else:
+                normalized_question = re.sub(r'\s+', '', question)
+                asks_list = bool(re.search(r'哪些|哪些方面|包括|列出|清单|下列|以下|分为|列明|完整', normalized_question))
+                asks_definition = bool(re.search(r'定义|是什么|含义|界定|是指', normalized_question))
+                # A numbered definition or a section heading must not swallow
+                # the following chapter merely because it starts with a number.
+                open_list = list_lead or (starts_enumeration and previous_is_lead)
+                if asks_list:
+                    open_list = list_lead or starts_enumeration
+                elif asks_definition:
+                    open_list = list_lead
             if open_list:
                 for i in range(position+1, len(source)):
                     following = source[i]
@@ -787,7 +813,7 @@ def _required_aspect_ids(retrieval_summary: dict[str, Any]) -> list[str]:
         return []
     requirements = retrieval_summary.get("evidence_bundle", {}).get("requirements")
     if requirements is not None:
-        return [r["requirement_id"] for r in requirements]
+        return [r["requirement_id"] for r in requirements if r.get("mandatory", True)]
     aspects = retrieval_summary.get("query_plan", {}).get("aspects", [])
     return [
         str(item.get("aspect_id"))

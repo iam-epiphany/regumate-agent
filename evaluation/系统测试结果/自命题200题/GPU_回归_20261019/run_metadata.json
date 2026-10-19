@@ -1,0 +1,31 @@
+{
+  "started_at": "2026-10-19T01:58:23.002024+00:00",
+  "git_commit": "aca46ef1a08ecfc26e93c6275c9e388b7c14b3d8",
+  "git_status": "?? \"evaluation/\\347\\263\\273\\347\\273\\237\\346\\265\\213\\350\\257\\225\\347\\273\\223\\346\\236\\234/\\350\\207\\252\\345\\221\\275\\351\\242\\230200\\351\\242\\230/GPU_\\345\\233\\236\\345\\275\\222_20261019/\"\n",
+  "model_device": {
+    "requested_device": "cuda",
+    "selected_device": "cuda",
+    "torch_version": "2.11.0+cu128",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+    "cuda_total_memory_gb": 7.96,
+    "cuda_free_memory_gb": 6.83,
+    "fallback_reason": null
+  },
+  "performance": {
+    "selected_mode": "gpu",
+    "requested_mode": "auto",
+    "embedding_batch_size": 4,
+    "rerank_batch_size": 16,
+    "rerank_max_length": 1024,
+    "rerank_input_mode": "embedding",
+    "torch_num_threads": 16
+  },
+  "qdrant_points": null,
+  "questions_sha256": {
+    "data\\自命题200题评测集\\去锚100题\\questions.jsonl": "f549ebbff76d04486244bd6c7079193d59bc8276ddf362f86ac2c1329fdb6d22",
+    "data\\自命题200题评测集\\去锚100题B\\questions.jsonl": "3bde9827482a4e53bfa0c1c55d694b982ab54c1132297f55ec56f76873015668"
+  },
+  "build_id": "regumate-agent-small"
+}

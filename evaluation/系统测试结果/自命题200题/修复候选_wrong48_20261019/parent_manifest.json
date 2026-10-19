@@ -1,0 +1,79 @@
+{
+  "parent_run": "D:\\Agent-Project\\ReguMate Agent\\evaluation\\系统测试结果\\自命题200题\\GPU_回归_20261019",
+  "source_hashes": {
+    "old_questions": "f549ebbff76d04486244bd6c7079193d59bc8276ddf362f86ac2c1329fdb6d22",
+    "old_gold": "06d38753f5922047f836f882a76343afecabfd796e77fda88f98ddc4515d04b1",
+    "old_diagnostic": "c1e97b619e4bc0e6eea4d475b53b0bb714125abee21eab219c857bd166b6ad39",
+    "new_questions": "3bde9827482a4e53bfa0c1c55d694b982ab54c1132297f55ec56f76873015668",
+    "new_gold": "7a6384e24d2482858d94d19784d6bb1d5cd32e1da28fc8fd101ec1b965ce33c4",
+    "new_diagnostic": "61bc078f92190de7017849bf36d9944ef118396a240cf1a92c54fb798c3ff215"
+  },
+  "subsets": {
+    "old": {
+      "failed_count": 27,
+      "failed_ids": [
+        "BW-D10",
+        "BW-D12",
+        "BW-D15",
+        "BW-L07",
+        "BW-L08",
+        "BW-R02",
+        "BW-R03",
+        "BW-R04",
+        "BW-R10",
+        "BW-R11",
+        "BW-R14",
+        "BW-R15",
+        "BW-R16",
+        "BW-R17",
+        "BW-R18",
+        "BW-R19",
+        "BW-T03",
+        "BW-T07",
+        "BW-T10",
+        "BW-T11",
+        "BW-T12",
+        "BW-TBL10",
+        "BW-TBL9",
+        "BW-TC5",
+        "BW-TC6",
+        "BW-X01",
+        "BW-X04"
+      ],
+      "questions_file": "evaluation\\系统测试结果\\自命题200题\\修复候选_wrong48_20261019\\old_questions.jsonl",
+      "gold_file": "evaluation\\系统测试结果\\自命题200题\\修复候选_wrong48_20261019\\old_gold.jsonl",
+      "questions_sha256": "bebe2c86cded6d5bbedc53dda5e5a93011fddbb35b669094890c0db829489629",
+      "gold_sha256": "d3b1f274f20c3160fa29cb2fa5fb443ba8f4b3254d8723a3f5c906f6f6a406e3"
+    },
+    "new": {
+      "failed_count": 21,
+      "failed_ids": [
+        "B2-D02",
+        "B2-D05",
+        "B2-D06",
+        "B2-R05",
+        "B2-R07",
+        "B2-R08",
+        "B2-R09",
+        "B2-R10",
+        "B2-R11",
+        "B2-R13",
+        "B2-R15",
+        "B2-R16",
+        "B2-R18",
+        "B2-T02",
+        "B2-T03",
+        "B2-T10",
+        "B2-T11",
+        "B2-T12",
+        "B2-T13",
+        "B2-L04",
+        "B2-X03"
+      ],
+      "questions_file": "evaluation\\系统测试结果\\自命题200题\\修复候选_wrong48_20261019\\new_questions.jsonl",
+      "gold_file": "evaluation\\系统测试结果\\自命题200题\\修复候选_wrong48_20261019\\new_gold.jsonl",
+      "questions_sha256": "f028d5df6f4aca32ec674db30d410a6c47edf0f85497b8ee1f2e58ff12e424bd",
+      "gold_sha256": "1985f5978f014a463d3bb5186ade5e83872bb7a0f90c9480824afec933fd3d32"
+    }
+  }
+}
