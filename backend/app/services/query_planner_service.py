@@ -145,6 +145,7 @@ class QueryAspect:
     expected_unit: str | None = None
     explicit_filter_keys: tuple[str, ...] = ()
     subject_scope: tuple[str, ...] = ()
+    mandatory: bool = True
     intent: str = field(default='', init=False)
     targets: tuple[str, ...] = field(default=(), init=False)
 
@@ -177,6 +178,7 @@ class QueryAspect:
             "expected_unit": self.expected_unit,
             "explicit_filter_keys": list(self.explicit_filter_keys),
             "subject_scope": list(self.subject_scope),
+            "mandatory": self.mandatory,
             "intent": self.intent,
             "targets": list(self.targets),
             "search_queries": [query.to_debug_dict() for query in self.search_queries],
@@ -234,6 +236,92 @@ class QueryBudget:
 
 
 @timed("query_planner.total")
+def _scope_text(value: str) -> str:
+    return re.sub(r'[^\w\u4e00-\u9fff]', '', str(value or '')).casefold()
+
+
+def _scope_overlap(left: str, right: str) -> float:
+    left_text = _scope_text(left)
+    right_text = _scope_text(right)
+    if not left_text or not right_text:
+        return 0.0
+    left_grams = {left_text[index:index + 2] for index in range(max(len(left_text) - 1, 1))}
+    right_grams = {right_text[index:index + 2] for index in range(max(len(right_text) - 1, 1))}
+    if not left_grams or not right_grams:
+        return 0.0
+    return len(left_grams & right_grams) / len(left_grams | right_grams)
+
+
+def _scope_focus(question: str) -> str:
+    text = re.sub(r'\s+', '', str(question or ''))
+    after = re.search(r'(?:有什么|有哪些|哪些)(.+?)(?:[？?]|$)', text)
+    if after:
+        return after.group(1)
+    before = re.search(r'(.+?)(?:是什么|如何|怎样|怎么)(?:[？?]|$)', text)
+    return before.group(1) if before else ''
+
+
+def _scope_focus_coverage(focus: str, aspect: str) -> float:
+    focus_chars = set(_scope_text(focus))
+    if not focus_chars:
+        return 0.0
+    return len(focus_chars & set(_scope_text(aspect))) / len(focus_chars)
+
+
+def _scope_priority(aspect: QueryAspect, question: str, index: int) -> float:
+    aspect_text = re.sub(r'\s+', '', aspect.question)
+    score = _scope_overlap(aspect.question, question)
+    focus = _scope_focus(question)
+    if focus and _scope_focus_coverage(focus, aspect_text) >= 0.75:
+        score += 0.2
+    if '哪些' in question and re.search(r'哪些|清单|列出|包括', aspect_text):
+        score += 0.15
+    if '哪些' in question and re.match(r'^(?:集团内|特定类型|除|门槛|其中|此外|同时|资金|规模|交易对手)', aspect_text):
+        score -= 0.15
+    if index == 0:
+        score += 0.1
+    return score
+
+
+def _mark_aspect_scope(question: str, aspects: list[QueryAspect], max_mandatory: int) -> list[QueryAspect]:
+    """Keep user-requested aspects mandatory and demote planner expansions.
+
+    The planner may add useful research aspects (approval process, retention,
+    exceptions, reporting).  Those can improve recall but must not become
+    answer obligations unless the user asked for them or the planner budget
+    explicitly detected a multi-part question.
+    """
+
+    if not aspects:
+        return []
+    limit = max(1, min(int(max_mandatory or 1), len(aspects)))
+    if len(aspects) <= limit:
+        return [replace(aspect, mandatory=True) for aspect in aspects]
+    titles = list(dict.fromkeys(re.findall(r'《([^》]+)》', question)))
+    if len(titles) > 1:
+        limit = max(limit, len(titles))
+    parts = _split_question_parts(question)
+    scores = [_scope_priority(aspect, question, index) for index, aspect in enumerate(aspects)]
+    mandatory: set[int] = set()
+    if len(titles) > 1:
+        for index, aspect in enumerate(aspects):
+            if any(title in aspect.question for title in titles):
+                mandatory.add(index)
+    if len(parts) > 1:
+        for part in parts:
+            scores_for_part = [_scope_overlap(aspect.question, part) for aspect in aspects]
+            best = max(range(len(aspects)), key=lambda index: scores_for_part[index])
+            if scores_for_part[best] >= 0.15:
+                mandatory.add(best)
+    for index in sorted(range(len(aspects)), key=lambda item: scores[item], reverse=True):
+        if len(mandatory) >= limit:
+            break
+        mandatory.add(index)
+    if not mandatory:
+        mandatory.add(0)
+    return [replace(aspect, mandatory=index in mandatory) for index, aspect in enumerate(aspects)]
+
+
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     plan = _plan_query_impl(question, options)
     if (plan.budget or {}).get('capacity_limited'):
@@ -251,6 +339,9 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
                     explicit_filter_keys=tuple(set(aspect.explicit_filter_keys) | {"source_title"})))
         else:
             aspects.append(aspect)
+    if not plan.fallback_used:
+        aspects = _mark_aspect_scope(plan.original_question, aspects,
+                                     int((plan.budget or {}).get('max_aspects') or 1))
     return replace(plan, aspects=tuple(aspects), requirements=())
 
 
@@ -772,6 +863,7 @@ def _aspects_from_payload(
                 operation=operation,
                 explicit_filter_keys=tuple(explicit_filters),
                 subject_scope=tuple(x for x in _clean_string_list(raw_aspect.get('subject_scope')) if x in question),
+                mandatory=raw_aspect.get('mandatory') if isinstance(raw_aspect.get('mandatory'), bool) else True,
             )
         )
 

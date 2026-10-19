@@ -143,6 +143,9 @@ class EvidenceRequirement(BaseModel):
     selectors: list[dict[str, Any]] = Field(default_factory=list)
     parent_id: str | None = None
     selector_index: int | None = None
+    # Planner expansions may be useful for recall but are not user-requested
+    # obligations.  The default keeps every existing caller compatible.
+    mandatory: bool = True
 
 
 class EvidenceDecision(BaseModel):
@@ -157,6 +160,7 @@ class EvidenceBundle(BaseModel):
     evidence: list[RetrievalResult] = Field(default_factory=list)
     coverage: dict[str, list[str]] = Field(default_factory=dict)
     missing_requirements: list[str] = Field(default_factory=list)
+    missing_optional_requirements: list[str] = Field(default_factory=list)
     decisions: list[EvidenceDecision] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
