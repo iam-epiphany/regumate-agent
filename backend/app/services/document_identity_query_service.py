@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import feature_gate
 
 import re
 
@@ -21,6 +22,7 @@ _IDENTITY_TERMS = (
 )
 
 
+@feature_gate("structured_index", empty="none")
 def answer_document_identity_question(db: Session, question: str) -> QAResponse | None:
     """Answer explicit identity/version questions from the identity ledger, not RAG prose.
 
@@ -50,7 +52,7 @@ def answer_document_identity_question(db: Session, question: str) -> QAResponse 
             refused=True,
             answer_type="identity_refusal",
             generation_status="skipped",
-            grounding_validation={"passed": True, "reason": "document_identity_not_found"},
+            grounding_validation={"passed": False, "status": "not_run", "task_complete": False, "reason": "document_identity_not_found"},
             refusal_reason="document_identity_not_found",
             refusal_code="document_identity_not_found",
         )
@@ -64,7 +66,7 @@ def answer_document_identity_question(db: Session, question: str) -> QAResponse 
             refused=True,
             answer_type="identity_refusal",
             generation_status="skipped",
-            grounding_validation={"passed": True, "reason": "document_identity_ambiguous"},
+            grounding_validation={"passed": False, "status": "not_run", "task_complete": False, "reason": "document_identity_ambiguous"},
             refusal_reason="document_identity_ambiguous",
             refusal_code="document_identity_ambiguous",
         )
@@ -83,7 +85,7 @@ def answer_document_identity_question(db: Session, question: str) -> QAResponse 
             answer_type="identity_refusal",
             generation_status="deterministic",
             grounding_validation={
-                "passed": True,
+                "passed": False, "status": "not_run", "task_complete": False,
                 "reason": "version_status_unknown",
                 "document_id": document.document_id,
                 "file_sha256": document.file_sha256,
@@ -103,7 +105,7 @@ def answer_document_identity_question(db: Session, question: str) -> QAResponse 
             refused=True,
             answer_type="identity_refusal",
             generation_status="deterministic",
-            grounding_validation={"passed": True, "reason": "identity_not_confirmed", "document_id": document.document_id},
+            grounding_validation={"passed": False, "status": "not_run", "task_complete": False, "reason": "identity_not_confirmed", "document_id": document.document_id},
             refusal_reason="identity_not_confirmed",
             refusal_code="identity_not_confirmed",
         )
@@ -117,7 +119,7 @@ def answer_document_identity_question(db: Session, question: str) -> QAResponse 
         refused=False,
         answer_type="identity_metadata",
         generation_status="deterministic",
-        grounding_validation={"passed": True, "reason": "confirmed_identity_snapshot", "document_id": document.document_id},
+        grounding_validation={"passed": True, "status": "passed", "task_complete": True, "facts_supported": True, "citation_integrity": True, "method": "identity_ledger", "reason": "confirmed_identity_snapshot", "document_id": document.document_id},
     )
 
 

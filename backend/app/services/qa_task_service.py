@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import QA_QUEUE_CAPACITY, QA_TASK_MAX_RETRIES
+from backend.app.core.config import QA_QUEUE_CAPACITY, QA_REQUEST_TOTAL_BUDGET_SECONDS
 from backend.app.core.database import SessionLocal
 from backend.app.models.document import QATask
 from backend.app.schemas.qa import (
@@ -27,6 +27,7 @@ from backend.app.schemas.qa import (
 from backend.app.services.audit_service import record_event
 from backend.app.services.rag_service import answer_question
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
+from backend.app.services.performance_metrics import RequestBudgetExceeded, request_budget_context, model_call_budget
 
 
 logger = logging.getLogger(__name__)
@@ -170,9 +171,8 @@ def _worker_loop() -> None:
             except Exception:
                 logger.exception("Failed to refill QA queue")
             continue
-        retry = False
         try:
-            retry = _run_task(task_id)
+            _run_task(task_id)
         except Exception as exc:
             logger.exception("Unexpected QA worker failure for %s", task_id)
             _record_unexpected_failure(task_id, exc)
@@ -180,8 +180,6 @@ def _worker_loop() -> None:
             with _LOCK:
                 _PENDING.discard(task_id)
             _QUEUE.task_done()
-        if retry:
-            _schedule_in_memory(task_id)
         try:
             _fill_queue_from_db()
         except Exception:
@@ -193,6 +191,8 @@ def _run_task(task_id: str) -> bool:
         task = db.get(QATask, task_id)
         if task is None or task.status not in {"queued", "running"}:
             return False
+        previous_attempts = int(task.attempt_count or 0)
+        budgets = [e['summary']['_runtime_budget'] for e in _json_events(task.progress_json) if _is_budget_event(e)]
         task.status = "running"
         task.answer_preview_json = None
         task.attempt_count = int(task.attempt_count or 0) + 1
@@ -217,15 +217,33 @@ def _run_task(task_id: str) -> bool:
             _raise_if_task_cancelled(db, task_id)
 
         try:
-            response = answer_question(
-                db,
-                task.question,
-                options=options,
-                include_debug=task.include_debug,
-                progress_reporter=progress_reporter,
-                answer_preview_reporter=answer_preview_reporter,
-                cancellation_checker=cancellation_checker,
-            )
+            if not budgets and previous_attempts:
+                raise RequestBudgetExceeded('旧任务未记录已用运行预算，请重新提问。',
+                                            stage='task.recovery', code='budget_not_recorded')
+            budget = budgets[-1] if budgets else {'started_at': _now().isoformat(), 'model_calls': 0}
+            elapsed = max(0.0, (_now()-datetime.fromisoformat(budget['started_at'])).total_seconds())
+            remaining = QA_REQUEST_TOTAL_BUDGET_SECONDS-elapsed
+            if remaining <= 0:
+                raise RequestBudgetExceeded('恢复的任务已超过运行预算，请重新提问。', stage='task.recovery')
+            def save_budget(calls: int) -> None:
+                _append_progress_event(db, task_id, {'stage': 'planning', 'status': 'completed', 'title': '任务状态已保存', 'detail': '',
+                    'summary': {'_runtime_budget': {'started_at': budget['started_at'], 'model_calls': calls}}})
+            save_budget(int(budget['model_calls']))
+            with request_budget_context(remaining), model_call_budget(calls=int(budget['model_calls']), on_reserve=save_budget):
+                response = answer_question(
+                    db,
+                    task.question,
+                    options=options,
+                    include_debug=task.include_debug,
+                    progress_reporter=progress_reporter,
+                    answer_preview_reporter=answer_preview_reporter,
+                    cancellation_checker=cancellation_checker,
+                )
+            if response.answer_type == "service_error":
+                _fail_task(db, task_id, response.answer or "问答服务暂不可用。",
+                           code=response.refusal_reason or "service_unavailable", stage="llm_generation",
+                           title="问答服务暂不可用", retryable=False)
+                return False
             db.expire_all()
             task = db.get(QATask, task_id)
             if task is None:
@@ -246,12 +264,21 @@ def _run_task(task_id: str) -> bool:
         except QATaskCancelled:
             db.rollback()
             return False
+        except RequestBudgetExceeded as exc:
+            db.expire_all()
+            task = db.get(QATask, task_id)
+            if task is None or task.status == 'cancelled':
+                return False
+            _fail_task(db, task_id, str(exc), code=exc.code, stage=exc.stage,
+                       title='问答请求已达到运行预算', retryable=False)
+            return False
         except RetrievalServiceUnavailable as exc:
             db.expire_all()
             task = db.get(QATask, task_id)
             if task is None or task.status == "cancelled":
                 return False
-            retryable = task.attempt_count <= QA_TASK_MAX_RETRIES
+            # A retry of the whole task would silently obtain a new call/deadline budget.
+            retryable = False
             _fail_task(
                 db,
                 task_id,
@@ -287,7 +314,9 @@ def _append_progress_event(db: Session, task_id: str, event: dict[str, Any]) -> 
     events = _json_events(task.progress_json)
     events.append(event)
     # Bound task snapshots so a long diagnostic run cannot grow without limit.
-    task.progress_json = json.dumps(events[-100:], ensure_ascii=False)
+    budget_events = [item for item in events if _is_budget_event(item)]
+    public_events = [item for item in events if not _is_budget_event(item)]
+    task.progress_json = json.dumps(budget_events[-1:] + public_events[-99:], ensure_ascii=False)
     task.updated_at = _now()
     db.commit()
 
@@ -318,11 +347,14 @@ def _fail_task(
     title: str,
     retryable: bool,
 ) -> None:
+    public_stage = stage if stage in {'planning', 'retrieval', 'rerank', 'context_selection',
+                                      'prompt_build', 'llm_generation', 'grounding_validation'} else (
+        'llm_generation' if stage == 'model_call' else 'planning' if stage == 'task.recovery' else 'prompt_build')
     _append_progress_event(
         db,
         task_id,
         {
-            "stage": stage,
+            "stage": public_stage,
             "status": "failed",
             "title": title,
             "detail": detail,
@@ -414,11 +446,16 @@ def _task_to_response(task: QATask) -> QATaskStatusResponse:
             answer = QAResponse.model_validate_json(task.answer_json)
         except ValueError:
             answer = None
-    progress_events = [
-        RagProgressEvent.model_validate(event)
-        for event in _json_events(task.progress_json)
-        if isinstance(event, dict)
-    ]
+    progress_events = []
+    for event in _json_events(task.progress_json):
+        if not isinstance(event, dict) or _is_budget_event(event):
+            continue
+        try:
+            progress_events.append(RagProgressEvent.model_validate(event))
+        except ValueError:
+            progress_events.append(RagProgressEvent(stage='prompt_build', status='skipped',
+                title='历史阶段状态未记录', detail=str(event.get('detail') or ''),
+                summary={'recorded_stage': event.get('stage')}))
     answer_preview = None
     if task.answer_preview_json:
         try:
@@ -479,3 +516,8 @@ def _iso(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat()
+
+
+def _is_budget_event(event: dict[str, Any]) -> bool:
+    summary = event.get('summary')
+    return isinstance(summary, dict) and isinstance(summary.get('_runtime_budget'), dict)

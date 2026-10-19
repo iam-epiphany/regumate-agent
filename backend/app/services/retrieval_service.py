@@ -503,8 +503,12 @@ def matches_from_reranked(
     diagnostics.timings_ms["filter"] = _elapsed_ms(filter_started_at)
     diagnostics.reliable_count = len(reliable)
     diagnostics.filtered_count = max(diagnostics.reranked_count - len(reliable), 0)
-    reliable.sort(key=_rank_key, reverse=True)
-    selected = _select_final_chunks(reliable, question, limit=limit)
+    from backend.app.core.rag_features import features
+    if features().rerank:
+        reliable.sort(key=_rank_key, reverse=True)
+        selected = _select_final_chunks(reliable, question, limit=limit)
+    else:
+        selected = reliable[:limit]
     diagnostics.selected_count = len(selected)
     return [
         RetrievalMatch(
@@ -541,19 +545,8 @@ def _limit_rerank_candidates(candidates: list[VectorSearchResult]) -> list[Vecto
 
 
 def retrieval_queries(question: str) -> list[str]:
-    normalized = _normalize_for_match(question)
-    queries = [question]
-    split_parts = [part.strip() for part in re.split(r"[？?。；;，,]|如果|若", question) if part.strip()]
-    for part in split_parts:
-        if part != question:
-            queries.append(part)
-    if "外币折算" in normalized and any(term in normalized for term in ["保留", "依据", "需要保留"]):
-        queries.append("外币折算 保留 汇率日期 折算规则 原币金额来源")
-    if "资产合计" in normalized and "差异" in normalized:
-        queries.append("资产合计 差异 优先检查 币种折算 四舍五入 科目映射 重复汇总")
-    if "差异" in normalized and any(term in normalized for term in ["处理", "保留", "依据"]):
-        queries.append("差异处理 保留依据")
-    return list(dict.fromkeys(queries))
+    parts = [part.strip() for part in re.split(r"[？?。；;]", question) if part.strip()]
+    return list(dict.fromkeys([question, *parts]))
 
 
 @dataclass
@@ -567,35 +560,12 @@ class _AnnotatedChunk:
 def _is_reliable(item: RerankedChunk, terms: list[str], question: str) -> bool:
     if not item.candidate.chunk_id or not item.candidate.text.strip():
         return False
-    # MCQ aspects blend a lexical coverage term into ``rerank_score`` for
-    # ordering; the reliability gates must evaluate the raw cross-encoder
-    # score, otherwise a strong model match can be filtered by a weak
-    # lexical term (or a weak match pushed through by a high coverage term).
-    rerank_score = (
-        item.raw_rerank_score if item.raw_rerank_score is not None else item.rerank_score
-    )
-    coverage = evidence_coverage(terms, _candidate_evidence_text(item.candidate))
-    strong_exact_match = (
-        coverage >= DIRECT_EVIDENCE_COVERAGE
-        and item.candidate.score >= 0.60
-        and rerank_score >= 0.0
-    )
-    if rerank_score < MIN_RERANK_SCORE and not strong_exact_match:
-        return False
-    # The previous universal lexical-coverage gate discarded 28 official
-    # Word/PDF cases even after BGE reranker had placed the expected document at
-    # the top. Chinese regulatory questions and source clauses frequently use
-    # paraphrases, so a strong cross-encoder match is valid semantic evidence.
-    strong_semantic_match = (
-        rerank_score >= 0.55
-        and item.candidate.score >= 0.05
-        and coverage > 0.0
-    )
-    if coverage < MIN_EVIDENCE_COVERAGE and not strong_semantic_match:
-        return False
-    if _is_table_context(item.candidate, question, coverage):
-        return coverage >= DIRECT_EVIDENCE_COVERAGE or strong_semantic_match
-    return True
+    from backend.app.core.rag_features import features
+    if not features().rerank:
+        return True
+    raw = item.raw_rerank_score if item.raw_rerank_score is not None else item.rerank_score
+    # Lexical overlap orders candidates; it is never a semantic veto.
+    return raw >= MIN_RERANK_SCORE
 
 
 def _annotate(item: RerankedChunk, terms: list[str], question: str) -> _AnnotatedChunk:
@@ -604,7 +574,7 @@ def _annotate(item: RerankedChunk, terms: list[str], question: str) -> _Annotate
         candidate=item.candidate,
         rerank_score=item.rerank_score,
         coverage_score=coverage,
-        evidence_role=_evidence_role(item.candidate, question, coverage),
+        evidence_role=("direct_evidence" if item.candidate.chunk_type != "table" and item.rerank_score >= 0.55 else _evidence_role(item.candidate, question, coverage)),
     )
 
 
@@ -665,6 +635,9 @@ def rerank_input_with_document_coverage(
     the top chunk of each document, round 2 refills by rank — single-file
     questions are unchanged.
     """
+    from backend.app.core.rag_features import features
+    if not features().rerank:
+        return candidates[:limit]
     if len(candidates) <= limit:
         return candidates
     selected: list[VectorSearchResult] = []
@@ -722,67 +695,8 @@ def _optional_text(value: Any) -> str | None:
 
 
 def question_terms(question: str) -> list[str]:
-    normalized = _normalize_for_match(question)
-    domain_phrases = [
-        "重要声明",
-        "文件版本",
-        "版本号",
-        "发布日期",
-        "适用范围",
-        "模拟制度",
-        "文档版本",
-        "定义",
-        "规则编号",
-        "规则名称",
-        "触发条件",
-        "处理建议",
-        "普惠小微",
-        "同一借款人",
-        "借款人",
-        "多笔贷款",
-        "贷款余额",
-        "余额",
-        "统计",
-        "用途",
-        "金额口径",
-        "客户范围",
-        "处理口径",
-        "情形",
-        "不纳入",
-        "合并判断",
-        "资产合计",
-        "差异",
-        "处理",
-        "优先检查",
-        "优先排查",
-        "币种折算",
-        "外币折算",
-        "四舍五入",
-        "科目映射",
-        "重复汇总",
-        "保留",
-        "依据",
-        "汇率日期",
-        "折算规则",
-        "原币金额",
-        "原币金额来源",
-        "逾期贷款",
-        "不良贷款",
-        "风险分类",
-        "逾期统计",
-        "逾期天数",
-        "合同约定还款日",
-        "还款能力",
-        "资产质量",
-        "绿色信贷",
-        "差错更正",
-    ]
-    terms = [phrase for phrase in domain_phrases if phrase in normalized]
-    terms.extend(_expanded_domain_terms(normalized))
-    terms.extend(token for token in re.findall(r"[A-Za-z0-9_]{2,}", normalized))
-    if not terms:
-        terms.extend(_fallback_chinese_terms(normalized))
-    return list(dict.fromkeys(terms))
+    from backend.app.services.evidence_contract_service import target_terms
+    return target_terms(question)
 
 
 def evidence_coverage(terms: list[str], text: str) -> float:
@@ -853,23 +767,6 @@ def _fallback_chinese_terms(text: str) -> list[str]:
     return terms
 
 
-def _expanded_domain_terms(normalized_question: str) -> list[str]:
-    expansions: list[str] = []
-    if "逾期" in normalized_question:
-        expansions.extend(["逾期", "逾期贷款", "逾期统计", "逾期天数", "合同约定还款日"])
-    if "不良" in normalized_question:
-        expansions.extend(["不良", "不良贷款", "风险分类", "还款能力", "资产质量"])
-    if "风险分类" in normalized_question:
-        expansions.extend(["风险分类", "不良贷款", "还款能力", "资产质量"])
-    if any(term in normalized_question for term in ["区别", "差异", "关系", "等同", "不同", "比较"]):
-        expansions.extend(["区别", "差异", "关系", "等同"])
-    if "外币折算" in normalized_question:
-        expansions.extend(["外币折算", "币种折算", "汇率日期", "折算规则", "原币金额"])
-    if "保留" in normalized_question or "依据" in normalized_question:
-        expansions.extend(["保留", "依据", "来源"])
-    if "资产合计" in normalized_question and "差异" in normalized_question:
-        expansions.extend(["资产合计", "差异", "优先检查", "币种折算", "四舍五入", "科目映射", "重复汇总"])
-    return expansions
 
 
 def _candidate_evidence_text(candidate: VectorSearchResult) -> str:

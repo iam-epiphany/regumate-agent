@@ -1,0 +1,228 @@
+{
+  "A2": [
+    {
+      "id": "old:BW-TC1",
+      "context_count": 2,
+      "row_labels": [
+        "原保险保费收入",
+        "赔付支出"
+      ]
+    },
+    {
+      "id": "old:BW-TC10",
+      "context_count": 2,
+      "row_labels": [
+        "原保险保费收入",
+        "赔付支出"
+      ]
+    },
+    {
+      "id": "old:BW-TC2",
+      "context_count": 2,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额",
+        "其中：财产险公司 / 其中：银行存款"
+      ]
+    },
+    {
+      "id": "old:BW-TC3",
+      "context_count": 2,
+      "row_labels": [
+        "原保险保费收入",
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC4",
+      "context_count": 2,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额",
+        "其中：财产险公司 / 债券"
+      ]
+    },
+    {
+      "id": "old:BW-TC5",
+      "context_count": 2,
+      "row_labels": [
+        "一季度 / 不良贷款余额",
+        "四季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC6",
+      "context_count": 2,
+      "row_labels": [
+        "三季度 / 不良贷款余额",
+        "二季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC7",
+      "context_count": 2,
+      "row_labels": [
+        "人身险公司 / 资金运用余额",
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC8",
+      "context_count": 2,
+      "row_labels": [
+        "其中：财产险公司 / 其中：银行存款",
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC9",
+      "context_count": 2,
+      "row_labels": [
+        "其中：财产险公司 / 债券",
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    }
+  ],
+  "A3": [
+    {
+      "id": "old:BW-TC1",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC10",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC2",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC3",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC4",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC5",
+      "context_count": 1,
+      "row_labels": [
+        "一季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC6",
+      "context_count": 1,
+      "row_labels": [
+        "三季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC7",
+      "context_count": 1,
+      "row_labels": [
+        "人身险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC8",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 其中：银行存款"
+      ]
+    },
+    {
+      "id": "old:BW-TC9",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 债券"
+      ]
+    }
+  ],
+  "A4": [
+    {
+      "id": "old:BW-TC1",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC10",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC2",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC3",
+      "context_count": 1,
+      "row_labels": [
+        "原保险保费收入"
+      ]
+    },
+    {
+      "id": "old:BW-TC4",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC5",
+      "context_count": 1,
+      "row_labels": [
+        "一季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC6",
+      "context_count": 1,
+      "row_labels": [
+        "三季度 / 不良贷款余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC7",
+      "context_count": 1,
+      "row_labels": [
+        "人身险公司 / 资金运用余额"
+      ]
+    },
+    {
+      "id": "old:BW-TC8",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 其中：银行存款"
+      ]
+    },
+    {
+      "id": "old:BW-TC9",
+      "context_count": 1,
+      "row_labels": [
+        "其中：财产险公司 / 债券"
+      ]
+    }
+  ]
+}

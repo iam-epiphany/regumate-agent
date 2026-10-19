@@ -1,0 +1,2426 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-02T01:26:50.174395+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "device": {
+    "selected_device": "cuda",
+    "cuda_available": true,
+    "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+    "performance_mode": "gpu"
+  },
+  "summary": {
+    "total": 300,
+    "correct": 300,
+    "errors": 0,
+    "accuracy": 1.0,
+    "latency": {
+      "n": 300,
+      "avg_ms": 812.75,
+      "p50_ms": 378.39,
+      "p95_ms": 2389.12,
+      "max_ms": 11379.53
+    }
+  },
+  "results": [
+    {
+      "id": "Q001",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 44.5
+    },
+    {
+      "id": "Q002",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 502.19
+    },
+    {
+      "id": "Q003",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 50.79
+    },
+    {
+      "id": "Q004",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 41.97
+    },
+    {
+      "id": "Q005",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 69.19
+    },
+    {
+      "id": "Q006",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 119.77
+    },
+    {
+      "id": "Q007",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 44.87
+    },
+    {
+      "id": "Q008",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 63.72
+    },
+    {
+      "id": "Q009",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 60.37
+    },
+    {
+      "id": "Q010",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 47.79
+    },
+    {
+      "id": "Q011",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 49.75
+    },
+    {
+      "id": "Q012",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 118.13
+    },
+    {
+      "id": "Q013",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 45.65
+    },
+    {
+      "id": "Q014",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 42.51
+    },
+    {
+      "id": "Q015",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 44.75
+    },
+    {
+      "id": "Q016",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 107.79
+    },
+    {
+      "id": "Q017",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 42.3
+    },
+    {
+      "id": "Q018",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 189.67
+    },
+    {
+      "id": "Q019",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 106.57
+    },
+    {
+      "id": "Q020",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 209.43
+    },
+    {
+      "id": "Q021",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 71.43
+    },
+    {
+      "id": "Q022",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 51.74
+    },
+    {
+      "id": "Q023",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 37.36
+    },
+    {
+      "id": "Q024",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 36.65
+    },
+    {
+      "id": "Q025",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 106.29
+    },
+    {
+      "id": "Q026",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 40.19
+    },
+    {
+      "id": "Q027",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 37.08
+    },
+    {
+      "id": "Q028",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 38.04
+    },
+    {
+      "id": "Q029",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 98.14
+    },
+    {
+      "id": "Q030",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 43.77
+    },
+    {
+      "id": "Q031",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 61.91
+    },
+    {
+      "id": "Q032",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 61.86
+    },
+    {
+      "id": "Q033",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 115.82
+    },
+    {
+      "id": "Q034",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 38.32
+    },
+    {
+      "id": "Q035",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 61.58
+    },
+    {
+      "id": "Q036",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 154.84
+    },
+    {
+      "id": "Q037",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 154.14
+    },
+    {
+      "id": "Q038",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 151.78
+    },
+    {
+      "id": "Q039",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 159.11
+    },
+    {
+      "id": "Q040",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 157.21
+    },
+    {
+      "id": "Q041",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 168.84
+    },
+    {
+      "id": "Q042",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 76.0
+    },
+    {
+      "id": "Q043",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 60.26
+    },
+    {
+      "id": "Q044",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 40.35
+    },
+    {
+      "id": "Q045",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 46.78
+    },
+    {
+      "id": "Q046",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 108.87
+    },
+    {
+      "id": "Q047",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 101.37
+    },
+    {
+      "id": "Q048",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 102.92
+    },
+    {
+      "id": "Q049",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 104.5
+    },
+    {
+      "id": "Q050",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 106.82
+    },
+    {
+      "id": "Q051",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 54.64
+    },
+    {
+      "id": "Q052",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 39.26
+    },
+    {
+      "id": "Q053",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 48.45
+    },
+    {
+      "id": "Q054",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 111.21
+    },
+    {
+      "id": "Q055",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 114.02
+    },
+    {
+      "id": "Q056",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 121.49
+    },
+    {
+      "id": "Q057",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 102.55
+    },
+    {
+      "id": "Q058",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 104.09
+    },
+    {
+      "id": "Q059",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 40.19
+    },
+    {
+      "id": "Q060",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 36.25
+    },
+    {
+      "id": "Q061",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 37.21
+    },
+    {
+      "id": "Q062",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 99.71
+    },
+    {
+      "id": "Q063",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 100.74
+    },
+    {
+      "id": "Q064",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 101.71
+    },
+    {
+      "id": "Q065",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 111.65
+    },
+    {
+      "id": "Q066",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 113.01
+    },
+    {
+      "id": "Q067",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 45.26
+    },
+    {
+      "id": "Q068",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 133.1
+    },
+    {
+      "id": "Q069",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 120.68
+    },
+    {
+      "id": "Q070",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 197.34
+    },
+    {
+      "id": "Q071",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 161.86
+    },
+    {
+      "id": "Q072",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 159.71
+    },
+    {
+      "id": "Q073",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 156.36
+    },
+    {
+      "id": "Q074",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 443.72
+    },
+    {
+      "id": "Q075",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 808.8
+    },
+    {
+      "id": "Q076",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 88.32
+    },
+    {
+      "id": "Q077",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 71.37
+    },
+    {
+      "id": "Q078",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 75.53
+    },
+    {
+      "id": "Q079",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 67.71
+    },
+    {
+      "id": "Q080",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 72.54
+    },
+    {
+      "id": "Q081",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 70.9
+    },
+    {
+      "id": "Q082",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 57.82
+    },
+    {
+      "id": "Q083",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 52.62
+    },
+    {
+      "id": "Q084",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 52.23
+    },
+    {
+      "id": "Q085",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 52.02
+    },
+    {
+      "id": "Q086",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 110.17
+    },
+    {
+      "id": "Q087",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 96.7
+    },
+    {
+      "id": "Q088",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 106.0
+    },
+    {
+      "id": "Q089",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 96.45
+    },
+    {
+      "id": "Q090",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 93.99
+    },
+    {
+      "id": "Q091",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 95.56
+    },
+    {
+      "id": "Q092",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 93.76
+    },
+    {
+      "id": "Q093",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 97.34
+    },
+    {
+      "id": "Q094",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 115.98
+    },
+    {
+      "id": "Q095",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 111.37
+    },
+    {
+      "id": "Q096",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 97.37
+    },
+    {
+      "id": "Q097",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 100.28
+    },
+    {
+      "id": "Q098",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 92.88
+    },
+    {
+      "id": "Q099",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 132.17
+    },
+    {
+      "id": "Q100",
+      "correct": true,
+      "answer_type": "table_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 103.26
+    },
+    {
+      "id": "Q101",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 2198.65
+    },
+    {
+      "id": "Q102",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 782.27
+    },
+    {
+      "id": "Q103",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 904.29
+    },
+    {
+      "id": "Q104",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1104.1
+    },
+    {
+      "id": "Q105",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 857.86
+    },
+    {
+      "id": "Q106",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 4735.12
+    },
+    {
+      "id": "Q107",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1025.24
+    },
+    {
+      "id": "Q108",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1063.55
+    },
+    {
+      "id": "Q109",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1178.23
+    },
+    {
+      "id": "Q110",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 525.32
+    },
+    {
+      "id": "Q111",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 647.78
+    },
+    {
+      "id": "Q112",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 118.39
+    },
+    {
+      "id": "Q113",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 769.5
+    },
+    {
+      "id": "Q114",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 8702.12
+    },
+    {
+      "id": "Q115",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 153.59
+    },
+    {
+      "id": "Q116",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1293.9
+    },
+    {
+      "id": "Q117",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1087.02
+    },
+    {
+      "id": "Q118",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 113.14
+    },
+    {
+      "id": "Q119",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 533.97
+    },
+    {
+      "id": "Q120",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 115.44
+    },
+    {
+      "id": "Q121",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1041.54
+    },
+    {
+      "id": "Q122",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 8216.08
+    },
+    {
+      "id": "Q123",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 949.1
+    },
+    {
+      "id": "Q124",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 138.54
+    },
+    {
+      "id": "Q125",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1168.25
+    },
+    {
+      "id": "Q126",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 68.53
+    },
+    {
+      "id": "Q127",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 627.35
+    },
+    {
+      "id": "Q128",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 825.81
+    },
+    {
+      "id": "Q129",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 595.95
+    },
+    {
+      "id": "Q130",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 11379.53
+    },
+    {
+      "id": "Q131",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1115.76
+    },
+    {
+      "id": "Q132",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 969.35
+    },
+    {
+      "id": "Q133",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 282.16
+    },
+    {
+      "id": "Q134",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 68.75
+    },
+    {
+      "id": "Q135",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 569.75
+    },
+    {
+      "id": "Q136",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 184.59
+    },
+    {
+      "id": "Q137",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 825.9
+    },
+    {
+      "id": "Q138",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 8954.65
+    },
+    {
+      "id": "Q139",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 146.33
+    },
+    {
+      "id": "Q140",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1193.84
+    },
+    {
+      "id": "Q141",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1243.34
+    },
+    {
+      "id": "Q142",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 6539.66
+    },
+    {
+      "id": "Q143",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 670.57
+    },
+    {
+      "id": "Q144",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1022.93
+    },
+    {
+      "id": "Q145",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 888.84
+    },
+    {
+      "id": "Q146",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 8511.92
+    },
+    {
+      "id": "Q147",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 828.12
+    },
+    {
+      "id": "Q148",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 258.02
+    },
+    {
+      "id": "Q149",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1020.56
+    },
+    {
+      "id": "Q150",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 52.37
+    },
+    {
+      "id": "Q151",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 736.08
+    },
+    {
+      "id": "Q152",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 895.6
+    },
+    {
+      "id": "Q153",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 628.95
+    },
+    {
+      "id": "Q154",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 9528.85
+    },
+    {
+      "id": "Q155",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 896.88
+    },
+    {
+      "id": "Q156",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1108.9
+    },
+    {
+      "id": "Q157",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 337.87
+    },
+    {
+      "id": "Q158",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 368.05
+    },
+    {
+      "id": "Q159",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 694.7
+    },
+    {
+      "id": "Q160",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1454.38
+    },
+    {
+      "id": "Q161",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 848.58
+    },
+    {
+      "id": "Q162",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 7675.6
+    },
+    {
+      "id": "Q163",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 127.13
+    },
+    {
+      "id": "Q164",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1241.49
+    },
+    {
+      "id": "Q165",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1099.4
+    },
+    {
+      "id": "Q166",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 103.96
+    },
+    {
+      "id": "Q167",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 624.81
+    },
+    {
+      "id": "Q168",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 936.46
+    },
+    {
+      "id": "Q169",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 116.5
+    },
+    {
+      "id": "Q170",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 7208.15
+    },
+    {
+      "id": "Q171",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 872.02
+    },
+    {
+      "id": "Q172",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 91.35
+    },
+    {
+      "id": "Q173",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1054.86
+    },
+    {
+      "id": "Q174",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 64.12
+    },
+    {
+      "id": "Q175",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1063.47
+    },
+    {
+      "id": "Q176",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1053.59
+    },
+    {
+      "id": "Q177",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 696.26
+    },
+    {
+      "id": "Q178",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 10133.32
+    },
+    {
+      "id": "Q179",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1063.94
+    },
+    {
+      "id": "Q180",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1117.4
+    },
+    {
+      "id": "Q181",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 299.22
+    },
+    {
+      "id": "Q182",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 75.56
+    },
+    {
+      "id": "Q183",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 787.55
+    },
+    {
+      "id": "Q184",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 215.61
+    },
+    {
+      "id": "Q185",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 176.17
+    },
+    {
+      "id": "Q186",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 7392.84
+    },
+    {
+      "id": "Q187",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 236.34
+    },
+    {
+      "id": "Q188",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 488.01
+    },
+    {
+      "id": "Q189",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1283.53
+    },
+    {
+      "id": "Q190",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 5726.54
+    },
+    {
+      "id": "Q191",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 582.12
+    },
+    {
+      "id": "Q192",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 994.33
+    },
+    {
+      "id": "Q193",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 149.27
+    },
+    {
+      "id": "Q194",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 8072.66
+    },
+    {
+      "id": "Q195",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 482.14
+    },
+    {
+      "id": "Q196",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 98.88
+    },
+    {
+      "id": "Q197",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1026.63
+    },
+    {
+      "id": "Q198",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 3329.63
+    },
+    {
+      "id": "Q199",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 554.19
+    },
+    {
+      "id": "Q200",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 404.18
+    },
+    {
+      "id": "Q201",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 420.51
+    },
+    {
+      "id": "Q202",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 246.32
+    },
+    {
+      "id": "Q203",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 159.8
+    },
+    {
+      "id": "Q204",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 892.85
+    },
+    {
+      "id": "Q205",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 480.32
+    },
+    {
+      "id": "Q206",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1847.06
+    },
+    {
+      "id": "Q207",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 471.22
+    },
+    {
+      "id": "Q208",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 874.26
+    },
+    {
+      "id": "Q209",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 285.86
+    },
+    {
+      "id": "Q210",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 635.31
+    },
+    {
+      "id": "Q211",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 592.05
+    },
+    {
+      "id": "Q212",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1910.65
+    },
+    {
+      "id": "Q213",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 429.71
+    },
+    {
+      "id": "Q214",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 279.03
+    },
+    {
+      "id": "Q215",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 221.36
+    },
+    {
+      "id": "Q216",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 605.32
+    },
+    {
+      "id": "Q217",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 401.76
+    },
+    {
+      "id": "Q218",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1505.23
+    },
+    {
+      "id": "Q219",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 422.99
+    },
+    {
+      "id": "Q220",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 477.83
+    },
+    {
+      "id": "Q221",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 263.57
+    },
+    {
+      "id": "Q222",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 780.74
+    },
+    {
+      "id": "Q223",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 487.51
+    },
+    {
+      "id": "Q224",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1726.79
+    },
+    {
+      "id": "Q225",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 406.81
+    },
+    {
+      "id": "Q226",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 285.39
+    },
+    {
+      "id": "Q227",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 378.39
+    },
+    {
+      "id": "Q228",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 593.36
+    },
+    {
+      "id": "Q229",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 437.16
+    },
+    {
+      "id": "Q230",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1538.68
+    },
+    {
+      "id": "Q231",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 427.91
+    },
+    {
+      "id": "Q232",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 349.94
+    },
+    {
+      "id": "Q233",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 226.2
+    },
+    {
+      "id": "Q234",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 637.74
+    },
+    {
+      "id": "Q235",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 407.06
+    },
+    {
+      "id": "Q236",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1723.38
+    },
+    {
+      "id": "Q237",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 448.18
+    },
+    {
+      "id": "Q238",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 351.37
+    },
+    {
+      "id": "Q239",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 337.48
+    },
+    {
+      "id": "Q240",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 614.54
+    },
+    {
+      "id": "Q241",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 488.8
+    },
+    {
+      "id": "Q242",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 594.31
+    },
+    {
+      "id": "Q243",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 454.68
+    },
+    {
+      "id": "Q244",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 530.99
+    },
+    {
+      "id": "Q245",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 312.4
+    },
+    {
+      "id": "Q246",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 763.07
+    },
+    {
+      "id": "Q247",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 781.31
+    },
+    {
+      "id": "Q248",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 624.75
+    },
+    {
+      "id": "Q249",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 458.09
+    },
+    {
+      "id": "Q250",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 551.25
+    },
+    {
+      "id": "Q251",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 408.73
+    },
+    {
+      "id": "Q252",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 645.37
+    },
+    {
+      "id": "Q253",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 649.73
+    },
+    {
+      "id": "Q254",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1017.41
+    },
+    {
+      "id": "Q255",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 424.72
+    },
+    {
+      "id": "Q256",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 370.14
+    },
+    {
+      "id": "Q257",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1414.47
+    },
+    {
+      "id": "Q258",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 571.49
+    },
+    {
+      "id": "Q259",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 456.71
+    },
+    {
+      "id": "Q260",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 865.64
+    },
+    {
+      "id": "Q261",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 413.67
+    },
+    {
+      "id": "Q262",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 310.62
+    },
+    {
+      "id": "Q263",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 180.6
+    },
+    {
+      "id": "Q264",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 723.61
+    },
+    {
+      "id": "Q265",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 485.12
+    },
+    {
+      "id": "Q266",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 812.11
+    },
+    {
+      "id": "Q267",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 432.64
+    },
+    {
+      "id": "Q268",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 304.53
+    },
+    {
+      "id": "Q269",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 160.77
+    },
+    {
+      "id": "Q270",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 628.3
+    },
+    {
+      "id": "Q271",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 435.67
+    },
+    {
+      "id": "Q272",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 889.35
+    },
+    {
+      "id": "Q273",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 429.39
+    },
+    {
+      "id": "Q274",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 284.38
+    },
+    {
+      "id": "Q275",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 1993.85
+    },
+    {
+      "id": "Q276",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 599.01
+    },
+    {
+      "id": "Q277",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 418.26
+    },
+    {
+      "id": "Q278",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 809.25
+    },
+    {
+      "id": "Q279",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 453.8
+    },
+    {
+      "id": "Q280",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 145.98
+    },
+    {
+      "id": "Q281",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 2389.12
+    },
+    {
+      "id": "Q282",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 524.99
+    },
+    {
+      "id": "Q283",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 374.97
+    },
+    {
+      "id": "Q284",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 848.71
+    },
+    {
+      "id": "Q285",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 411.66
+    },
+    {
+      "id": "Q286",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 152.53
+    },
+    {
+      "id": "Q287",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 157.04
+    },
+    {
+      "id": "Q288",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 531.15
+    },
+    {
+      "id": "Q289",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 377.77
+    },
+    {
+      "id": "Q290",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 527.9
+    },
+    {
+      "id": "Q291",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 429.61
+    },
+    {
+      "id": "Q292",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 147.32
+    },
+    {
+      "id": "Q293",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 290.67
+    },
+    {
+      "id": "Q294",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 570.22
+    },
+    {
+      "id": "Q295",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 467.37
+    },
+    {
+      "id": "Q296",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 603.71
+    },
+    {
+      "id": "Q297",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 407.23
+    },
+    {
+      "id": "Q298",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 148.73
+    },
+    {
+      "id": "Q299",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 221.09
+    },
+    {
+      "id": "Q300",
+      "correct": true,
+      "answer_type": "choice_evidence_deterministic",
+      "refused": false,
+      "error": null,
+      "latency_ms": 517.25
+    }
+  ]
+}

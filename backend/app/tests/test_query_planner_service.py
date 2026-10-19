@@ -1,3 +1,6 @@
+from backend.app.services.evidence_contract_service import source_matches, requirements_for_plan
+import pytest
+from backend.app.services import retrieval_support
 import json
 import re
 
@@ -105,10 +108,8 @@ def test_prompt_aspect_marking_preserves_retrieval_origin() -> None:
         "document_a": first.question,
         "document_b": second.question,
     }
-    assert rag_service._chunk_matches_query_aspect(chunk, first) is True
-    assert rag_service._chunk_matches_query_aspect(chunk, second) is False
-    assert rag_service._prompt_chunk_covers_aspect(chunk, second) is False
-    assert rag_service._best_shared_candidate([chunk], [chunk], second) is None
+    assert source_matches(requirements_for_plan(rag_service.QueryPlan("", (first,), "test"))[0].source_titles, chunk) is True
+    assert source_matches(requirements_for_plan(rag_service.QueryPlan("", (second,), "test"))[0].source_titles, chunk) is False
 
 
 def test_exact_support_is_isolated_by_explicit_source_title() -> None:
@@ -142,8 +143,8 @@ def test_exact_support_is_isolated_by_explicit_source_title() -> None:
         },
     )
 
-    assert rag_service._chunk_matches_query_aspect(chunk, first) is True
-    assert rag_service._chunk_matches_query_aspect(chunk, second) is False
+    assert source_matches(requirements_for_plan(rag_service.QueryPlan("", (first,), "test"))[0].source_titles, chunk) is True
+    assert source_matches(requirements_for_plan(rag_service.QueryPlan("", (second,), "test"))[0].source_titles, chunk) is False
 
 
 def test_query_planner_fallback_recognizes_excel_lookup_question(monkeypatch) -> None:
@@ -218,7 +219,7 @@ def test_query_planner_recognizes_monthly_report_lookup_and_difference(monkeypat
     assert table.modality == "table"
     assert table.table_task == "calculate"
     assert table.operation == "sum"
-    assert [selector["row_or_indicator"] for selector in table.selectors] == ["现金及存放同业", "贷款余额", "证券投资", "其他资产"]
+    assert table.selectors == ()  # The vague count does not identify operands.
     assert regulation.modality == "text"
 
     missing_period = missing_period_plan.aspects[0]
@@ -320,7 +321,7 @@ def test_query_planner_builds_deterministic_mcq_title_and_option_queries(monkeyp
     assert plan.planner == "deterministic-mcq"
     assert len(plan.aspects) == 1
     aspect = plan.aspects[0]
-    assert aspect.question == "数据安全事件分级"
+    assert aspect.question == plan.original_question
     assert [query.query_type for query in aspect.search_queries[:2]] == [
         "keyword_anchor",
         "semantic_question",
@@ -332,7 +333,7 @@ def test_query_planner_builds_deterministic_mcq_title_and_option_queries(monkeyp
         "检索《银行函证工作操作指引（PDF）》后，以下哪一项与材料内容一致？",
         options=options,
     )
-    assert pdf_plan.aspects[0].question == "银行函证工作操作指引"
+    assert pdf_plan.aspects[0].question == pdf_plan.original_question
     assert pdf_plan.aspects[0].table_filters["file_type"] == "pdf"
 
     repeated = "共同事实。；"
@@ -496,7 +497,7 @@ def test_llm_postprocessor_splits_two_coordinated_requirement_categories() -> No
     ) == ["说明大额风险暴露门槛", "处置自救原则"]
     assert query_planner_service._coordinated_aspect_questions(
         "说明意外伤害保险定义及保费厘定要求"
-    ) == ["说明意外伤害保险定义", "保费厘定要求"]
+    ) == ["说明意外伤害保险定义", "意外伤害保险的保费厘定要求"]
 
 
 def test_llm_postprocessor_splits_bare_threshold_and_order_categories() -> None:
@@ -634,7 +635,7 @@ def test_llm_postprocessor_splits_definition_and_pricing_but_preserves_title_sco
     assert "《意外伤害保险业务监管办法》中保险费厘定" in parts[1]
 
 
-def test_query_planner_expands_four_loan_balance_comparison(monkeypatch) -> None:
+def test_vague_category_count_does_not_insert_fixed_metrics(monkeypatch) -> None:
     monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
 
     plan = plan_query(
@@ -642,14 +643,9 @@ def test_query_planner_expands_four_loan_balance_comparison(monkeypatch) -> None
     )
 
     table = plan.aspects[0]
-    assert table.table_filters["row_label"] == "农村商业银行"
+    assert table.table_filters["row_label"] == "农村商业银行 贷款余额"
     assert "column_label" not in table.table_filters
-    assert [selector["label"] for selector in table.selectors] == [
-        "损失类贷款余额",
-        "不良贷款余额",
-        "可疑类贷款余额",
-        "次级类贷款余额",
-    ]
+    assert not any(selector.get("label") == "损失类贷款余额" for selector in table.selectors)
 
 
 def test_query_planner_does_not_route_word_appendix_formula_to_spreadsheet(monkeypatch) -> None:
@@ -997,7 +993,7 @@ def test_bounded_lexical_phrases_split_document_style_support_anchors() -> None:
         modality="text",
     )
 
-    phrases = rag_service._bounded_lexical_phrases(aspect)
+    phrases = retrieval_support._bounded_lexical_phrases(aspect)
 
     assert "处置策略建议坚持自救为本基本原则" in phrases
     assert "处置策略建议坚持自救为本" in phrases
@@ -1020,7 +1016,7 @@ def test_bounded_lexical_phrases_do_not_use_regulatory_keywords_for_table_aspect
         modality="table",
     )
 
-    phrases = rag_service._bounded_lexical_phrases(aspect)
+    phrases = retrieval_support._bounded_lexical_phrases(aspect)
 
     assert "大额风险暴露" not in phrases
     assert "自救为本" not in phrases
@@ -1284,7 +1280,7 @@ def test_multi_document_subquestions_keep_their_own_explicit_source_titles() -> 
     assert [aspect.table_filters["source_title"] for aspect in aspects] == ["规则甲", "规则乙"]
 
 
-def test_merged_two_document_aspect_is_split_with_independent_source_filters() -> None:
+def test_merged_two_document_aspect_is_split_with_independent_source_filters(monkeypatch) -> None:
     aspect = query_planner_service.QueryAspect(
         aspect_id="two_rules",
         question=(
@@ -1301,14 +1297,9 @@ def test_merged_two_document_aspect_is_split_with_independent_source_filters() -
         table_filters={"source_title": "规则甲"},
         explicit_filter_keys=("source_title",),
     )
-    budget = query_planner_service.QueryBudget(
-        detected_items=("规则甲", "规则乙"),
-        max_aspects=2,
-        system_max_aspects=8,
-        capacity_limited=False,
-    )
-
-    split = query_planner_service._split_merged_llm_aspects([aspect], budget)
+    supplied = query_planner_service.QueryPlan(aspect.question, (aspect,), 'model')
+    monkeypatch.setattr(query_planner_service, '_plan_query_impl', lambda *args: supplied)
+    split = query_planner_service.plan_query(aspect.question).aspects
 
     assert len(split) == 2
     assert [item.table_filters["source_title"] for item in split] == ["规则甲", "规则乙"]
@@ -1567,3 +1558,17 @@ def test_period_selectors_use_global_year(monkeypatch) -> None:
         {"year": 2025, "quarter": 1, "row_label": "不良贷款余额"},
         {"year": 2025, "quarter": 4, "row_label": "不良贷款余额"},
     ]
+
+
+@pytest.fixture(autouse=True)
+def indexed_table_schema():
+    """Labels in the synthetic corpus used by these pure parser tests."""
+    token = query_planner_service._TABLE_VOCABULARY.set(("健康险", "全国合计", "北京", "天津", "公司本级", "本年累计", '现金及存放同业', '贷款余额', '证券投资', '其他资产', '资产合计', '不良贷款余额', '损失类贷款余额', '可疑类贷款余额', '次级类贷款余额', '资金运用余额', '普惠小微贷款余额', '绿色信贷余额', '原保险保费收入', '资本充足率', '银行存款', '债券', '股票', '证券投资基金', '长期股权投资', '保户投资款新增交费', '投连险独立账户新增交费', '赔付支出', '总资产', '净资产', '净利润'))
+    source_token = query_planner_service._TABLE_SOURCES.set(tuple(f"{year}年{month}月{subject}经营情况表" for year in [2023,2024,2025] for month in range(1,13) for subject in ["保险业","人身险公司","财产保险公司"])+tuple(f"{year}年{month}月全国各地区原保险保费收入情况表" for year in [2023,2024,2025] for month in range(1,13)))
+    column_token = query_planner_service._TABLE_COLUMNS.set(("健康险",))
+    row_token = query_planner_service._TABLE_ROWS.set(("全国合计", "农村商业银行", "北京", "天津", "公司本级"))
+    yield
+    query_planner_service._TABLE_ROWS.reset(row_token)
+    query_planner_service._TABLE_COLUMNS.reset(column_token)
+    query_planner_service._TABLE_SOURCES.reset(source_token)
+    query_planner_service._TABLE_VOCABULARY.reset(token)

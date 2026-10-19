@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from backend.app.core.rag_features import features
 import re
 from typing import Any
 
@@ -53,6 +54,18 @@ def build_chunks_from_parsed(
     inherited_metadata: dict[str, Any] | None = None,
 ) -> list[ChunkDraft]:
     """Build retrievable chunks from structured parser blocks."""
+
+    if features().chunking == "recursive":
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_TARGET_TOKENS, chunk_overlap=CHUNK_OVERLAP_TOKENS,
+            length_function=count_tokens, separators=["\n\n", "\n", "。", "；", " ", ""],
+        )
+        return [ChunkDraft(chunk_id=f"{document_id}-CHUNK-{index:04d}",
+                    document_id=document_id, text=text, embedding_text=text,
+                    token_count=count_tokens(text), title=None, section_title=None,
+                    page_number=None, metadata={})
+                for index, text in enumerate(splitter.split_text(parsed.text), start=1)]
 
     source_format = _metadata_text(parsed.metadata.get("source_format"))
     groups = _group_blocks(parsed.blocks)
@@ -533,6 +546,9 @@ def build_contextual_embedding_text(
     chunk_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Prepend deterministic retrieval context while keeping chunk text unchanged."""
+
+    if not features().contextual_embedding:
+        return text
 
     chunk_metadata = chunk_metadata or {}
     labels: list[str] = []

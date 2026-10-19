@@ -39,6 +39,7 @@ ReguMate 当前只暴露可信 RAG 主线接口，统一前缀为 `/api`。
 | GET | `/api/qa/tasks/{task_id}` | 查询单个问答任务状态、进度和最终答案 |
 | GET | `/api/qa/tasks/{task_id}/stream` | 通过 SSE 订阅持久化任务的完整快照与已核验答案预览 |
 | POST | `/api/qa/tasks/{task_id}/cancel` | 停止排队中或运行中的问答生成 |
+| GET | `/api/qa/agents` | 查看 Supervisor 与专业 Agent 注册表（名称、角色、能力、任务） |
 | GET | `/api/audit/logs` | 分页获取审计日志（只读） |
 | GET | `/api/audit/archives` | 获取历史审计日志归档列表 |
 | GET | `/api/audit/archives/{archive_date}` | 查看某天审计日志归档内容 |
@@ -352,3 +353,14 @@ DOCX loader 会按 XML 顺序抽取 Word OMML 真数学公式，并将普通文�
 `retrieval_summary` 会记录显式与推断元数据条件、匹配文档数、召回前后候选数及 `metadata_filter_no_match`。用户明确条件零匹配时服务不会执行无条件回退。
 
 `grounding_validation` 新增逐 claim 语义 frame/verdict、冲突原因、校验模式和 verifier 状态。流式 preview 仍只发布已经通过引用、实体和语义校验的 claim。
+
+## 多智能体协作可观测字段（2026-10-18）
+
+问答主链由 Supervisor 统一调度八个专业 Agent（triage、identity、planner、table、evidence、verifier、curation、answer）执行；契约与路由规则见 `docs/multi-agent-architecture.md`。接口层只新增可观测字段，既有字段、事件顺序与评分口径不变：
+
+- `QAResponse.agent_trace`（默认空数组）：按时间顺序的 `AgentTraceEntry` 列表，字段为 `agent`、`role`、`task`、`status`（`completed | failed | skipped | refused | clarification`）、`attempt`、`elapsed_ms`、`model_calls`、`aspect_ids`、`summary`。`summary` 只含计数、状态码、原因码与方面编号，不含证据文本、Prompt 或答案正文。连续的同 `agent/task/attempt/status` 条目会合并，`summary.calls` 记录合并次数。最后一条为 `supervisor/route`，其 `summary` 含 `route`（`identity | boundary | pipeline`）、`boundary_code`、`aspect_routes`（每个方面分派给哪个 Agent、是否在该 Agent 终结及原因）、`generation_attempts`、`validations`、`model_calls_total`。
+- `RagProgressEvent.agent`（可选）：该进度事件由哪个 Agent 发出；Supervisor 直接发出的聚合事件标记为 `supervisor`。`stage`、`status`、`title`、`detail`、`summary` 与发出顺序不变。
+- `LLMContextPackage.agent_trace`：仅 `POST /api/qa/retrieve` 这类独立调用检索阶段时填充；完整问答中轨迹统一出现在 `QAResponse.agent_trace`。
+- `GET /api/qa/agents`：返回 `{"supervisor": "supervisor", "agents": [{"name", "role", "capabilities": [...], "tasks": [...]}]}`。
+
+可信状态仍只由 `grounding_validation` 决定；`agent_trace` 的存在或内容不表示答案已核验。

@@ -33,6 +33,8 @@ _METRICS_LOCK = RLock()
 _CURRENT_TRACE: ContextVar[dict[str, Any] | None] = ContextVar("regumate_performance_trace", default=None)
 _CURRENT_REQUEST_ID: ContextVar[str | None] = ContextVar("regumate_request_id", default=None)
 _CURRENT_REQUEST_DEADLINE: ContextVar[float | None] = ContextVar("regumate_request_deadline", default=None)
+_CURRENT_MODEL_BUDGET: ContextVar[dict[str, Any] | None] = ContextVar("regumate_model_budget", default=None)
+_CURRENT_CANCELLATION: ContextVar[Any] = ContextVar("regumate_cancellation", default=None)
 _TRACE_HISTORY: list[dict[str, Any]] = []
 _TRACE_HISTORY_LIMIT = 50
 _INFLIGHT_REQUESTS: dict[str, dict[str, Any]] = {}
@@ -152,14 +154,73 @@ def request_trace_context(request_id: str) -> Iterator[None]:
 class RequestBudgetExceeded(TimeoutError):
     """Raised at cooperative boundaries before a request can become unbounded."""
 
+    def __init__(self, message: str, *, stage: str = 'request', code: str = 'request_budget_exhausted'):
+        super().__init__(message)
+        self.stage = stage
+        self.code = code
+
 
 @contextmanager
 def request_budget_context(total_seconds: float) -> Iterator[None]:
-    token = _CURRENT_REQUEST_DEADLINE.set(perf_counter() + max(0.001, total_seconds))
+    parent = _CURRENT_REQUEST_DEADLINE.get()
+    deadline = perf_counter() + max(0.001, total_seconds)
+    token = _CURRENT_REQUEST_DEADLINE.set(min(parent, deadline) if parent is not None else deadline)
     try:
         yield
     finally:
         _CURRENT_REQUEST_DEADLINE.reset(token)
+
+
+def model_call_count() -> int:
+    return int((_CURRENT_MODEL_BUDGET.get() or {}).get("calls", 0))
+
+
+def reserve_model_call(timeout: float) -> float:
+    checker = _CURRENT_CANCELLATION.get()
+    if checker:
+        checker()
+    state = _CURRENT_MODEL_BUDGET.get()
+    if state is not None:
+        if state["calls"] >= 5:
+            raise RequestBudgetExceeded("model call limit exhausted", stage='model_call', code='model_call_limit_exceeded')
+        state["calls"] += 1
+        if state.get('on_reserve'):
+            state['on_reserve'](state['calls'])
+        record_trace_event("model_call", "started", {"call_count": state["calls"]})
+    remaining = remaining_request_budget_seconds()
+    if remaining is not None and remaining <= 0:
+        raise RequestBudgetExceeded("request deadline exhausted")
+    return min(timeout, remaining) if remaining is not None else timeout
+
+
+@contextmanager
+def model_call_budget(*, calls: int = 0, on_reserve: Callable[[int], None] | None = None):
+    """Restore a durable task's spent calls before entering the shared pipeline."""
+    token = _CURRENT_MODEL_BUDGET.set({'calls': calls, 'on_reserve': on_reserve})
+    try:
+        yield
+    finally:
+        _CURRENT_MODEL_BUDGET.reset(token)
+
+
+def qa_execution(function):
+    """One budget for direct, HTTP, streaming and queued execution."""
+    @wraps(function)
+    def execute(*args, **kwargs):
+        from backend.app.core.config import QA_REQUEST_TOTAL_BUDGET_SECONDS
+        existing = _CURRENT_MODEL_BUDGET.get()
+        token = _CURRENT_MODEL_BUDGET.set(existing if existing is not None else {"calls": 0})
+        cancellation = _CURRENT_CANCELLATION.set(kwargs.get("cancellation_checker") or _CURRENT_CANCELLATION.get())
+        try:
+            with request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
+                result = function(*args, **kwargs)
+                if hasattr(result, "grounding_validation"):
+                    result.grounding_validation["model_call_count"] = model_call_count()
+                return result
+        finally:
+            _CURRENT_CANCELLATION.reset(cancellation)
+            _CURRENT_MODEL_BUDGET.reset(token)
+    return execute
 
 
 def remaining_request_budget_seconds() -> float | None:
@@ -168,10 +229,13 @@ def remaining_request_budget_seconds() -> float | None:
 
 
 def check_request_budget(stage: str) -> None:
+    checker = _CURRENT_CANCELLATION.get()
+    if checker:
+        checker()
     remaining = remaining_request_budget_seconds()
     if remaining is not None and remaining <= 0:
         record_trace_event(stage, "timeout", {"reason": "request_budget_exhausted"})
-        raise RequestBudgetExceeded(f"QA request budget exhausted during {stage}")
+        raise RequestBudgetExceeded(f"QA request budget exhausted during {stage}", stage=stage)
 
 
 def record_trace_event(stage: str, status: str, summary: dict[str, Any] | None = None) -> None:

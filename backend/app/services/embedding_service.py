@@ -2,7 +2,6 @@ import math
 import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
-from time import perf_counter, sleep
 from typing import Any
 
 from backend.app.core import config
@@ -11,7 +10,7 @@ from backend.app.core.performance_profile import resolve_performance_profile
 from backend.app.services.model_path_resolver import ModelPathResolutionError, resolve_embedding_model_path
 from backend.app.services.model_device_service import force_cpu_fallback, is_cuda_failure, selected_model_device
 from backend.app.services.model_inference_lock import MODEL_INFERENCE_LOCK
-from backend.app.services.performance_metrics import ByteLRUCache, check_request_budget, measure
+from backend.app.services.performance_metrics import ByteLRUCache, RequestBudgetExceeded, check_request_budget, measure
 
 
 class EmbeddingServiceError(RuntimeError):
@@ -82,28 +81,10 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
                     return_colbert_vecs=False,
                 )
         check_request_budget("embedding")
-    except TimeoutError:
-        # Lock contention under concurrent load: retry within the request
-        # budget instead of failing the whole retrieval as a 503.
-        retry_deadline = perf_counter() + _LOCK_RETRY_BUDGET_SECONDS
-        while True:
-            check_request_budget("embedding.lock_retry")
-            if perf_counter() >= retry_deadline:
-                raise EmbeddingServiceError("BGE-M3 embedding 生成失败（推理锁等待超时）") from None
-            try:
-                model = _get_bge_m3_model()
-                with MODEL_INFERENCE_LOCK:
-                    with measure("embedding.inference"):
-                        encoded = model.encode(
-                            cleaned,
-                            batch_size=safe_batch_size,
-                            return_dense=True,
-                            return_sparse=True,
-                            return_colbert_vecs=False,
-                        )
-                break
-            except TimeoutError:
-                sleep(0.5)
+    except RequestBudgetExceeded:
+        raise
+    except TimeoutError as exc:
+        raise EmbeddingServiceError("BGE-M3 inference lock wait timed out") from exc
     except Exception as exc:
         if selected_model_device() == "cuda" and is_cuda_failure(exc):
             _fallback_embedding_to_cpu(exc)

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "authorized_on": "2026-10-18",
+  "policy": "按用户要求，已证实的题目与金标口径问题计为正确；原始评分保留，不修改题集或评分器。豁免须有本次正常回答和通过的证据校验，不覆盖运行失败或拒答。",
+  "evidence_document": "docs/mainline-refactor/official-value-conflicts.md",
+  "decisions": [
+    {"id": "Q044", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含新增保险金额，原表 C13 大于金标 C6。"},
+    {"id": "Q045", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含总资产，原表 C12 大于金标 C6。"},
+    {"id": "Q051", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含保险金额，原表 C14 大于金标 C7。"},
+    {"id": "Q052", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含新增保险金额，原表 C13 大于金标 C6。"},
+    {"id": "Q053", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含总资产，原表 C12 大于金标 C6。"},
+    {"id": "Q059", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含保险金额，原表 C14 大于金标 C7。"},
+    {"id": "Q060", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含新增保险金额，原表 C12 大于金标 C5。"},
+    {"id": "Q061", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含总资产，原表 C13 大于金标 C7。"},
+    {"id": "Q067", "classification": "question_gold_scope_conflict", "reason": "题面最大值候选包含保险金额，原表 C14 大于金标 C7。"},
+    {"id": "Q075", "classification": "question_subject_scope_ambiguous", "reason": "金标 B6→E16 跨两个主体，题面没有指定跨主体范围；回答明示采用同一主体 B6→E6。"}
+  ],
+  "unresolved": [
+    {"id": "Q234", "classification": "system_semantic_refusal", "reason": "相关原文已检索到，但生成器将指导与鼓励的措辞差异视为不能作答；尚无充分理由证明金标无效，不予豁免。"}
+  ]
+}

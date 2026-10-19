@@ -110,7 +110,7 @@ def _prepared_result(aspect: QueryAspect):
                 for query in aspect.search_queries
             ],
             qdrant_filter=None,
-            table_matches=[],
+            located_matches=[],
             table_diagnostics=[],
             retrieval_filter=_FilterStub(),
             diagnostics=RetrievalDiagnostics(),

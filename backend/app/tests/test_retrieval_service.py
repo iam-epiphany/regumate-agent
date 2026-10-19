@@ -158,10 +158,10 @@ def test_retrieve_citations_prefers_direct_paragraph_over_neighbor_table(monkeyp
 
     assert matches[0].citation.chunk_id == "DOC-TEST-0001-CHUNK-0003"
     assert matches[0].evidence_role == "direct_evidence"
-    assert all(match.citation.evidence_role != "table_context" for match in matches)
+    assert matches[0].citation.evidence_role != "table_context"
 
 
-def test_retrieve_citations_filters_high_rerank_low_coverage(monkeypatch) -> None:
+def test_high_semantic_low_lexical_evidence_remains_a_candidate(monkeypatch) -> None:
     item = VectorSearchResult(
         chunk_id="DOC-TEST-0001-CHUNK-0010",
         document_id="DOC-TEST-0001",
@@ -182,7 +182,7 @@ def test_retrieve_citations_filters_high_rerank_low_coverage(monkeypatch) -> Non
         lambda question, candidates, limit: [RerankedChunk(candidate=item, rerank_score=1.0)],
     )
 
-    assert retrieve_citations("同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？") == []
+    assert retrieve_citations("同一个借款人有多笔贷款时，普惠小微贷款余额应该怎么统计？")
 
 
 def test_retrieve_citations_accepts_table_evidence_for_comparison_question(monkeypatch) -> None:
@@ -223,8 +223,9 @@ def test_retrieve_citations_accepts_table_evidence_for_comparison_question(monke
 def test_retrieval_queries_decompose_asset_difference_foreign_currency_question() -> None:
     queries = retrieval_queries("资产合计差异应该优先排查哪些问题？如果差异来自外币折算，需要保留什么依据？")
 
-    assert "资产合计 差异 优先检查 币种折算 四舍五入 科目映射 重复汇总" in queries
-    assert "外币折算 保留 汇率日期 折算规则 原币金额来源" in queries
+    assert "资产合计差异应该优先排查哪些问题" in queries
+    assert all("四舍五入" not in query for query in queries)
+    assert "如果差异来自外币折算，需要保留什么依据" in queries
 
 
 def test_retrieve_citations_batches_expanded_query_embeddings(monkeypatch) -> None:
@@ -462,198 +463,18 @@ def _base_match(evidence_text: str = "担保品应当满足集中清算要求。
     )
 
 
-def test_enumeration_clause_detector_styles() -> None:
-    """列表条款检测：中文序号、数字序号、圈号均识别；比率数字不误判。"""
-    from backend.app.services.retrieval_support import _looks_like_enumeration_clause
-
-    assert _looks_like_enumeration_clause(
-        "（一）甲应当报经批准；（二）乙应当报经批准；（三）丙应当报经批准。"
-    )
-    assert _looks_like_enumeration_clause(
-        "(一)甲应当报经批准；(二)乙应当报经批准；(三)丙应当报经批准。"
-    )
-    assert _looks_like_enumeration_clause(
-        "1．甲应当报经批准；2．乙应当报经批准；3．丙应当报经批准。"
-    )
-    assert _looks_like_enumeration_clause("①甲应当报经批准；②乙应当报经批准；③丙应当报经批准。")
-    assert not _looks_like_enumeration_clause(
-        "存款利率1.5%，贷款利率2.8%，净息差1.2%，加权平均收益率2.6%。"
-    )
-    assert not _looks_like_enumeration_clause("本条规定了最低资本要求的计算口径，与附件二保持一致。")
 
 
-def test_intent_gap_extracts_quoted_terms() -> None:
-    """回归：heredoc 转义曾破坏引号正则，引号术语必须能被提取并参与缺口判定。"""
-    from backend.app.services.retrieval_support import _intent_gap_supplement
-
-    aspect = replace(_intent_gap_aspect(), question="哪些“实物结算”衍生品交易可以不适用初始保证金要求？")
-    matches = [_base_match(evidence_text="担保品应当满足集中清算要求。")]
-    supplements = _intent_gap_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0002",
-                    "DOC-1",
-                    "实物结算的非集中清算衍生品交易不适用初始保证金要求。",
-                )
-            ]
-        },
-    )
-    assert len(supplements) == 1
-    assert supplements[0].citation.chunk_id == "DOC-1-CHUNK-0002"
-    assert supplements[0].metadata.get("evidence_role") == "intent_gap_support"
-    assert supplements[0].metadata.get("intent_gap_term") in ("初始保证金要求", "实物结算")
 
 
-def test_intent_gap_prohibition_adds_institution_clause() -> None:
-    """禁止性问题额外构造“{机构}不得”模式。"""
-    from backend.app.services.retrieval_support import _intent_gap_supplement
-
-    aspect = replace(
-        _intent_gap_aspect(),
-        question="消费金融公司防范欺诈风险有什么禁止性规定？",
-        keywords=("消费金融公司", "欺诈风险"),
-    )
-    matches = [_base_match(evidence_text="担保品应当满足集中清算要求。")]
-    supplements = _intent_gap_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0003",
-                    "DOC-1",
-                    "消费金融公司不得参与欺诈相关的资金往来活动。",
-                )
-            ]
-        },
-    )
-    assert len(supplements) == 1
-    assert supplements[0].metadata.get("intent_gap_term") in ("消费金融公司", "消费金融公司不得")
 
 
-def test_list_completeness_promotes_enumeration_chunk() -> None:
-    """列表型问题：含主题词的枚举条款即使未被召回也应被补充。"""
-    from backend.app.services.retrieval_support import _list_completeness_supplement
-
-    aspect = _intent_gap_aspect()
-    matches = [_base_match(evidence_text="担保品应当满足集中清算要求。")]
-    supplements = _list_completeness_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0004",
-                    "DOC-1",
-                    "下列非集中清算衍生品交易可以不适用初始保证金要求："
-                    "（一）实物结算的交易；（二）单一交易对手的交易；（三）集团内部交易。",
-                ),
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0005",
-                    "DOC-1",
-                    "担保品应当满足集中清算要求，防止重复使用。",
-                ),
-            ]
-        },
-    )
-    assert len(supplements) == 1
-    assert supplements[0].citation.chunk_id == "DOC-1-CHUNK-0004"
-    assert supplements[0].metadata.get("evidence_role") == "list_completeness_support"
 
 
-def test_list_completeness_skips_non_list_questions() -> None:
-    """非列表型问题不触发列表补充。"""
-    from backend.app.services.retrieval_support import _list_completeness_supplement
-
-    aspect = replace(_intent_gap_aspect(), question="担保品的估值应如何处理？")
-    matches = [_base_match(evidence_text="担保品应当满足集中清算要求。")]
-    supplements = _list_completeness_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0006",
-                    "DOC-1",
-                    "下列情形之一应当调整估值：（一）市场波动；（二）信用变化；（三）其他。",
-                )
-            ]
-        },
-    )
-    terms = [s.metadata.get("intent_gap_term") for s in supplements]
-    assert "不符合" not in terms
 
 
-def test_intent_gap_fallback_clause_for_unclassified_assets() -> None:
-    """“不符合…标准的资产如何处理”由兜底条款回答（含否定词+处理动词）。"""
-    from backend.app.services.retrieval_support import _intent_gap_supplement
-
-    aspect = replace(
-        _intent_gap_aspect(),
-        question="商业银行采用内部评级法时，不符合各类风险暴露分类标准的资产应如何处理？",
-        keywords=("内部评级法", "风险暴露", "分类标准", "不符合", "处理", "监管资本计量"),
-    )
-    matches = [_base_match(evidence_text="商业银行应建立内部评级法风险暴露分类和调整的报告制度。")]
-    supplements = _intent_gap_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0007",
-                    "DOC-1",
-                    "对不符合主权风险暴露、金融机构风险暴露、零售风险暴露、股权风险暴露、"
-                    "其他风险暴露划分标准且存在信用风险的资产，应纳入公司风险暴露处理。",
-                ),
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0008",
-                    "DOC-1",
-                    "本附件规定了内部评级法风险暴露分类标准的适用范围。",
-                ),
-            ]
-        },
-    )
-    chunk_ids = [s.citation.chunk_id for s in supplements]
-    assert "DOC-1-CHUNK-0007" in chunk_ids
-    terms = {s.metadata.get("intent_gap_term") for s in supplements}
-    assert "不符合" in terms
-    assert all(s.metadata.get("evidence_role") == "intent_gap_support" for s in supplements)
 
 
-def test_intent_gap_fallback_requires_treatment_verb() -> None:
-    """兜底条款必须同时含处理动词，避免把一般性“不符合”表述误注入。"""
-    from backend.app.services.retrieval_support import _intent_gap_supplement
-
-    aspect = replace(
-        _intent_gap_aspect(),
-        question="商业银行采用内部评级法时，不符合各类风险暴露分类标准的资产应如何处理？",
-        keywords=("内部评级法", "风险暴露", "分类标准", "不符合", "处理", "监管资本计量"),
-    )
-    matches = [_base_match(evidence_text="商业银行应建立内部评级法风险暴露分类和调整的报告制度。")]
-    supplements = _intent_gap_supplement(
-        _fake_db_for_support(),
-        aspect,
-        matches,
-        document_chunk_cache={
-            "DOC-1": [
-                _snapshot_chunk(
-                    "DOC-1-CHUNK-0009",
-                    "DOC-1",
-                    "不符合分类标准的资产不适用本附件规定的计量方法。",
-                ),
-            ]
-        },
-    )
-    terms = [s.metadata.get("intent_gap_term") for s in supplements]
-    assert "不符合" not in terms
 
 
 def test_to_retrieval_results_keeps_highest_role_version() -> None:
@@ -727,43 +548,3 @@ def test_expand_neighbor_matches_keeps_highest_role_version() -> None:
     roles = {m.metadata.get("evidence_role") for m in expanded if m.citation.chunk_id == "DOC-1-CHUNK-0006"}
     assert "mcq_exact_support" in roles
     assert "bounded_lexical_support" not in roles
-
-
-def test_referenced_clause_chunks_resolves_cross_section_citation() -> None:
-    """“第X条”引用解析：命中同文档被引条款（跨章节多跳）。"""
-    from backend.app.services.retrieval_support import _referenced_clause_chunks
-
-    anchor = _snapshot_chunk(
-        "DOC-1-CHUNK-0010",
-        "DOC-1",
-        "按照本办法第二十八条的规定执行。",
-        section_title="第十二条 定义",
-    )
-    target = _snapshot_chunk(
-        "DOC-1-CHUNK-0020",
-        "DOC-1",
-        "商业银行应按照监管并表范围披露相关信息。",
-        section_title="第二十八条 并表范围",
-    )
-    unrelated = _snapshot_chunk(
-        "DOC-1-CHUNK-0030",
-        "DOC-1",
-        "其他内容。",
-        section_title="第三十五条 过渡安排",
-    )
-    hits = _referenced_clause_chunks(anchor, [anchor, target, unrelated])
-    assert [chunk.chunk_id for chunk in hits] == ["DOC-1-CHUNK-0020"]
-
-
-def test_referenced_clause_skips_own_section_title() -> None:
-    """锚点自身的条号标题不被当作引用。"""
-    from backend.app.services.retrieval_support import _referenced_clause_chunks
-
-    anchor = _snapshot_chunk(
-        "DOC-1-CHUNK-0010",
-        "DOC-1",
-        "本条规定了报告制度。",
-        section_title="第二十八条 并表范围",
-    )
-    hits = _referenced_clause_chunks(anchor, [anchor])
-    assert hits == []

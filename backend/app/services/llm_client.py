@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.app.core.rag_features import event
+from backend.app.services.performance_metrics import reserve_model_call, measure, check_request_budget
 
 from dataclasses import dataclass
 import json
@@ -46,11 +48,14 @@ def chat_completion_content(
         stream=False,
     )
     request = build_chat_request(config, payload)
+    timeout = reserve_model_call(config.timeout_seconds)
     try:
-        with (opener or urllib.request.urlopen)(request, timeout=config.timeout_seconds) as response:
+        with measure('llm.transport'), (opener or urllib.request.urlopen)(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
+            event("llm_usage", model=config.model, usage=body.get("usage"))
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise ChatCompletionError("LLM chat completion request failed") from exc
+    check_request_budget('llm.response')
     try:
         return str(body["choices"][0]["message"]["content"])
     except (KeyError, IndexError, TypeError) as exc:
@@ -78,8 +83,9 @@ def open_chat_completion(
         stream=stream,
     )
     request = build_chat_request(config, payload)
+    timeout = reserve_model_call(config.timeout_seconds)
     try:
-        return (opener or urllib.request.urlopen)(request, timeout=config.timeout_seconds)
+        return (opener or urllib.request.urlopen)(request, timeout=timeout)
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
         raise ChatCompletionError("LLM chat completion request failed") from exc
 
@@ -111,6 +117,8 @@ def build_chat_payload(
 
 
 def build_chat_request(config: ChatCompletionConfig, payload: dict[str, Any]) -> urllib.request.Request:
+    event("llm_call", model=config.model, stream=bool(payload.get("stream")),
+          temperature=payload.get("temperature"), max_tokens=payload.get("max_tokens"))
     return urllib.request.Request(
         _chat_completions_endpoint(config.base_url),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

@@ -1,0 +1,26 @@
+{
+  "files": {
+    "backend_tests_final.log": "7aea347b4b0befd4d5fd011b4fb525140f395abec25780375f70dd069209a8dc",
+    "calculation_context_cross_profile_audit.json": "057c8e71cda6d4b3498bc43e088b80a945d11a22b60eda01049a712b542bd987",
+    "calculation_operand_context_audit.json": "dc4bb55d1a7f8941f8b60a331a2d43181c6f4a87477dd74299d4c7ce7ee8f328",
+    "delivery_manifest.json": "959d6b965f29b3ada9918147246874f9b2ad282bf8d5a2f2504cee3e2b8711c5",
+    "environment_deviations.jsonl": "94757b32db717780b7bafc1f37843996efb8eccb488ca26c0bb9095c2299fd8d",
+    "feature_tests_final.log": "c708de5c297c0aedf590f3bbbb2115454c6dcfe477cc17218743573cd37a80eb",
+    "final_delivery_audit.json": "183be413140c5c8ebd0867ab29177232ae19914705da730e5045c512fb3fcd6a",
+    "frontend_checks_20261016.json": "a6ab90deb3f7383ba4e491ddd109862d908996898289f56d76d8dbeda4a55def",
+    "hardcoding_audit_final.json": "59849f005e55ac2e40def19b491f25849e7364894806302522f03b7132967303",
+    "paired_differences.jsonl": "b3237d7742000f3cb9a8545298e84f5dc473ba2205f73dcb3ff74f5d50bb813e",
+    "plain_index_table_filter_audit.json": "63b8881925b1507d221d0224f961b2f177820bd157dcf62022a3ee1864586835",
+    "presentation_summary.md": "de24da959e4592995e0b858a120ab07ea34cd650bb45b8d685da54ec35e01e25",
+    "production_restoration.json": "39d77b479af0242bfc351c9bd2b2edf39e44bf8d36a386446574fd25a7e23a8a",
+    "protocol.json": "f7934cf815dd6a65eb64f30daf7efef80304e7ad0c19e55966c8ab43625672ac",
+    "README.md": "b4747943d20a45b412db3834b5dbef72c377691e69004d894e2cf2706c2bfd5c",
+    "ReguMate_ablation_results.pptx": "549ac9caf8466036b15abe2e6d06227fe522fbf43c73bc57e927ed3b277ea96c",
+    "ReguMate_final_with_ablation.pptx": "2da8441cd1ceef347b34e8fbefb85037d37e321bf43df11f63165ffc8fb941fd",
+    "result_manifest.json": "2292eb60bd1853ea31a25b609dd7c2ef38f9512a33c8bca90a61e46c859cd1ff",
+    "results_report.md": "ba8153fe2a78dd66ad907111a2098b3aa0cf926445a4b4005899a477bb6e2729",
+    "scope_amendment_first100_20261016.json": "d9897977155ee0bc04ae9fa8081cef3a7699903a88ba77e6ed85f62729f5ddf9",
+    "summary.json": "238d046880826b956791af2738d35552f5e793e4dea5e95a39b3dd414761827d"
+  },
+  "content_claim": "First-run automated observations with explicit baseline and calculation-control limitations"
+}

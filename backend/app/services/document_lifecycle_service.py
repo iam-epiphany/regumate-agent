@@ -12,10 +12,12 @@ from backend.app.services.chunk_service import build_chunks_from_parsed
 from backend.app.services.document_parser import DocumentParseError, parse_document
 from backend.app.services.vector_store_service import (
     VectorStoreError,
+    count_document_vectors,
     delete_document_vectors,
     document_vector_chunk_ids,
 )
 from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
+from backend.app.services.document_structure_index_service import rebuild_document_structure_index
 from backend.app.services.rerank_service import invalidate_rerank_score_cache
 
 
@@ -228,6 +230,7 @@ def recover_documents_from_originals(db: Session) -> list[tuple[str, str]]:
             db.add(chunk_model)
         db.flush()
         rebuild_spreadsheet_cell_index(db, document, chunk_models)
+        rebuild_document_structure_index(db, document, chunk_models)
         existing_ids.add(document_id)
         recovered.append((document_id, "indexed" if indexed else "uploaded"))
     if recovered:

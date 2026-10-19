@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import features, feature_gate, event
 
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ import json
 import re
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import TABLE_STRICT_EVIDENCE_VALIDATION
@@ -39,6 +40,7 @@ def get_last_spreadsheet_diagnostic() -> dict[str, Any]:
     return dict(current or {})
 
 
+@feature_gate("structured_index")
 def retrieve_spreadsheet_matches(db: Session, aspect: Any, *, limit: int = 5) -> list[RetrievalMatch]:
     _set_last_diagnostic(match_status="not_run", refusal_reason=None)
     filters = dict(getattr(aspect, "table_filters", {}) or {})
@@ -70,6 +72,8 @@ def retrieve_spreadsheet_matches(db: Session, aspect: Any, *, limit: int = 5) ->
         return [_to_match(comparison, aspect, table_task, operation)] if comparison else []
 
     if table_task == "calculate" and operation in {"difference", "sum", "ratio"}:
+        if not features().calculation:
+            return _operand_matches(candidates, aspect)
         calculation = _calculation_match(candidates, aspect, operation)
         return [calculation] if calculation else []
 
@@ -248,7 +252,6 @@ def _indexed_spreadsheet_matches(
             if selectors
             else _unique_numeric_candidates(candidates)
         )
-        selected = _comparable_metric_candidates(selected)
         winner = _comparison_candidate(selected, operation)
         if winner:
             winner.metadata["comparison_operation"] = operation
@@ -260,17 +263,19 @@ def _indexed_spreadsheet_matches(
         return []
 
     if table_task == "calculate" and operation in {"difference", "sum", "ratio"}:
-        selected = (
-            _cells_for_selectors(
+        if len(selectors) < 2:
+            _set_last_diagnostic(match_status="missing_operands",
+                                 refusal_reason="尚未明确全部操作数，请给出每项的来源、期间及行列定位。")
+            return []
+        selected = _cells_for_selectors(
                 candidates,
                 selectors,
                 question=question,
                 question_column_target=question_column_target,
                 preserve_explicit_generic_columns=True,
             )
-            if selectors
-            else _unique_numeric_candidates(candidates)[:2]
-        )
+        if not features().calculation and selected:
+            return _operand_matches(selected, aspect)
         calculation = _calculation_match_from_selected(
             selected,
             aspect,
@@ -438,7 +443,7 @@ def _transposed_row_matches(cell_row: Any, filters: dict[str, Any]) -> bool:
 
 def _transposed_column_matches(cell_column: Any, filters: dict[str, Any]) -> bool:
     """Transposed column test: the institution word must match the column."""
-    terms = _transposed_institution_terms(filters)
+    terms = _row_label_terms(filters.get('column_label')) or _transposed_institution_terms(filters)
     if not terms:
         return False
     return _row_label_terms_covered(normalize_table_text(str(cell_column or "")), terms)
@@ -473,7 +478,8 @@ def _transposed_selector_cell(
             continue
         if metric and not _row_label_terms_covered(metric_part, _row_label_terms(metric)):
             continue
-        if not _transposed_column_matches(cell.get("column_label"), filters):
+        column_filters = {**filters, 'column_label': selector.get('column_label') or filters.get('column_label')}
+        if not _transposed_column_matches(cell.get("column_label"), column_filters):
             continue
         if best is None:
             best = candidate
@@ -517,6 +523,8 @@ def _transposed_spreadsheet_matches(
                 break
             selected.append(chosen)
         if len(selected) == len(selectors):
+            if not features().calculation:
+                return _operand_matches(selected, aspect)
             calculation = _calculation_match_from_selected(
                 selected,
                 aspect,
@@ -808,13 +816,10 @@ def _cells_for_selectors(
             and not (preserve_explicit_generic_columns and column_target)
         ):
             column_target = question_column_target
-        quarter_mode = None
-        if column_target == "年季度":
-            quarter_mode, column_target = "first", ""
-        elif column_target == "季度":
-            quarter_mode, column_target = "last", ""
-        elif column_target == "季度季度":
-            quarter_mode, column_target = "last_later_table", ""
+        generic_period = bool(re.fullmatch(r"(?:年|季度|月度|月|季|度)+", column_target))
+        period_pattern = r'[一二三四1-4]季度' if '季' in column_target else r'\d{1,2}月'
+        if generic_period:
+            column_target = ""
         scope = normalize_table_text(selector.get("scope"))
         if scope in {"季度", "年季度", "月度", "年月度"}:
             scope = ""
@@ -827,6 +832,8 @@ def _cells_for_selectors(
             column = normalize_table_text(cell.get("column_label"))
             column_index = int(cell.get("column") or 0)
             combined = f"{row}{column}"
+            if generic_period and not re.search(period_pattern, str(cell.get('column_label') or '')):
+                continue
             if any(
                 selector.get(key) is not None and int(candidate.metadata.get(key) or 0) != int(selector[key])
                 for key in ("year", "month", "quarter")
@@ -836,10 +843,6 @@ def _cells_for_selectors(
             actual_source = normalize_table_text(candidate.metadata.get("source_title") or candidate.document.filename)
             if requested_source and not _source_title_matches(requested_source, actual_source):
                 continue
-            if label and any(term in label for term in ["总资产", "总负债"]):
-                requested_scope = normalize_table_text(selector.get("scope"))
-                if "本年累计" in requested_scope:
-                    continue
             label_specificity = _table_label_match_specificity(label, row, str(cell.get("column_label") or ""))
             if label and label_specificity <= 0:
                 continue
@@ -851,21 +854,10 @@ def _cells_for_selectors(
                     unlabeled_scope_fallback = True
                 else:
                     continue
-            effective_quarter_mode = quarter_mode
-            if effective_quarter_mode == "last" and len(selectors) == 1:
-                effective_quarter_mode = "first"
-            if effective_quarter_mode == "first" and column_index != 2:
-                continue
-            if effective_quarter_mode in {"last", "last_later_table"} and column_index != 5:
-                continue
             if scope and scope not in combined:
                 continue
             specificity = sum(bool(value) for value in (label, row_target, column_target, scope))
             row_index = int(cell.get("row") or 0)
-            if quarter_mode == "last_later_table" and selected:
-                anchor_row = int((selected[0].selected_cell or {}).get("row") or 0)
-                if row_index <= anchor_row:
-                    continue
             row_preference = -row_index * 0.01
             column_preference = column_index * 0.01 if unlabeled_scope_fallback else 0.0
             matches.append(
@@ -875,11 +867,57 @@ def _cells_for_selectors(
                     candidate,
                 )
             )
-        if matches:
-            matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
-            chosen = matches[0][2]
-            if all(_candidate_cell_key(chosen) != _candidate_cell_key(existing) for existing in selected):
-                selected.append(chosen)
+        if not matches:
+            return []
+        matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        chosen = matches[0][2]
+        if generic_period:
+            # Temporal placeholders do not identify a quarter. Use actual table
+            # order, never fixed spreadsheet columns. A transition with two
+            # placeholders uses the first and last available records.
+            best_specificity = matches[0][0]
+            ordered = sorted(
+                (item[2] for item in matches if item[0] == best_specificity),
+                key=lambda item: (
+                    str(item.metadata.get("source_title") or ""),
+                    str(item.metadata.get("sheet_name") or ""),
+                    int((item.selected_cell or {}).get("row") or 0),
+                    int((item.selected_cell or {}).get("column") or 0),
+                ),
+            )
+            transition = any(item.get("ordered_transition") for item in selectors)
+            if transition and selected and row_target == str(selectors[0].get('row_label') or '').strip():
+                anchor = selected[0]
+                ordered = [item for item in ordered if
+                    item.document.document_id == anchor.document.document_id and
+                    item.metadata.get('sheet_name') == anchor.metadata.get('sheet_name') and
+                    (item.selected_cell or {}).get('row') == (anchor.selected_cell or {}).get('row')]
+                if not ordered:
+                    return []
+            chosen = ordered[-1] if transition and selected else ordered[0]
+            chosen.metadata["selection_assumptions"] = [
+                "期间标签未指定具体日期，按表内顺序取"
+                + ("末项" if transition and selected else "首项")
+                + f"：{(chosen.selected_cell or {}).get('row_label')} / "
+                + f"{(chosen.selected_cell or {}).get('column_label')}。"
+            ]
+        elif not any(selector.get(key) is not None for key in ("month", "quarter")):
+            period_labels = {
+                token for _, _, item in matches
+                for token in re.findall(r"[一二三四1-4]季度|\d{1,2}月", str(
+                    (item.selected_cell or {}).get("row_label", "")
+                ) + str((item.selected_cell or {}).get("column_label", "")))
+            }
+            if len(period_labels) > 1:
+                chosen.metadata["selection_assumptions"] = [
+                    "未指定具体期间，采用表内首个匹配记录："
+                    + f"{(chosen.selected_cell or {}).get('row_label')} / "
+                    + f"{(chosen.selected_cell or {}).get('column_label')}。"
+                ]
+        if any(_candidate_cell_key(chosen) == _candidate_cell_key(existing) for existing in selected):
+            # A single cell cannot stand in for two different requested operands.
+            return []
+        selected.append(chosen)
     return selected
 
 
@@ -1004,23 +1042,6 @@ def _unique_numeric_candidates(candidates: list[SpreadsheetCandidate]) -> list[S
     return result
 
 
-def _comparable_metric_candidates(candidates: list[SpreadsheetCandidate]) -> list[SpreadsheetCandidate]:
-    """Avoid comparing monetary flows with policy counts or insured amounts."""
-
-    ordinary = [candidate for candidate in candidates if _metric_family(candidate) == "ordinary"]
-    return ordinary if len(ordinary) >= 2 else candidates
-
-
-def _metric_family(candidate: SpreadsheetCandidate) -> str:
-    cell = candidate.selected_cell or {}
-    label = normalize_table_text(f"{cell.get('row_label') or ''}{cell.get('column_label') or ''}")
-    if any(term in label for term in ["件数", "保单数", "承保数量"]):
-        return "count"
-    if "保险金额" in label and "保费" not in label:
-        return "insured_amount"
-    return "ordinary"
-
-
 def _candidate_cell_key(candidate: SpreadsheetCandidate) -> tuple[str, str, str]:
     cell = candidate.selected_cell or {}
     return candidate.document.document_id, str(candidate.metadata.get("sheet_name") or ""), str(cell.get("coordinate") or "")
@@ -1121,6 +1142,10 @@ def _calculation_match_from_selected(
         "calculation_result": result,
         "calculation_result_text": display_result,
         "calculation_cells": [_cell_metadata(candidate) for candidate in candidates],
+        "selection_assumptions": list(dict.fromkeys(
+            assumption for candidate in candidates
+            for assumption in candidate.metadata.get("selection_assumptions", [])
+        )),
         **({"result_scale": 100, "unit": "%"} if ratio_is_percent else {}),
         **({"display_decimal_places": display_decimal_places} if display_decimal_places is not None else {}),
         "evidence_id": f"{anchor.chunk.chunk_id}::CALC::{operation}",
@@ -1381,6 +1406,10 @@ def _select_cell(question: str, filters: dict[str, Any], metadata: dict[str, Any
 
 
 def _comparison_candidate(candidates: list[SpreadsheetCandidate], operation: str) -> SpreadsheetCandidate | None:
+    units = {str((item.selected_cell or {}).get("unit") or item.metadata.get("unit") or "")
+             for item in candidates}
+    if len(units) > 1:
+        return None
     comparable: list[tuple[float, SpreadsheetCandidate]] = []
     for candidate in candidates:
         cell = candidate.selected_cell or _first_numeric_cell(candidate.metadata)
@@ -1608,6 +1637,7 @@ def _cell_metadata(candidate: SpreadsheetCandidate) -> dict[str, Any]:
         "unit": cell.get("unit") or candidate.metadata.get("unit"),
         "row_label": cell.get("row_label"),
         "column_label": cell.get("column_label"),
+        "period": candidate.metadata.get("period"),
     }
 
 
@@ -1651,3 +1681,14 @@ def _missing_row_reason(filters: dict[str, Any]) -> str:
     if status == "source_not_found":
         return "指定文件或报表标题未在知识库中找到。"
     return "未检索到可用表格候选。"
+
+
+def _operand_matches(candidates: list[SpreadsheetCandidate], aspect: Any) -> list[RetrievalMatch]:
+    """Expose original cells, never compute or inject the answer in this path."""
+    matches = [_to_match(item, aspect, "lookup", "none", match_status="valid_cell")
+               for item in candidates]
+    for match in matches:
+        match.metadata["calculation_operand_only"] = True
+    _set_valid_diagnostic(matches)
+    event("calculation", enabled=False, operands=len(matches))
+    return matches

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.core.rag_features import capture_validation
 
 import math
 import re
@@ -6,35 +7,19 @@ from typing import Any
 
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
 from backend.app.services.performance_metrics import timed
-from backend.app.services.regulatory_semantic_grounding_service import (
-    validate_regulatory_semantics,
-)
 
 
 ENTITY_PATTERN = re.compile(
-    r"(?:20\d{2}年(?:\d{1,2}月(?:\d{1,2}日)?)?)|(?:\d+(?:\.\d+)?%?)|"
+    r"(?:20\d{2}年(?:\d{1,2}月(?:\d{1,2}日)?)?)|(?:[-−－]?\d+(?:\.\d+)?%?)|"
     r"(?:[A-Za-z一-龥]+〔\d{4}〕\d+号)"
 )
-ORGANIZATION_PATTERN = re.compile(
-    "|".join(
-        re.escape(value)
-        for value in (
-            "国家金融监督管理总局",
-            "中国银行保险监督管理委员会",
-            "中国证券监督管理委员会",
-            "中国人民银行",
-            "中国银保监会",
-            "会计师事务所",
-            "银行业金融机构",
-            "消费金融公司",
-            "商业银行",
-            "金融机构",
-            "财政部",
-        )
-    )
+ACTOR_PATTERN = re.compile(
+    r'(?:由|向|经)([\u4e00-\u9fffA-Za-z]{1,35}?(?:委员会|事务所|中心|公司|银行|部门|机构|总局|局|部|处|组|会))'
+    r'(?=审批|批准|备案|审核|核验|报告|报送|提交|负责|办理|确认)'
 )
 
 
+@capture_validation
 @timed("grounding.validation")
 def validate_grounded_answer(
     answer: str,
@@ -109,8 +94,8 @@ def validate_grounded_answer(
         and not missing_claim_citations
         and not unsupported_claim_entities
     )
-    semantic_validation = validate_regulatory_semantics(claims, context_chunks)
-    passed = base_passed and bool(semantic_validation.get("semantic_passed"))
+    semantic_validation = {"semantic_passed": None, "semantic_mode": "task_level", "verifier_status": "not_run"}
+    passed = base_passed
     return {
         "passed": passed,
         "checked_claims": len(claims),
@@ -187,4 +172,4 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
 
 
 def _extract_entities(value: str) -> set[str]:
-    return set(ENTITY_PATTERN.findall(value)) | set(ORGANIZATION_PATTERN.findall(value))
+    return set(ENTITY_PATTERN.findall(value)) | set(ACTOR_PATTERN.findall(value))

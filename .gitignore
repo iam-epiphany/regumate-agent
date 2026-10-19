@@ -57,6 +57,7 @@ data/contest_dataset/
 data/contest_staging/
 data/contest dataset/
 data/dev_runtime/
+data/ablation/
 dist-delivery/
 delivery/
 release/
@@ -66,9 +67,9 @@ ReguMate-Agent-Delivery*/
 *.tar
 .agents/
 .cache/
-models/
-model_cache/
-hf_cache/
+/models/
+/model_cache/
+/hf_cache/
 
 # Large or generated files
 *.sqlite3
@@ -81,3 +82,10 @@ hf_cache/
 
 # 私有金标(不提交)
 ReguMate-Eval-Private/
+
+# ZCode 会话状态与一次性评测产物（保留在磁盘，不入库）
+.zcode/
+tmp/
+
+# Isolated refactor database snapshots
+data/refactor_*/

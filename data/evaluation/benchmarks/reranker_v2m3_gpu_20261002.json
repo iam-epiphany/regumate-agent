@@ -1,0 +1,136 @@
+{
+  "created_at": "2026-10-01T21:33:04.705499+00:00",
+  "device": {
+    "requested_device": "cuda",
+    "selected_device": "cuda",
+    "torch_version": "2.11.0+cu128",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA GeForce RTX 5070 Laptop GPU",
+    "cuda_total_memory_gb": 7.96,
+    "cuda_free_memory_gb": 6.83,
+    "fallback_reason": null
+  },
+  "profile": {
+    "requested_mode": "gpu",
+    "selected_mode": "gpu",
+    "requested_backend": "pytorch",
+    "backend": "pytorch",
+    "backend_fallback_reason": null,
+    "effective_cpu_cores": 32,
+    "memory_limit_bytes": null,
+    "embedding_batch_size": 4,
+    "rerank_batch_size": 16,
+    "rerank_max_length": 1024,
+    "rerank_input_mode": "embedding",
+    "torch_num_threads": 16,
+    "torch_num_interop_threads": 1,
+    "omp_num_threads": 16,
+    "mkl_num_threads": 16,
+    "query_embedding_cache_bytes": 0,
+    "query_embedding_cache_items": 2048,
+    "rerank_score_cache_bytes": 0,
+    "rerank_score_cache_items": 50000,
+    "warmup_policy": "background",
+    "experimental": false
+  },
+  "configuration": {
+    "warmup": 2,
+    "repeats": 20,
+    "torch_threads": 0,
+    "torch_interop_threads": 1
+  },
+  "embedding": [
+    {
+      "name": "embedding_batch_1",
+      "batch_size": 1,
+      "elapsed_ms": {
+        "avg": 55.801,
+        "p50": 55.123,
+        "p95": 59.101,
+        "max": 61.042
+      }
+    },
+    {
+      "name": "embedding_batch_4",
+      "batch_size": 4,
+      "elapsed_ms": {
+        "avg": 93.78,
+        "p50": 92.715,
+        "p95": 98.194,
+        "max": 99.753
+      }
+    },
+    {
+      "name": "embedding_batch_8",
+      "batch_size": 8,
+      "elapsed_ms": {
+        "avg": 188.961,
+        "p50": 174.931,
+        "p95": 240.79,
+        "max": 262.289
+      }
+    },
+    {
+      "name": "embedding_batch_16",
+      "batch_size": 16,
+      "elapsed_ms": {
+        "avg": 244.519,
+        "p50": 228.899,
+        "p95": 289.603,
+        "max": 294.917
+      }
+    }
+  ],
+  "reranker": [
+    {
+      "name": "rerank_c12_l384_b16",
+      "candidate_count": 12,
+      "input_length_chars": 384,
+      "batch_size": 16,
+      "elapsed_ms": {
+        "avg": 136.635,
+        "p50": 134.081,
+        "p95": 139.547,
+        "max": 172.689
+      }
+    },
+    {
+      "name": "rerank_c12_l768_b16",
+      "candidate_count": 12,
+      "input_length_chars": 768,
+      "batch_size": 16,
+      "elapsed_ms": {
+        "avg": 254.199,
+        "p50": 253.153,
+        "p95": 263.659,
+        "max": 267.877
+      }
+    },
+    {
+      "name": "rerank_c24_l384_b16",
+      "candidate_count": 24,
+      "input_length_chars": 384,
+      "batch_size": 16,
+      "elapsed_ms": {
+        "avg": 298.328,
+        "p50": 287.004,
+        "p95": 362.464,
+        "max": 371.904
+      }
+    },
+    {
+      "name": "rerank_c24_l768_b16",
+      "candidate_count": 24,
+      "input_length_chars": 768,
+      "batch_size": 16,
+      "elapsed_ms": {
+        "avg": 530.569,
+        "p50": 530.561,
+        "p95": 550.077,
+        "max": 550.081
+      }
+    }
+  ],
+  "script_sha256": "0795087bc07bc26f450af7552879468f1833915b911a64058fb2ef347c07da39"
+}

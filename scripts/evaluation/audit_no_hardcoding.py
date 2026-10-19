@@ -133,6 +133,32 @@ def _line(text: str, position: int) -> int:
     return text.count("\n", 0, position) + 1
 
 
+def control_review_candidates(path: Path) -> list[dict]:
+    """Surface domain-dependent controls for human review, without claiming a proof.
+
+    Intent grammar, units and document identity normalization also appear here.
+    Entity/document substitution tests are required to distinguish those uses
+    from business facts controlling ranking or an answer.
+    """
+    if path.suffix != '.py':
+        return []
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    result = []
+    for node in ast.walk(tree):
+        value = node.test if isinstance(node, (ast.If, ast.IfExp)) else (
+            node.value if isinstance(node, (ast.Assign, ast.AnnAssign))
+            and isinstance(node.value, (ast.Dict, ast.List, ast.Tuple, ast.Set)) else None)
+        if value is None:
+            continue
+        literals = [child.value for child in ast.walk(value) if isinstance(child, ast.Constant)
+                    and isinstance(child.value, str) and re.search(r'[\u4e00-\u9fff]{2,}', child.value)]
+        if literals:
+            result.append({'path': path.relative_to(PROJECT_ROOT).as_posix(), 'line': node.lineno,
+                           'kind': 'control_branch' if isinstance(node, (ast.If, ast.IfExp)) else 'static_collection',
+                           'literals': literals})
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audit production code for evaluation-specific hardcoding.")
     parser.add_argument("--report", type=Path, required=True)
@@ -140,11 +166,19 @@ def main() -> int:
     files = production_files()
     findings = [finding for path in files for finding in audit_file(path)]
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "passed": not findings,
         "production_file_count": len(files),
         "findings": [asdict(finding) for finding in findings],
         "allowlist": [],
+        "control_review_candidates": [item for path in files for item in control_review_candidates(path)],
+        "manual_review_checklist": [
+            "固定领域词是否控制分支、加分表或特殊豁免",
+            "固定机构、指标、来源是否来自当前问题或真实索引",
+            "替换实体与文档后，来源约束及拒答行为是否保持一致",
+            "引用、支持性和完整性校验关闭或失败时，是否仍被视为通过",
+        ],
+        "scope_note": "passed仅表示禁止模式扫描通过；审查候选与换实体/换文档测试需单独核验。",
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

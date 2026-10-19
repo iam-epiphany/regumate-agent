@@ -315,7 +315,6 @@ def _workbook_metadata(file_path: Path) -> dict[str, Any]:
         "inferred_year": _first_int(re.findall(r"(20\d{2})年?", text)),
         "inferred_month": _first_int(re.findall(r"(?:20\d{2}年)?(\d{1,2})月", text)),
         "inferred_quarter": _infer_quarter(text),
-        "report_type": _infer_report_type(text),
         "business_domain": _infer_business_domain(text),
     }
 
@@ -578,21 +577,6 @@ def _source_title(file_path: Path) -> str:
     if "_" in stem:
         return stem.split("_", maxsplit=1)[-1]
     return stem
-
-
-def _infer_report_type(text: str) -> str | None:
-    candidates = [
-        "全国各地区原保险保费收入情况表",
-        "人身险公司经营情况表",
-        "财产保险公司经营情况表",
-        "财产险公司经营情况表",
-        "保险业经营情况表",
-        "保险业资金运用情况表",
-        "商业银行主要监管指标情况表",
-        "商业银行主要指标分机构类情况表",
-        "银行业总资产、总负债",
-    ]
-    return next((item for item in candidates if item in text), None)
 
 
 def _infer_business_domain(text: str) -> str | None:

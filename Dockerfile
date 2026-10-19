@@ -52,7 +52,7 @@ RUN set -eux; \
 ARG REGUMATE_TORCH_FLAVOR=cuda
 # 国内网络构建默认使用 PyPI 清华镜像源（无需代理）；海外环境可用
 # --build-arg PIP_INDEX_URL=https://pypi.org/simple 切回官方源。
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 COPY requirements.txt requirements-cuda.txt ./
 RUN set -eux; \
     python -m pip install --upgrade pip -i "$PIP_INDEX_URL"; \

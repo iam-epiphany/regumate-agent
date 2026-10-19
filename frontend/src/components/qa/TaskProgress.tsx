@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 
 import type { QAResponse, RagProgressEvent, RagProgressStage } from "../../types/api";
+import { agentRoleLabel } from "../../utils/agentLabels";
 
 interface StageDefinition {
   stage: RagProgressStage;
@@ -48,7 +49,10 @@ export function TaskProgress({ events, answer, active, technical, taskStatus, he
           <li key={stage.stage} className={`progress-node ${status}`}>
             <ProgressIcon status={status} />
             <div>
-              <strong>{status === "running" ? stage.running : stage.label}</strong>
+              <strong>
+                {status === "running" ? stage.running : stage.label}
+                {technical && event?.agent ? <span className="agent-badge">{agentRoleLabel(event.agent)}</span> : null}
+              </strong>
               <span>{statusLabel(status)}</span>
               {event?.detail ? <p>{humanizeDetail(event.detail)}</p> : null}
             </div>
