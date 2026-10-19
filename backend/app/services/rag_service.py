@@ -1,6 +1,7 @@
 from backend.app.core.rag_features import features, capture_question, event
 import json
 import re
+from contextlib import nullcontext
 from time import perf_counter
 from typing import Any, Callable
 from uuid import uuid4
@@ -33,6 +34,8 @@ from backend.app.schemas.qa import (
     RetrievalResult,
 )
 from backend.app.services.audit_service import record_event
+from backend.app.services.agents.contracts import Blackboard, board_context, board_for
+from backend.app.services.agents.supervisor import Supervisor
 from backend.app.services.answer_generation_service import generate_answer
 from backend.app.services.document_identity_query_service import answer_document_identity_question
 from backend.app.services.prompt_builder import RAGPromptBuilder
@@ -114,208 +117,19 @@ def answer_question(
     cleaned_question = question.strip()
     if not cleaned_question:
         return QAResponse(answer=None, citations=[], confidence=0.0, refused=True, context_package=None)
-    original_question = cleaned_question
-    identity_response = answer_document_identity_question(db, cleaned_question)
-    if identity_response is not None:
-        _save_qa_log(db, original_question, identity_response)
-        _log_qa_audit(db, "qa_identity_answered", original_question, identity_response)
-        return identity_response
-    task = build_question_task(cleaned_question, options)
-    cleaned_question = task.question
-    normalized_options = task.options
-    option_labels = task.option_labels
-    boundary_code = _explicit_request_boundary_code(cleaned_question)
-    if boundary_code:
-        response = QAResponse(
-            answer="该请求超出监管知识库可验证回答的范围，系统需要补充可核验依据或改为资料库可支持的问题。",
-            citations=[],
-            confidence=0.0,
-            refused=True,
-            context_package=None,
-            answer_type="clarification" if boundary_code in {"missing_required_context", "missing_calculation_operands"} else "refusal",
-            generation_status="skipped",
-            claims=[],
-            grounding_validation={"passed": False, "status": "not_run", "task_complete": False, "reason": "explicit_request_boundary"},
-            refusal_reason="explicit_request_boundary",
-            refusal_code=boundary_code,
-            degraded=False,
-        )
-        _save_qa_log(db, original_question, response)
-        _log_qa_audit(db, "qa_refused_explicit_boundary", original_question, response)
-        return response
-    package = build_context_package(
-        db,
-        cleaned_question,
-        options=normalized_options,
+    board = Blackboard(
+        db=db,
+        original_question=cleaned_question,
+        question=cleaned_question,
+        options=list(options or []),
+        include_debug=include_debug,
         progress_reporter=progress_reporter,
-    )
-    generation_started = perf_counter()
-    first_preview_ms: float | None = None
-    preview_revision = 0
-    preview_claims: list[AnswerClaim] = []
-    preview_keys: set[tuple[str, tuple[str, ...]]] = set()
-
-    def report_verified_claim(claim: AnswerClaim) -> None:
-        nonlocal first_preview_ms, preview_revision
-        key = (claim.text, tuple(claim.citation_ids))
-        if key in preview_keys:
-            return
-        preview_keys.add(key)
-        preview_claims.append(claim)
-        if first_preview_ms is None:
-            first_preview_ms = round((perf_counter() - generation_started) * 1000, 2)
-        if answer_preview_reporter is None:
-            return
-        preview_revision += 1
-        cited_labels = {
-            citation_id
-            for item in preview_claims
-            for citation_id in item.citation_ids
-        }
-        answer_preview_reporter(QAAnswerPreview(
-            answer="\n\n".join(item.text for item in preview_claims),
-            citations=[
-                _citation_from_result(result)
-                for result in package.context_chunks
-                if result.citation_label in cited_labels
-            ],
-            verified_claim_count=len(preview_claims),
-            revision=preview_revision,
-        ))
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "llm_generation",
-            "status": "running",
-            "title": "正在生成可信回答",
-            "detail": "正在基于已选证据生成结构化答案……",
-        },
-    )
-    generated = generate_answer(
-        cleaned_question,
-        package.context_chunks,
-        options=normalized_options,
-        option_labels=option_labels,
-        llm_prompt=package.llm_prompt,
-        has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
-        verified_claim_reporter=None,
+        answer_preview_reporter=answer_preview_reporter,
         cancellation_checker=cancellation_checker,
-        answer_mode=_answer_mode(cleaned_question, package.retrieval_summary),
-        required_aspect_ids=_required_aspect_ids(package.retrieval_summary),
-        requirements=[EvidenceRequirement.model_validate(r) for r in
-                      package.retrieval_summary.get('evidence_bundle', {}).get('requirements', [])] or None,
     )
-    if package.retrieval_summary.get('clarification_reason'):
-        generated.answer_type = 'clarification'
-        generated.answer = package.retrieval_summary['clarification_reason']
-        generated.refusal_code = 'missing_required_context'
-        generated.grounding_validation['failure_stage'] = 'planning'
-    if generated.refused:
-        missing = generated.grounding_validation.get('missing_requirements') or []
-        requirements = (package.retrieval_summary.get('evidence_bundle') or {}).get('requirements', [])
-        descriptions = {r['requirement_id']: ('《' + '》、《'.join(r['source_titles']) + '》的直接依据'
-                        if r.get('source_titles') else r['question']) for r in requirements}
-        labels = [descriptions.get(item, item) for item in missing]
-        generated.grounding_validation['missing_required_aspect_ids'] = missing
-        generated.grounding_validation['missing_requirements'] = labels
-        if labels and generated.answer_type != 'service_error':
-            generated.answer = '当前证据不足以完整回答。缺少：' + '；'.join(labels)
-    if not generated.refused and not bool(generated.grounding_validation.get("passed")):
-        generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
-        generated.answer_type = "refusal"
-        generated.refused = True
-        generated.refusal_reason = "grounding_validation_failed"
-        generated.claims = []
-        generated.degraded = True
-    table_refusal_reasons = [
-        str(reason)
-        for reason in package.retrieval_summary.get("table_refusal_reasons", [])
-        if reason
-    ]
-    if generated.refused and table_refusal_reasons:
-        generated.answer = "当前知识库中未找到足够表格依据，无法给出确定答案。" + "；".join(
-            dict.fromkeys(table_refusal_reasons)
-        )
-        generated.refusal_reason = "table_evidence_not_found"
-        generated.grounding_validation = {
-            **generated.grounding_validation,
-            "passed": False,
-            "reason": "table_evidence_not_found",
-            "table_refusal_reasons": table_refusal_reasons,
-        }
-    if generated.refused and not generated.refusal_code:
-        # Keep refusal outcomes machine-readable even when the answer model
-        # declines before it can emit its own structured code.  The classifier
-        # only describes request boundaries stated by the user; it never
-        # supplies a regulatory conclusion or an answer from an evaluation set.
-        generated.refusal_code = _refusal_code_for_request(cleaned_question)
-    if not generated.refused and bool(generated.grounding_validation.get("passed")):
-        for claim in generated.claims:
-            report_verified_claim(claim)
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "llm_generation",
-            "status": "completed" if generated.generation_status == "completed" else "skipped",
-            "title": "答案生成完成" if generated.generation_status == "completed" else "答案生成已跳过",
-            "detail": _generation_progress_detail(generated.generation_status, generated.answer_type),
-            "summary": {
-                "generation_status": generated.generation_status,
-                "answer_type": generated.answer_type,
-                "refused": generated.refused,
-                "refusal_reason": generated.refusal_reason,
-                "refusal_code": generated.refusal_code,
-                "first_verified_claim_ms": first_preview_ms,
-                "generation_total_ms": round((perf_counter() - generation_started) * 1000, 2),
-                "verified_claim_count": len(preview_claims),
-            },
-        },
-    )
-    grounding_passed = bool(generated.grounding_validation.get("passed"))
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "grounding_validation",
-            "status": "completed" if grounding_passed else "failed",
-            "title": "事实与引用校验完成" if grounding_passed else "事实与引用校验未通过",
-            "detail": (
-                "答案中的引用和关键实体已完成证据核验。"
-                if grounding_passed
-                else "关键事实未能由当前证据或可信计算结果支持。"
-            ),
-            "summary": generated.grounding_validation,
-        },
-    )
-    cited_results = _cited_context_results(
-        package.context_chunks,
-        answer=generated.answer,
-        claims=generated.claims,
-    )
-    response = QAResponse(
-        answer=generated.answer,
-        citations=[_citation_from_result(result) for result in cited_results],
-        confidence=_confidence_from_results(cited_results),
-        refused=generated.refused,
-        context_package=package if include_debug else None,
-        answer_type=generated.answer_type,
-        generation_status=generated.generation_status,
-        claims=generated.claims,
-        grounding_validation=generated.grounding_validation,
-        refusal_reason=generated.refusal_reason,
-        refusal_code=generated.refusal_code,
-        missing_variables=generated.missing_variables,
-        ambiguous_variables=generated.ambiguous_variables,
-        unsupported_formula=generated.unsupported_formula,
-        degraded=generated.degraded,
-        evidence_coverage=_build_evidence_coverage(
-            package.retrieval_summary,
-            generated.claims,
-            cited_results,
-        ),
-    )
-    _save_qa_log(db, original_question, response)
-    _log_qa_audit(db, "qa_context_built", original_question, response)
-    return response
+    board.notes["raw_options"] = options
+    with board_context(board):
+        return Supervisor().run(board)
 
 
 def _refusal_code_for_request(question: str) -> str:
@@ -358,94 +172,12 @@ def retrieve_context_package(
 def retrieve_evidence(db: Session, query_plan: QueryPlan,
                       progress_reporter: ProgressReporter | None = None) -> EvidenceBundle:
     """Replayable retrieval stage: accepts one existing plan, never replans it."""
-    question = query_plan.original_question
-    aspect_retrievals = _retrieve_aspects(db, query_plan, progress_reporter=progress_reporter)
-    citation_validation = _merge_citation_validation(
-        [item.citation_validation for item in aspect_retrievals]
-    )
-    context_started_at = perf_counter()
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "context_selection",
-            "status": "running",
-            "title": "正在精选最终上下文",
-            "detail": "正在按问题方面选择可引用依据……",
-        },
-    )
-    context_chunks, prompt_selection = _select_prompt_chunks(question, query_plan, aspect_retrievals)
-    context_chunks = _retrieval_support_structural_context(db, context_chunks)
-    from backend.app.services.evidence_contract_service import build_evidence_bundle
-    bundle = build_evidence_bundle(list(query_plan.requirements), context_chunks,
-                                  list({c.chunk_id: c for c in
-                                        [c for item in aspect_retrievals for c in item.candidates] + context_chunks}.values()))
-    for item in aspect_retrievals:
-        for diagnostic in item.diagnostics:
-            bundle.decisions.extend(EvidenceDecision.model_validate(d) for d in diagnostic.get('candidate_decisions', []))
-    event("context", chunks=context_chunks, query_plan=query_plan.to_debug_dict())
-    _sync_aspect_coverage_from_prompt(context_chunks, aspect_retrievals, bundle=bundle)
-    prompt_selection["final_prompt_chunks"] = len(context_chunks)
-    prompt_selection["final_prompt_chunk_ids"] = [chunk.chunk_id for chunk in context_chunks]
-    prompt_selection["covered_aspects"] = [
-        aspect.aspect_id for aspect in query_plan.aspects if any(
-            aspect.aspect_id == retrieval.aspect.aspect_id and retrieval.covered
-            for retrieval in aspect_retrievals
-        )
-    ]
-    prompt_selection["retrieval_covered_aspects"] = [
-        retrieval.aspect.aspect_id for retrieval in aspect_retrievals if retrieval.retrieval_covered
-    ]
-    prompt_selection["covered_by_retrieval_but_not_prompted"] = [
-        retrieval.aspect.aspect_id
-        for retrieval in aspect_retrievals
-        if retrieval.retrieval_covered and not retrieval.covered
-    ]
-    prompt_selection["aspect_selected_chunk_ids"] = {
-        retrieval.aspect.aspect_id: retrieval.selected_chunk_ids
-        for retrieval in aspect_retrievals
-    }
-    prompt_selection["prompt_capacity_limited"] = bool(
-        prompt_selection["covered_by_retrieval_but_not_prompted"]
-    )
-    context_elapsed_ms = _elapsed_ms(context_started_at)
-    prompt_covered_aspect_count = sum(1 for item in aspect_retrievals if item.covered)
-    retrieval_covered_aspect_count = sum(1 for item in aspect_retrievals if item.retrieval_covered)
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "context_selection",
-            "status": "completed",
-            "title": "上下文精选完成",
-            "detail": (
-                f"最终使用 {len(context_chunks)}/{MAX_PROMPT_CHUNKS} 个片段，"
-                f"检索覆盖 {retrieval_covered_aspect_count}/{len(query_plan.aspects)} 个方面，"
-                f"进入 Prompt {prompt_covered_aspect_count}/{len(query_plan.aspects)} 个方面"
-            ),
-            "elapsed_ms": context_elapsed_ms,
-            "summary": {
-                "used_chunks": len(context_chunks),
-                "max_prompt_chunks": MAX_PROMPT_CHUNKS,
-                "covered_aspects": prompt_covered_aspect_count,
-                "retrieval_covered_aspects": retrieval_covered_aspect_count,
-                "total_aspects": len(query_plan.aspects),
-            },
-        },
-    )
-    diagnostics = _aggregate_aspect_diagnostics(aspect_retrievals)
-    retrieval_summary = _build_retrieval_summary(
-        question,
-        context_chunks,
-        query_plan,
-        aspect_retrievals,
-        diagnostics,
-        citation_validation,
-        prompt_selection,
-    )
-    retrieval_summary["evidence_bundle"] = bundle.model_dump(exclude={'evidence', 'diagnostics'})
-    retrieval_summary["has_sufficient_context"] = bool(context_chunks) and bundle.complete
-    retrieval_summary["missing_requirements"] = bundle.missing_requirements
-    bundle.diagnostics = retrieval_summary
-    return bundle
+    board = board_for(db, query_plan.original_question, progress_reporter=progress_reporter)
+    with (board_context(board) if board.standalone else nullcontext()):
+        bundle = Supervisor().gather_evidence(board, query_plan)
+        if board.standalone and isinstance(bundle.diagnostics, dict):
+            bundle.diagnostics["agent_trace"] = [entry.model_dump() for entry in board.trace]
+        return bundle
 
 
 def build_context_package(
@@ -454,75 +186,12 @@ def build_context_package(
     options: list[str] | None = None,
     progress_reporter: ProgressReporter | None = None,
 ) -> LLMContextPackage:
-    planning_started_at = perf_counter()
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "planning",
-            "status": "running",
-            "title": "正在理解问题",
-            "detail": "正在拆分问题并生成检索计划……",
-        },
-    )
-    from backend.app.services.query_planner_service import table_schema_context
-    with table_schema_context(db, question):
-        query_plan = plan_query(question, options=options)
-    if query_plan.clarification_reason:
-        return LLMContextPackage(query=question, instruction=CONTEXT_INSTRUCTION,
-            retrieval_summary={'has_sufficient_context': False, 'used_chunks': 0,
-                               'query_plan': query_plan.to_debug_dict(),
-                               'clarification_reason': query_plan.clarification_reason},
-            context_chunks=[], llm_prompt='')
-    planning_elapsed_ms = _elapsed_ms(planning_started_at)
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "planning",
-            "status": "completed",
-            "title": "问题理解完成",
-            "detail": f"已拆分为 {len(query_plan.aspects)} 个方面，用时 {_format_elapsed_seconds(planning_elapsed_ms)}",
-            "elapsed_ms": planning_elapsed_ms,
-            "summary": {
-                "aspect_count": len(query_plan.aspects),
-                "aspects": [aspect.to_debug_dict() for aspect in query_plan.aspects],
-                "planner": query_plan.planner,
-                "fallback_used": query_plan.fallback_used,
-            },
-        },
-    )
-    bundle = retrieve_evidence(db, query_plan, progress_reporter=progress_reporter)
-    context_chunks = bundle.evidence
-    retrieval_summary = bundle.diagnostics
-    prompt_started_at = perf_counter()
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "prompt_build",
-            "status": "running",
-            "title": "正在构造 LLM Prompt",
-            "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
-        },
-    )
-    prompt = RAGPromptBuilder().build(question, context_chunks)
-    prompt_elapsed_ms = _elapsed_ms(prompt_started_at)
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "prompt_build",
-            "status": "completed",
-            "title": "Prompt 构造完成",
-            "detail": f"已完成 Prompt 构造，用时 {_format_elapsed_seconds(prompt_elapsed_ms)}",
-            "elapsed_ms": prompt_elapsed_ms,
-            "summary": {"prompt_chunk_count": len(context_chunks)},
-        },
-    )
-    return LLMContextPackage(
-        query=question,
-        instruction=CONTEXT_INSTRUCTION,
-        retrieval_summary=retrieval_summary,
-        context_chunks=context_chunks,
-        llm_prompt=prompt,
-    )
+    board = board_for(db, question, options=options, progress_reporter=progress_reporter)
+    with (board_context(board) if board.standalone else nullcontext()):
+        package = Supervisor().build_context(board, question, options)
+        if board.standalone:
+            package.agent_trace = list(board.trace)
+        return package
 
 
 def _empty_context_package(question: str) -> LLMContextPackage:
@@ -560,227 +229,9 @@ def _retrieve_aspects(
     query_plan: QueryPlan,
     progress_reporter: ProgressReporter | None = None,
 ) -> list[AspectRetrieval]:
-    retrieval_started_at = perf_counter()
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "retrieval",
-            "status": "running",
-            "title": "正在检索相关依据",
-            "detail": f"正在按 {len(query_plan.aspects)} 个问题方面召回知识库片段……",
-            "summary": {"total_aspects": len(query_plan.aspects)},
-        },
-    )
-    aspect_retrievals: list[AspectRetrieval] = []
-    document_chunk_cache: dict[str, list[DocumentChunk]] = {}
-
-    # Phase A: deterministic preparation (spreadsheet, filters, MCQ early
-    # stop, query normalization) for every aspect, so the hybrid collection
-    # can run once across all of them.
-    prep_by_aspect: dict[str, _AspectPrepResult] = {}
-    for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
-        _report_progress(
-            progress_reporter,
-            {
-                "stage": "retrieval",
-                "status": "running",
-                "title": f"正在检索方面 {aspect_index}",
-                "detail": f"正在为“{aspect.question}”检索相关依据……",
-                "aspect_id": aspect.aspect_id,
-                "summary": {
-                    "aspect_index": aspect_index,
-                    "total_aspects": len(query_plan.aspects),
-                    "aspect_question": aspect.question,
-                },
-            },
-        )
-        prep_by_aspect[aspect.aspect_id] = _prepare_aspect_retrieval(
-            db,
-            aspect,
-            progress_reporter=progress_reporter,
-            document_chunk_cache=document_chunk_cache,
-        )
-
-    # Phase B + C: collect hybrid candidates (one batched embedding + Qdrant
-    # pass and one batched rerank pass when several aspects need vectors;
-    # otherwise the single-aspect path) and finish each aspect.
-    prepared_items = [
-        (aspect, prep_by_aspect[aspect.aspect_id].prepared)
-        for aspect in query_plan.aspects
-        if not prep_by_aspect[aspect.aspect_id].terminal
-    ]
-    finished: dict[str, tuple[list[RetrievalMatch], list[dict[str, Any]]]] = {}
-    if len(prepared_items) > 1:
-        try:
-            collected = _collect_prepared_candidates_many(
-                [prepared for _aspect, prepared in prepared_items]
-            )
-        except (EmbeddingServiceError, VectorStoreError) as exc:
-            raise RetrievalServiceUnavailable(str(exc)) from exc
-        rerank_questions: list[str] = []
-        rerank_inputs: list[list[Any]] = []
-        for (aspect, prepared), (candidates, hits, _per_query) in zip(
-            prepared_items, collected, strict=True
-        ):
-            if not features().rerank:
-                candidates.sort(key=lambda candidate: sum(
-                    QUERY_TYPE_WEIGHTS.get(str(hit.get("query_type") or "semantic_question"), 1.0)
-                    / (RRF_K + int(hit.get("rank") or 1))
-                    for hit in hits.get(candidate.chunk_id, [])
-                ), reverse=True)
-            effective = _effective_rerank_candidate_limit(
-                aspect,
-                candidates,
-                retrieval_filter_document_ids=set(prepared.retrieval_filter.document_ids or ()),
-                mcq_material_document_ids=prepared.mcq_material_document_ids,
-            )
-            rerank_inputs.append(
-                rerank_input_with_document_coverage(candidates, limit=effective)
-            )
-            rerank_questions.append(_rerank_query_for_aspect(aspect))
-        rerank_limits = [
-            len(rerank_input)
-            if aspect.aspect_id.startswith("multiple_choice_evidence")
-            else RERANK_TOP_K
-            for (aspect, _prepared), rerank_input in zip(
-                prepared_items, rerank_inputs, strict=True
-            )
-        ]
-        try:
-            reranked_groups = rerank_candidate_groups(
-                questions=rerank_questions,
-                candidate_groups=rerank_inputs,
-                limits=rerank_limits,
-            )
-        except RerankServiceError as exc:
-            raise RetrievalServiceUnavailable(str(exc)) from exc
-        for (aspect, prepared), (candidates, hits, per_query), rerank_input, reranked in zip(
-            prepared_items, collected, rerank_inputs, reranked_groups, strict=True
-        ):
-            matches, diagnostics = _finish_aspect_matches(
-                db,
-                aspect,
-                candidates=candidates,
-                query_hits_by_chunk_id=hits,
-                diagnostics_by_query=per_query,
-                diagnostics=prepared.diagnostics,
-                retrieval_filter=prepared.retrieval_filter,
-                mcq_material_document_ids=prepared.mcq_material_document_ids,
-                located_matches=prepared.located_matches,
-                table_diagnostics=prepared.table_diagnostics,
-                document_chunk_cache=document_chunk_cache,
-                total_started_at=prepared.total_started_at,
-                progress_reporter=progress_reporter,
-                reranked=reranked,
-                rerank_input=rerank_input,
-            )
-            finished[aspect.aspect_id] = (matches, diagnostics)
-    else:
-        for aspect, prepared in prepared_items:
-            assert prepared is not None
-            try:
-                candidates, hits, per_query = collect_candidates_with_query_hits(
-                    prepared.search_queries,
-                    query_metadata=prepared.query_metadata,
-                    diagnostics=prepared.diagnostics,
-                    metadata_filter=prepared.qdrant_filter,
-                )
-            except (EmbeddingServiceError, VectorStoreError) as exc:
-                raise RetrievalServiceUnavailable(str(exc)) from exc
-            matches, diagnostics = _finish_aspect_matches(
-                db,
-                aspect,
-                candidates=candidates,
-                query_hits_by_chunk_id=hits,
-                diagnostics_by_query=per_query,
-                diagnostics=prepared.diagnostics,
-                retrieval_filter=prepared.retrieval_filter,
-                mcq_material_document_ids=prepared.mcq_material_document_ids,
-                located_matches=prepared.located_matches,
-                table_diagnostics=prepared.table_diagnostics,
-                document_chunk_cache=document_chunk_cache,
-                total_started_at=prepared.total_started_at,
-                progress_reporter=progress_reporter,
-            )
-            finished[aspect.aspect_id] = (matches, diagnostics)
-
-    for aspect_index, aspect in enumerate(query_plan.aspects, start=1):
-        prep = prep_by_aspect[aspect.aspect_id]
-        if prep.terminal:
-            matches, diagnostics = prep.matches, prep.diagnostics
-        else:
-            matches, diagnostics = finished[aspect.aspect_id]
-        matches = _expand_neighbor_matches(
-            db,
-            aspect.question,
-            matches,
-            document_chunk_cache=document_chunk_cache,
-        )
-        candidates = _to_retrieval_results(matches)
-        for candidate in candidates:
-            candidate.metadata["aspect_id"] = aspect.aspect_id
-            candidate.metadata["aspect_question"] = aspect.question
-            candidate.metadata["aspect_search_queries"] = _search_query_debug_list(aspect)
-            candidate.metadata["expected_evidence_type"] = aspect.expected_evidence_type
-            candidate.metadata["evidence_need"] = aspect.evidence_need
-            candidate.metadata.setdefault("prompt_matched_aspects", [aspect.aspect_id])
-        valid_candidates, citation_validation = _validate_context_chunks(db, candidates)
-        aspect_retrieval = AspectRetrieval(
-            aspect=aspect,
-            candidates=valid_candidates,
-            diagnostics=diagnostics,
-            citation_validation=citation_validation,
-            selected_chunk_ids=[],
-            retrieval_covered=bool(valid_candidates),
-            covered=False,
-        )
-        aspect_retrievals.append(aspect_retrieval)
-        _report_progress(
-            progress_reporter,
-            {
-                "stage": "retrieval",
-                "status": "completed" if valid_candidates else "failed",
-                "title": f"方面 {aspect_index} 检索完成" if valid_candidates else f"方面 {aspect_index} 未找到足够依据",
-                "detail": (
-                    f"已为“{aspect.question}”召回 {len(valid_candidates)} 个可回溯候选片段"
-                    if valid_candidates
-                    else f"“{aspect.question}”暂未召回可回溯依据"
-                ),
-                "aspect_id": aspect.aspect_id,
-                "summary": {
-                    "aspect_index": aspect_index,
-                    "total_aspects": len(query_plan.aspects),
-                    "candidate_count": len(valid_candidates),
-                    "aspect_question": aspect.question,
-                    "retrieved_sections": [
-                        chunk.section_title for chunk in valid_candidates if chunk.section_title
-                    ],
-                },
-            },
-        )
-    retrieval_elapsed_ms = _elapsed_ms(retrieval_started_at)
-    retrieved_aspect_count = sum(1 for item in aspect_retrievals if item.retrieval_covered)
-    candidate_count = sum(len(item.candidates) for item in aspect_retrievals)
-    _report_progress(
-        progress_reporter,
-        {
-            "stage": "retrieval",
-            "status": "completed",
-            "title": "检索相关依据完成",
-            "detail": (
-                f"已完成 {len(query_plan.aspects)} 个方面检索，"
-                f"召回 {candidate_count} 个可回溯候选片段。"
-            ),
-            "elapsed_ms": retrieval_elapsed_ms,
-            "summary": {
-                "total_aspects": len(query_plan.aspects),
-                "retrieved_aspects": retrieved_aspect_count,
-                "candidate_count": candidate_count,
-            },
-        },
-    )
-    _report_rerank_stage_summary(progress_reporter, aspect_retrievals)
-    return aspect_retrievals
+    board = board_for(db, query_plan.original_question, progress_reporter=progress_reporter)
+    with (board_context(board) if board.standalone else nullcontext()):
+        return Supervisor().gather_aspects(board, query_plan)
 
 
 # Chunk text often cites another regulation by bracketed title; such titles

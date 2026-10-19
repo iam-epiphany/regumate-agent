@@ -464,6 +464,32 @@ export interface QueryPlanSearchQuery {
   rationale: string;
 }
 
+export type AgentTraceStatus = "completed" | "failed" | "skipped" | "refused" | "clarification";
+
+export interface AgentTraceEntry {
+  agent: string;
+  role: string;
+  task: string;
+  status: AgentTraceStatus;
+  attempt: number;
+  elapsed_ms: number | null;
+  model_calls: number;
+  aspect_ids: string[];
+  summary: Record<string, unknown>;
+}
+
+export interface AgentDescriptor {
+  name: string;
+  role: string;
+  capabilities: string[];
+  tasks: string[];
+}
+
+export interface AgentRegistryResponse {
+  supervisor: string;
+  agents: AgentDescriptor[];
+}
+
 export interface QAResponse {
   answer: string | null;
   citations: Citation[];
@@ -495,6 +521,7 @@ export interface QAResponse {
   grounding_validation: Record<string, unknown>;
   refusal_reason: string | null;
   degraded: boolean;
+  agent_trace?: AgentTraceEntry[];
   evidence_coverage?: {
     expected_aspect_ids: string[];
     covered_aspect_ids: string[];
@@ -545,6 +572,7 @@ export interface RagProgressEvent {
   elapsed_ms?: number | null;
   summary?: Record<string, unknown>;
   aspect_id?: string;
+  agent?: string | null;
 }
 
 export interface QATaskStatusResponse {

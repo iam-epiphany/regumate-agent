@@ -173,24 +173,20 @@ class _AspectPrepResult:
     prepared: _PreparedAspect | None
 
 
-def _prepare_aspect_retrieval(
-    db: Session,
-    aspect: QueryAspect,
-    progress_reporter: ProgressReporter | None = None,
-    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
-) -> _AspectPrepResult:
-    """Run the deterministic pre-collection stages for one aspect.
+@dataclass
+class _TableStageResult:
+    located_matches: list[RetrievalMatch]
+    table_diagnostics: list[dict[str, Any]]
+    terminal: bool
+    terminal_reason: str | None
 
-    Covers the legacy hook, structured spreadsheet retrieval with terminal
-    refusal early-stops, metadata filter construction with the no-match gate,
-    MCQ exact-support early stop, and search-query normalization.  Terminal
-    outcomes return matches/diagnostics directly; otherwise a prepared aspect
-    is returned for collection (single or batched).
-    """
 
-    if retrieve_citations is not _DEFAULT_RETRIEVE_CITATIONS:
-        matches, diagnostics = _retrieve_aspect_matches_legacy_hook(db, aspect, progress_reporter)
-        return _AspectPrepResult(terminal=True, matches=matches, diagnostics=diagnostics, prepared=None)
+def legacy_retrieval_override_active() -> bool:
+    return retrieve_citations is not _DEFAULT_RETRIEVE_CITATIONS
+
+
+def _prepare_table_stage(db: Session, aspect: QueryAspect) -> _TableStageResult:
+    """Run the structured spreadsheet locator for one aspect (moved verbatim)."""
 
     located_matches: list[RetrievalMatch] = []
     table_diagnostics: list[dict[str, Any]] = []
@@ -231,12 +227,26 @@ def _prepare_aspect_retrieval(
             match.metadata["evidence_need"] = aspect.evidence_need
 
         if located_matches and aspect.modality == "table":
-            return _AspectPrepResult(True, located_matches, table_diagnostics, None)
+            return _TableStageResult(located_matches, table_diagnostics, True, "structured_cells_located")
         if not located_matches and _should_stop_after_spreadsheet_refusal(aspect, spreadsheet_diagnostic):
             table_diagnostics[-1]["early_stopped"] = True
             table_diagnostics[-1]["early_stop_reason"] = "structured_spreadsheet_refusal"
-            return _AspectPrepResult(True, [], table_diagnostics, None)
+            return _TableStageResult(located_matches, table_diagnostics, True, "structured_spreadsheet_refusal")
+    return _TableStageResult(located_matches, table_diagnostics, False, None)
 
+
+def _prepare_text_stage(
+    db: Session,
+    aspect: QueryAspect,
+    table_stage: _TableStageResult,
+    *,
+    progress_reporter: ProgressReporter | None = None,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> _AspectPrepResult:
+    """Run metadata filtering, MCQ early stop and query normalization (moved verbatim)."""
+
+    located_matches = table_stage.located_matches
+    table_diagnostics = table_stage.table_diagnostics
     diagnostics = RetrievalDiagnostics()
     total_started_at = perf_counter()
     vector_filter_values, vector_explicit_keys, mixed_table_scoped_keys = _vector_metadata_filter_inputs(aspect)
@@ -356,6 +366,39 @@ def _prepare_aspect_retrieval(
             mcq_material_document_ids=mcq_material_document_ids,
         ),
     )
+
+
+def _prepare_aspect_retrieval(
+    db: Session,
+    aspect: QueryAspect,
+    progress_reporter: ProgressReporter | None = None,
+    document_chunk_cache: dict[str, list[DocumentChunk]] | None = None,
+) -> _AspectPrepResult:
+    """Run the deterministic pre-collection stages for one aspect.
+
+    Covers the legacy hook, structured spreadsheet retrieval with terminal
+    refusal early-stops, metadata filter construction with the no-match gate,
+    MCQ exact-support early stop, and search-query normalization.  Terminal
+    outcomes return matches/diagnostics directly; otherwise a prepared aspect
+    is returned for collection (single or batched).
+    """
+
+    if legacy_retrieval_override_active():
+        matches, diagnostics = _retrieve_aspect_matches_legacy_hook(db, aspect, progress_reporter)
+        return _AspectPrepResult(terminal=True, matches=matches, diagnostics=diagnostics, prepared=None)
+    table_stage = _prepare_table_stage(db, aspect)
+    if table_stage.terminal:
+        return _AspectPrepResult(True, table_stage.located_matches, table_stage.table_diagnostics, None)
+    return _prepare_text_stage(
+        db,
+        aspect,
+        table_stage,
+        progress_reporter=progress_reporter,
+        document_chunk_cache=document_chunk_cache,
+    )
+
+
+_DEFAULT_PREPARE_ASPECT_RETRIEVAL = _prepare_aspect_retrieval
 
 
 def _collect_prepared_candidates_many(

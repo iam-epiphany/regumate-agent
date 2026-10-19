@@ -27,6 +27,32 @@ class ApiError(BaseModel):
     request_id: str | None = None
 
 
+class AgentTraceEntry(BaseModel):
+    """One specialist-agent task recorded by the supervisor; counts and codes only."""
+
+    agent: str
+    role: str
+    task: str
+    status: Literal["completed", "failed", "skipped", "refused", "clarification"] = "completed"
+    attempt: int = 1
+    elapsed_ms: float | None = None
+    model_calls: int = 0
+    aspect_ids: list[str] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentDescriptor(BaseModel):
+    name: str
+    role: str
+    capabilities: list[str] = Field(default_factory=list)
+    tasks: list[str] = Field(default_factory=list)
+
+
+class AgentRegistryResponse(BaseModel):
+    supervisor: str
+    agents: list[AgentDescriptor] = Field(default_factory=list)
+
+
 class RagProgressEvent(BaseModel):
     stage: Literal[
         "planning",
@@ -43,6 +69,7 @@ class RagProgressEvent(BaseModel):
     elapsed_ms: float | None = None
     summary: dict[str, Any] | None = None
     aspect_id: str | None = None
+    agent: str | None = None
 
 
 class AnswerClaim(BaseModel):
@@ -160,6 +187,7 @@ class LLMContextPackage(BaseModel):
     retrieval_summary: dict[str, Any]
     context_chunks: list[RetrievalResult]
     llm_prompt: str
+    agent_trace: list[AgentTraceEntry] = Field(default_factory=list)
 
 
 class QAResponse(BaseModel):
@@ -179,6 +207,7 @@ class QAResponse(BaseModel):
     unsupported_formula: str | None = None
     degraded: bool = False
     evidence_coverage: EvidenceCoverage | None = None
+    agent_trace: list[AgentTraceEntry] = Field(default_factory=list)
 
 
 class QAAnswerPreview(BaseModel):

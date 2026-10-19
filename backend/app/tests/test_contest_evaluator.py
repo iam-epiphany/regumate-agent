@@ -88,6 +88,14 @@ def test_extract_option_ignores_citation_numbers_and_rounding() -> None:
     assert extract_option("答案为 275230.63。依据表格证据，核验值为 275230.6254。[1]", options) == "C"
 
 
+def test_extract_option_requires_a_letter_delimiter() -> None:
+    options = ("甲", "乙", "丙", "丁")
+    assert extract_option("答案为 D。依据如下。", options) == "D"
+    # A Chinese enumeration comma is not an accepted delimiter; production
+    # must emit a full stop, colon or whitespace after the letter.
+    assert extract_option("答案为 D、依据如下。", options) is None
+
+
 def test_extract_option_ignores_terminal_punctuation_for_text_options() -> None:
     options = (
         "消费金融公司是经批准设立、不吸收公众存款的非银行金融机构。",

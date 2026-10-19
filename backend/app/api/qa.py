@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.database import SessionLocal, get_db
 from backend.app.schemas.qa import (
+    AgentDescriptor,
+    AgentRegistryResponse,
     LLMContextPackage,
     QARequest,
     QAResponse,
@@ -18,6 +20,7 @@ from backend.app.schemas.qa import (
     QATaskCreateResponse,
     QATaskStatusResponse,
 )
+from backend.app.services.agents import Supervisor, default_registry
 from backend.app.services.qa_task_service import (
     QATaskCancelled,
     cancel_qa_task,
@@ -33,6 +36,14 @@ from uuid import uuid4
 
 
 router = APIRouter(prefix="/qa", tags=["qa"])
+
+
+@router.get("/agents", response_model=AgentRegistryResponse)
+def list_agents() -> AgentRegistryResponse:
+    return AgentRegistryResponse(
+        supervisor=Supervisor.name,
+        agents=[AgentDescriptor(**item) for item in default_registry().describe()],
+    )
 
 
 @router.post("/ask", response_model=QAResponse)

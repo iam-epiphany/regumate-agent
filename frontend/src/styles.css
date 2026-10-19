@@ -1180,6 +1180,22 @@ nav {
   color: var(--text-faint);
 }
 
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
 /* ---------- 11. 结果状态条 ---------- */
 
 .result-error,
@@ -1404,6 +1420,94 @@ nav {
   content: counter(choice);
   font-size: 11px;
   font-weight: 600;
+}
+
+.agent-trace {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-trace > summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.agent-trace > summary:hover {
+  background: var(--surface-hover);
+}
+
+.agent-trace ol {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-trace li {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(96px, 1fr) max-content max-content max-content max-content;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.agent-trace__agent {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.agent-trace__status {
+  justify-self: start;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.agent-trace__status.completed {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.agent-trace__status.failed {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.agent-trace__status.refused,
+.agent-trace__status.clarification {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.agent-trace__elapsed {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-trace__meta {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
 }
 
 .table-result-section {
@@ -3405,6 +3509,11 @@ tbody tr.is-selected {
 
   .audit-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agent-trace li {
+    grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) max-content;
+    gap: 4px 10px;
   }
 }
 

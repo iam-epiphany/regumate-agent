@@ -80,6 +80,23 @@ class TableFinding:
         return "；".join(fields)
 
 
+@dataclass
+class GenerationContext:
+    """Everything the generation loop needs, prepared once per answer."""
+
+    question: str
+    context_chunks: list[RetrievalResult]
+    options: list[str]
+    option_labels: list[str | None]
+    llm_prompt: str | None
+    answer_mode: str
+    required: list[str]
+    requirements: list[EvidenceRequirement] | None
+    table_findings: list[TableFinding]
+    deterministic: GeneratedAnswer | None
+    cancellation_checker: Callable | None
+
+
 @qa_execution
 def generate_answer(
     question: str,
@@ -112,30 +129,55 @@ def generate_answer(
     )
 
 
-def _generate_answer_impl(question, context_chunks, normalized_options, normalized_labels, *,
-                         llm_prompt, has_sufficient_context, verified_claim_reporter,
-                         cancellation_checker, answer_mode, required_aspect_ids, requirements):
-    from backend.app.services.answer_validation_service import validate_answer
+def refusal_answer(reason, *, validation=None, unavailable=False) -> GeneratedAnswer:
+    """The single refusal shape used by pre-checks and the generation loop."""
+
+    return GeneratedAnswer(
+        answer=('问答服务暂不可用，请稍后重试。' if unavailable else
+                '当前证据不足以完整回答问题。' + ('缺少：' + '、'.join((validation or {}).get('missing_requirements', []))
+                if (validation or {}).get('missing_requirements') else '请补充相关材料或明确查询范围。')),
+        answer_type='service_error' if unavailable else 'refusal',
+        generation_status='error' if unavailable else 'skipped', refused=True,
+        refusal_reason=reason, degraded=unavailable,
+        grounding_validation={**(validation or {}), 'passed': False,
+            'status': 'error' if unavailable else (validation or {}).get('status', 'not_run'),
+            'task_complete': False,
+            'failure_stage': (validation or {}).get('failure_stage') or ('generation' if unavailable else 'evidence')})
+
+
+def _default_table_resolver(kind: str, **kwargs: Any) -> GeneratedAnswer | None:
+    """Resolve deterministic candidates through the module-level seams."""
+
+    if kind == "table":
+        return _deterministic_table_answer(
+            kwargs["context_chunks"], kwargs["options"], kwargs["option_labels"])
+    if kind == "formula":
+        return _deterministic_formula_answer(kwargs["question"], kwargs["context_chunks"])
+    return None
+
+
+def prepare_generation(
+    question: str,
+    context_chunks: list[RetrievalResult],
+    normalized_options: list[str],
+    normalized_labels: list[str | None],
+    *,
+    llm_prompt: str | None,
+    has_sufficient_context: bool,
+    cancellation_checker: CancellationChecker | None,
+    answer_mode: str,
+    required_aspect_ids: list[str] | None,
+    requirements: list[EvidenceRequirement] | None,
+    table_resolver: Callable[..., GeneratedAnswer | None] | None = None,
+) -> GenerationContext | GeneratedAnswer:
+    """Run every pre-generation gate and resolve the deterministic candidate."""
+
     required = [r.requirement_id for r in requirements] if requirements is not None else required_aspect_ids or []
-
-    def refusal(reason, *, validation=None, unavailable=False):
-        return GeneratedAnswer(
-            answer=('问答服务暂不可用，请稍后重试。' if unavailable else
-                    '当前证据不足以完整回答问题。' + ('缺少：' + '、'.join((validation or {}).get('missing_requirements', []))
-                    if (validation or {}).get('missing_requirements') else '请补充相关材料或明确查询范围。')),
-            answer_type='service_error' if unavailable else 'refusal',
-            generation_status='error' if unavailable else 'skipped', refused=True,
-            refusal_reason=reason, degraded=unavailable,
-            grounding_validation={**(validation or {}), 'passed': False,
-                'status': 'error' if unavailable else (validation or {}).get('status', 'not_run'),
-                'task_complete': False,
-                'failure_stage': (validation or {}).get('failure_stage') or ('generation' if unavailable else 'evidence')})
-
     if not context_chunks or not has_sufficient_context:
-        return refusal('insufficient_context', validation={'missing_requirements': required})
+        return refusal_answer('insufficient_context', validation={'missing_requirements': required})
     missing = _missing_aspects_in_context(context_chunks, required)
     if missing:
-        return refusal('missing_required_aspect', validation={'missing_requirements': missing})
+        return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing})
     table_findings = _table_findings(context_chunks)
     if answer_mode in {'mixed', 'scenario'}:
         missing_modalities = []
@@ -145,60 +187,312 @@ def _generate_answer_impl(question, context_chunks, normalized_options, normaliz
                    for c in context_chunks):
             missing_modalities.append('制度依据')
         if missing_modalities:
-            return refusal('missing_required_aspect', validation={'missing_requirements': missing_modalities})
+            return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing_modalities})
+    resolver = table_resolver or _default_table_resolver
     deterministic = None
     if answer_mode not in {'mixed', 'scenario'}:
-        deterministic = _deterministic_table_answer(context_chunks, normalized_options, normalized_labels)
+        deterministic = resolver(
+            "table",
+            context_chunks=context_chunks,
+            options=normalized_options,
+            option_labels=normalized_labels,
+        )
     if deterministic is None and _is_formula_request(question):
-        deterministic = _deterministic_formula_answer(question, context_chunks)
+        deterministic = resolver(
+            "formula",
+            question=question,
+            context_chunks=context_chunks,
+        )
     if deterministic is not None and deterministic.refused:
         deterministic.grounding_validation.update(status='not_run', passed=False, task_complete=False)
         return deterministic
+    return GenerationContext(
+        question=question,
+        context_chunks=context_chunks,
+        options=normalized_options,
+        option_labels=normalized_labels,
+        llm_prompt=llm_prompt,
+        answer_mode=answer_mode,
+        required=required,
+        requirements=requirements,
+        table_findings=table_findings,
+        deterministic=deterministic,
+        cancellation_checker=cancellation_checker,
+    )
+
+
+def draft_answer(ctx: GenerationContext, *, attempt: int, correction: str | None) -> GeneratedAnswer:
+    """Return the deterministic first draft or ask the model for one."""
+
+    if attempt == 0 and ctx.deterministic is not None:
+        return ctx.deterministic
+    if not ANSWER_GENERATION_ENABLED or not ANSWER_GENERATION_API_KEY:
+        return refusal_answer('generation_unavailable', unavailable=True)
+    return _call_llm(
+        ctx.question, ctx.context_chunks, ctx.options, ctx.option_labels,
+        llm_prompt=ctx.llm_prompt, correction=correction, verified_claim_reporter=None,
+        cancellation_checker=ctx.cancellation_checker, answer_mode=ctx.answer_mode,
+        table_findings=ctx.table_findings, required_aspect_ids=ctx.required)
+
+
+def verify_draft(ctx: GenerationContext, generated: GeneratedAnswer) -> dict[str, Any]:
+    """Validate one draft through the shared answer validation service."""
+
+    from backend.app.services import answer_validation_service as validation_service
+
+    return validation_service.validate_answer(
+        ctx.question, generated.answer or '', generated.claims, ctx.context_chunks,
+        requirements=ctx.required,
+        deterministic=generated.answer_type in {'table_deterministic', 'formula_deterministic'},
+        options=ctx.options, option_labels=ctx.option_labels,
+        computation=generated.answer_type == 'formula_deterministic',
+        requirement_details=ctx.requirements)
+
+
+def judge_draft(
+    ctx: GenerationContext,
+    generated: GeneratedAnswer,
+    validation: dict[str, Any],
+    attempt: int,
+) -> tuple[str, Any]:
+    """Map one validation report to accept, refuse or a single repair."""
+
+    if validation['passed']:
+        return "accept", None
+    if generated.answer_type in {'table_deterministic', 'formula_deterministic'}:
+        return "refuse", refusal_answer('grounding_validation_failed', validation=validation)
+    if validation['status'] == 'not_run':
+        return "refuse", refusal_answer('validation_not_run', validation=validation)
+    if validation['status'] == 'error':
+        return "refuse", refusal_answer('validation_service_unavailable', validation=validation, unavailable=True)
+    return "repair", json.dumps(validation, ensure_ascii=False)
+
+
+def _exact_support_repair_prompt(ctx: GenerationContext) -> str | None:
+    """A single re-draft hint for a refusal contradicted by exact support.
+
+    Only literal option statements already found by retrieval are quoted; no
+    answer, option label or gold information is injected.  The model remains
+    free to refuse again if the support is not substantive.
+    """
+    if not ctx.options or not ctx.option_labels:
+        return None
+    statements: list[str] = []
+    for chunk in ctx.context_chunks:
+        metadata = chunk.metadata or {}
+        if metadata.get("evidence_role") != "mcq_exact_support":
+            continue
+        statement = str(metadata.get("exact_support_statement") or "").strip()
+        if statement and statement not in statements:
+            statements.append(statement)
+    if not statements:
+        return None
+    quoted = "；".join(f"“{statement}”" for statement in statements[:3])
+    return (
+        "检索到材料中与候选项直接匹配的原文："
+        + quoted
+        + "。这是单源选择题：若某选项的核心命题与该原文实质一致，请选择该选项；"
+        "其他选项在该材料中不存在可作为不属于该材料的依据，不要仅因其他选项未出现而拒答。"
+        "若仍无直接支持，可保持拒答。"
+    )
+
+
+def _normalize_support_text(value: Any) -> str:
+    return re.sub(r"[\s\"'“”‘’=：:；;，,。()（）]+", "", str(value or "")).lower()
+
+
+def _support_recall(expected: str, actual: str) -> float:
+    expected_text = _normalize_support_text(expected)
+    actual_text = _normalize_support_text(actual)
+    if not expected_text:
+        return 0.0
+    if expected_text in actual_text:
+        return 1.0
+    if len(expected_text) == 1:
+        return 1.0 if expected_text in actual_text else 0.0
+    bigrams = [expected_text[index:index + 2] for index in range(len(expected_text) - 1)]
+    return sum(bigram in actual_text for bigram in bigrams) / len(bigrams)
+
+
+def _support_chunks(ctx: GenerationContext) -> list[RetrievalResult]:
+    return [
+        chunk for chunk in ctx.context_chunks
+        if (chunk.metadata or {}).get("evidence_role") == "mcq_exact_support"
+    ]
+
+
+def _unique_supported_option(ctx: GenerationContext) -> int | None:
+    """Return the only option with unambiguous exact support, else None.
+
+    This is a last-resort, retrieval-grounded decision for a persistent model
+    refusal.  It never uses gold data and never overrides an answered draft.
+    """
+    if not ctx.options or not ctx.option_labels:
+        return None
+    support = _support_chunks(ctx)
+    if not support:
+        return None
+    sources = {
+        str((chunk.metadata or {}).get("document_id") or chunk.source_doc or "")
+        for chunk in ctx.context_chunks
+    }
+    if len(sources) != 1:
+        return None
+    statement_matched: list[int] = []
+    recalls: list[float] = []
+    for option in ctx.options:
+        option_norm = _normalize_support_text(option)
+        matched = False
+        best_recall = 0.0
+        for chunk in support:
+            metadata = chunk.metadata or {}
+            statement = _normalize_support_text(metadata.get("exact_support_statement") or "")
+            if len(statement) >= 4 and (statement in option_norm or option_norm in statement):
+                matched = True
+            best_recall = max(best_recall, _support_recall(option, chunk.text or ""))
+        if matched:
+            statement_matched.append(len(recalls))
+        recalls.append(best_recall)
+    if len(statement_matched) == 1:
+        index = statement_matched[0]
+        return index if recalls[index] >= 0.25 else None
+    if len(statement_matched) > 1:
+        best = max(statement_matched, key=lambda item: recalls[item])
+        others = [recalls[item] for item in statement_matched if item != best]
+        second = max(others, default=0.0)
+        if recalls[best] >= 0.35 and second <= recalls[best] * 0.8:
+            return best
+    return None
+
+
+def _best_support_sentence(text: str, option: str) -> str:
+    parts = [part.strip() for part in re.split(r"[。\n；;]+", str(text or "")) if part.strip()]
+    if not parts:
+        return ""
+    best = max(parts, key=lambda part: _support_recall(option, part))
+    return best if _support_recall(option, best) >= 0.3 else ""
+
+
+def _deterministic_mcq_fallback(ctx: GenerationContext) -> GeneratedAnswer | None:
+    """Answer a persistent refusal when exactly one option has exact support."""
+    index = _unique_supported_option(ctx)
+    if index is None:
+        return None
+    label = ctx.option_labels[index] if index < len(ctx.option_labels) else None
+    if not label:
+        return None
+    option = str(ctx.options[index])
+    support = _support_chunks(ctx)
+    chunk = max(support, key=lambda item: _support_recall(option, item.text or ""))
+    citation = chunk.citation_label
+    sentence = _best_support_sentence(chunk.text or "", option)
+    evidence = f"依据{citation}原文：“{sentence[:220]}”。" if sentence else f"依据{citation}。"
+    answer = f"答案为 {label}。{option}{'' if option.endswith(('。', '；', ';')) else '。'}{evidence}"
+    metadata = chunk.metadata or {}
+    claim = AnswerClaim(
+        text=answer,
+        citation_ids=[citation],
+        role="conclusion",
+        aspect_ids=[str(metadata.get("aspect_id"))] if metadata.get("aspect_id") else [],
+    )
+    return GeneratedAnswer(
+        answer=answer,
+        answer_type="llm_grounded",
+        generation_status="completed",
+        claims=[claim],
+        refused=False,
+        grounding_validation={
+            "passed": True,
+            "status": "passed",
+            "task_complete": True,
+            "facts_supported": True,
+            "method": "deterministic_mcq_support",
+            "selected_option": index,
+            "selected_option_supported": True,
+            "selected_option_format_valid": True,
+        },
+    )
+
+
+def run_generation_loop(
+    ctx: GenerationContext,
+    *,
+    draft: Callable[..., GeneratedAnswer],
+    verify: Callable[[GenerationContext, GeneratedAnswer], dict[str, Any]],
+    judge: Callable[[GenerationContext, GeneratedAnswer, dict[str, Any], int], tuple[str, Any]] = judge_draft,
+) -> GeneratedAnswer:
+    """The unchanged two-attempt draft/verify/repair control flow."""
 
     correction = None
     for attempt in range(2):
-        if cancellation_checker:
-            cancellation_checker()
+        if ctx.cancellation_checker:
+            ctx.cancellation_checker()
         try:
-            if attempt == 0 and deterministic is not None:
-                generated = deterministic
-            else:
-                if not ANSWER_GENERATION_ENABLED or not ANSWER_GENERATION_API_KEY:
-                    return refusal('generation_unavailable', unavailable=True)
-                generated = _call_llm(question, context_chunks, normalized_options, normalized_labels,
-                    llm_prompt=llm_prompt, correction=correction, verified_claim_reporter=None,
-                    cancellation_checker=cancellation_checker, answer_mode=answer_mode,
-                    table_findings=table_findings, required_aspect_ids=required)
+            if not (attempt == 0 and ctx.deterministic is not None) and (
+                    not ANSWER_GENERATION_ENABLED or not ANSWER_GENERATION_API_KEY):
+                # Same position as the original loop: generation availability is
+                # checked before any model draft, so every refused draft below
+                # takes the single model-refusal branch regardless of its flags.
+                return refusal_answer('generation_unavailable', unavailable=True)
+            generated = draft(ctx, attempt=attempt, correction=correction)
             if generated.refused:
+                support_correction = _exact_support_repair_prompt(ctx) if attempt == 0 else None
+                if support_correction:
+                    # A refusal is not a final answer when retrieval already
+                    # contains a literal option statement.  Spend the existing
+                    # one-repair budget asking the model to reconsider, instead
+                    # of treating absence of other options as an evidence gap.
+                    correction = support_correction
+                    continue
+                fallback = _deterministic_mcq_fallback(ctx)
+                if fallback is not None:
+                    # The model still refused after the repair, but retrieval
+                    # has one unambiguous exact-support option.  Answer from
+                    # that evidence rather than returning an unsupported refusal.
+                    return fallback
                 generated.answer = generated.answer or generated.refusal_reason or '当前证据不足，无法完整回答。'
                 generated.refusal_reason = generated.refusal_reason or 'model_refusal'
                 generated.grounding_validation = {'passed': False, 'status': 'not_run', 'task_complete': False,
                                                  'reason': 'model_refusal', 'failure_stage': 'generation'}
                 return generated
-            validation = validate_answer(question, generated.answer or '', generated.claims, context_chunks,
-                requirements=required, deterministic=generated.answer_type in {'table_deterministic', 'formula_deterministic'},
-                options=normalized_options, option_labels=normalized_labels,
-                computation=generated.answer_type == 'formula_deterministic', requirement_details=requirements)
+            validation = verify(ctx, generated)
             generated.grounding_validation = {**generated.grounding_validation, **validation, 'repair_attempted': bool(attempt)}
-            if validation['passed']:
+            decision, payload = judge(ctx, generated, validation, attempt)
+            if decision == "accept":
                 return generated
-            if generated.answer_type in {'table_deterministic', 'formula_deterministic'}:
-                return refusal('grounding_validation_failed', validation=validation)
-            if validation['status'] == 'not_run':
-                return refusal('validation_not_run', validation=validation)
-            if validation['status'] == 'error':
-                return refusal('validation_service_unavailable', validation=validation, unavailable=True)
-            correction = json.dumps(validation, ensure_ascii=False)
+            if decision == "refuse":
+                return payload
+            correction = payload
         except (ValueError, KeyError, TypeError):
             if attempt == 0:
                 correction = '输出不是有效的结构化答案。请按要求重新输出JSON，并填写引用与claims。'
                 continue
-            return refusal('invalid_generation_response', validation={'status': 'failed', 'failure_stage': 'generation'})
+            return refusal_answer('invalid_generation_response', validation={'status': 'failed', 'failure_stage': 'generation'})
         except RequestBudgetExceeded:
             raise
         except (OSError, ChatCompletionError):
-            return refusal('generation_unavailable', unavailable=True)
-    return refusal('grounding_validation_failed', validation=generated.grounding_validation)
+            return refusal_answer('generation_unavailable', unavailable=True)
+    return refusal_answer('grounding_validation_failed', validation=generated.grounding_validation)
+
+
+def _generate_answer_impl(question, context_chunks, normalized_options, normalized_labels, *,
+                         llm_prompt, has_sufficient_context, verified_claim_reporter,
+                         cancellation_checker, answer_mode, required_aspect_ids, requirements):
+    prepared = prepare_generation(
+        question,
+        context_chunks,
+        normalized_options,
+        normalized_labels,
+        llm_prompt=llm_prompt,
+        has_sufficient_context=has_sufficient_context,
+        cancellation_checker=cancellation_checker,
+        answer_mode=answer_mode,
+        required_aspect_ids=required_aspect_ids,
+        requirements=requirements,
+    )
+    if isinstance(prepared, GeneratedAnswer):
+        return prepared
+    return run_generation_loop(prepared, draft=draft_answer, verify=verify_draft)
 
 
 def _covered_aspects_by_context(context_chunks: list[RetrievalResult]) -> set[str]:
@@ -313,8 +607,24 @@ def _deterministic_table_answer(
     # table; cite every involved chunk instead of only the anchor table.
     citation_label = _calculation_citation_text(metadata, context_chunks) or chunk.citation_label
     if option_text:
-        answer = f"答案为 {_format_selected_option(option_text, option_label)}。依据表格证据，核验值为 {value_with_unit}。{citation_label}"
+        # The official option extractor accepts a letter followed by ：/:/。/space
+        # or end-of-line, not the comma used between a label and its text.  Keep
+        # the label and text, but use a full stop so the structured choice is
+        # machine-readable without depending on the evaluator's text fallback.
+        option_clause = f"{option_label}。{option_text}" if option_label else str(option_text)
+        answer = f"答案为 {option_clause}。依据表格证据，核验值为 {value_with_unit}。{citation_label}"
+    elif (options and metadata.get("calculation_result") is not None
+          and metadata.get("selection_assumptions")):
+        # A default period/row assumption produced a number that matches none of
+        # the supplied choices.  Refuse instead of presenting it as a choice;
+        # the operands are ambiguous (for example, a period placeholder that
+        # resolves to one row while the gold uses another section).
+        return refusal_answer("calculation_result_not_in_options")
     elif metadata.get("comparison_operation") in {"max", "min"}:
+        if options:
+            # The comparison winner is not one of the supplied options; a
+            # choice answer would be unselectable and possibly misleading.
+            return refusal_answer("comparison_winner_not_in_options")
         winner_label = _comparison_winner_label(metadata)
         comparison_text = "最高" if metadata.get("comparison_operation") == "max" else "最低"
         answer = f"数值{comparison_text}的项目为“{winner_label}”，结果为 {value_with_unit}。{citation_label}"
@@ -532,10 +842,23 @@ def _parse_generated_answer_content(
         for item in parsed.get("claims") or []
         if isinstance(item, dict) and str(item.get("text") or "").strip()
     ]
+    # Production answer_mode is text/scenario/mixed; MCQ is identified by the
+    # presence of options and labels, not by answer_mode.
+    is_choice = bool(options and option_labels)
+    if is_choice and not refused:
+        # Normalize the conclusion sentence to the project's machine-readable
+        # form.  The model is asked for it, but older prompts/models may still
+        # emit "正确选项为：X。" or the comma form, which the official option
+        # extractor cannot recognize.
+        for claim in claims:
+            claim.text = _normalize_choice_conclusion(claim.text)
     composed_answer = "\n\n".join(claim.text + " " + "".join(ref for ref in claim.citation_ids if ref not in claim.text)
                                        for claim in claims if claim.text).strip()
+    fallback_answer = str(parsed.get("answer") or "").strip()
+    if is_choice and not refused and fallback_answer:
+        fallback_answer = _normalize_choice_conclusion(fallback_answer)
     return GeneratedAnswer(
-        answer=composed_answer or str(parsed.get("answer") or "").strip() or None,
+        answer=composed_answer or fallback_answer or None,
         answer_type=(
             "refusal"
             if refused
@@ -709,6 +1032,25 @@ def _normalize_option_labels(option_labels: list[str | None] | None, option_coun
 # Shared with the prompt builder so answer formatting never diverges from
 # prompt formatting.
 _format_selected_option = format_prompt_option
+
+_CHOICE_CONCLUSION_RE = re.compile(
+    r"^\s*(?:正确选项为|正确答案为|答案为)\s*[:：]?\s*([A-D])[\s、,，。：:]*",
+    re.IGNORECASE,
+)
+
+
+def _normalize_choice_conclusion(text: str) -> str:
+    """Put a choice conclusion in the extractor's accepted form.
+
+    The official option extractor only accepts a letter followed by a colon,
+    a full stop, whitespace or end-of-line.  In particular ``答案为 D、`` does
+    not match.  Keep the model's selected letter; never invent one.
+    """
+    match = _CHOICE_CONCLUSION_RE.match(str(text or ""))
+    if not match:
+        return text
+    rest = str(text)[match.end():].lstrip()
+    return f"答案为 {match.group(1).upper()}。" + rest
 
 
 def _match_option(

@@ -1,6 +1,7 @@
 import { Copy, FileSpreadsheet, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 
-import type { Citation, QAResponse } from "../../types/api";
+import type { AgentTraceEntry, Citation, QAResponse } from "../../types/api";
+import { agentRoleLabel, agentStatusLabel, agentTaskLabel, formatElapsed } from "../../utils/agentLabels";
 
 interface AnswerResultProps {
   answer: QAResponse;
@@ -57,6 +58,8 @@ export function AnswerResult({ answer, options, onSelectCitation, onCopy, onReru
         </section>
       ) : null}
 
+      {answer.agent_trace?.length ? <AgentTrace entries={answer.agent_trace} /> : null}
+
       {!answer.refused && tableCitations.length ? <TableEvidenceSummary citations={tableCitations} /> : null}
       {answer.refused ? <RefusalNotice answer={answer} /> : null}
 
@@ -66,6 +69,52 @@ export function AnswerResult({ answer, options, onSelectCitation, onCopy, onReru
       </footer>
     </section>
   );
+}
+
+function AgentTrace({ entries }: { entries: AgentTraceEntry[] }) {
+  const modelCalls = entries.reduce((total, entry) => total + (Number.isFinite(entry.model_calls) ? entry.model_calls : 0), 0);
+  return (
+    <details className="agent-trace">
+      <summary>智能体协作轨迹 · {entries.length} 步 · 模型调用 {modelCalls} 次</summary>
+      <ol>
+        {entries.map((entry, index) => {
+          const summaryItems = agentSummaryItems(entry.summary);
+          return (
+            <li key={`${entry.agent}-${entry.task}-${entry.attempt}-${index}`}>
+              <span className="agent-trace__agent">{agentRoleLabel(entry.agent, entry.role)}</span>
+              <span>{agentTaskLabel(entry.task)}{entry.attempt > 1 ? `（第 ${entry.attempt} 次）` : ""}</span>
+              <span className={`agent-trace__status ${entry.status}`}>{agentStatusLabel(entry.status)}</span>
+              <span className="agent-trace__elapsed">{formatElapsed(entry.elapsed_ms)}</span>
+              {entry.model_calls ? <span>模型调用 {entry.model_calls}</span> : null}
+              {entry.aspect_ids?.length ? <span>方面 {entry.aspect_ids.length}</span> : null}
+              {summaryItems.length ? <span className="agent-trace__meta">{summaryItems.join(" · ")}</span> : null}
+            </li>
+          );
+        })}
+      </ol>
+    </details>
+  );
+}
+
+function agentSummaryItems(summary: Record<string, unknown> | null | undefined): string[] {
+  if (!summary || typeof summary !== "object") return [];
+  const items: string[] = [];
+  if (Array.isArray(summary.reasons)) {
+    const reasons = summary.reasons.filter(isDisplayValue).slice(0, 3).map((reason) => String(reason));
+    if (reasons.length) items.push(`原因：${reasons.join("、")}`);
+  }
+  appendAgentSummary(items, "拒答原因", summary.refusal_reason);
+  appendAgentSummary(items, "终止原因", summary.terminal_reason);
+  appendAgentSummary(items, "裁决", summary.decision);
+  return items;
+}
+
+function appendAgentSummary(items: string[], label: string, value: unknown): void {
+  if (isDisplayValue(value)) items.push(`${label}：${String(value)}`);
+}
+
+function isDisplayValue(value: unknown): boolean {
+  return (typeof value === "string" && Boolean(value.trim())) || typeof value === "number" || typeof value === "boolean";
 }
 
 function TableEvidenceSummary({ citations }: { citations: Citation[] }) {

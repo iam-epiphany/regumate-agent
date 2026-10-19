@@ -2,7 +2,7 @@ import json
 
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
 from backend.app.services import answer_generation_service
-from backend.app.services.answer_generation_service import generate_answer
+from backend.app.services.answer_generation_service import GeneratedAnswer, generate_answer
 from backend.app.services.grounding_validation_service import validate_grounded_answer
 
 
@@ -61,7 +61,146 @@ def test_table_answer_keeps_user_option_label_when_provided() -> None:
     )
 
     assert result.refused is False
-    assert "答案为 B、123.45" in result.answer
+    assert "答案为 B。123.45" in result.answer
+
+
+def test_choice_conclusion_normalization_uses_extractor_delimiters() -> None:
+    normalize = answer_generation_service._normalize_choice_conclusion
+    assert normalize("正确选项为：D。D项说明[1]") == "答案为 D。D项说明[1]"
+    assert normalize("答案为 D、新增保险金额。") == "答案为 D。新增保险金额。"
+    assert normalize("答案为 D：新增保险金额。") == "答案为 D。新增保险金额。"
+    assert normalize("答案为 D。新增保险金额。") == "答案为 D。新增保险金额。"
+    assert normalize("无法确定正确选项：证据不足。") == "无法确定正确选项：证据不足。"
+
+
+def test_generation_loop_retries_refusal_with_exact_support(monkeypatch) -> None:
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test")
+    statement = "鼓励商业银行制定专门的知识产权金融业务办法和管理制度"
+    ctx = answer_generation_service.GenerationContext(
+        question="下列哪项表述正确？",
+        context_chunks=[_chunk(metadata={
+            "evidence_role": "mcq_exact_support",
+            "exact_support_statement": statement,
+        })],
+        options=["选项一", "选项二", "选项三", statement + "。"],
+        option_labels=["A", "B", "C", "D"],
+        llm_prompt=None,
+        answer_mode="choice",
+        required=[],
+        requirements=None,
+        table_findings=[],
+        deterministic=None,
+        cancellation_checker=None,
+    )
+    attempts: list[int] = []
+
+    def draft(context, *, attempt, correction):
+        attempts.append(attempt)
+        if attempt == 0:
+            return GeneratedAnswer(answer="无法确定", answer_type="refusal", generation_status="completed",
+                                   refused=True, refusal_reason="model_refusal", claims=[])
+        return GeneratedAnswer(
+            answer=f"答案为 D。{statement}。[1]", answer_type="llm_grounded", generation_status="completed",
+            claims=[AnswerClaim(text=f"答案为 D。{statement}。[1]", citation_ids=["[1]"])],
+        )
+
+    def verify(context, generated):
+        return {"passed": True, "status": "passed", "task_complete": True,
+                "facts_supported": True, "missing_requirements": [], "reasons": []}
+
+    result = answer_generation_service.run_generation_loop(ctx, draft=draft, verify=verify)
+    assert attempts == [0, 1]
+    assert result.answer.startswith("答案为 D。")
+
+
+def test_parse_generated_answer_normalizes_choice_in_production_text_mode() -> None:
+    content = json.dumps({
+        "refused": False,
+        "refusal_reason": None,
+        "claims": [{
+            "text": "正确选项为：D。D项说明[1]",
+            "citation_ids": ["[1]"],
+            "role": "conclusion",
+            "aspect_ids": [],
+        }],
+    }, ensure_ascii=False)
+    generated = answer_generation_service._parse_generated_answer_content(
+        content,
+        question="下列哪项正确？",
+        context_chunks=[_chunk()],
+        options=["甲", "乙", "丙", "丁"],
+        option_labels=["A", "B", "C", "D"],
+        answer_mode="text",
+    )
+    assert generated.answer.startswith("答案为 D。")
+
+
+def _support_context(statement: str, options: list[str]) -> answer_generation_service.GenerationContext:
+    return answer_generation_service.GenerationContext(
+        question="下列哪项表述正确？",
+        context_chunks=[_chunk(metadata={
+            "evidence_role": "mcq_exact_support",
+            "exact_support_statement": statement,
+        }, text=statement)],
+        options=options,
+        option_labels=["A", "B", "C", "D"],
+        llm_prompt=None,
+        answer_mode="text",
+        required=[],
+        requirements=None,
+        table_findings=[],
+        deterministic=None,
+        cancellation_checker=None,
+    )
+
+
+def test_deterministic_mcq_fallback_selects_unique_supported_option() -> None:
+    statement = "鼓励商业银行制定专门的知识产权金融业务办法和管理制度"
+    ctx = _support_context(statement, ["选项一", "选项二", "选项三", statement + "。"])
+    result = answer_generation_service._deterministic_mcq_fallback(ctx)
+    assert result is not None
+    assert result.answer.startswith("答案为 D。")
+    assert result.grounding_validation["selected_option"] == 3
+    assert result.grounding_validation["method"] == "deterministic_mcq_support"
+
+
+def test_deterministic_mcq_fallback_rejects_ambiguous_support() -> None:
+    statement = "共同表述"
+    ctx = _support_context(statement, ["共同表述甲", "共同表述乙", "无关一", "无关二"])
+    assert answer_generation_service._deterministic_mcq_fallback(ctx) is None
+
+
+def test_generation_loop_uses_support_fallback_after_persistent_refusal(monkeypatch) -> None:
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test")
+    statement = "鼓励商业银行制定专门的知识产权金融业务办法和管理制度"
+    ctx = _support_context(statement, ["选项一", "选项二", "选项三", statement + "。"])
+    attempts: list[int] = []
+
+    def draft(context, *, attempt, correction):
+        attempts.append(attempt)
+        return GeneratedAnswer(answer="无法确定", answer_type="refusal", generation_status="completed",
+                               refused=True, refusal_reason="model_refusal", claims=[])
+
+    def verify(context, generated):
+        raise AssertionError("fallback should not be verified as a model answer")
+
+    result = answer_generation_service.run_generation_loop(ctx, draft=draft, verify=verify)
+    assert attempts == [0, 1]
+    assert result.answer.startswith("答案为 D。")
+
+
+def test_table_calculation_result_not_in_options_refuses() -> None:
+    result = answer_generation_service._deterministic_table_answer(
+        [_chunk(metadata={"dynamic_table_evidence": True, "calculation_result": 42, "value": 42,
+                          "selection_assumptions": ["期间标签未指定具体日期，按表内顺序取首项。"]})],
+        ["1", "2", "3", "4"],
+        ["A", "B", "C", "D"],
+    )
+    assert result is not None
+    assert result.refused is True
+    assert result.refusal_reason == "calculation_result_not_in_options"
 
 
 def test_calculation_answer_shows_numeric_formula() -> None:
