@@ -10,7 +10,8 @@ describe("AnswerResult", () => {
     [{ status: "not_run", passed: true }, "尚未完成核对"],
     [{ status: "error", passed: false }, "核对服务异常"],
     [{ status: "failed", passed: false }, "依据核对未通过"],
-    [{ status: "passed", task_complete: true, passed: true }, "依据核对通过"],
+    [{ status: "passed", task_complete: true, passed: true }, "未记录核对状态"],
+    [{ status: "passed", task_complete: true, citation_integrity: true, facts_supported: true, passed: true }, "依据核对通过"],
   ])("uses recorded validation status independently of confidence", (grounding_validation, expected) => {
     const answer: QAResponse = {
       answer: "已有结果", citations: [], confidence: 1, refused: false, context_package: null,

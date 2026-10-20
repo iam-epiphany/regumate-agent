@@ -18,6 +18,19 @@ from backend.app.services.prompt_builder import SEMANTIC_SUPPORT_RULE
 from backend.app.core.rag_features import features
 
 
+def validation_passed(report: dict[str, Any] | None) -> bool:
+    """The single success predicate shared by the backend and UI contract."""
+
+    value = dict(report or {})
+    return (
+        value.get('status') == 'passed'
+        and value.get('passed') is True
+        and value.get('task_complete') is True
+        and value.get('citation_integrity') is True
+        and value.get('facts_supported') is True
+    )
+
+
 @timed('answer.validation')
 def validate_answer(question: str, answer: str, claims: list[AnswerClaim], evidence: list[RetrievalResult],
                     *, requirements: list[str], deterministic: bool = False,

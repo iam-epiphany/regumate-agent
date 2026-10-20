@@ -1,0 +1,1310 @@
+{
+  "case": {
+    "id": "C03",
+    "category": "跨文档比较",
+    "demo": true,
+    "question": "《恢复计划示例（商业银行版）》与《处置计划建议示例（商业银行版）》中，关键功能的定义是否一致？",
+    "expected": {
+      "answered": true,
+      "answer_any_groups": [
+        [
+          "一致",
+          "相同",
+          "无实质差异"
+        ]
+      ],
+      "sources_all": [
+        "恢复计划示例（商业银行版）",
+        "处置计划建议示例（商业银行版）"
+      ],
+      "requirements_all": [
+        "恢复计划示例（商业银行版）",
+        "处置计划建议示例（商业银行版）"
+      ],
+      "validation_passed": true,
+      "explanation_required": true,
+      "source_groups_min": 2
+    },
+    "notes": "两份来源都必须有直接定义证据；不能用一份材料代替另一份。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": false,
+    "failures": [
+      "expected an answer, got refusal/clarification",
+      "answer missing any of ['一致', '相同', '无实质差异']",
+      "citation source missing 恢复计划示例（商业银行版）",
+      "citation source missing 处置计划建议示例（商业银行版）",
+      "validation did not pass all four conditions"
+    ],
+    "task_status": "refused",
+    "answer_type": "refusal",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 12021.62,
+    "model_calls": 1,
+    "explanation_present": true,
+    "outcome": "evidence_missing",
+    "validation": {
+      "status": "not_run",
+      "passed": false,
+      "citation_integrity": false,
+      "facts_supported": false,
+      "task_complete": false,
+      "method": "none",
+      "reasons": [],
+      "missing_requirements": [
+        "《恢复计划示例（商业银行版）》的直接依据",
+        "《处置计划建议示例（商业银行版）》的直接依据"
+      ]
+    },
+    "budget": {
+      "category": "complex",
+      "total_seconds": 240.0,
+      "elapsed_ms": 12008.39,
+      "model_calls": 1,
+      "model_call_limit": 5,
+      "first_feedback_ms": 0.19,
+      "upgraded": true
+    },
+    "first_feedback_ms": 0.19
+  },
+  "task": {
+    "task_id": "c81f05a806a841afa9e4da1640d52d0a",
+    "client_request_id": "c03-c422905436ef4457b0c5",
+    "question": "《恢复计划示例（商业银行版）》与《处置计划建议示例（商业银行版）》中，关键功能的定义是否一致？",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 4 个方面，用时 8.503s",
+        "elapsed_ms": 8503.28,
+        "summary": {
+          "aspect_count": 4,
+          "aspects": [
+            {
+              "aspect_id": "A1",
+              "question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+              "evidence_need": "需要找到恢复计划示例文本中关于“关键功能”的定义条款或填报口径，包括该定义所在的章节位置、认定要素（如对金融体系或实体经济的影响、替代性等），以及是否列出识别标准或示例清单。",
+              "expected_evidence_type": "需要找到恢复计划示例文本中关于“关键功能”的定义条款或填报口径，包括该定义所在的章节位置、认定要素（如对金融体系或实体经济的影响、替代性等），以及是否列出识别标准或示例清单。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "恢复计划示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "《恢复计划示例（商业银行版）》"
+              ],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键功能"
+              ],
+              "search_queries": [
+                {
+                  "query": "《恢复计划示例（商业银行版）》里关键功能是怎么定义的，定义条款在哪个章节？",
+                  "query_type": "semantic_question",
+                  "rationale": "贴近用户对恢复计划示例中关键功能定义的直接询问，有助于命中定义性 chunk。"
+                },
+                {
+                  "query": "本示例所称关键功能，是指商业银行在压力情景下必须持续提供、一旦中断将对金融体系或实体经济造成严重影响的功能。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度原文口径的表述形式检索，便于匹配示例文本中的定义句。"
+                },
+                {
+                  "query": "关键功能 定义 恢复计划 示例 商业银行",
+                  "query_type": "keyword_anchor",
+                  "rationale": "用少量核心术语兜底，防止自然语言查询漏检定义条款。"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "定义",
+                "恢复计划示例",
+                "商业银行版",
+                "认定标准"
+              ]
+            },
+            {
+              "aspect_id": "A2",
+              "question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+              "evidence_need": "需要找到处置计划建议示例文本中关于“关键功能”的定义条款或填报口径，包括该定义所在章节位置、认定要素、与处置策略的衔接关系，以及是否列出识别标准或示例清单。",
+              "expected_evidence_type": "需要找到处置计划建议示例文本中关于“关键功能”的定义条款或填报口径，包括该定义所在章节位置、认定要素、与处置策略的衔接关系，以及是否列出识别标准或示例清单。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "处置计划建议示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "《处置计划建议示例（商业银行版）》"
+              ],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键功能"
+              ],
+              "search_queries": [
+                {
+                  "query": "《处置计划建议示例（商业银行版）》中关键功能的定义是什么，写在哪个部分？",
+                  "query_type": "semantic_question",
+                  "rationale": "贴近用户对处置计划建议示例中关键功能定义的直接询问，便于命中定义性 chunk。"
+                },
+                {
+                  "query": "本示例所称关键功能，是指商业银行一旦中断将对其自身持续经营或对金融体系、实体经济产生严重影响的功能。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以处置计划建议示例可能采用的制度原文表述形式检索，提高定义句匹配概率。"
+                },
+                {
+                  "query": "关键功能 定义 处置计划建议 示例 商业银行",
+                  "query_type": "keyword_anchor",
+                  "rationale": "用少量核心术语兜底，避免自然语言查询漏检。"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "定义",
+                "处置计划建议示例",
+                "商业银行版",
+                "认定标准"
+              ]
+            },
+            {
+              "aspect_id": "A3_source1",
+              "question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+              "evidence_need": "需要同时取得两份示例文件中的关键功能定义原文，逐项比对定义主体、认定要素、阈值或判断标准、列举的示例清单及适用范围表述，以形成一致性判断依据；不得在缺少任一方原文时下结论。",
+              "expected_evidence_type": "需要同时取得两份示例文件中的关键功能定义原文，逐项比对定义主体、认定要素、阈值或判断标准、列举的示例清单及适用范围表述，以形成一致性判断依据；不得在缺少任一方原文时下结论。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "恢复计划示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "关键功能的定义"
+              ],
+              "mandatory": false,
+              "intent": "define",
+              "targets": [
+                "关键功能"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划示例与处置计划建议示例对关键功能的定义是否一致，两者表述有何差异？",
+                  "query_type": "semantic_question",
+                  "rationale": "直接对应跨文档一致性比较的意图，便于同时召回两份文本的定义段落。"
+                },
+                {
+                  "query": "关键功能定义在两份商业银行示例文件中的认定标准与表述范围比较",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度比较式表述检索，帮助命中两份文件中可比对的识别标准条款。"
+                },
+                {
+                  "query": "关键功能 定义 一致性 恢复计划 处置计划",
+                  "query_type": "keyword_anchor",
+                  "rationale": "用核心术语兜底，覆盖两份来源的定义句。"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "定义一致性",
+                "差异对比",
+                "恢复计划",
+                "处置计划"
+              ]
+            },
+            {
+              "aspect_id": "A3_source2",
+              "question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+              "evidence_need": "需要同时取得两份示例文件中的关键功能定义原文，逐项比对定义主体、认定要素、阈值或判断标准、列举的示例清单及适用范围表述，以形成一致性判断依据；不得在缺少任一方原文时下结论。",
+              "expected_evidence_type": "需要同时取得两份示例文件中的关键功能定义原文，逐项比对定义主体、认定要素、阈值或判断标准、列举的示例清单及适用范围表述，以形成一致性判断依据；不得在缺少任一方原文时下结论。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "处置计划建议示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "关键功能的定义"
+              ],
+              "mandatory": false,
+              "intent": "define",
+              "targets": [
+                "关键功能"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划示例与处置计划建议示例对关键功能的定义是否一致，两者表述有何差异？",
+                  "query_type": "semantic_question",
+                  "rationale": "直接对应跨文档一致性比较的意图，便于同时召回两份文本的定义段落。"
+                },
+                {
+                  "query": "关键功能定义在两份商业银行示例文件中的认定标准与表述范围比较",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度比较式表述检索，帮助命中两份文件中可比对的识别标准条款。"
+                },
+                {
+                  "query": "关键功能 定义 一致性 恢复计划 处置计划",
+                  "query_type": "keyword_anchor",
+                  "rationale": "用核心术语兜底，覆盖两份来源的定义句。"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "定义一致性",
+                "差异对比",
+                "恢复计划",
+                "处置计划"
+              ]
+            }
+          ],
+          "planner": "openai_compatible:deepseek-v4-flash",
+          "fallback_used": false,
+          "complex_task": true,
+          "budget_reasons": [
+            "multiple_required_sources"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 4 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 4
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 4,
+          "aspect_question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 2",
+        "detail": "正在为“《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 4,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 3",
+        "detail": "正在为“根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 4,
+          "aspect_question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+        },
+        "aspect_id": "A3_source1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 4",
+        "detail": "正在为“根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 4,
+          "aspect_question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+        },
+        "aspect_id": "A3_source2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 1 检索完成",
+        "detail": "已为“《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 2 检索完成",
+        "detail": "已为“《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 3 检索完成",
+        "detail": "已为“根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。”召回 13 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 4,
+          "candidate_count": 13,
+          "aspect_question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A3_source1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 4 检索完成",
+        "detail": "已为“根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。”召回 13 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 4,
+          "candidate_count": 13,
+          "aspect_question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A3_source2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 4 个方面检索，召回 50 个可回溯候选片段。",
+        "elapsed_ms": 3477.78,
+        "summary": {
+          "total_aspects": 4,
+          "retrieved_aspects": 4,
+          "candidate_count": 50
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "completed",
+        "title": "重排候选片段完成",
+        "detail": "已完成 4 次重排，输出 80 个候选片段。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 50,
+          "rerank_input_count": 96,
+          "rerank_call_count": 4,
+          "reranked_count": 80
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 12/12 个片段，检索覆盖 4/4 个方面，进入 Prompt 3/4 个方面",
+        "elapsed_ms": 10.64,
+        "summary": {
+          "used_chunks": 12,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 3,
+          "retrieval_covered_aspects": 4,
+          "total_aspects": 4
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.002s",
+        "elapsed_ms": 1.79,
+        "summary": {
+          "prompt_chunk_count": 12
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "依据不足，系统直接形成拒答结论，未继续调用生成模型。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "refusal",
+          "refused": true,
+          "refusal_reason": "insufficient_context",
+          "refusal_code": "insufficient_evidence",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 1.57,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据",
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": [
+            "A1",
+            "A2"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "当前证据不足以完整回答。缺少：《恢复计划示例（商业银行版）》的直接依据；《处置计划建议示例（商业银行版）》的直接依据",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "refusal",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [
+          "《恢复计划示例（商业银行版）》的直接依据",
+          "《处置计划建议示例（商业银行版）》的直接依据"
+        ],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "evidence",
+        "model_call_count": 1,
+        "missing_required_aspect_ids": [
+          "A1",
+          "A2"
+        ]
+      },
+      "refusal_reason": "insufficient_context",
+      "refusal_code": "insufficient_evidence",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "A1",
+          "A2"
+        ],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [
+          "A1",
+          "A2"
+        ],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.12,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 8505.26,
+          "model_calls": 1,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 4,
+            "planner": "openai_compatible:deepseek-v4-flash",
+            "fallback_used": false,
+            "clarification": false,
+            "modalities": [
+              "text"
+            ]
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "prepare",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 81.85,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "terminal": false,
+            "terminal_reason": null,
+            "search_queries": 3,
+            "calls": 4
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "collect",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 3365.0,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "aspects": 4,
+            "batched": true,
+            "rerank_calls": 4
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.12,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.19,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.04,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.28,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.45,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source1"
+          ],
+          "summary": {
+            "candidates": 13
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.51,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source1"
+          ],
+          "summary": {
+            "checked": 13,
+            "valid": 13,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.4,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source2"
+          ],
+          "summary": {
+            "candidates": 13
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.94,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source2"
+          ],
+          "summary": {
+            "checked": 13,
+            "valid": 13,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 12.76,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "selected_chunks": 12,
+            "complete": false,
+            "missing_requirements": [
+              "A2"
+            ],
+            "missing_optional_requirements": [
+              "A3_source2"
+            ]
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 3.59,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 12
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": 0.03,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": false,
+            "answer_mode": "text",
+            "required": 4,
+            "refusal_reason": "insufficient_context"
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "A1",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A2",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A3_source1",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A3_source2",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              }
+            ],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 1,
+            "answer_type": "refusal",
+            "refusal_reason": "insufficient_context"
+          }
+        }
+      ],
+      "explanation": {
+        "question": "《恢复计划示例（商业银行版）》与《处置计划建议示例（商业银行版）》中，关键功能的定义是否一致？",
+        "outcome": "evidence_missing",
+        "cross_document": true,
+        "requirements": [
+          {
+            "requirement_id": "A1",
+            "question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+            "source_titles": [
+              "恢复计划示例（商业银行版）"
+            ],
+            "mandatory": true,
+            "status": "covered",
+            "evidence_ids": [
+              "[12]",
+              "[7]",
+              "[4]",
+              "[5]",
+              "[1]",
+              "[2]",
+              "[3]",
+              "[6]"
+            ],
+            "missing_reason": "rerank_or_candidate_limit"
+          },
+          {
+            "requirement_id": "A2",
+            "question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。",
+            "source_titles": [
+              "处置计划建议示例（商业银行版）"
+            ],
+            "mandatory": true,
+            "status": "missing",
+            "evidence_ids": [
+              "[10]",
+              "[11]",
+              "[8]"
+            ],
+            "missing_reason": "rerank_budget"
+          },
+          {
+            "requirement_id": "A3_source1",
+            "question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+            "source_titles": [
+              "恢复计划示例（商业银行版）"
+            ],
+            "mandatory": false,
+            "status": "covered",
+            "evidence_ids": [
+              "[9]",
+              "[12]",
+              "[7]",
+              "[4]",
+              "[5]",
+              "[1]",
+              "[2]",
+              "[3]",
+              "[6]"
+            ],
+            "missing_reason": "rerank_or_candidate_limit"
+          },
+          {
+            "requirement_id": "A3_source2",
+            "question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。",
+            "source_titles": [
+              "处置计划建议示例（商业银行版）"
+            ],
+            "mandatory": false,
+            "status": "optional_missing",
+            "evidence_ids": [
+              "[10]",
+              "[11]",
+              "[8]"
+            ],
+            "missing_reason": "rerank_budget"
+          }
+        ],
+        "claims": [],
+        "sources": [],
+        "source_groups": [
+          {
+            "source_title": "恢复计划示例（商业银行版）",
+            "source_name": "",
+            "requirement_ids": [
+              "A1",
+              "A3_source1"
+            ],
+            "evidence_ids": [],
+            "claim_indices": [],
+            "status": "partial"
+          },
+          {
+            "source_title": "处置计划建议示例（商业银行版）",
+            "source_name": "",
+            "requirement_ids": [
+              "A2",
+              "A3_source2"
+            ],
+            "evidence_ids": [],
+            "claim_indices": [],
+            "status": "partial"
+          }
+        ],
+        "calculations": [],
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据",
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 12008.39,
+          "model_calls": 1,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.19,
+          "upgraded": true
+        },
+        "stages": [
+          {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "elapsed_ms": null,
+            "agent": "planner",
+            "summary": {}
+          },
+          {
+            "stage": "planning",
+            "status": "completed",
+            "title": "问题理解完成",
+            "elapsed_ms": 8503.28,
+            "agent": "planner",
+            "summary": {
+              "aspect_count": 4,
+              "planner": "openai_compatible:deepseek-v4-flash",
+              "fallback_used": false,
+              "complex_task": true
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索相关依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 4
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 1",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 4,
+              "aspect_question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 2",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 2,
+              "total_aspects": 4,
+              "aspect_question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 3",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 3,
+              "total_aspects": 4,
+              "aspect_question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 4",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 4,
+              "total_aspects": 4,
+              "aspect_question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 1 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 4,
+              "candidate_count": 12,
+              "aspect_question": "《恢复计划示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 2 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 2,
+              "total_aspects": 4,
+              "candidate_count": 12,
+              "aspect_question": "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 3 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 3,
+              "total_aspects": 4,
+              "candidate_count": 13,
+              "aspect_question": "根据《恢复计划示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 4 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 4,
+              "total_aspects": 4,
+              "candidate_count": 13,
+              "aspect_question": "根据《处置计划建议示例（商业银行版）》：对比与中“关键功能”的定义，判断两者表述与认定口径是否一致，并指出差异点。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "检索相关依据完成",
+            "elapsed_ms": 3477.78,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 4,
+              "retrieved_aspects": 4,
+              "candidate_count": 50
+            }
+          },
+          {
+            "stage": "rerank",
+            "status": "completed",
+            "title": "重排候选片段完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "candidate_count": 50,
+              "rerank_input_count": 96,
+              "rerank_call_count": 4,
+              "reranked_count": 80
+            }
+          },
+          {
+            "stage": "context_selection",
+            "status": "running",
+            "title": "正在精选最终上下文",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "context_selection",
+            "status": "completed",
+            "title": "上下文精选完成",
+            "elapsed_ms": 10.64,
+            "agent": "curation",
+            "summary": {
+              "used_chunks": 12,
+              "max_prompt_chunks": 12,
+              "covered_aspects": 3,
+              "retrieval_covered_aspects": 4,
+              "total_aspects": 4
+            }
+          },
+          {
+            "stage": "prompt_build",
+            "status": "running",
+            "title": "正在构造 LLM Prompt",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "prompt_build",
+            "status": "completed",
+            "title": "Prompt 构造完成",
+            "elapsed_ms": 1.79,
+            "agent": "curation",
+            "summary": {
+              "prompt_chunk_count": 12
+            }
+          },
+          {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "skipped",
+            "title": "答案生成已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "generation_status": "skipped",
+              "answer_type": "refusal",
+              "refused": true,
+              "refusal_reason": "insufficient_context",
+              "refusal_code": "insufficient_evidence",
+              "generation_total_ms": 1.57,
+              "verified_claim_count": 0
+            }
+          },
+          {
+            "stage": "grounding_validation",
+            "status": "failed",
+            "title": "事实与引用校验未通过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "passed": false,
+              "status": "not_run",
+              "task_complete": false,
+              "failure_stage": "evidence",
+              "model_call_count": 1
+            }
+          }
+        ],
+        "missing_requirements": [
+          "《恢复计划示例（商业银行版）》的直接依据",
+          "《处置计划建议示例（商业银行版）》的直接依据",
+          "《处置计划建议示例（商业银行版）》中“关键功能”是如何定义的？包括定义条款所在章节、认定标准和表述范围。"
+        ],
+        "elapsed_ms": 12008.39,
+        "first_feedback_ms": 0.19
+      }
+    },
+    "error": null,
+    "created_at": "2026-10-19T14:57:50.955498+00:00",
+    "updated_at": "2026-10-19T14:58:02.977114+00:00",
+    "completed_at": "2026-10-19T14:58:02.977114+00:00"
+  }
+}

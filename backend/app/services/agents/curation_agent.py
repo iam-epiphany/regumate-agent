@@ -46,6 +46,9 @@ class CurationAgent(SpecialistAgent):
             question, query_plan, aspect_retrievals
         )
         context_chunks = rag_service._retrieval_support_structural_context(board.db, context_chunks, question=question)
+        context_chunks = rag_service._reserve_definition_clauses(
+            board.db, context_chunks, query_plan, aspect_retrievals
+        )
         from backend.app.services.evidence_contract_service import build_evidence_bundle
         bundle = build_evidence_bundle(list(query_plan.requirements), context_chunks,
                                       list({c.chunk_id: c for c in

@@ -107,7 +107,8 @@ def test_generation_loop_retries_refusal_with_exact_support(monkeypatch) -> None
 
     def verify(context, generated):
         return {"passed": True, "status": "passed", "task_complete": True,
-                "facts_supported": True, "missing_requirements": [], "reasons": []}
+                "citation_integrity": True, "facts_supported": True,
+                "missing_requirements": [], "reasons": []}
 
     result = answer_generation_service.run_generation_loop(ctx, draft=draft, verify=verify)
     assert attempts == [0, 1]
@@ -155,23 +156,9 @@ def _support_context(statement: str, options: list[str]) -> answer_generation_se
     )
 
 
-def test_deterministic_mcq_fallback_selects_unique_supported_option() -> None:
-    statement = "鼓励商业银行制定专门的知识产权金融业务办法和管理制度"
-    ctx = _support_context(statement, ["选项一", "选项二", "选项三", statement + "。"])
-    result = answer_generation_service._deterministic_mcq_fallback(ctx)
-    assert result is not None
-    assert result.answer.startswith("答案为 D。")
-    assert result.grounding_validation["selected_option"] == 3
-    assert result.grounding_validation["method"] == "deterministic_mcq_support"
+def test_persistent_option_refusal_stays_unverified_refusal(monkeypatch) -> None:
+    """A literal option match cannot certify itself after the model refuses."""
 
-
-def test_deterministic_mcq_fallback_rejects_ambiguous_support() -> None:
-    statement = "共同表述"
-    ctx = _support_context(statement, ["共同表述甲", "共同表述乙", "无关一", "无关二"])
-    assert answer_generation_service._deterministic_mcq_fallback(ctx) is None
-
-
-def test_generation_loop_uses_support_fallback_after_persistent_refusal(monkeypatch) -> None:
     monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
     monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test")
     statement = "鼓励商业银行制定专门的知识产权金融业务办法和管理制度"
@@ -184,11 +171,14 @@ def test_generation_loop_uses_support_fallback_after_persistent_refusal(monkeypa
                                refused=True, refusal_reason="model_refusal", claims=[])
 
     def verify(context, generated):
-        raise AssertionError("fallback should not be verified as a model answer")
+        raise AssertionError("a refused draft must not be certified by exact-support similarity")
 
     result = answer_generation_service.run_generation_loop(ctx, draft=draft, verify=verify)
     assert attempts == [0, 1]
-    assert result.answer.startswith("答案为 D。")
+    assert result.refused is True
+    assert result.refusal_reason == "model_refusal"
+    assert result.grounding_validation["status"] == "not_run"
+    assert not result.grounding_validation["passed"]
 
 
 def test_table_calculation_result_not_in_options_refuses() -> None:
@@ -1092,6 +1082,16 @@ def test_generation_prompt_requires_all_aspects_without_forcing_duplicate_claims
 
 
 
+
+
+def test_grounding_accepts_hyphenated_quarter_against_chinese_period_evidence() -> None:
+    result = validate_grounded_answer(
+        "2023-3季度资金运用余额为275230.6254亿元。[1]",
+        [AnswerClaim(text="2023-3季度资金运用余额为275230.6254亿元。", citation_ids=["[1]"])],
+        [_chunk(text="2023年3季度资金运用余额为275230.6254亿元。")],
+    )
+    assert result["passed"] is True
+    assert "-3" not in result["unsupported_entities"]
 
 
 def test_grounding_ignores_rendered_list_ordinals_but_checks_claim_numbers() -> None:

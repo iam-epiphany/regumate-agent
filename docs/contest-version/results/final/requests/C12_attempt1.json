@@ -1,0 +1,1386 @@
+{
+  "case": {
+    "id": "C12",
+    "category": "证据不足或澄清",
+    "demo": false,
+    "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+    "expected": {
+      "answered": false,
+      "refused_or_clarification": true,
+      "validation_passed": false,
+      "explanation_required": true
+    },
+    "notes": "指定来源不在知识库中；允许澄清或证据不足，但不得用其他文件冒充指定来源。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": true,
+    "failures": [],
+    "task_status": "refused",
+    "answer_type": "refusal",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 14471.63,
+    "model_calls": 1,
+    "explanation_present": true,
+    "outcome": "evidence_missing",
+    "validation": {
+      "status": "not_run",
+      "passed": false,
+      "citation_integrity": false,
+      "facts_supported": false,
+      "task_complete": false,
+      "method": "none",
+      "reasons": [],
+      "missing_requirements": [
+        "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+      ]
+    },
+    "budget": {
+      "category": "standard",
+      "total_seconds": 150.0,
+      "elapsed_ms": 14457.36,
+      "model_calls": 1,
+      "model_call_limit": 5,
+      "first_feedback_ms": 0.15,
+      "upgraded": false
+    },
+    "first_feedback_ms": 0.15
+  },
+  "task": {
+    "task_id": "70399940422743e6bd496ae791ecba7b",
+    "client_request_id": "c12-2b7790fe395f4df0b61a",
+    "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 5 个方面，用时 14.277s",
+        "elapsed_ms": 14276.66,
+        "summary": {
+          "aspect_count": 5,
+          "aspects": [
+            {
+              "aspect_id": "A1",
+              "question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？",
+              "evidence_need": "需找到恢复计划正文中关于关键功能定义的章节，以及识别维度（如可替代性、市场份额、客户影响、与其他业务的关联性、监管关注度等）的原文表述。注意：用户声明该文件未入库，检索前需先确认知识库是否收录该文件及其附件；若未收录，应提示用户补充原文，不得猜测。",
+              "expected_evidence_type": "需找到恢复计划正文中关于关键功能定义的章节，以及识别维度（如可替代性、市场份额、客户影响、与其他业务的关联性、监管关注度等）的原文表述。注意：用户声明该文件未入库，检索前需先确认知识库是否收录该文件及其附件；若未收录，应提示用户补充原文，不得猜测。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "某未入库商业银行恢复计划（2025年版）"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title"
+              ],
+              "subject_scope": [
+                "某未入库商业银行恢复计划（2025年版）"
+              ],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键功能"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划中关键功能如何定义和识别，依据哪些标准判断某项业务属于关键功能？",
+                  "query_type": "semantic_question",
+                  "rationale": "贴近用户意图，检索制度原文中关键功能定义与识别标准的段落"
+                },
+                {
+                  "query": "关键功能识别标准：从可替代性、市场份额、客户影响、业务关联性及监管关注等维度识别关键功能。",
+                  "query_type": "document_style_statement",
+                  "rationale": "模拟恢复计划原文或填报说明中的标准表述，提高向量命中率"
+                },
+                {
+                  "query": "关键功能 识别标准 可替代性 市场份额",
+                  "query_type": "keyword_anchor",
+                  "rationale": "用少量核心术语兜底，防止语义检索漏召回"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "识别标准",
+                "可替代性",
+                "市场份额",
+                "客户影响",
+                "业务关联性"
+              ]
+            },
+            {
+              "aspect_id": "A2",
+              "question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？",
+              "evidence_need": "需找到恢复计划中关于关键功能识别工作由谁牵头、业务部门如何配合、识别结果经高级管理层/董事会审核审批、以及书面记录与档案留存要求的章节或流程条款。",
+              "expected_evidence_type": "需找到恢复计划中关于关键功能识别工作由谁牵头、业务部门如何配合、识别结果经高级管理层/董事会审核审批、以及书面记录与档案留存要求的章节或流程条款。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "某未入库商业银行恢复计划（2025年版）"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title"
+              ],
+              "subject_scope": [
+                "某未入库商业银行恢复计划（2025年版）"
+              ],
+              "mandatory": false,
+              "intent": "define",
+              "targets": [
+                "关键功能识别",
+                "组织流程",
+                "职责分工",
+                "审批层级",
+                "留痕要求"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划编制中关键功能的识别由哪个部门牵头，经过哪些审批流程，识别结果如何留痕？",
+                  "query_type": "semantic_question",
+                  "rationale": "定位流程、职责与留痕类条款"
+                },
+                {
+                  "query": "关键功能识别应明确牵头部门与业务部门配合职责，识别结果经高级管理层审核、董事会审批并留存书面记录。",
+                  "query_type": "document_style_statement",
+                  "rationale": "模拟制度原文中的职责与审批表述"
+                },
+                {
+                  "query": "关键功能 识别流程 职责分工 审批 留痕",
+                  "query_type": "keyword_anchor",
+                  "rationale": "关键词兜底检索流程条款"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "识别流程",
+                "职责分工",
+                "审批",
+                "留痕"
+              ]
+            },
+            {
+              "aspect_id": "A3",
+              "question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？",
+              "evidence_need": "需找到恢复计划或其附件表格中关键功能识别的量化口径：指标名称、计算公式、阈值、统计期间、数据来源报表及单位。若为表格，需定位文件名、sheet、行列标签与单位。",
+              "expected_evidence_type": "需找到恢复计划或其附件表格中关键功能识别的量化口径：指标名称、计算公式、阈值、统计期间、数据来源报表及单位。若为表格，需定位文件名、sheet、行列标签与单位。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "某未入库商业银行恢复计划（2025年版）"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title"
+              ],
+              "subject_scope": [
+                "某未入库商业银行恢复计划（2025年版）"
+              ],
+              "mandatory": false,
+              "intent": "list",
+              "targets": [
+                "识别关键功能时使用",
+                "量化指标",
+                "阈值",
+                "数据来源",
+                "如业务规模占比",
+                "客户数量",
+                "可替代时限等"
+              ],
+              "search_queries": [
+                {
+                  "query": "识别关键功能时使用哪些量化指标和阈值，例如业务规模占比、客户数量、可替代时间，数据取自哪些报表？",
+                  "query_type": "semantic_question",
+                  "rationale": "检索量化口径与数据来源说明"
+                },
+                {
+                  "query": "《某未入库商业银行恢复计划（2025年版）》关键功能识别表 sheet 指标 阈值 单位 %",
+                  "query_type": "table_locator",
+                  "rationale": "按文件名、sheet、指标、单位定位表格"
+                },
+                {
+                  "query": "关键功能识别量化标准：业务量占比、客户数、可替代性时限等指标及对应阈值。",
+                  "query_type": "document_style_statement",
+                  "rationale": "模拟填报说明中的量化标准表述"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "量化指标",
+                "阈值",
+                "业务规模占比",
+                "客户数量",
+                "可替代时限"
+              ]
+            },
+            {
+              "aspect_id": "A4",
+              "question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？",
+              "evidence_need": "需找到恢复计划中关于临界值/争议业务处理、例外情形认定、专门审议程序，以及关键功能识别结果定期复核（如至少每年一次）和随业务变化更新的条款。",
+              "expected_evidence_type": "需找到恢复计划中关于临界值/争议业务处理、例外情形认定、专门审议程序，以及关键功能识别结果定期复核（如至少每年一次）和随业务变化更新的条款。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "某未入库商业银行恢复计划（2025年版）"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title"
+              ],
+              "subject_scope": [
+                "某未入库商业银行恢复计划（2025年版）"
+              ],
+              "mandatory": false,
+              "intent": "define",
+              "targets": [
+                "关键功能识别",
+                "例外情形",
+                "临界值判断规则",
+                "识别结果",
+                "复核",
+                "更新频率"
+              ],
+              "search_queries": [
+                {
+                  "query": "关键功能识别中哪些情形可作为例外处理，处于临界值的业务如何判断，识别结果多久复核更新一次？",
+                  "query_type": "semantic_question",
+                  "rationale": "定位例外条件与复核更新要求"
+                },
+                {
+                  "query": "对处于临界值或存在争议的业务应提交专门审议，关键功能识别结果应定期复核并随业务变化更新。",
+                  "query_type": "document_style_statement",
+                  "rationale": "模拟制度原文中的例外与复核表述"
+                },
+                {
+                  "query": "关键功能 例外情形 临界值 复核 更新频率",
+                  "query_type": "keyword_anchor",
+                  "rationale": "关键词兜底检索例外与复核条款"
+                }
+              ],
+              "keywords": [
+                "关键功能",
+                "例外情形",
+                "临界值",
+                "复核",
+                "更新频率"
+              ]
+            },
+            {
+              "aspect_id": "A5",
+              "question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？",
+              "evidence_need": "需定位该恢复计划附件中的关键功能清单/识别结果表，明确sheet名称、行标签（业务条线或功能名称）、列标签（识别维度、指标值、判断结论）、单位及统计期间，以支撑逐项核对。",
+              "expected_evidence_type": "需定位该恢复计划附件中的关键功能清单/识别结果表，明确sheet名称、行标签（业务条线或功能名称）、列标签（识别维度、指标值、判断结论）、单位及统计期间，以支撑逐项核对。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "某未入库商业银行恢复计划（2025年版）"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title"
+              ],
+              "subject_scope": [
+                "某未入库商业银行恢复计划（2025年版）"
+              ],
+              "mandatory": false,
+              "intent": "lookup",
+              "targets": [
+                "恢复计划附件或清单",
+                "关键功能识别结果",
+                "表格结构",
+                "行标签",
+                "列标签",
+                "单位",
+                "期间",
+                "定位",
+                "读取"
+              ],
+              "search_queries": [
+                {
+                  "query": "《某未入库商业银行恢复计划（2025年版）》关键功能清单 附件 表格 行标签 列标签 单位",
+                  "query_type": "table_locator",
+                  "rationale": "按文件名、附件、行列标签与单位定位清单表"
+                },
+                {
+                  "query": "恢复计划附件中关键功能清单表格包含哪些行列字段，如何逐项列示识别结论？",
+                  "query_type": "semantic_question",
+                  "rationale": "检索附件表格的结构说明"
+                },
+                {
+                  "query": "关键功能清单 附件 识别结果表",
+                  "query_type": "keyword_anchor",
+                  "rationale": "关键词兜底定位附件清单"
+                }
+              ],
+              "keywords": [
+                "关键功能清单",
+                "附件",
+                "识别结果表",
+                "行标签",
+                "列标签"
+              ]
+            }
+          ],
+          "planner": "openai_compatible:deepseek-v4-flash",
+          "fallback_used": false,
+          "complex_task": false,
+          "budget_reasons": []
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 5 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 5
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 5,
+          "aspect_question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？"
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 2",
+        "detail": "正在为“关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 5,
+          "aspect_question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？"
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 3",
+        "detail": "正在为“识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 5,
+          "aspect_question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？"
+        },
+        "aspect_id": "A3",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 4",
+        "detail": "正在为“关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 5,
+          "aspect_question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？"
+        },
+        "aspect_id": "A4",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 5",
+        "detail": "正在为“恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 5,
+          "total_aspects": 5,
+          "aspect_question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？"
+        },
+        "aspect_id": "A5",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 1 未找到足够依据",
+        "detail": "“《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 5,
+          "candidate_count": 0,
+          "aspect_question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 2 未找到足够依据",
+        "detail": "“关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 5,
+          "candidate_count": 0,
+          "aspect_question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 3 未找到足够依据",
+        "detail": "“识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 5,
+          "candidate_count": 0,
+          "aspect_question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A3",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 4 未找到足够依据",
+        "detail": "“关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 5,
+          "candidate_count": 0,
+          "aspect_question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A4",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 5 未找到足够依据",
+        "detail": "“恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 5,
+          "total_aspects": 5,
+          "candidate_count": 0,
+          "aspect_question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A5",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 5 个方面检索，召回 0 个可回溯候选片段。",
+        "elapsed_ms": 160.39,
+        "summary": {
+          "total_aspects": 5,
+          "retrieved_aspects": 0,
+          "candidate_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "skipped",
+        "title": "重排候选片段已跳过",
+        "detail": "检索未产生需要重排的候选片段。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 0,
+          "rerank_input_count": 0,
+          "rerank_call_count": 0,
+          "reranked_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 0/12 个片段，检索覆盖 0/5 个方面，进入 Prompt 0/5 个方面",
+        "elapsed_ms": 2.4,
+        "summary": {
+          "used_chunks": 0,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 0,
+          "retrieval_covered_aspects": 0,
+          "total_aspects": 5
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.002s",
+        "elapsed_ms": 1.73,
+        "summary": {
+          "prompt_chunk_count": 0
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "依据不足，系统直接形成拒答结论，未继续调用生成模型。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "refusal",
+          "refused": true,
+          "refusal_reason": "insufficient_context",
+          "refusal_code": "insufficient_evidence",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 1.63,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [
+            "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": [
+            "A1"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "当前证据不足以完整回答。缺少：《某未入库商业银行恢复计划（2025年版）》的直接依据",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "refusal",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [
+          "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+        ],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "evidence",
+        "model_call_count": 1,
+        "missing_required_aspect_ids": [
+          "A1"
+        ]
+      },
+      "refusal_reason": "insufficient_context",
+      "refusal_code": "insufficient_evidence",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "A1"
+        ],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [
+          "A1"
+        ],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.07,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 14279.62,
+          "model_calls": 1,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 5,
+            "planner": "openai_compatible:deepseek-v4-flash",
+            "fallback_used": false,
+            "clarification": false,
+            "modalities": [
+              "text"
+            ]
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "prepare",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 132.07,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5"
+          ],
+          "summary": {
+            "terminal": true,
+            "terminal_reason": "metadata_filter_no_match",
+            "search_queries": 0,
+            "calls": 5
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.03,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.04,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.04,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.04,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A4"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A4"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.03,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A5"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A5"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 4.23,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5"
+          ],
+          "summary": {
+            "selected_chunks": 0,
+            "complete": false,
+            "missing_requirements": [
+              "A1"
+            ],
+            "missing_optional_requirements": [
+              "A2",
+              "A3",
+              "A4",
+              "A5"
+            ]
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 3.25,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 0
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": 0.03,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": false,
+            "answer_mode": "text",
+            "required": 5,
+            "refusal_reason": "insufficient_context"
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "A1",
+                "agent": "evidence",
+                "terminal": true,
+                "terminal_reason": "metadata_filter_no_match"
+              },
+              {
+                "aspect_id": "A2",
+                "agent": "evidence",
+                "terminal": true,
+                "terminal_reason": "metadata_filter_no_match"
+              },
+              {
+                "aspect_id": "A3",
+                "agent": "evidence",
+                "terminal": true,
+                "terminal_reason": "metadata_filter_no_match"
+              },
+              {
+                "aspect_id": "A4",
+                "agent": "evidence",
+                "terminal": true,
+                "terminal_reason": "metadata_filter_no_match"
+              },
+              {
+                "aspect_id": "A5",
+                "agent": "evidence",
+                "terminal": true,
+                "terminal_reason": "metadata_filter_no_match"
+              }
+            ],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 1,
+            "answer_type": "refusal",
+            "refusal_reason": "insufficient_context"
+          }
+        }
+      ],
+      "explanation": {
+        "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+        "outcome": "evidence_missing",
+        "cross_document": false,
+        "requirements": [
+          {
+            "requirement_id": "A1",
+            "question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？",
+            "source_titles": [
+              "某未入库商业银行恢复计划（2025年版）"
+            ],
+            "mandatory": true,
+            "status": "missing",
+            "evidence_ids": [],
+            "missing_reason": "not_recalled"
+          },
+          {
+            "requirement_id": "A2",
+            "question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？",
+            "source_titles": [
+              "某未入库商业银行恢复计划（2025年版）"
+            ],
+            "mandatory": false,
+            "status": "optional_missing",
+            "evidence_ids": [],
+            "missing_reason": "not_recalled"
+          },
+          {
+            "requirement_id": "A3",
+            "question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？",
+            "source_titles": [
+              "某未入库商业银行恢复计划（2025年版）"
+            ],
+            "mandatory": false,
+            "status": "optional_missing",
+            "evidence_ids": [],
+            "missing_reason": "not_recalled"
+          },
+          {
+            "requirement_id": "A4",
+            "question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？",
+            "source_titles": [
+              "某未入库商业银行恢复计划（2025年版）"
+            ],
+            "mandatory": false,
+            "status": "optional_missing",
+            "evidence_ids": [],
+            "missing_reason": "not_recalled"
+          },
+          {
+            "requirement_id": "A5",
+            "question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？",
+            "source_titles": [
+              "某未入库商业银行恢复计划（2025年版）"
+            ],
+            "mandatory": false,
+            "status": "optional_missing",
+            "evidence_ids": [],
+            "missing_reason": "not_recalled"
+          }
+        ],
+        "claims": [],
+        "sources": [],
+        "source_groups": [
+          {
+            "source_title": "某未入库商业银行恢复计划（2025年版）",
+            "source_name": "",
+            "requirement_ids": [
+              "A1",
+              "A2",
+              "A3",
+              "A4",
+              "A5"
+            ],
+            "evidence_ids": [],
+            "claim_indices": [],
+            "status": "partial"
+          }
+        ],
+        "calculations": [],
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": [
+            "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 14457.36,
+          "model_calls": 1,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.15,
+          "upgraded": false
+        },
+        "stages": [
+          {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "elapsed_ms": null,
+            "agent": "planner",
+            "summary": {}
+          },
+          {
+            "stage": "planning",
+            "status": "completed",
+            "title": "问题理解完成",
+            "elapsed_ms": 14276.66,
+            "agent": "planner",
+            "summary": {
+              "aspect_count": 5,
+              "planner": "openai_compatible:deepseek-v4-flash",
+              "fallback_used": false,
+              "complex_task": false
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索相关依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 5
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 1",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 5,
+              "aspect_question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 2",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 2,
+              "total_aspects": 5,
+              "aspect_question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 3",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 3,
+              "total_aspects": 5,
+              "aspect_question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 4",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 4,
+              "total_aspects": 5,
+              "aspect_question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 5",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 5,
+              "total_aspects": 5,
+              "aspect_question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "failed",
+            "title": "方面 1 未找到足够依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 5,
+              "candidate_count": 0,
+              "aspect_question": "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "failed",
+            "title": "方面 2 未找到足够依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 2,
+              "total_aspects": 5,
+              "candidate_count": 0,
+              "aspect_question": "关键功能识别的组织流程、职责分工、审批层级与留痕要求是什么？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "failed",
+            "title": "方面 3 未找到足够依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 3,
+              "total_aspects": 5,
+              "candidate_count": 0,
+              "aspect_question": "识别关键功能时使用哪些量化指标、阈值和数据来源（如业务规模占比、客户数量、可替代时限等）？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "failed",
+            "title": "方面 4 未找到足够依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 4,
+              "total_aspects": 5,
+              "candidate_count": 0,
+              "aspect_question": "关键功能识别中的例外情形、临界值判断规则以及识别结果的复核与更新频率是什么？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "failed",
+            "title": "方面 5 未找到足够依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 5,
+              "total_aspects": 5,
+              "candidate_count": 0,
+              "aspect_question": "恢复计划附件或清单中关键功能识别结果的表格结构（行标签、列标签、单位、期间）如何定位和读取？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "检索相关依据完成",
+            "elapsed_ms": 160.39,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 5,
+              "retrieved_aspects": 0,
+              "candidate_count": 0
+            }
+          },
+          {
+            "stage": "rerank",
+            "status": "skipped",
+            "title": "重排候选片段已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "candidate_count": 0,
+              "rerank_input_count": 0,
+              "rerank_call_count": 0,
+              "reranked_count": 0
+            }
+          },
+          {
+            "stage": "context_selection",
+            "status": "running",
+            "title": "正在精选最终上下文",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "context_selection",
+            "status": "completed",
+            "title": "上下文精选完成",
+            "elapsed_ms": 2.4,
+            "agent": "curation",
+            "summary": {
+              "used_chunks": 0,
+              "max_prompt_chunks": 12,
+              "covered_aspects": 0,
+              "retrieval_covered_aspects": 0,
+              "total_aspects": 5
+            }
+          },
+          {
+            "stage": "prompt_build",
+            "status": "running",
+            "title": "正在构造 LLM Prompt",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "prompt_build",
+            "status": "completed",
+            "title": "Prompt 构造完成",
+            "elapsed_ms": 1.73,
+            "agent": "curation",
+            "summary": {
+              "prompt_chunk_count": 0
+            }
+          },
+          {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "skipped",
+            "title": "答案生成已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "generation_status": "skipped",
+              "answer_type": "refusal",
+              "refused": true,
+              "refusal_reason": "insufficient_context",
+              "refusal_code": "insufficient_evidence",
+              "generation_total_ms": 1.63,
+              "verified_claim_count": 0
+            }
+          },
+          {
+            "stage": "grounding_validation",
+            "status": "failed",
+            "title": "事实与引用校验未通过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "passed": false,
+              "status": "not_run",
+              "task_complete": false,
+              "failure_stage": "evidence",
+              "model_call_count": 1
+            }
+          }
+        ],
+        "missing_requirements": [
+          "《某未入库商业银行恢复计划（2025年版）》的直接依据",
+          "《某未入库商业银行恢复计划（2025年版）》中“关键功能”的定义与识别标准是什么？依据哪些维度判断某项业务属于关键功能？"
+        ],
+        "elapsed_ms": 14457.36,
+        "first_feedback_ms": 0.15
+      }
+    },
+    "error": null,
+    "created_at": "2026-10-19T14:58:48.912019+00:00",
+    "updated_at": "2026-10-19T14:59:03.383650+00:00",
+    "completed_at": "2026-10-19T14:59:03.383650+00:00"
+  }
+}

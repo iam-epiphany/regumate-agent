@@ -1,0 +1,531 @@
+{
+  "mode": "core",
+  "base_url": "http://127.0.0.1:8000",
+  "generated_at": "2026-10-19T23:04:55.073148+08:00",
+  "summary": {
+    "cases": 12,
+    "passed": 11,
+    "failed": 1,
+    "duration_ms": {
+      "count": 12,
+      "median": 8695.35,
+      "max": 29219.17
+    },
+    "by_category": {
+      "制度查询": {
+        "passed": 2,
+        "total": 2
+      },
+      "跨文档比较": {
+        "passed": 1,
+        "total": 2
+      },
+      "表格取数": {
+        "passed": 2,
+        "total": 2
+      },
+      "表格计算": {
+        "passed": 2,
+        "total": 2
+      },
+      "制度与数据联合问答": {
+        "passed": 2,
+        "total": 2
+      },
+      "证据不足或澄清": {
+        "passed": 2,
+        "total": 2
+      }
+    },
+    "failures": [
+      {
+        "id": "C03",
+        "attempt": 1,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['一致', '相同', '无实质差异']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "validation did not pass all four conditions"
+        ]
+      }
+    ]
+  },
+  "rows": [
+    {
+      "id": "C01",
+      "category": "制度查询",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 10335.5,
+        "model_calls": 3,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [
+            "定义及恢复阶段要求均由[7]直接支持"
+          ],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 10309.18,
+          "model_calls": 3,
+          "model_call_limit": 5,
+          "first_feedback_ms": 101.52,
+          "upgraded": false
+        },
+        "first_feedback_ms": 101.52
+      }
+    },
+    {
+      "id": "C02",
+      "category": "制度查询",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 13742.97,
+        "model_calls": 3,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 13721.59,
+          "model_calls": 3,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.21,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.21
+      }
+    },
+    {
+      "id": "C03",
+      "category": "跨文档比较",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": false,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['一致', '相同', '无实质差异']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "validation did not pass all four conditions"
+        ],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 29219.17,
+        "model_calls": 3,
+        "explanation_present": true,
+        "outcome": "validation_failed",
+        "validation": {
+          "status": "failed",
+          "passed": false,
+          "citation_integrity": true,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [
+            "missing_required_evidence"
+          ],
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据",
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 29148.18,
+          "model_calls": 3,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.31,
+          "upgraded": true
+        },
+        "first_feedback_ms": 0.31
+      }
+    },
+    {
+      "id": "C04",
+      "category": "跨文档比较",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 22841.38,
+        "model_calls": 3,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [
+            "两份原文三要素表述逐字一致"
+          ],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 22822.56,
+          "model_calls": 3,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.2,
+          "upgraded": true
+        },
+        "first_feedback_ms": 0.2
+      }
+    },
+    {
+      "id": "C05",
+      "category": "表格取数",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 365.14,
+        "model_calls": 0,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "deterministic",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 352.82,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.12,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.12
+      }
+    },
+    {
+      "id": "C06",
+      "category": "表格取数",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 78.26,
+        "model_calls": 0,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "deterministic",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 65.26,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.13
+      }
+    },
+    {
+      "id": "C07",
+      "category": "表格计算",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 86.44,
+        "model_calls": 0,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "deterministic",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 69.77,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.15,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.15
+      }
+    },
+    {
+      "id": "C08",
+      "category": "表格计算",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 79.16,
+        "model_calls": 0,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "deterministic",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 66.07,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.13
+      }
+    },
+    {
+      "id": "C09",
+      "category": "制度与数据联合问答",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "mixed_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 15523.76,
+        "model_calls": 2,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 15510.55,
+          "model_calls": 2,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": true
+        },
+        "first_feedback_ms": 0.13
+      }
+    },
+    {
+      "id": "C10",
+      "category": "制度与数据联合问答",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "mixed_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 15290.23,
+        "model_calls": 2,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 15275.52,
+          "model_calls": 2,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.17,
+          "upgraded": true
+        },
+        "first_feedback_ms": 0.17
+      }
+    },
+    {
+      "id": "C11",
+      "category": "证据不足或澄清",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 4923.46,
+        "model_calls": 0,
+        "explanation_present": true,
+        "outcome": "evidence_missing",
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": [
+            "《2026年第四季度保险业资金运用情况表》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 4912.02,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.19,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.19
+      }
+    },
+    {
+      "id": "C12",
+      "category": "证据不足或澄清",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 7055.21,
+        "model_calls": 1,
+        "explanation_present": true,
+        "outcome": "evidence_missing",
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": [
+            "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 7044.69,
+          "model_calls": 1,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": false
+        },
+        "first_feedback_ms": 0.13
+      }
+    }
+  ]
+}

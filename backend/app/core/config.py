@@ -221,6 +221,13 @@ ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or LLM_API_KE
 ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_URL)
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
+# A plan that requires multiple named sources, both text and table evidence,
+# or at least three explicit user items gets the larger budget.  The upgrade
+# is applied once from the original request start time.
+QA_COMPLEX_REQUEST_TOTAL_BUDGET_SECONDS = _env_float(
+    "QA_COMPLEX_REQUEST_TOTAL_BUDGET_SECONDS", 240.0, minimum=QA_REQUEST_TOTAL_BUDGET_SECONDS
+)
+QA_MODEL_CALL_LIMIT = _env_int("QA_MODEL_CALL_LIMIT", 5, minimum=1)
 # Model passes hold the lock for seconds; 90s of waiting absorbs a cold-load
 # neighbour plus concurrent inference without failing the request.
 MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 90.0, minimum=0.1)
@@ -237,9 +244,13 @@ SEMANTIC_GROUNDING_PROVIDER = os.getenv("SEMANTIC_GROUNDING_PROVIDER", LLM_PROVI
 SEMANTIC_GROUNDING_API_KEY = os.getenv("SEMANTIC_GROUNDING_API_KEY") or LLM_API_KEY
 SEMANTIC_GROUNDING_BASE_URL = os.getenv("SEMANTIC_GROUNDING_BASE_URL", LLM_BASE_URL)
 SEMANTIC_GROUNDING_MODEL = os.getenv("SEMANTIC_GROUNDING_MODEL", LLM_MODEL)
+# The verifier returns a short JSON verdict.  Reasoning-token output adds
+# latency and can exhaust max_tokens before the JSON closes, so it is disabled
+# by default for this step; set SEMANTIC_GROUNDING_DISABLE_THINKING=false to
+# opt back in.
 SEMANTIC_GROUNDING_DISABLE_THINKING = _env_bool(
     "SEMANTIC_GROUNDING_DISABLE_THINKING",
-    _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", LLM_DISABLE_THINKING),
+    _env_bool("SEMANTIC_GROUNDING_INCLUDE_THINKING", True),
 )
 SEMANTIC_GROUNDING_RESPONSE_FORMAT = os.getenv("SEMANTIC_GROUNDING_RESPONSE_FORMAT", LLM_RESPONSE_FORMAT).strip() or LLM_RESPONSE_FORMAT
 MAX_UPLOAD_BYTES = _env_int("MAX_UPLOAD_BYTES", 50 * 1024 * 1024, minimum=1)

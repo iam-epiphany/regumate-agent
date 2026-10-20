@@ -12,7 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import QA_QUEUE_CAPACITY, QA_REQUEST_TOTAL_BUDGET_SECONDS
+from backend.app.core.config import (
+    QA_COMPLEX_REQUEST_TOTAL_BUDGET_SECONDS,
+    QA_QUEUE_CAPACITY,
+    QA_REQUEST_TOTAL_BUDGET_SECONDS,
+)
 from backend.app.core.database import SessionLocal
 from backend.app.models.document import QATask
 from backend.app.schemas.qa import (
@@ -221,15 +225,47 @@ def _run_task(task_id: str) -> bool:
                 raise RequestBudgetExceeded('旧任务未记录已用运行预算，请重新提问。',
                                             stage='task.recovery', code='budget_not_recorded')
             budget = budgets[-1] if budgets else {'started_at': _now().isoformat(), 'model_calls': 0}
-            elapsed = max(0.0, (_now()-datetime.fromisoformat(budget['started_at'])).total_seconds())
-            remaining = QA_REQUEST_TOTAL_BUDGET_SECONDS-elapsed
+            category = str(budget.get('category') or 'standard')
+            total_seconds = float(
+                budget.get('total_seconds')
+                or (QA_COMPLEX_REQUEST_TOTAL_BUDGET_SECONDS if category == 'complex'
+                    else QA_REQUEST_TOTAL_BUDGET_SECONDS)
+            )
+            started_at_iso = str(budget['started_at'])
+            elapsed = max(0.0, (_now()-datetime.fromisoformat(started_at_iso)).total_seconds())
+            remaining = total_seconds-elapsed
             if remaining <= 0:
                 raise RequestBudgetExceeded('恢复的任务已超过运行预算，请重新提问。', stage='task.recovery')
-            def save_budget(calls: int) -> None:
+            def save_budget(calls: int, *, state=None) -> None:
+                from backend.app.services.performance_metrics import request_budget_snapshot
+                snapshot = request_budget_snapshot(model_calls=calls)
+                runtime_category = getattr(
+                    state, 'category',
+                    snapshot['category'] if snapshot.get('category') != 'unknown' else category,
+                )
+                runtime_total = getattr(
+                    state, 'total_seconds',
+                    snapshot['total_seconds'] if snapshot.get('total_seconds') is not None else total_seconds,
+                )
+                runtime = {
+                    'started_at': started_at_iso,
+                    'model_calls': calls,
+                    'category': runtime_category,
+                    'total_seconds': runtime_total,
+                    'upgraded': bool(getattr(state, 'upgraded', snapshot.get('upgraded', False))),
+                }
                 _append_progress_event(db, task_id, {'stage': 'planning', 'status': 'completed', 'title': '任务状态已保存', 'detail': '',
-                    'summary': {'_runtime_budget': {'started_at': budget['started_at'], 'model_calls': calls}}})
+                    'summary': {'_runtime_budget': runtime}})
+            def save_budget_state(state) -> None:
+                from backend.app.services.performance_metrics import model_call_count
+                save_budget(model_call_count(), state=state)
             save_budget(int(budget['model_calls']))
-            with request_budget_context(remaining), model_call_budget(calls=int(budget['model_calls']), on_reserve=save_budget):
+            with request_budget_context(
+                total_seconds,
+                elapsed_seconds=elapsed,
+                category=category,
+                on_change=save_budget_state,
+            ), model_call_budget(calls=int(budget['model_calls']), on_reserve=save_budget):
                 response = answer_question(
                     db,
                     task.question,

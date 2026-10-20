@@ -523,7 +523,8 @@ class Supervisor:
                 generated.grounding_validation['missing_requirements'] = labels
                 if labels and generated.answer_type != 'service_error':
                     generated.answer = '当前证据不足以完整回答。缺少：' + '；'.join(labels)
-            if not generated.refused and not bool(generated.grounding_validation.get("passed")):
+            from backend.app.services.answer_validation_service import validation_passed
+            if not generated.refused and not validation_passed(generated.grounding_validation):
                 generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
                 generated.answer_type = "refusal"
                 generated.refused = True
@@ -550,7 +551,7 @@ class Supervisor:
                 # Keep refusal outcomes machine-readable even when the answer
                 # model declines before it can emit its own structured code.
                 generated.refusal_code = rag_service._refusal_code_for_request(board.question)
-            if not generated.refused and bool(generated.grounding_validation.get("passed")):
+            if not generated.refused and validation_passed(generated.grounding_validation):
                 for claim in generated.claims:
                     report_verified_claim(claim)
             rag_service._report_progress(
@@ -574,7 +575,7 @@ class Supervisor:
                     },
                 },
             )
-            grounding_passed = bool(generated.grounding_validation.get("passed"))
+            grounding_passed = validation_passed(generated.grounding_validation)
             rag_service._report_progress(
                 board.reporter,
                 {
@@ -615,6 +616,16 @@ class Supervisor:
                     generated.claims,
                     cited_results,
                 ),
+            )
+            from backend.app.services.answer_explanation_service import build_answer_explanation
+            response.explanation = build_answer_explanation(
+                question=board.original_question,
+                generated=generated,
+                package=package,
+                cited_results=cited_results,
+                progress_events=board.notes.get("progress_events") or [],
+                started_at=board.notes.get("started_at"),
+                first_feedback_ms=board.notes.get("first_feedback_ms"),
             )
             self._record_trace(board, response)
             rag_service._save_qa_log(board.db, board.original_question, response)

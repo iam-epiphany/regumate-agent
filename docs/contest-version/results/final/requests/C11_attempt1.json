@@ -1,0 +1,745 @@
+{
+  "case": {
+    "id": "C11",
+    "category": "证据不足或澄清",
+    "demo": true,
+    "question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+    "expected": {
+      "answered": false,
+      "refused_or_clarification": true,
+      "validation_passed": false,
+      "explanation_required": true
+    },
+    "notes": "只存在2025年四季度及更早报表；不得把其他期间数值当作2026年四季度结果。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": true,
+    "failures": [],
+    "task_status": "refused",
+    "answer_type": "refusal",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 937.18,
+    "model_calls": 0,
+    "explanation_present": true,
+    "outcome": "evidence_missing",
+    "validation": {
+      "status": "not_run",
+      "passed": false,
+      "citation_integrity": false,
+      "facts_supported": false,
+      "task_complete": false,
+      "method": "none",
+      "reasons": [],
+      "missing_requirements": [
+        "《2026年第四季度保险业资金运用情况表》的直接依据"
+      ]
+    },
+    "budget": {
+      "category": "standard",
+      "total_seconds": 150.0,
+      "elapsed_ms": 924.38,
+      "model_calls": 0,
+      "model_call_limit": 5,
+      "first_feedback_ms": 0.15,
+      "upgraded": false
+    },
+    "first_feedback_ms": 0.15
+  },
+  "task": {
+    "task_id": "797fd2effd2c46b68e8ecd16b37c07ed",
+    "client_request_id": "c11-052d44c7aef34af1b54f",
+    "question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 1 个方面，用时 0.353s",
+        "elapsed_ms": 352.94,
+        "summary": {
+          "aspect_count": 1,
+          "aspects": [
+            {
+              "aspect_id": "table_evidence",
+              "question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+              "evidence_need": "表格工作表、行列标签、单元格坐标和值",
+              "expected_evidence_type": "表格工作表、行列标签、单元格坐标和值",
+              "modality": "table",
+              "table_task": "lookup",
+              "table_filters": {
+                "source_title": "2026年第四季度保险业资金运用情况表",
+                "indicator": "资金运用余额",
+                "row_label": "资金运用余额",
+                "column_label": "四季度"
+              },
+              "operation": "none",
+              "selectors": [
+                {
+                  "row_or_indicator": "资金运用余额"
+                }
+              ],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "indicator",
+                "row_label",
+                "column_label"
+              ],
+              "subject_scope": [],
+              "mandatory": true,
+              "intent": "lookup",
+              "targets": [
+                "资金运用余额"
+              ],
+              "search_queries": [
+                {
+                  "query": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+                  "query_type": "semantic_question",
+                  "rationale": "表格问题的自然语言意图"
+                },
+                {
+                  "query": "2026年第四季度保险业资金运用情况表 资金运用余额",
+                  "query_type": "document_style_statement",
+                  "rationale": "接近表格标题和工作表名称"
+                },
+                {
+                  "query": "2026年第四季度保险业资金运用情况表 资金运用余额 资金运用余额 四季度",
+                  "query_type": "table_locator",
+                  "rationale": "表格结构定位锚点"
+                }
+              ],
+              "keywords": [
+                "请给出",
+                "2026",
+                "年第四季度保险业资金运用",
+                "情况表里",
+                "资金运用余额",
+                "的账面余额",
+                "情况表",
+                "四季度"
+              ]
+            }
+          ],
+          "planner": "deterministic-table",
+          "fallback_used": true,
+          "complex_task": false,
+          "budget_reasons": []
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 1 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "aspect_question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。"
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 1 检索完成",
+        "detail": "已为“请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。”召回 1 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "candidate_count": 1,
+          "aspect_question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+          "retrieved_sections": [
+            "2023年4季度保险业资金运用情况表"
+          ]
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 1 个方面检索，召回 1 个可回溯候选片段。",
+        "elapsed_ms": 548.88,
+        "summary": {
+          "total_aspects": 1,
+          "retrieved_aspects": 1,
+          "candidate_count": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "skipped",
+        "title": "重排候选片段已跳过",
+        "detail": "当前候选片段已由结构化检索或兼容检索直接排序，无需额外重排。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 1,
+          "rerank_input_count": 0,
+          "rerank_call_count": 0,
+          "reranked_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 0/12 个片段，检索覆盖 1/1 个方面，进入 Prompt 0/1 个方面",
+        "elapsed_ms": 2.37,
+        "summary": {
+          "used_chunks": 0,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 0,
+          "retrieval_covered_aspects": 1,
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.002s",
+        "elapsed_ms": 2.09,
+        "summary": {
+          "prompt_chunk_count": 0
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "依据不足，系统直接形成拒答结论，未继续调用生成模型。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "refusal",
+          "refused": true,
+          "refusal_reason": "insufficient_context",
+          "refusal_code": "insufficient_evidence",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 1.93,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [
+            "《2026年第四季度保险业资金运用情况表》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 0,
+          "missing_required_aspect_ids": [
+            "table_evidence"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "当前证据不足以完整回答。缺少：《2026年第四季度保险业资金运用情况表》的直接依据",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "refusal",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [
+          "《2026年第四季度保险业资金运用情况表》的直接依据"
+        ],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "evidence",
+        "model_call_count": 0,
+        "missing_required_aspect_ids": [
+          "table_evidence"
+        ]
+      },
+      "refusal_reason": "insufficient_context",
+      "refusal_code": "insufficient_evidence",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "table_evidence"
+        ],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [
+          "table_evidence"
+        ],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.08,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 356.1,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 1,
+            "planner": "deterministic-table",
+            "fallback_used": true,
+            "clarification": false,
+            "modalities": [
+              "table"
+            ]
+          }
+        },
+        {
+          "agent": "table",
+          "role": "表格计算",
+          "task": "locate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 542.03,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "located": 1,
+            "terminal": true,
+            "terminal_reason": "structured_cells_located",
+            "match_status": "valid_cell"
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.1,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "candidates": 1
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.73,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "checked": 1,
+            "valid": 1,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 4.6,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "selected_chunks": 0,
+            "complete": false,
+            "missing_requirements": [
+              "table_evidence"
+            ],
+            "missing_optional_requirements": []
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 3.74,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 0
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": 0.04,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": false,
+            "answer_mode": "text",
+            "required": 1,
+            "refusal_reason": "insufficient_context"
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "table_evidence",
+                "agent": "table",
+                "terminal": true,
+                "terminal_reason": "structured_cells_located"
+              }
+            ],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 0,
+            "answer_type": "refusal",
+            "refusal_reason": "insufficient_context"
+          }
+        }
+      ],
+      "explanation": {
+        "question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+        "outcome": "evidence_missing",
+        "cross_document": false,
+        "requirements": [
+          {
+            "requirement_id": "table_evidence",
+            "question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。",
+            "source_titles": [
+              "2026年第四季度保险业资金运用情况表"
+            ],
+            "mandatory": true,
+            "status": "missing",
+            "evidence_ids": [],
+            "missing_reason": "explicit_source_conflict"
+          }
+        ],
+        "claims": [],
+        "sources": [],
+        "source_groups": [
+          {
+            "source_title": "2026年第四季度保险业资金运用情况表",
+            "source_name": "",
+            "requirement_ids": [
+              "table_evidence"
+            ],
+            "evidence_ids": [],
+            "claim_indices": [],
+            "status": "missing"
+          }
+        ],
+        "calculations": [],
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": [
+            "《2026年第四季度保险业资金运用情况表》的直接依据"
+          ]
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 924.38,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.15,
+          "upgraded": false
+        },
+        "stages": [
+          {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "elapsed_ms": null,
+            "agent": "planner",
+            "summary": {}
+          },
+          {
+            "stage": "planning",
+            "status": "completed",
+            "title": "问题理解完成",
+            "elapsed_ms": 352.94,
+            "agent": "planner",
+            "summary": {
+              "aspect_count": 1,
+              "planner": "deterministic-table",
+              "fallback_used": true,
+              "complex_task": false
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索相关依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 1
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 1",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 1,
+              "aspect_question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 1 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 1,
+              "candidate_count": 1,
+              "aspect_question": "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "检索相关依据完成",
+            "elapsed_ms": 548.88,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 1,
+              "retrieved_aspects": 1,
+              "candidate_count": 1
+            }
+          },
+          {
+            "stage": "rerank",
+            "status": "skipped",
+            "title": "重排候选片段已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "candidate_count": 1,
+              "rerank_input_count": 0,
+              "rerank_call_count": 0,
+              "reranked_count": 0
+            }
+          },
+          {
+            "stage": "context_selection",
+            "status": "running",
+            "title": "正在精选最终上下文",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "context_selection",
+            "status": "completed",
+            "title": "上下文精选完成",
+            "elapsed_ms": 2.37,
+            "agent": "curation",
+            "summary": {
+              "used_chunks": 0,
+              "max_prompt_chunks": 12,
+              "covered_aspects": 0,
+              "retrieval_covered_aspects": 1,
+              "total_aspects": 1
+            }
+          },
+          {
+            "stage": "prompt_build",
+            "status": "running",
+            "title": "正在构造 LLM Prompt",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "prompt_build",
+            "status": "completed",
+            "title": "Prompt 构造完成",
+            "elapsed_ms": 2.09,
+            "agent": "curation",
+            "summary": {
+              "prompt_chunk_count": 0
+            }
+          },
+          {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "skipped",
+            "title": "答案生成已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "generation_status": "skipped",
+              "answer_type": "refusal",
+              "refused": true,
+              "refusal_reason": "insufficient_context",
+              "refusal_code": "insufficient_evidence",
+              "generation_total_ms": 1.93,
+              "verified_claim_count": 0
+            }
+          },
+          {
+            "stage": "grounding_validation",
+            "status": "failed",
+            "title": "事实与引用校验未通过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "passed": false,
+              "status": "not_run",
+              "task_complete": false,
+              "failure_stage": "evidence",
+              "model_call_count": 0
+            }
+          }
+        ],
+        "missing_requirements": [
+          "《2026年第四季度保险业资金运用情况表》的直接依据",
+          "请给出2026年第四季度保险业资金运用情况表里“资金运用余额”的账面余额。"
+        ],
+        "elapsed_ms": 924.38,
+        "first_feedback_ms": 0.15
+      }
+    },
+    "error": null,
+    "created_at": "2026-10-19T14:58:47.885658+00:00",
+    "updated_at": "2026-10-19T14:58:48.822841+00:00",
+    "completed_at": "2026-10-19T14:58:48.822841+00:00"
+  }
+}

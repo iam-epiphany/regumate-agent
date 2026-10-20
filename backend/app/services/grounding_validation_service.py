@@ -13,6 +13,15 @@ ENTITY_PATTERN = re.compile(
     r"(?:20\d{2}年(?:\d{1,2}月(?:\d{1,2}日)?)?)|(?:[-−－]?\d+(?:\.\d+)?%?)|"
     r"(?:[A-Za-z一-龥]+〔\d{4}〕\d+号)"
 )
+# Period labels locate the evidence; they are not standalone numeric facts.
+# Removing the whole expression avoids treating the “3” in “2023-3” or
+# “3季度” as an unsupported negative/ordinal number when the source writes the
+# same period as “2023年3季度” or “三季度”.
+_PERIOD_EXPRESSION_PATTERN = re.compile(
+    r"(20\d{2})\s*(?:年|[-/—])\s*(?:\d{1,2}|[一二三四])\s*季度"
+    r"|(20\d{2})\s*[-/—]\s*\d{1,2}(?!\s*[月日])"
+    r"|(?:第)?[一二三四1-4]\s*季度"
+)
 ACTOR_PATTERN = re.compile(
     r'(?:由|向|经)([\u4e00-\u9fffA-Za-z]{1,35}?(?:委员会|事务所|中心|公司|银行|部门|机构|总局|局|部|处|组|会))'
     r'(?=审批|批准|备案|审核|核验|报告|报送|提交|负责|办理|确认)'
@@ -172,4 +181,9 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
 
 
 def _extract_entities(value: str) -> set[str]:
-    return set(ENTITY_PATTERN.findall(value)) | set(ACTOR_PATTERN.findall(value))
+    def keep_year(match: re.Match[str]) -> str:
+        year = match.group(1) or match.group(2)
+        return f"{year}年" if year else " "
+
+    without_periods = _PERIOD_EXPRESSION_PATTERN.sub(keep_year, value)
+    return set(ENTITY_PATTERN.findall(without_periods)) | set(ACTOR_PATTERN.findall(without_periods))

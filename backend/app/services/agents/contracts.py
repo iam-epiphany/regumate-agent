@@ -55,12 +55,28 @@ class Blackboard:
     standalone: bool = False
 
     def report(self, event: dict[str, Any]) -> None:
-        """Forward a progress event, stamping the agent that produced it."""
+        """Forward a progress event, stamping and locally recording it.
 
-        if self.progress_reporter is None:
-            return
+        The local list feeds the display projection.  It is deliberately
+        bounded and contains the same user-visible stage metadata already sent
+        to the task store, never prompts or model reasoning.
+        """
+
         if self.active_agent and not event.get("agent"):
             event = {**event, "agent": self.active_agent}
+        events = self.notes.setdefault("progress_events", [])
+        if isinstance(events, list):
+            events.append(dict(event))
+            del events[:-100]
+        if "first_feedback_ms" not in self.notes:
+            started_at = self.notes.get("started_at")
+            if isinstance(started_at, (int, float)):
+                from time import perf_counter
+                self.notes["first_feedback_ms"] = round(
+                    max(0.0, perf_counter() - float(started_at)) * 1000, 2
+                )
+        if self.progress_reporter is None:
+            return
         self.progress_reporter(event)
 
     @property

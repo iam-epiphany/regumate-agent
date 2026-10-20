@@ -1,0 +1,64 @@
+{
+  "mode": "core",
+  "base_url": "http://127.0.0.1:8000",
+  "generated_at": "2026-10-19T23:21:21.237914+08:00",
+  "summary": {
+    "cases": 1,
+    "passed": 1,
+    "failed": 0,
+    "duration_ms": {
+      "count": 1,
+      "median": 10355.96,
+      "max": 10355.96
+    },
+    "by_category": {
+      "制度查询": {
+        "passed": 1,
+        "total": 1
+      }
+    },
+    "failures": []
+  },
+  "rows": [
+    {
+      "id": "C02",
+      "category": "制度查询",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 10355.96,
+        "model_calls": 3,
+        "explanation_present": true,
+        "outcome": "answered",
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "model",
+          "reasons": [
+            "答案与原文[1]逐字一致，直接支持关键功能保护要求"
+          ],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 10331.02,
+          "model_calls": 3,
+          "model_call_limit": 5,
+          "first_feedback_ms": 92.44,
+          "upgraded": false
+        },
+        "first_feedback_ms": 92.44
+      }
+    }
+  ]
+}

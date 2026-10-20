@@ -1,15 +1,14 @@
 ﻿param(
-    [string]$DeepSeekApiKey = $env:REGUMATE_SUBMISSION_DEEPSEEK_API_KEY
+    [string]$DeepSeekApiKey = $null
 )
 
 $ErrorActionPreference = 'Stop'
 
-if (-not $DeepSeekApiKey) {
-    throw 'DeepSeek API key is required. Set REGUMATE_SUBMISSION_DEEPSEEK_API_KEY before running this script.'
-}
-
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
-Set-Location -LiteralPath $ProjectRoot
+# This legacy entry copied a live .env and generated SHA-256 manifests.  The
+# contest delivery now has one entry point that ships .env.example only.
+Write-Host "Deprecated entry: delegating to scripts/build_delivery_package.ps1 (no .env copy, no SHA-256 manifest)." -ForegroundColor Yellow
+& (Join-Path $PSScriptRoot 'build_delivery_package.ps1')
+exit $LASTEXITCODE
 
 $PackageName = 'ReguMate-Agent'
 $DistRoot = Join-Path $ProjectRoot 'dist-delivery'

@@ -1,4 +1,8 @@
 from backend.app.services.evidence_contract_service import source_matches, requirements_for_plan
+from backend.app.services.evidence_contract_service import (
+    comparison_attribute_terms,
+    is_cross_document_comparison,
+)
 import pytest
 from backend.app.services import retrieval_support
 import json
@@ -6,7 +10,7 @@ import re
 
 from backend.app.services import query_planner_service, rag_service
 from backend.app.schemas.qa import Citation, RetrievalResult
-from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery, plan_query
+from backend.app.services.query_planner_service import QueryAspect, QueryPlan, QuerySearchQuery, plan_query
 
 
 def test_query_planner_keeps_user_stated_table_locator_when_llm_guesses_period() -> None:
@@ -62,9 +66,13 @@ def test_query_planner_parses_explicit_sheet_row_and_column_lookup() -> None:
 
 def test_refusal_code_contract_classifies_explicit_request_limits() -> None:
     assert rag_service._refusal_code_for_request("请预测未来十二个月的监管数据。") == "unsupported_prediction"
-    assert rag_service._refusal_code_for_request("没有给出余额和期限时，请计算利息。") == "missing_calculation_operands"
+    # A missing amount is not an entry-level refusal.  The planner/retrieval
+    # and the formula path decide whether the variable is truly unavailable.
+    assert rag_service._explicit_request_boundary_code("没有给出余额和期限时，请计算利息。") is None
+    assert rag_service._refusal_code_for_request("没有给出余额和期限时，请计算利息。") == "insufficient_evidence"
     assert rag_service._refusal_code_for_request("请提供资料库之外的实时汇率。") == "out_of_scope_or_realtime"
     assert rag_service._explicit_request_boundary_code("请概述资本充足率的监管口径。") is None
+    assert rag_service._explicit_request_boundary_code("资料缺失时制度要求如何处理？") is None
 
 
 def test_prompt_aspect_marking_preserves_retrieval_origin() -> None:
@@ -1190,37 +1198,31 @@ def test_joint_policy_report_uses_separate_explicit_document_titles(monkeypatch)
     assert all("资产负债季度" not in aspect.question for aspect in regulation_aspects)
 
 
-def test_explicit_missing_operands_and_subjective_decision_boundaries_are_general() -> None:
-    assert (
-        rag_service._explicit_request_boundary_code(
-            "请比较两家机构的不良率差异，但未给出机构、期间和对应数值。"
-        )
-        == "missing_calculation_operands"
-    )
-    assert (
-        rag_service._explicit_request_boundary_code(
-            "请换算监管报表金额，但没有给出原币金额、币种或汇率。"
-        )
-        == "missing_calculation_operands"
-    )
-    assert (
-        rag_service._explicit_request_boundary_code(
-            "请根据监管材料替我决定明年的产品投放方向。"
-        )
-        == "subjective_business_advice"
-    )
+def test_missing_operands_are_handled_by_retrieval_not_entry_refusal() -> None:
+    assert rag_service._explicit_request_boundary_code(
+        "请比较两家机构的不良率差异，但未给出机构、期间和对应数值。"
+    ) is None
+    assert rag_service._explicit_request_boundary_code(
+        "请换算监管报表金额，但没有给出原币金额、币种或汇率。"
+    ) is None
+    assert rag_service._explicit_request_boundary_code(
+        "请根据监管材料替我决定明年的产品投放方向。"
+    ) == "subjective_business_advice"
 
 
-def test_refusal_boundaries_cover_common_missing_context_phrasings() -> None:
+def test_entry_boundaries_keep_only_real_scope_limits() -> None:
+    # Calculation operands and source location are resolved from the actual
+    # evidence and formula; only explicit out-of-scope or subjective requests
+    # are rejected before planning.
     assert rag_service._explicit_request_boundary_code(
         "请算出两个未提供数值的报告期资本充足率差异。"
-    ) == "missing_calculation_operands"
+    ) is None
     assert rag_service._explicit_request_boundary_code(
         "请把一笔外币负债折算成人民币，但没有金额、币种或汇率。"
-    ) == "missing_calculation_operands"
+    ) is None
     assert rag_service._explicit_request_boundary_code(
         "请从Excel取数，但没有文件名、工作表、行和列定位信息。"
-    ) == "missing_required_context"
+    ) is None
     assert rag_service._explicit_request_boundary_code(
         "请查询尚未入库的今日监管处罚清单。"
     ) == "out_of_scope_or_realtime"
@@ -1572,3 +1574,280 @@ def indexed_table_schema():
     query_planner_service._TABLE_COLUMNS.reset(column_token)
     query_planner_service._TABLE_SOURCES.reset(source_token)
     query_planner_service._TABLE_VOCABULARY.reset(token)
+
+
+def _cross_document_comparison_plan(question_mode: str = "open") -> QueryPlan:
+    question = (
+        "蓝杉治理示例（存款机构版）和雾港治理示例（保险机构版）"
+        "对“关键功能”的定义是否一致？"
+    )
+    search = (QuerySearchQuery("关键功能 定义", "semantic_question"),)
+    aspects = (
+        QueryAspect(
+            "source_a",
+            "根据蓝杉治理示例（存款机构版），说明“关键功能”的定义。",
+            search,
+            "定义原文",
+            ("关键功能",),
+            table_filters={"source_title": "蓝杉治理示例（存款机构版）"},
+            subject_scope=("蓝杉治理示例（存款机构版）",),
+        ),
+        QueryAspect(
+            "source_b",
+            "根据雾港治理示例（保险机构版），说明“关键功能”的定义。",
+            search,
+            "定义原文",
+            ("关键功能",),
+            table_filters={"source_title": "雾港治理示例（保险机构版）"},
+            subject_scope=("雾港治理示例（保险机构版）",),
+        ),
+        QueryAspect(
+            "comparison",
+            "比较两个版本对“关键功能”的定义是否一致。",
+            search,
+            "对比结论",
+            ("关键功能",),
+            subject_scope=("蓝杉治理示例（存款机构版）", "雾港治理示例（保险机构版）"),
+        ),
+    )
+    return QueryPlan(
+        question,
+        aspects,
+        "test",
+        fallback_used=False,
+        budget={"max_aspects": 1},
+        question_mode=question_mode,
+    )
+
+
+def test_open_cross_document_comparison_keeps_each_named_source_mandatory(monkeypatch) -> None:
+    monkeypatch.setattr(
+        query_planner_service,
+        "_plan_query_impl",
+        lambda question, options=None: _cross_document_comparison_plan("open"),
+    )
+    plan = plan_query("蓝杉治理示例（存款机构版）和雾港治理示例（保险机构版）对“关键功能”的定义是否一致？")
+    assert len(plan.aspects) == 3
+    assert plan.aspects[0].mandatory
+    assert plan.aspects[1].mandatory
+    assert not plan.aspects[2].mandatory
+
+
+def test_choice_mode_does_not_promote_cross_document_sources(monkeypatch) -> None:
+    monkeypatch.setattr(
+        query_planner_service,
+        "_plan_query_impl",
+        lambda question, options=None: _cross_document_comparison_plan("choice"),
+    )
+    plan = plan_query(
+        "蓝杉治理示例（存款机构版）和雾港治理示例（保险机构版）对“关键功能”的定义是否一致？",
+        options=["一致", "不一致"],
+    )
+    assert not all(aspect.mandatory for aspect in plan.aspects)
+
+
+def test_duplicate_split_sources_do_not_block_real_source_aspects(monkeypatch) -> None:
+    question = (
+        "商业银行版恢复计划示例与商业银行版处置计划建议示例中，"
+        "“关键功能”的定义是否相同？"
+    )
+    search = (QuerySearchQuery("关键功能 定义", "semantic_question"),)
+    aspects = (
+        QueryAspect(
+            "source_a", "根据商业银行版恢复计划示例，说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("商业银行版恢复计划示例",),
+        ),
+        QueryAspect(
+            "source_b", "根据商业银行版处置计划建议示例，说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("商业银行版处置计划建议示例",),
+        ),
+        QueryAspect(
+            "comparison_source1", "根据恢复计划示例（商业银行版），说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("恢复计划示例（商业银行版）",),
+        ),
+        QueryAspect(
+            "comparison_source2", "根据处置计划建议示例（商业银行版），说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("处置计划建议示例（商业银行版）",),
+        ),
+    )
+    plan = QueryPlan(
+        question, aspects, "test", fallback_used=False,
+        budget={"max_aspects": 1}, question_mode="open",
+    )
+    monkeypatch.setattr(
+        query_planner_service, "_plan_query_impl",
+        lambda query, options=None: plan,
+    )
+    result = plan_query(question)
+    mandatory = {aspect.aspect_id: aspect.mandatory for aspect in result.aspects}
+    assert mandatory["source_a"]
+    assert mandatory["source_b"]
+    # Duplicate source splits are removed, not merely demoted, so they cannot
+    # consume retrieval or prompt space as a second evidence obligation.
+    assert "comparison_source1" not in mandatory
+    assert "comparison_source2" not in mandatory
+
+    only_split_aspects = (
+        QueryAspect(
+            "comparison_source1", "根据恢复计划示例（商业银行版），说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("恢复计划示例（商业银行版）",),
+        ),
+        QueryAspect(
+            "comparison_source2", "根据处置计划建议示例（商业银行版），说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("处置计划建议示例（商业银行版）",),
+        ),
+    )
+    only_split_plan = QueryPlan(
+        question, only_split_aspects, "test", fallback_used=False,
+        budget={"max_aspects": 1}, question_mode="open",
+    )
+    monkeypatch.setattr(
+        query_planner_service, "_plan_query_impl",
+        lambda query, options=None: only_split_plan,
+    )
+    result = plan_query(question)
+    assert all(aspect.mandatory for aspect in result.aspects)
+
+
+def test_comparison_aspect_is_optional_when_named_sources_exist(monkeypatch) -> None:
+    question = (
+        "商业银行版恢复计划示例与商业银行版处置计划建议示例中，"
+        "“关键功能”的定义是否相同？"
+    )
+    search = (QuerySearchQuery("关键功能 定义", "semantic_question"),)
+    aspects = (
+        QueryAspect(
+            "source_a", "根据商业银行版恢复计划示例，说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("商业银行版恢复计划示例",),
+        ),
+        QueryAspect(
+            "source_b", "根据商业银行版处置计划建议示例，说明“关键功能”的定义。",
+            search, "定义原文", ("关键功能",),
+            subject_scope=("商业银行版处置计划建议示例",),
+        ),
+        QueryAspect(
+            "comparison",
+            "比较商业银行版恢复计划示例与商业银行版处置计划建议示例"
+            "对“关键功能”的定义是否相同。",
+            search, "对比结论", ("关键功能",),
+            subject_scope=("商业银行版恢复计划示例", "商业银行版处置计划建议示例"),
+        ),
+    )
+    plan = QueryPlan(
+        question, aspects, "test", fallback_used=False,
+        budget={"max_aspects": 1}, question_mode="open",
+    )
+    monkeypatch.setattr(
+        query_planner_service, "_plan_query_impl",
+        lambda query, options=None: plan,
+    )
+    result = plan_query(question)
+    mandatory = {aspect.aspect_id: aspect.mandatory for aspect in result.aspects}
+    assert mandatory["source_a"]
+    assert mandatory["source_b"]
+    assert not mandatory["comparison"]
+
+
+def test_single_question_research_expansion_can_still_be_demoted(monkeypatch) -> None:
+    question = "说明蓝杉规则中的定义和适用范围。"
+    search = (QuerySearchQuery("定义 适用范围", "semantic_question"),)
+    aspects = (
+        QueryAspect("main", question, search, "定义", ("蓝杉规则",)),
+        QueryAspect("expansion_a", "说明蓝杉规则的适用范围。", search, "范围", ("蓝杉规则",)),
+        QueryAspect("expansion_b", "说明蓝杉规则的例外。", search, "例外", ("蓝杉规则",)),
+    )
+    plan = QueryPlan(
+        question, aspects, "test", fallback_used=False,
+        budget={"max_aspects": 1}, question_mode="open",
+    )
+    monkeypatch.setattr(
+        query_planner_service, "_plan_query_impl",
+        lambda query, options=None: plan,
+    )
+    result = plan_query(question)
+    assert not all(aspect.mandatory for aspect in result.aspects)
+
+
+@pytest.mark.parametrize("question,expected", [
+    (
+        "恢复计划示例（商业银行版）和处置计划建议示例（商业银行版）"
+        "对“关键功能”的定义是否一致？",
+        "定义",
+    ),
+    (
+        "商业银行版恢复计划示例与商业银行版处置计划建议示例中，"
+        "“关键功能”的定义是否相同？",
+        "定义",
+    ),
+    (
+        "恢复计划示例（商业银行版）和恢复计划示例（保险公司版）"
+        "对恢复计划治理架构中职责分工的规定是否一致？",
+        "职责分工",
+    ),
+    (
+        "恢复计划示例（商业银行版）和恢复计划示例（保险公司版）"
+        "列示的“主要金融产品和服务”是否一致？",
+        "主要金融产品和服务",
+    ),
+    (
+        "最低资本和风险综合评级（分类监管）监管规则"
+        "对“可资本化风险”和“难以资本化风险”的构成界定是否一致？",
+        "构成",
+    ),
+])
+def test_comparison_attribute_terms_extracts_compared_property(question, expected) -> None:
+    assert is_cross_document_comparison(question)
+    assert comparison_attribute_terms(question) == [expected]
+
+
+def test_requirements_for_open_comparison_bind_source_and_attribute() -> None:
+    search = (QuerySearchQuery("比较属性", "semantic_question"),)
+    cases = [
+        (
+            "恢复计划示例（商业银行版）和处置计划建议示例（商业银行版）"
+            "对“关键功能”的定义是否一致？",
+            "恢复计划示例（商业银行版）",
+            "处置计划建议示例（商业银行版）",
+            "根据恢复计划示例（商业银行版），说明包括定义表述、识别标准及优先级。",
+            "定义",
+        ),
+        (
+            "恢复计划示例（商业银行版）和恢复计划示例（保险公司版）"
+            "对恢复计划治理架构中职责分工的规定是否一致？",
+            "恢复计划示例（商业银行版）",
+            "恢复计划示例（保险公司版）",
+            "根据恢复计划示例（商业银行版），说明董事会、高级管理层的职责安排。",
+            "职责分工",
+        ),
+    ]
+    for question, source_a, source_b, misleading_question, expected in cases:
+        aspects = (
+            QueryAspect(
+                "source_a", misleading_question, search, "来源原文", ("事项",),
+                subject_scope=(source_a,),
+            ),
+            QueryAspect(
+                "source_b", misleading_question.replace(source_a, source_b),
+                search, "来源原文", ("事项",),
+                subject_scope=(source_b,),
+            ),
+            QueryAspect(
+                "comparison", "比较两个来源的同一属性是否一致。",
+                search, "对比结论", ("事项",),
+                subject_scope=(source_a, source_b),
+            ),
+        )
+        plan = QueryPlan(question, aspects, "test")
+        requirements = {item.requirement_id: item for item in requirements_for_plan(plan)}
+        assert requirements["source_a"].attribute_terms == [expected]
+        assert requirements["source_b"].attribute_terms == [expected]
+        assert requirements["comparison"].attribute_terms == []
+        assert requirements["source_a"].source_titles == [source_a]
+        assert requirements["source_b"].source_titles == [source_b]

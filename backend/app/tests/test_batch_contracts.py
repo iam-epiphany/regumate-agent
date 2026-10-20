@@ -163,7 +163,8 @@ def test_truncated_generation_retries_with_compact_output(monkeypatch) -> None:
 
     def verify(context, generated):
         return {"passed": True, "status": "passed", "task_complete": True,
-                "facts_supported": True, "missing_requirements": [], "reasons": []}
+                "citation_integrity": True, "facts_supported": True,
+                "missing_requirements": [], "reasons": []}
 
     result = generation.run_generation_loop(_generation_context(), draft=draft, verify=verify)
     assert attempts == [(0, False), (1, True)]

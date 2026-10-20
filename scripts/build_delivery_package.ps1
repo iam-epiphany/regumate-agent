@@ -1,9 +1,13 @@
+param(
+    [switch]$IncludeRuntimeData
+)
+
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $ProjectRoot
 
-$DeliveryName = 'ReguMate-Agent-Delivery'
+$DeliveryName = 'ReguMate-Agent-Contest'
 $DistRoot = Join-Path $ProjectRoot 'dist-delivery'
 $DeliveryRoot = Join-Path $DistRoot $DeliveryName
 $ProjectRootFull = (Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\')
@@ -64,7 +68,7 @@ New-Item -ItemType Directory -Force -Path $DeliveryRootFull | Out-Null
 
 $rootFiles = @(
     '.dockerignore',
-    '.env',
+    '.env.example',
     '.gitignore',
     'docker-compose.gpu.yml',
     'docker-compose.yml',
@@ -75,10 +79,7 @@ $rootFiles = @(
     'requirements-dev.in',
     'requirements.in',
     'requirements.txt',
-    'docker-compose.dev.yml',
-    'docker-run.bat',
-    'docker-run.sh',
-                    'scripts/launcher/'
+    'docker-compose.dev.yml'
 )
 foreach ($file in $rootFiles) { Copy-FileToDelivery $file }
 
@@ -110,6 +111,7 @@ Copy-Directory (Join-Path $ProjectRoot 'docs') (Join-Path $DeliveryRoot 'docs') 
     -ExcludeDirs @('contest_excel_100_final.json') `
     -ExcludeFiles @(
         '*.docx',
+        '*.log',
         'legacy_doc_parsing_report.md',
         'official_excel_cells_report.md',
         'CODEX_*.md',
@@ -124,14 +126,24 @@ foreach ($internalDoc in $internalDocs) {
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'data') | Out-Null
-Copy-Directory (Join-Path $ProjectRoot 'data\models') (Join-Path $DeliveryRoot 'data\models')
-Copy-Directory (Join-Path $ProjectRoot 'data\qdrant') (Join-Path $DeliveryRoot 'data\qdrant')
-Copy-Directory (Join-Path $ProjectRoot 'data\contest_dataset') (Join-Path $DeliveryRoot 'data\contest_dataset')
-Copy-Directory (Join-Path $ProjectRoot 'data\regulations') (Join-Path $DeliveryRoot 'data\regulations') `
-    -ExcludeFiles @('银行业监管制度测试样例_模拟版.pdf')
-Copy-Directory (Join-Path $ProjectRoot 'data\evaluation\final_runtime') (Join-Path $DeliveryRoot 'data\evaluation\final_runtime') `
-    -ExcludeDirs @('audit_archives', 'models', 'qdrant') `
-    -ExcludeFiles @('*.log')
+$dataDirectories = @('data\contest_dataset', 'data\regulations')
+if ($IncludeRuntimeData) {
+    # Optional demo-ready mode.  Windows cannot reliably copy Qdrant's long
+    # payload-index paths, so runtime vector data is opt-in.
+    $dataDirectories = @('data\models', 'data\qdrant') + $dataDirectories
+}
+foreach ($directory in $dataDirectories) {
+    $source = Join-Path $ProjectRoot $directory
+    if (Test-Path -LiteralPath $source) {
+        Copy-Directory $source (Join-Path $DeliveryRoot $directory)
+    }
+}
+$runtimeEvaluation = Join-Path $ProjectRoot 'data\evaluation\final_runtime'
+if (Test-Path -LiteralPath $runtimeEvaluation) {
+    Copy-Directory $runtimeEvaluation (Join-Path $DeliveryRoot 'data\evaluation\final_runtime') `
+        -ExcludeDirs @('audit_archives', 'models', 'qdrant') `
+        -ExcludeFiles @('*.log')
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'data\evaluation\final') | Out-Null
 if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'outputs\evaluation')) {
     Copy-Directory (Join-Path $ProjectRoot 'outputs\evaluation') (Join-Path $DeliveryRoot 'outputs\evaluation') `
@@ -144,13 +156,14 @@ foreach ($file in @(
     'data\evaluation\final\official_excel_cells.json',
     'data\evaluation\final\parse_manifest.json'
 )) {
-    Copy-FileToDelivery $file
+    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $file)) {
+        Copy-FileToDelivery $file
+    }
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'dist-delivery') | Out-Null
 $optionalDeliveryFiles = @(
-    'dist-delivery\regumate-images.tar',
-    'dist-delivery\SHA256SUMS.txt'
+    'dist-delivery\regumate-images.tar'
 )
 $missingOptionalDeliveryFiles = @()
 foreach ($file in $optionalDeliveryFiles) {
@@ -166,6 +179,9 @@ $excludedFinding = Get-ChildItem -LiteralPath $DeliveryRoot -Recurse -Force -Err
     $insideQdrant = $relative -like 'data\qdrant\*'
     $_.FullName -match '\\(node_modules|\.git|\.idea|\.pytest_cache|__pycache__|\.run-state|contest_staging|audit_archives|dev_runtime)\\' -or
     ($_.Name -match '\.(pyc|pyo|tsbuildinfo)$') -or
+    ($_.Name -eq '.env') -or
+    ($_.Name -eq 'SHA256SUMS.txt') -or
+    ($_.Name -eq 'FILE_MANIFEST.sha256') -or
     ($_.Name -match '\.log$' -and -not $insideQdrant)
 } | Select-Object -First 1
 if ($excludedFinding) { throw "Unexpected generated file in delivery package: $($excludedFinding.FullName)" }
@@ -186,7 +202,7 @@ $contents = @(
     }
 ) + @(
     "",
-    "Excluded from delivery: .git, IDE files, Python/Node caches, node_modules, frontend dist, development databases, temporary staging directories, historical audit logs, repeated evaluation runs, and duplicate .env.example.",
+    "Excluded from delivery: .git, IDE files, Python/Node caches, node_modules, frontend dist, development databases, temporary staging directories, historical audit logs, repeated evaluation runs, the real .env, and generated SHA-256 manifests. The package ships .env.example only.",
     "Qdrant internal *.log files are retained because they are part of the persisted vector index."
 )
 if ($missingOptionalDeliveryFiles.Count -gt 0) {

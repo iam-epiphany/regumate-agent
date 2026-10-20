@@ -45,13 +45,14 @@ ReguMate-Agent/
 
 ## 三、配置
 
-提交包中保留 `.env`，用于配置大模型服务和运行参数。README 不展示真实 Key。
-
-如需修改模型服务，在项目根目录编辑 `.env`：
+提交包只提供 `.env.example` 空配置模板，不包含真实 `.env`、API Key 或内部服务地址。首次部署时复制模板并填入自己的配置；README 不展示真实 Key。
 
 ```powershell
+Copy-Item .env.example .env
 notepad .env
 ```
+
+运行预算默认值已在模板中给出：普通问题 150 秒，复杂任务 240 秒，单请求最多 5 次模型调用。
 
 常用项如下：
 
@@ -380,3 +381,33 @@ cd ..
 ```
 
 评审演示优先使用 Docker Compose 启动系统，再运行“脚本上传与评测”中的命令。
+
+## 十一、参赛版展示与交付
+
+本轮参赛版在现有问答页增加“展示视图”，与“日常问答”使用同一请求和同一答案，不增加模型调用。展示视图分为任务区、结论区和侧边依据区：点击结论会定位它依赖的证据和计算记录，点击证据会定位使用它的结论。核验状态分别展示“引用可定位”“事实支持”“要求完整性”，只有四项条件全部为真才标记为通过。
+
+运行预算：
+
+- 普通问题 150 秒；
+- 复杂任务 240 秒（至少两个必需来源、制度＋表格、或至少三个独立事项）；
+- 单请求最多 5 次模型调用；
+- 复杂任务从请求最初开始时间一次性升级截止时间，重试、恢复和嵌套调用不会重新起算。
+
+参赛文档与验收入口：
+
+- `docs/contest-version/README.md`：技术说明与架构图；
+- `docs/contest-version/core_cases.json`：12 个核心用例；
+- `docs/contest-version/results.md`：基线、最终版首轮和演示连续 3 次记录；
+- `docs/contest-version/demo-script.md`：5 分钟和 10 分钟演示讲稿；
+- `docs/contest-version/pitch.md`：亮点讲解文案；
+- `scripts/contest/preflight_contest.py`：GPU、本地模型、向量库和在线模型就绪检查；
+- `scripts/contest/run_core_cases.py`：只提交问题、不注入答案的验收运行器。
+
+统一打包入口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_delivery_package.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_delivery.ps1
+```
+
+交付包只提供 `.env.example` 空配置模板，不复制真实 `.env`，不生成 SHA-256 清单。默认包包含代码、文档、测试、赛题数据和展示结果，不包含本地模型缓存与 Qdrant 运行数据；需要离线演示数据时使用 `-IncludeRuntimeData`。旧入口 `build_submission_package.ps1` 已改为委托统一入口，避免复制密钥或生成额外哈希文件。

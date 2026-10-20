@@ -305,7 +305,9 @@ def judge_draft(
 ) -> tuple[str, Any]:
     """Map one validation report to accept, refuse or a single repair."""
 
-    if validation['passed']:
+    from backend.app.services.answer_validation_service import validation_passed
+
+    if validation_passed(validation):
         return "accept", None
     if generated.answer_type in {'table_deterministic', 'formula_deterministic'}:
         return "refuse", refusal_answer('grounding_validation_failed', validation=validation)
@@ -346,123 +348,6 @@ def _exact_support_repair_prompt(ctx: GenerationContext) -> str | None:
     )
 
 
-def _normalize_support_text(value: Any) -> str:
-    return re.sub(r"[\s\"'“”‘’=：:；;，,。()（）]+", "", str(value or "")).lower()
-
-
-def _support_recall(expected: str, actual: str) -> float:
-    expected_text = _normalize_support_text(expected)
-    actual_text = _normalize_support_text(actual)
-    if not expected_text:
-        return 0.0
-    if expected_text in actual_text:
-        return 1.0
-    if len(expected_text) == 1:
-        return 1.0 if expected_text in actual_text else 0.0
-    bigrams = [expected_text[index:index + 2] for index in range(len(expected_text) - 1)]
-    return sum(bigram in actual_text for bigram in bigrams) / len(bigrams)
-
-
-def _support_chunks(ctx: GenerationContext) -> list[RetrievalResult]:
-    return [
-        chunk for chunk in ctx.context_chunks
-        if (chunk.metadata or {}).get("evidence_role") == "mcq_exact_support"
-    ]
-
-
-def _unique_supported_option(ctx: GenerationContext) -> int | None:
-    """Return the only option with unambiguous exact support, else None.
-
-    This is a last-resort, retrieval-grounded decision for a persistent model
-    refusal.  It never uses gold data and never overrides an answered draft.
-    """
-    if not ctx.options or not ctx.option_labels:
-        return None
-    support = _support_chunks(ctx)
-    if not support:
-        return None
-    sources = {
-        str((chunk.metadata or {}).get("document_id") or chunk.source_doc or "")
-        for chunk in ctx.context_chunks
-    }
-    if len(sources) != 1:
-        return None
-    statement_matched: list[int] = []
-    recalls: list[float] = []
-    for option in ctx.options:
-        option_norm = _normalize_support_text(option)
-        matched = False
-        best_recall = 0.0
-        for chunk in support:
-            metadata = chunk.metadata or {}
-            statement = _normalize_support_text(metadata.get("exact_support_statement") or "")
-            if len(statement) >= 4 and (statement in option_norm or option_norm in statement):
-                matched = True
-            best_recall = max(best_recall, _support_recall(option, chunk.text or ""))
-        if matched:
-            statement_matched.append(len(recalls))
-        recalls.append(best_recall)
-    if len(statement_matched) == 1:
-        index = statement_matched[0]
-        return index if recalls[index] >= 0.25 else None
-    if len(statement_matched) > 1:
-        best = max(statement_matched, key=lambda item: recalls[item])
-        others = [recalls[item] for item in statement_matched if item != best]
-        second = max(others, default=0.0)
-        if recalls[best] >= 0.35 and second <= recalls[best] * 0.8:
-            return best
-    return None
-
-
-def _best_support_sentence(text: str, option: str) -> str:
-    parts = [part.strip() for part in re.split(r"[。\n；;]+", str(text or "")) if part.strip()]
-    if not parts:
-        return ""
-    best = max(parts, key=lambda part: _support_recall(option, part))
-    return best if _support_recall(option, best) >= 0.3 else ""
-
-
-def _deterministic_mcq_fallback(ctx: GenerationContext) -> GeneratedAnswer | None:
-    """Answer a persistent refusal when exactly one option has exact support."""
-    index = _unique_supported_option(ctx)
-    if index is None:
-        return None
-    label = ctx.option_labels[index] if index < len(ctx.option_labels) else None
-    if not label:
-        return None
-    option = str(ctx.options[index])
-    support = _support_chunks(ctx)
-    chunk = max(support, key=lambda item: _support_recall(option, item.text or ""))
-    citation = chunk.citation_label
-    sentence = _best_support_sentence(chunk.text or "", option)
-    evidence = f"依据{citation}原文：“{sentence[:220]}”。" if sentence else f"依据{citation}。"
-    answer = f"答案为 {label}。{option}{'' if option.endswith(('。', '；', ';')) else '。'}{evidence}"
-    metadata = chunk.metadata or {}
-    claim = AnswerClaim(
-        text=answer,
-        citation_ids=[citation],
-        role="conclusion",
-        aspect_ids=[str(metadata.get("aspect_id"))] if metadata.get("aspect_id") else [],
-    )
-    return GeneratedAnswer(
-        answer=answer,
-        answer_type="llm_grounded",
-        generation_status="completed",
-        claims=[claim],
-        refused=False,
-        grounding_validation={
-            "passed": True,
-            "status": "passed",
-            "task_complete": True,
-            "facts_supported": True,
-            "method": "deterministic_mcq_support",
-            "selected_option": index,
-            "selected_option_supported": True,
-            "selected_option_format_valid": True,
-        },
-    )
-
-
 def run_generation_loop(
     ctx: GenerationContext,
     *,
@@ -495,12 +380,9 @@ def run_generation_loop(
                     # of treating absence of other options as an evidence gap.
                     correction = support_correction
                     continue
-                fallback = _deterministic_mcq_fallback(ctx)
-                if fallback is not None:
-                    # The model still refused after the repair, but retrieval
-                    # has one unambiguous exact-support option.  Answer from
-                    # that evidence rather than returning an unsupported refusal.
-                    return fallback
+                # A model refusal after the single allowed repair stays a
+                # refusal.  Similarity or a literal option match may guide
+                # retrieval, but it cannot by itself certify the option.
                 generated.answer = generated.answer or generated.refusal_reason or '当前证据不足，无法完整回答。'
                 generated.refusal_reason = generated.refusal_reason or 'model_refusal'
                 generated.grounding_validation = {'passed': False, 'status': 'not_run', 'task_complete': False,

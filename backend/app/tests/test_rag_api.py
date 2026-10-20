@@ -3769,6 +3769,48 @@ def test_recovered_task_keeps_spent_model_calls(monkeypatch):
     assert len(calls)==5
 
 
+def test_recovered_task_keeps_complex_budget_category(monkeypatch):
+    from backend.app.models.document import QATask
+    from backend.app.services import qa_task_service as tasks
+    from backend.app.services.performance_metrics import (
+        request_budget_snapshot,
+        reserve_model_call,
+        upgrade_request_budget,
+    )
+    reset_database()
+    with SessionLocal() as db:
+        db.add(QATask(task_id='complex-recovery', question='比较两份材料',
+                      status='queued', options_json='[]'))
+        db.commit()
+
+    def interrupted(*args, **kwargs):
+        upgrade_request_budget(240, category='complex')
+        reserve_model_call(1)
+        raise SystemExit('simulated interruption after upgrade')
+
+    monkeypatch.setattr(tasks, 'answer_question', interrupted)
+    with pytest.raises(SystemExit):
+        tasks._run_task('complex-recovery')
+    tasks._recover_interrupted_tasks()
+
+    seen: dict[str, object] = {}
+
+    def resumed(*args, **kwargs):
+        seen.update(request_budget_snapshot())
+        raise tasks.QATaskCancelled()
+
+    monkeypatch.setattr(tasks, 'answer_question', resumed)
+    tasks._run_task('complex-recovery')
+    assert seen['category'] == 'complex'
+    assert seen['total_seconds'] == 240
+    with SessionLocal() as db:
+        task = db.get(QATask, 'complex-recovery')
+        budget_events = [e for e in json.loads(task.progress_json)
+                         if (e.get('summary') or {}).get('_runtime_budget')]
+        assert budget_events[-1]['summary']['_runtime_budget']['category'] == 'complex'
+        assert budget_events[-1]['summary']['_runtime_budget']['total_seconds'] == 240
+
+
 def test_recovered_task_keeps_original_deadline(monkeypatch):
     from backend.app.models.document import QATask
     from backend.app.services import qa_task_service as tasks

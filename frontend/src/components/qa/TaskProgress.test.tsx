@@ -74,6 +74,27 @@ describe("TaskProgress", () => {
     expect(document.querySelector(".agent-badge")).toBeNull();
   });
 
+  it("shows unrecorded for stages that have no event after a finished task", () => {
+    const events: RagProgressEvent[] = [{
+      stage: "planning",
+      status: "completed",
+      title: "planning completed",
+      detail: "问题理解完成",
+    }];
+
+    render(
+      <TaskProgress
+        events={events}
+        answer={null}
+        active={false}
+        technical
+        taskStatus="completed"
+      />,
+    );
+
+    expect(screen.getAllByText("未记录").length).toBeGreaterThan(0);
+  });
+
   it("does not show an agent badge when the event has no agent", () => {
     const events: RagProgressEvent[] = [{
       stage: "planning",

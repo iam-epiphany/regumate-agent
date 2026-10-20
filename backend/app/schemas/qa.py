@@ -137,6 +137,10 @@ class EvidenceRequirement(BaseModel):
     question: str
     intent: str = "lookup"
     target_terms: list[str] = Field(default_factory=list)
+    # The concrete attribute a cross-document comparison must evidence in each
+    # named source (for example a definition or a division of duties).  Empty
+    # keeps every existing requirement on the legacy source-only contract.
+    attribute_terms: list[str] = Field(default_factory=list)
     source_titles: list[str] = Field(default_factory=list)
     subject_scope: list[str] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
@@ -183,6 +187,133 @@ class ValidationReport(BaseModel):
         return self.status == "passed" and self.task_complete and self.citation_integrity and self.facts_supported
 
 
+class ExplanationRequirement(BaseModel):
+    """One source/evidence obligation projected from EvidenceRequirement."""
+
+    requirement_id: str
+    question: str
+    source_titles: list[str] = Field(default_factory=list)
+    mandatory: bool = True
+    status: Literal["covered", "missing", "optional_missing"] = "missing"
+    evidence_ids: list[str] = Field(default_factory=list)
+    missing_reason: str | None = None
+
+
+class ExplanationClaimLink(BaseModel):
+    """A final-answer claim and the evidence/requirements it points to."""
+
+    claim_index: int
+    text: str
+    role: str = "other"
+    evidence_ids: list[str] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+    aspect_ids: list[str] = Field(default_factory=list)
+
+
+class ExplanationSource(BaseModel):
+    """A cited evidence unit; the full text remains in QAResponse.citations."""
+
+    evidence_id: str
+    chunk_id: str
+    document_id: str = ""
+    source: str = ""
+    source_title: str | None = None
+    section_title: str | None = None
+    section_path: list[str] = Field(default_factory=list)
+    page_number: int | None = None
+    sheet_name: str | None = None
+    cell: str | None = None
+    excerpt: str = ""
+    requirement_ids: list[str] = Field(default_factory=list)
+    claim_indices: list[int] = Field(default_factory=list)
+    citation_located: bool = False
+
+
+class ExplanationSourceGroup(BaseModel):
+    """Source-isolated evidence view used by the side-by-side comparison layout."""
+
+    source_title: str
+    source_name: str = ""
+    requirement_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    claim_indices: list[int] = Field(default_factory=list)
+    status: Literal["covered", "missing", "partial"] = "missing"
+
+
+class ExplanationOperand(BaseModel):
+    label: str
+    value: str | None = None
+    unit: str | None = None
+    sheet_name: str | None = None
+    cell: str | None = None
+    source: str | None = None
+    evidence_id: str | None = None
+
+
+class ExplanationCalculation(BaseModel):
+    operation: str | None = None
+    formula: str | None = None
+    display_formula: str | None = None
+    result: str | None = None
+    unit: str | None = None
+    operands: list[ExplanationOperand] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    source: str | None = None
+    verified: bool | None = None
+    verification_note: str | None = None
+
+
+class ExplanationValidation(BaseModel):
+    """The full ValidationReport projection used by every UI decision."""
+
+    status: Literal["passed", "failed", "not_run", "error", "unknown"] = "unknown"
+    passed: bool = False
+    citation_integrity: bool = False
+    facts_supported: bool = False
+    task_complete: bool = False
+    method: str = "none"
+    reasons: list[str] = Field(default_factory=list)
+    missing_requirements: list[str] = Field(default_factory=list)
+
+
+class ExplanationBudget(BaseModel):
+    category: Literal["standard", "complex", "unknown"] = "unknown"
+    total_seconds: float | None = None
+    elapsed_ms: float = 0.0
+    model_calls: int = 0
+    model_call_limit: int = 5
+    first_feedback_ms: float | None = None
+    upgraded: bool = False
+
+
+class ExplanationStage(BaseModel):
+    stage: str
+    status: str
+    title: str = ""
+    elapsed_ms: float | None = None
+    agent: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnswerExplanation(BaseModel):
+    """Display data projected from the existing plan, evidence, claims and validation."""
+
+    question: str
+    outcome: str = "answered"
+    cross_document: bool = False
+    requirements: list[ExplanationRequirement] = Field(default_factory=list)
+    claims: list[ExplanationClaimLink] = Field(default_factory=list)
+    sources: list[ExplanationSource] = Field(default_factory=list)
+    source_groups: list[ExplanationSourceGroup] = Field(default_factory=list)
+    calculations: list[ExplanationCalculation] = Field(default_factory=list)
+    validation: ExplanationValidation = Field(default_factory=ExplanationValidation)
+    budget: ExplanationBudget = Field(default_factory=ExplanationBudget)
+    stages: list[ExplanationStage] = Field(default_factory=list)
+    missing_requirements: list[str] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+    first_feedback_ms: float | None = None
+
+
 class LLMContextPackage(BaseModel):
     query: str
     mode: str = "rag_context"
@@ -212,6 +343,7 @@ class QAResponse(BaseModel):
     degraded: bool = False
     evidence_coverage: EvidenceCoverage | None = None
     agent_trace: list[AgentTraceEntry] = Field(default_factory=list)
+    explanation: AnswerExplanation | None = None
 
 
 class QAAnswerPreview(BaseModel):
