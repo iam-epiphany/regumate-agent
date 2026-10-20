@@ -1,10 +1,11 @@
-import { AlertTriangle, CircleStop, History, RefreshCw } from "lucide-react";
+import { AlertTriangle, CircleStop, History, LayoutPanelTop, ListChecks, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { CitationList } from "../components/CitationList";
 import { AnswerResult } from "../components/qa/AnswerResult";
 import { QuestionComposer } from "../components/qa/QuestionComposer";
 import { QuestionHistoryDrawer } from "../components/qa/QuestionHistoryDrawer";
+import { ShowcaseView } from "../components/qa/ShowcaseView";
 import { StreamingAnswerPreview } from "../components/qa/StreamingAnswerPreview";
 import { TaskProgress } from "../components/qa/TaskProgress";
 import { isActiveTaskStatus, useQATask } from "../state/qaTaskContext";
@@ -18,6 +19,7 @@ export function RagPage() {
   const system = useSystemStatus();
   const [technicalDetails, setTechnicalDetails] = useState(qa.includeDebug);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"normal" | "showcase">("normal");
   const [copyStatus, setCopyStatus] = useState("");
   const [activeCitation, setActiveCitation] = useState<string | null>(null);
   const answer = qa.answer;
@@ -60,16 +62,55 @@ export function RagPage() {
           </div>
           {!hasTask ? <p className="page-lead">从已入库制度、填报说明和统计报表中查找依据；无法建立充分证据时明确说明原因。</p> : null}
         </div>
-        <button className="secondary-button" type="button" onClick={() => setHistoryOpen(true)}><History size={17} />问答历史</button>
+        <div className="qa-header-actions">
+          {hasTask ? (
+            <div className="qa-view-toggle" role="group" aria-label="视图切换">
+              <button type="button" aria-pressed={viewMode === "normal"} className={viewMode === "normal" ? "active" : ""} onClick={() => setViewMode("normal")}><ListChecks size={16} />日常问答</button>
+              <button type="button" aria-pressed={viewMode === "showcase"} className={viewMode === "showcase" ? "active" : ""} onClick={() => setViewMode("showcase")}><LayoutPanelTop size={16} />展示视图</button>
+            </div>
+          ) : null}
+          <button className="secondary-button" type="button" onClick={() => setHistoryOpen(true)}><History size={17} />问答历史</button>
+        </div>
       </header>
 
       {!hasTask ? (
         <>
-          <section className="question-capabilities" aria-label="可提问内容">
-            <article><span>制度条款</span><strong>查规定、文号和适用口径</strong><p>回答关联到来源文件、章节和必要原文。</p></article>
-            <article><span>统计报表</span><strong>取数、比较和基础计算</strong><p>保留工作表、单元格、单位和计算依据。</p></article>
-            <article><span>依据核查</span><strong>选择题与证据充分性判断</strong><p>没有直接依据时不补写结论。</p></article>
+          <section className="question-capabilities question-capabilities--contest" aria-label="系统能力">
+            <article><span>多智能体分工</span><strong>规划、取证、计算、核验各司其职</strong><p>展示真实角色、分支、重试、耗时和模型调用次数。</p></article>
+            <article><span>跨文档证据</span><strong>每个必需来源单独取证</strong><p>按来源并列展示依据，缺少哪一侧线索直接指出。</p></article>
+            <article><span>可复核计算</span><strong>从单元格到结果保留完整过程</strong><p>记录工作表、坐标、操作数、公式、单位和校验状态。</p></article>
+            <article><span>联合核验</span><strong>引用、事实与任务完整性分别判定</strong><p>点击结论即可定位依据；未核验内容不标记为通过。</p></article>
           </section>
+          <p className="contest-showcase-hint">回答完成后可切换到“展示视图”，查看结论、证据与计算记录的联动。</p>
+        </>
+      ) : viewMode === "showcase" ? (
+        <>
+          <ShowcaseView
+            answer={answer}
+            question={qa.currentQuestion}
+            events={qa.progressEvents}
+            active={active}
+            taskStatus={qa.taskStatus}
+            message={qa.message || undefined}
+          />
+          {active && qa.answerPreview && !answer ? (
+            <StreamingAnswerPreview
+              preview={qa.answerPreview}
+              activeCitation={activeCitation}
+              onSelectCitation={selectCitation}
+              showTechnical={technicalDetails}
+            />
+          ) : null}
+          {qa.taskStatus === "failed" && !answer ? (
+            <section className="result-error" role="alert"><AlertTriangle size={20} /><div><h2>本次问答未完成</h2><p>{qa.message || "处理过程中发生异常。"}</p></div><button className="secondary-button" type="button" onClick={() => void qa.reloadTask()}><RefreshCw size={15} />重新读取状态</button></section>
+          ) : null}
+          {qa.taskStatus === "cancelled" ? (
+            <section className="result-cancelled" role="status">
+              <CircleStop size={21} />
+              <div><h2>已停止生成</h2><p>系统已终止本次问答任务，不会保存未完成的回答。</p></div>
+              <button className="secondary-button" type="button" onClick={() => void qa.runQuestion(qa.currentQuestion, technicalDetails)}><RefreshCw size={15} />重新生成</button>
+            </section>
+          ) : null}
         </>
       ) : (
         <>

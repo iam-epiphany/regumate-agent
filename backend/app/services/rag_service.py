@@ -128,6 +128,7 @@ def answer_question(
         cancellation_checker=cancellation_checker,
     )
     board.notes["raw_options"] = options
+    board.notes["started_at"] = perf_counter()
     with board_context(board):
         return Supervisor().run(board)
 
@@ -148,10 +149,10 @@ def _explicit_request_boundary_code(question: str) -> str | None:
         return 'subjective_business_advice'
     if re.search(r'(?:尚未|没有|未)(?:上传|收录|入库)|(?:请查询|请获取|请提供).*(?:此刻|实时|当前最新)', compact):
         return 'out_of_scope_or_realtime'
-    if re.search(r'(?:未给出|没有给出|没有提供|未提供|缺少|没有).*(?:操作数|数值|余额|净额|变量|期间|金额|币种|汇率)', compact):
-        return 'missing_calculation_operands'
-    if re.search(r'未指明|没有指定|没有任何定位信息|没有文件名|未提供任何', compact):
-        return 'missing_required_context'
+    # Missing operands or an underspecified source are not entry-level
+    # refusals: the planner and retrieval decide whether the request can be
+    # answered, and a genuine calculation gap is reported by the deterministic
+    # formula path after the formula and available operands are inspected.
     return None
 
 
@@ -361,24 +362,61 @@ def _validate_context_chunks(
     )
 
 
+def _attribute_clause_rank(chunk: RetrievalResult) -> tuple[int, int]:
+    """Prefer operative clause body over a bare heading, then longer text."""
+
+    text = str(chunk.text or '')
+    has_body = bool(re.search(
+        r'是指|系指|定义为|应当|不得|负责|履行|承担|包括|按照|报送|披露|管理',
+        text,
+    ))
+    return (1 if has_body else 0, len(text))
+
+
 def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrievals: list[AspectRetrieval]):
-    from backend.app.services.evidence_contract_service import source_matches
+    from backend.app.services.evidence_contract_service import (
+        requirement_attribute_matches,
+        source_matches,
+    )
     selected = []
     requirements = {r.requirement_id: r for r in query_plan.requirements}
     groups = []
     for item in aspect_retrievals:
-        requirement = requirements[item.aspect.aspect_id]
-        source_candidates = [c for c in item.candidates if source_matches(requirement.source_titles, c)]
-        best = max((_prompt_score(c) for c in source_candidates), default=0.0)
-        group = [c for c in source_candidates if (c.metadata.get('dynamic_table_evidence') or
+        requirement = requirements.get(item.aspect.aspect_id)
+        source_candidates = [c for c in item.candidates
+                             if requirement is None or source_matches(requirement.source_titles, c)]
+        attribute_terms = list(getattr(requirement, 'attribute_terms', ()) or ())
+        attribute_candidates: list[RetrievalResult] = []
+        selection_pool = source_candidates
+        if attribute_terms:
+            attribute_candidates = [
+                c for c in source_candidates
+                if requirement_attribute_matches(requirement, c)
+            ]
+            # Attribute wording locates and ranks direct clauses; it never
+            # removes a source-matching clause before semantic validation.
+        best = max((_prompt_score(c) for c in selection_pool), default=0.0)
+        group = [c for c in selection_pool if (c.metadata.get('dynamic_table_evidence') or
                       c.metadata.get('evidence_role') in {'mcq_exact_support', 'definition_clause', 'exact_anchor_support'} or
                       _prompt_score(c) >= max(RERANK_PROMPT_THRESHOLD, best * RELATIVE_SCORE_RATIO))]
         # Deterministic cells and explicitly located clauses precede semantic background.
+        # For compared attributes, direct attribute matches come next and are
+        # ordered by clause body/length so a short heading does not crowd out
+        # the operative text immediately after it.
         group.sort(key=lambda c: (
             bool(c.metadata.get('dynamic_table_evidence')),
+            bool(attribute_terms and requirement_attribute_matches(requirement, c)),
             bool(c.metadata.get('source_section_scope')),
             c.metadata.get('evidence_role') in {'mcq_exact_support', 'definition_clause', 'exact_anchor_support'},
+            _attribute_clause_rank(c) if attribute_terms else (0, 0),
             _prompt_score(c)), reverse=True)
+        if attribute_candidates:
+            best_attribute = max(attribute_candidates,
+                                 key=lambda c: (_attribute_clause_rank(c), _prompt_score(c)))
+            # Reserve the best direct attribute clause even when its rerank
+            # score falls below the prompt threshold.
+            group = [c for c in group if c.chunk_id != best_attribute.chunk_id]
+            group.insert(0, best_attribute)
         groups.append((item, group, bool(getattr(item.aspect, 'mandatory', True))))
     # Required aspects reserve prompt space first; planner-only research
     # aspects may use the remaining capacity but cannot crowd out the answer.
@@ -404,6 +442,33 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
     atomic = [c for c in selected if c.metadata.get('dynamic_table_evidence')]
     selected = atomic + _apply_prompt_token_budget([c for c in selected if c not in atomic])
     selected = selected[:MAX_PROMPT_CHUNKS]
+    # A definition obligation must reach generation with its defining clause,
+    # even when a higher-scored neighbouring paragraph filled the normal
+    # prompt slots.  The candidate is already in this aspect's retrieval set;
+    # this reserves one slot instead of widening recall.
+    for item in aspect_retrievals:
+        requirement = requirements.get(item.aspect.aspect_id)
+        if requirement is None or requirement.intent != 'define':
+            continue
+        if not requirement.source_titles and not requirement.attribute_terms:
+            continue
+        if any(requirement_attribute_matches(requirement, chunk)
+               and source_matches(requirement.source_titles, chunk)
+               for chunk in selected):
+            continue
+        candidate = next(
+            (chunk for chunk in item.candidates
+             if source_matches(requirement.source_titles, chunk)
+             and requirement_attribute_matches(requirement, chunk)),
+            None,
+        )
+        if candidate is None or any(chunk.chunk_id == candidate.chunk_id for chunk in selected):
+            continue
+        _mark_chunk_for_aspect(candidate, item.aspect)
+        candidate.metadata['prompt_selection_reason'] = 'definition_requirement_reserved'
+        if len(selected) >= MAX_PROMPT_CHUNKS:
+            selected = selected[:MAX_PROMPT_CHUNKS - 1]
+        selected.insert(0, candidate)
     _renumber_context_chunks(selected)
     for item in aspect_retrievals:
         item.selected_chunk_ids = [c.chunk_id for c in selected if item.aspect.aspect_id in
@@ -411,6 +476,88 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
         item.covered = bool(item.selected_chunk_ids)
     return selected, _prompt_selection_summary(sum(len(x.candidates) for x in aspect_retrievals), selected,
         query_plan, aspect_retrievals, {x.aspect.aspect_id for x in aspect_retrievals if x.covered})
+
+
+def _reserve_definition_clauses(
+    db: Session,
+    selected: list[RetrievalResult],
+    query_plan: QueryPlan,
+    aspect_retrievals: list[AspectRetrieval],
+) -> list[RetrievalResult]:
+    """Reserve one defining clause per definition requirement.
+
+    Candidate reranking may put a neighbouring paragraph ahead of the clause
+    that actually defines the requested term.  This bounded in-document scan
+    looks only at documents already retrieved for that aspect, so it does not
+    widen recall or add an embedding call.
+    """
+
+    from backend.app.services.evidence_contract_service import (
+        requirement_attribute_matches,
+        source_matches,
+    )
+    from backend.app.services.retrieval_support import _chunks_by_document, _chunk_metadata
+
+    if not hasattr(db, 'scalars'):
+        return selected
+    requirements = {requirement.requirement_id: requirement
+                    for requirement in (query_plan.requirements or ())}
+    for item in aspect_retrievals:
+        requirement = requirements.get(item.aspect.aspect_id)
+        if requirement is None or requirement.intent != 'define':
+            continue
+        if any(requirement_attribute_matches(requirement, chunk)
+               and source_matches(requirement.source_titles, chunk)
+               for chunk in selected):
+            continue
+        document_ids = {
+            str(chunk.metadata.get('document_id'))
+            for chunk in item.candidates
+            if chunk.metadata.get('document_id')
+        }
+        if not document_ids:
+            continue
+        snapshots = _chunks_by_document(db, document_ids)
+        replacement = None
+        for document_id, chunks in snapshots.items():
+            for source_chunk in chunks:
+                if source_chunk.index_status != 'indexed':
+                    continue
+                metadata = _chunk_metadata(source_chunk)
+                candidate = RetrievalResult(
+                    chunk_id=source_chunk.chunk_id,
+                    rank=0,
+                    source_doc=source_chunk.source_file,
+                    section_title=source_chunk.section_title,
+                    text=source_chunk.text,
+                    citation_label='',
+                    score=item.candidates[0].score if item.candidates else None,
+                    metadata={**metadata, 'document_id': str(document_id),
+                              'prompt_selection_reason': 'definition_clause_reserved'},
+                )
+                if (source_matches(requirement.source_titles, candidate)
+                        and requirement_attribute_matches(requirement, candidate)):
+                    replacement = candidate
+                    break
+            if replacement is not None:
+                break
+        if replacement is None or any(
+            chunk.chunk_id == replacement.chunk_id for chunk in selected
+        ):
+            continue
+        _mark_chunk_for_aspect(replacement, item.aspect)
+        if len(selected) >= MAX_PROMPT_CHUNKS:
+            removable = next(
+                (index for index in range(len(selected) - 1, -1, -1)
+                 if not selected[index].metadata.get('dynamic_table_evidence')),
+                None,
+            )
+            if removable is None:
+                continue
+            selected.pop(removable)
+        selected.insert(0, replacement)
+    _renumber_context_chunks(selected)
+    return selected
 
 
 def _retrieval_support_structural_context(db: Session, selected: list[RetrievalResult],
@@ -452,6 +599,26 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
                     incomplete = True
                     break
                 indices.append(i)
+        # A definition paragraph can be split across two chunks.  When the
+        # retrieved anchor starts with the consequence ("…应优先保护") but not
+        # the definition cue ("…是指/是提供…"), include the immediately
+        # preceding in-section chunk that carries the cue.  This is a bounded
+        # source-unit repair, not a new retrieval pass.
+        definition_request = bool(question and re.search(r'定义|是什么|含义|界定|是指', question))
+        definition_cue = re.compile(r'是指|系指|定义为|称为|是提供|是向')
+        if (position is not None and question is not None and definition_request
+                and not table_row and not definition_cue.search(source[position].text)):
+            current_section = source[position].section_title
+            for i in range(position - 1, max(-1, position - 4), -1):
+                previous = source[i]
+                if previous.index_status != 'indexed':
+                    incomplete = True
+                    break
+                if current_section and previous.section_title and previous.section_title != current_section:
+                    break
+                indices.insert(0, i)
+                if definition_cue.search(previous.text):
+                    break
         if (position is not None and not table_row and not anchor.metadata.get('source_section_scope')
                 and not anchor.metadata.get('source_heading_fact') and not anchor.metadata.get('source_definition_fact')):
             current = source[position].text.strip()
@@ -538,20 +705,57 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
         (primary if tags-reserved else background).append(unit)
         reserved.update(tags)
     result, seen, tokens = [], set(), 0
-    for anchor, unit, incomplete in primary+background:
-        additions = [c for c in unit if c.chunk_id not in seen]
-        cost = sum(_int_or_none(c.metadata.get('token_count')) or max(len(c.text)//2, 1) for c in additions)
-        fits = len(result)+len(additions) <= MAX_PROMPT_CHUNKS and tokens+cost <= MAX_PROMPT_TOKENS
-        if not fits or incomplete:
-            if (anchor, unit, incomplete) in primary:
-                anchor.metadata['unit_incomplete'] = True
-                anchor.metadata['selection_exclusion_reason'] = 'required_source_unit_incomplete_or_over_budget'
-                if anchor.chunk_id not in seen and len(result) < MAX_PROMPT_CHUNKS:
-                    result.append(anchor); seen.add(anchor.chunk_id)
-            continue
-        result.extend(additions)
-        seen.update(c.chunk_id for c in additions)
-        tokens += cost
+    if len(primary) > 1:
+        # Reserve a small direct-evidence footprint for every required source
+        # before one long section can consume the whole prompt budget.  The
+        # first two ordered chunks normally contain the retrieved anchor plus
+        # the definition/preceding clause repaired above.
+        for anchor, unit, _incomplete in primary:
+            for chunk in unit[:2]:
+                if chunk.chunk_id in seen or len(result) >= MAX_PROMPT_CHUNKS:
+                    continue
+                cost = _int_or_none(chunk.metadata.get('token_count')) or max(len(chunk.text)//2, 1)
+                if result and tokens + cost > MAX_PROMPT_TOKENS:
+                    break
+                result.append(chunk)
+                seen.add(chunk.chunk_id)
+                tokens += cost
+        for anchor, unit, incomplete in primary+background:
+            additions = [c for c in unit if c.chunk_id not in seen]
+            if incomplete:
+                if (anchor, unit, incomplete) in primary:
+                    anchor.metadata['unit_incomplete'] = True
+                    anchor.metadata['selection_exclusion_reason'] = 'required_source_unit_incomplete_or_over_budget'
+                continue
+            kept: list[RetrievalResult] = []
+            kept_cost = 0
+            for chunk in additions:
+                if len(result) + len(kept) >= MAX_PROMPT_CHUNKS:
+                    break
+                cost = _int_or_none(chunk.metadata.get('token_count')) or max(len(chunk.text)//2, 1)
+                if result and tokens + kept_cost + cost > MAX_PROMPT_TOKENS:
+                    break
+                kept.append(chunk)
+                kept_cost += cost
+            if kept:
+                result.extend(kept)
+                seen.update(chunk.chunk_id for chunk in kept)
+                tokens += kept_cost
+    else:
+        for anchor, unit, incomplete in primary+background:
+            additions = [c for c in unit if c.chunk_id not in seen]
+            cost = sum(_int_or_none(c.metadata.get('token_count')) or max(len(c.text)//2, 1) for c in additions)
+            fits = len(result)+len(additions) <= MAX_PROMPT_CHUNKS and tokens+cost <= MAX_PROMPT_TOKENS
+            if not fits or incomplete:
+                if (anchor, unit, incomplete) in primary:
+                    anchor.metadata['unit_incomplete'] = True
+                    anchor.metadata['selection_exclusion_reason'] = 'required_source_unit_incomplete_or_over_budget'
+                    if anchor.chunk_id not in seen and len(result) < MAX_PROMPT_CHUNKS:
+                        result.append(anchor); seen.add(anchor.chunk_id)
+                continue
+            result.extend(additions)
+            seen.update(c.chunk_id for c in additions)
+            tokens += cost
     _renumber_context_chunks(result)
     return result
 

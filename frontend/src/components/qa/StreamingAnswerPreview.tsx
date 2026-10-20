@@ -25,16 +25,16 @@ export function StreamingAnswerPreview({
           <header className="answer-document__head">
             <div className="answer-document__title">
               <span className="answer-document__seal"><ShieldCheck size={20} /></span>
-              <div><span className="section-kicker">逐句已核验</span><h2>正在生成可信回答</h2></div>
+              <div><span className="section-kicker">过程预览</span><h2>已核验片段（草稿）</h2></div>
             </div>
-            <span className="streaming-verified-count">{preview.verified_claim_count} 条已核验</span>
+            <span className="streaming-verified-count">{preview.verified_claim_count} 条片段</span>
           </header>
           <div className="streaming-answer-prose">
             {paragraphs.map((paragraph, index) => (
               <p key={`${preview.revision}-${index}`}><InlineCitations text={paragraph} onSelectCitation={onSelectCitation} /></p>
             ))}
           </div>
-          <footer className="streaming-answer-status"><Loader2 size={15} className="spinning" />其余内容仍在生成与核验</footer>
+          <footer className="streaming-answer-status"><Loader2 size={15} className="spinning" />预览不等于最终答案；最终状态以任务结束后的联合核验为准</footer>
         </section>
       </div>
       <aside className="evidence-rail" aria-label="已核验片段依据">

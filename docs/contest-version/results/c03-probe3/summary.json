@@ -1,0 +1,74 @@
+{
+  "mode": "core",
+  "base_url": "http://127.0.0.1:8000",
+  "generated_at": "2026-10-19T23:13:48.816900+08:00",
+  "summary": {
+    "cases": 1,
+    "passed": 0,
+    "failed": 1,
+    "duration_ms": {
+      "count": 1,
+      "median": 15019.76,
+      "max": 15019.76
+    },
+    "by_category": {
+      "跨文档比较": {
+        "passed": 0,
+        "total": 1
+      }
+    },
+    "failures": [
+      {
+        "id": "C03",
+        "attempt": 1,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "validation did not pass all four conditions"
+        ]
+      }
+    ]
+  },
+  "rows": [
+    {
+      "id": "C03",
+      "category": "跨文档比较",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": false,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "validation did not pass all four conditions"
+        ],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 6,
+        "duration_ms": 15019.76,
+        "model_calls": 2,
+        "explanation_present": true,
+        "outcome": "refused",
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "complex",
+          "total_seconds": 240.0,
+          "elapsed_ms": 14990.29,
+          "model_calls": 2,
+          "model_call_limit": 5,
+          "first_feedback_ms": 92.02,
+          "upgraded": true
+        },
+        "first_feedback_ms": 92.02
+      }
+    }
+  ]
+}

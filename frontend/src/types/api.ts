@@ -307,6 +307,7 @@ export interface Citation {
   document_number?: string | null;
   version_status?: string | null;
   section_title: string | null;
+  section_path?: string[];
   page_number: number | null;
   excerpt: string;
   score: number | null;
@@ -490,6 +491,132 @@ export interface AgentRegistryResponse {
   agents: AgentDescriptor[];
 }
 
+export type ExplanationOutcome =
+  | "answered"
+  | "clarification"
+  | "model_refusal"
+  | "evidence_missing"
+  | "calculation_gap"
+  | "validation_failed"
+  | "service_error"
+  | "refused"
+  | "unknown";
+
+export interface ExplanationRequirement {
+  requirement_id: string;
+  question: string;
+  source_titles: string[];
+  mandatory: boolean;
+  status: "covered" | "missing" | "optional_missing";
+  evidence_ids: string[];
+  missing_reason?: string | null;
+}
+
+export interface ExplanationClaimLink {
+  claim_index: number;
+  text: string;
+  role: string;
+  evidence_ids: string[];
+  requirement_ids: string[];
+  aspect_ids: string[];
+}
+
+export interface ExplanationSource {
+  evidence_id: string;
+  chunk_id: string;
+  document_id: string;
+  source: string;
+  source_title: string | null;
+  section_title: string | null;
+  section_path: string[];
+  page_number: number | null;
+  sheet_name: string | null;
+  cell: string | null;
+  excerpt: string;
+  requirement_ids: string[];
+  claim_indices: number[];
+  citation_located: boolean;
+}
+
+export interface ExplanationSourceGroup {
+  source_title: string;
+  source_name: string;
+  requirement_ids: string[];
+  evidence_ids: string[];
+  claim_indices: number[];
+  status: "covered" | "missing" | "partial";
+}
+
+export interface ExplanationOperand {
+  label: string;
+  value: string | null;
+  unit: string | null;
+  sheet_name: string | null;
+  cell: string | null;
+  source: string | null;
+  evidence_id: string | null;
+}
+
+export interface ExplanationCalculation {
+  operation: string | null;
+  formula: string | null;
+  display_formula: string | null;
+  result: string | null;
+  unit: string | null;
+  operands: ExplanationOperand[];
+  evidence_ids: string[];
+  source: string | null;
+  verified: boolean | null;
+  verification_note: string | null;
+}
+
+export interface ExplanationValidation {
+  status: "passed" | "failed" | "not_run" | "error" | "unknown";
+  passed: boolean;
+  citation_integrity: boolean;
+  facts_supported: boolean;
+  task_complete: boolean;
+  method: string;
+  reasons: string[];
+  missing_requirements: string[];
+}
+
+export interface ExplanationBudget {
+  category: "standard" | "complex" | "unknown";
+  total_seconds: number | null;
+  elapsed_ms: number;
+  model_calls: number;
+  model_call_limit: number;
+  first_feedback_ms: number | null;
+  upgraded: boolean;
+}
+
+export interface ExplanationStage {
+  stage: string;
+  status: string;
+  title: string;
+  elapsed_ms: number | null;
+  agent: string | null;
+  summary: Record<string, unknown>;
+}
+
+export interface AnswerExplanation {
+  question: string;
+  outcome: ExplanationOutcome;
+  cross_document: boolean;
+  requirements: ExplanationRequirement[];
+  claims: ExplanationClaimLink[];
+  sources: ExplanationSource[];
+  source_groups: ExplanationSourceGroup[];
+  calculations: ExplanationCalculation[];
+  validation: ExplanationValidation;
+  budget: ExplanationBudget;
+  stages: ExplanationStage[];
+  missing_requirements: string[];
+  elapsed_ms: number;
+  first_feedback_ms: number | null;
+}
+
 export interface QAResponse {
   answer: string | null;
   citations: Citation[];
@@ -522,6 +649,11 @@ export interface QAResponse {
   refusal_reason: string | null;
   degraded: boolean;
   agent_trace?: AgentTraceEntry[];
+  explanation?: AnswerExplanation | null;
+  refusal_code?: string | null;
+  missing_variables?: string[];
+  ambiguous_variables?: string[];
+  unsupported_formula?: string | null;
   evidence_coverage?: {
     expected_aspect_ids: string[];
     covered_aspect_ids: string[];

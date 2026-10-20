@@ -33,6 +33,7 @@ _METRICS_LOCK = RLock()
 _CURRENT_TRACE: ContextVar[dict[str, Any] | None] = ContextVar("regumate_performance_trace", default=None)
 _CURRENT_REQUEST_ID: ContextVar[str | None] = ContextVar("regumate_request_id", default=None)
 _CURRENT_REQUEST_DEADLINE: ContextVar[float | None] = ContextVar("regumate_request_deadline", default=None)
+_CURRENT_REQUEST_BUDGET: ContextVar["RequestBudgetState | None"] = ContextVar("regumate_request_budget", default=None)
 _CURRENT_MODEL_BUDGET: ContextVar[dict[str, Any] | None] = ContextVar("regumate_model_budget", default=None)
 _CURRENT_CANCELLATION: ContextVar[Any] = ContextVar("regumate_cancellation", default=None)
 _TRACE_HISTORY: list[dict[str, Any]] = []
@@ -160,15 +161,132 @@ class RequestBudgetExceeded(TimeoutError):
         self.code = code
 
 
+@dataclass
+class RequestBudgetState:
+    """One request's deadline, category and one-time complex upgrade.
+
+    The state object is shared by every nested execution wrapper.  Nested
+    calls can never introduce a fresh deadline; only the explicit
+    ``upgrade_request_budget`` call may extend the original deadline once.
+    """
+
+    started_at: float
+    deadline: float
+    total_seconds: float
+    category: str = "standard"
+    upgraded: bool = False
+    on_change: Callable[["RequestBudgetState"], None] | None = None
+    started_at_iso: str = ""
+
+    def snapshot(self, *, model_calls: int = 0, model_call_limit: int = 5) -> dict[str, Any]:
+        elapsed_ms = round(max(0.0, perf_counter() - self.started_at) * 1000, 2)
+        return {
+            "category": "complex" if self.category == "complex" else "standard",
+            "total_seconds": round(self.total_seconds, 3),
+            "elapsed_ms": elapsed_ms,
+            "remaining_seconds": round(max(0.0, self.deadline - perf_counter()), 3),
+            "model_calls": model_calls,
+            "model_call_limit": model_call_limit,
+            "upgraded": self.upgraded,
+        }
+
+
 @contextmanager
-def request_budget_context(total_seconds: float) -> Iterator[None]:
-    parent = _CURRENT_REQUEST_DEADLINE.get()
-    deadline = perf_counter() + max(0.001, total_seconds)
-    token = _CURRENT_REQUEST_DEADLINE.set(min(parent, deadline) if parent is not None else deadline)
+def request_budget_context(
+    total_seconds: float,
+    *,
+    elapsed_seconds: float = 0.0,
+    category: str = "standard",
+    on_change: Callable[[RequestBudgetState], None] | None = None,
+) -> Iterator[None]:
+    """Enter one request budget; nested contexts inherit the outer deadline.
+
+    ``elapsed_seconds`` lets a recovered background task reconstruct the
+    original start time.  It is used to compute the deadline and is never a
+    new budget start.
+    """
+
+    parent_state = _CURRENT_REQUEST_BUDGET.get()
+    parent_deadline = _CURRENT_REQUEST_DEADLINE.get()
+    if parent_state is not None or parent_deadline is not None:
+        # Re-entering the same pipeline is not a new request.  Keep the
+        # existing deadline even when the nested caller asks for more time.
+        deadline = parent_state.deadline if parent_state is not None else parent_deadline
+        token = _CURRENT_REQUEST_DEADLINE.set(deadline)
+        try:
+            yield
+        finally:
+            _CURRENT_REQUEST_DEADLINE.reset(token)
+        return
+
+    now = perf_counter()
+    started_at = now - max(0.0, float(elapsed_seconds or 0.0))
+    deadline = started_at + max(0.001, float(total_seconds))
+    state = RequestBudgetState(
+        started_at=started_at,
+        deadline=deadline,
+        total_seconds=max(0.001, float(total_seconds)),
+        category="complex" if category == "complex" else "standard",
+        on_change=on_change,
+        started_at_iso=datetime.now(timezone.utc).isoformat(),
+    )
+    budget_token = _CURRENT_REQUEST_BUDGET.set(state)
+    deadline_token = _CURRENT_REQUEST_DEADLINE.set(deadline)
     try:
         yield
     finally:
-        _CURRENT_REQUEST_DEADLINE.reset(token)
+        _CURRENT_REQUEST_DEADLINE.reset(deadline_token)
+        _CURRENT_REQUEST_BUDGET.reset(budget_token)
+
+
+def upgrade_request_budget(total_seconds: float, *, category: str = "complex") -> bool:
+    """Apply the one permitted complex-task deadline extension.
+
+    The new deadline is anchored at the original start time, so time already
+    spent on planning, retrieval or repair is deducted rather than reset.
+    """
+
+    state = _CURRENT_REQUEST_BUDGET.get()
+    if state is None or state.upgraded:
+        return False
+    requested = max(0.001, float(total_seconds))
+    if requested <= state.total_seconds:
+        return False
+    state.total_seconds = requested
+    state.deadline = state.started_at + requested
+    state.category = "complex" if category == "complex" else state.category
+    state.upgraded = True
+    _CURRENT_REQUEST_DEADLINE.set(state.deadline)
+    if state.on_change is not None:
+        try:
+            state.on_change(state)
+        except Exception:  # noqa: BLE001 - observability persistence must not break answering
+            pass
+    record_trace_event("budget", "upgraded", {
+        "category": state.category,
+        "total_seconds": round(state.total_seconds, 3),
+    })
+    return True
+
+
+def request_budget_snapshot(*, model_calls: int | None = None,
+                            model_call_limit: int | None = None) -> dict[str, Any]:
+    state = _CURRENT_REQUEST_BUDGET.get()
+    if state is None:
+        return {
+            "category": "unknown",
+            "total_seconds": None,
+            "elapsed_ms": 0.0,
+            "remaining_seconds": None,
+            "model_calls": model_call_count() if model_calls is None else model_calls,
+            "model_call_limit": model_call_limit or 5,
+            "upgraded": False,
+        }
+    from backend.app.core.config import QA_MODEL_CALL_LIMIT
+    return state.snapshot(
+        model_calls=model_call_count() if model_calls is None else model_calls,
+        model_call_limit=model_call_limit or QA_MODEL_CALL_LIMIT,
+    )
 
 
 def model_call_count() -> int:
@@ -181,7 +299,8 @@ def reserve_model_call(timeout: float) -> float:
         checker()
     state = _CURRENT_MODEL_BUDGET.get()
     if state is not None:
-        if state["calls"] >= 5:
+        from backend.app.core.config import QA_MODEL_CALL_LIMIT
+        if state["calls"] >= QA_MODEL_CALL_LIMIT:
             raise RequestBudgetExceeded("model call limit exhausted", stage='model_call', code='model_call_limit_exceeded')
         state["calls"] += 1
         if state.get('on_reserve'):
@@ -224,7 +343,8 @@ def qa_execution(function):
 
 
 def remaining_request_budget_seconds() -> float | None:
-    deadline = _CURRENT_REQUEST_DEADLINE.get()
+    state = _CURRENT_REQUEST_BUDGET.get()
+    deadline = state.deadline if state is not None else _CURRENT_REQUEST_DEADLINE.get()
     return None if deadline is None else max(0.0, deadline - perf_counter())
 
 

@@ -1,8 +1,10 @@
-﻿import { CheckCircle2, CircleDashed, Loader2, PauseCircle, XCircle } from "lucide-react";
+﻿import { CheckCircle2, CircleDashed, CircleHelp, Loader2, PauseCircle, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { QAResponse, RagProgressEvent, RagProgressStage } from "../../types/api";
 import { agentRoleLabel } from "../../utils/agentLabels";
+
+type DisplayStatus = RagProgressEvent["status"] | "unrecorded";
 
 interface StageDefinition {
   stage: RagProgressStage;
@@ -43,8 +45,8 @@ export function TaskProgress({ events, answer, active, technical, taskStatus, he
     <ol className="progress-flow">
       {stages.map((stage) => {
         const event = resolveStageEvent(events, stage.stage);
-        const reportedStatus = event?.status ?? inferPendingStatus(answer, taskStatus);
-        const status = taskStatus === "cancelled" && reportedStatus === "running" ? "skipped" : reportedStatus;
+        const reportedStatus: DisplayStatus = event?.status ?? missingStageStatus(active, taskStatus);
+        const status: DisplayStatus = taskStatus === "cancelled" && reportedStatus === "running" ? "skipped" : reportedStatus;
         return (
           <li key={stage.stage} className={`progress-node ${status}`}>
             <ProgressIcon status={status} />
@@ -96,15 +98,24 @@ function resolveStageEvent(events: RagProgressEvent[], stage: RagProgressStage):
   return null;
 }
 
-function inferPendingStatus(answer: QAResponse | null, taskStatus: string): RagProgressEvent["status"] {
-  if (answer || taskStatus === "completed" || taskStatus === "refused") return "completed";
-  if (taskStatus === "cancelled") return "skipped";
-  if (taskStatus === "failed") return "failed";
-  return "pending";
+function missingStageStatus(active: boolean, taskStatus: string): DisplayStatus {
+  // Never infer that an unrecorded stage succeeded just because the overall
+  // answer exists.  A missing event is shown as "未记录"; only an explicit
+  // skipped event is shown as "已跳过".
+  if (active) return "pending";
+  if (taskStatus === "failed") return "unrecorded";
+  return "unrecorded";
 }
 
-function statusLabel(status: RagProgressEvent["status"]): string {
-  return ({ pending: "等待处理", running: "正在处理", completed: "已完成", skipped: "已跳过", failed: "处理失败" })[status];
+function statusLabel(status: DisplayStatus): string {
+  return ({
+    pending: "等待处理",
+    running: "正在处理",
+    completed: "已完成",
+    skipped: "已跳过",
+    failed: "处理失败",
+    unrecorded: "未记录",
+  })[status];
 }
 
 function humanizeDetail(detail: string): string {
@@ -115,13 +126,14 @@ function humanizeDetail(detail: string): string {
     .replace(/chunk/gi, "内容片段");
 }
 
-function ProgressIcon({ status }: { status: RagProgressEvent["status"] }) {
-  const icons: Record<RagProgressEvent["status"], ReactNode> = {
+function ProgressIcon({ status }: { status: DisplayStatus }) {
+  const icons: Record<DisplayStatus, ReactNode> = {
     pending: <CircleDashed size={16} />,
     running: <Loader2 size={16} className="spinning" />,
     completed: <CheckCircle2 size={20} strokeWidth={1.8} />,
     skipped: <PauseCircle size={16} />,
     failed: <XCircle size={16} />,
+    unrecorded: <CircleHelp size={16} />,
   };
   return <span className="progress-node__icon">{icons[status]}</span>;
 }

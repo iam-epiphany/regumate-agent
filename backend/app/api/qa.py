@@ -123,15 +123,17 @@ def cancel_question_task(task_id: str, db: Session = Depends(get_db)) -> QATaskS
 
 
 @router.post("/ask/stream")
-def ask_question_stream(payload: QARequest) -> StreamingResponse:
+def ask_question_stream(payload: QARequest, x_request_id: str | None = Header(default=None)) -> StreamingResponse:
     """可信问答流式观测：通过 SSE 推送 RAG 阶段进度，最终返回 QAResponse。"""
 
+    request_id = x_request_id if x_request_id and len(x_request_id) <= 128 else uuid4().hex
     return StreamingResponse(
-        _stream_qa_events(payload.question, payload.options, payload.include_debug),
+        _stream_qa_events(payload.question, payload.options, payload.include_debug, request_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
+            "X-Request-ID": request_id,
         },
     )
 
@@ -150,6 +152,7 @@ def _stream_qa_events(
     question: str,
     options: list[str] | None = None,
     include_debug: bool = False,
+    request_id: str | None = None,
 ) -> Iterator[str]:
     events: Queue[tuple[str, dict[str, Any]] | None] = Queue()
     disconnected = Event()
@@ -164,14 +167,18 @@ def _stream_qa_events(
     def run_qa() -> None:
         db = SessionLocal()
         try:
-            response = answer_question(
-                db,
-                question,
-                options=options,
-                include_debug=include_debug,
-                progress_reporter=progress_reporter,
-                cancellation_checker=check_cancellation,
-            )
+            # ContextVars do not propagate into a new Thread.  Create the
+            # request trace and one budget here so the planner's complex-task
+            # upgrade can extend this same request instead of a nested copy.
+            with request_trace_context(request_id or uuid4().hex), request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
+                response = answer_question(
+                    db,
+                    question,
+                    options=options,
+                    include_debug=include_debug,
+                    progress_reporter=progress_reporter,
+                    cancellation_checker=check_cancellation,
+                )
             events.put(("final", response.model_dump(mode="json")))
         except QATaskCancelled:
             db.rollback()

@@ -1,0 +1,283 @@
+{
+  "case": {
+    "id": "C12",
+    "category": "证据不足或澄清",
+    "demo": false,
+    "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+    "expected": {
+      "answered": false,
+      "refused_or_clarification": true,
+      "validation_passed": false,
+      "explanation_required": true
+    },
+    "notes": "指定来源不在知识库中；允许澄清或证据不足，但不得用其他文件冒充指定来源。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": true,
+    "failures": [],
+    "task_status": "refused",
+    "answer_type": "clarification",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 7284.23,
+    "model_calls": 1,
+    "explanation_present": true,
+    "outcome": "clarification",
+    "validation": {
+      "status": "not_run",
+      "passed": false,
+      "citation_integrity": false,
+      "facts_supported": false,
+      "task_complete": false,
+      "method": "none",
+      "reasons": [],
+      "missing_requirements": []
+    },
+    "budget": {
+      "category": "standard",
+      "total_seconds": 150.0,
+      "elapsed_ms": 7272.15,
+      "model_calls": 1,
+      "model_call_limit": 5,
+      "first_feedback_ms": 0.13,
+      "upgraded": false
+    },
+    "first_feedback_ms": 0.13
+  },
+  "task": {
+    "task_id": "f19b0b4082e64e9faf2fe2fafc88fac4",
+    "client_request_id": "c12-808384287e354b47b851",
+    "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "问题信息不完整，已直接给出补充信息提示。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "clarification",
+          "refused": true,
+          "refusal_reason": "insufficient_context",
+          "refusal_code": "missing_required_context",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 2.49,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "planning",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": []
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "用户指定的《某未入库商业银行恢复计划（2025年版）》未在知识库中命中，无法确认其正文或附件是否存在。请补充：该文件是否为可提供的正式版本、发文字号或文号，或确认是否改用现行监管制度中关于恢复计划关键功能识别的一般性规定作答。",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "clarification",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "planning",
+        "model_call_count": 1,
+        "missing_required_aspect_ids": []
+      },
+      "refusal_reason": "insufficient_context",
+      "refusal_code": "missing_required_context",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.06,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "clarification",
+          "attempt": 1,
+          "elapsed_ms": 7266.54,
+          "model_calls": 1,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 0,
+            "planner": "clarification",
+            "fallback_used": false,
+            "clarification": true,
+            "modalities": []
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "clarification",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 1,
+            "answer_type": "clarification",
+            "refusal_reason": "insufficient_context"
+          }
+        }
+      ],
+      "explanation": {
+        "question": "请根据《某未入库商业银行恢复计划（2025年版）》说明关键功能如何识别。",
+        "outcome": "clarification",
+        "cross_document": false,
+        "requirements": [],
+        "claims": [],
+        "sources": [],
+        "source_groups": [],
+        "calculations": [],
+        "validation": {
+          "status": "not_run",
+          "passed": false,
+          "citation_integrity": false,
+          "facts_supported": false,
+          "task_complete": false,
+          "method": "none",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 7272.15,
+          "model_calls": 1,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": false
+        },
+        "stages": [
+          {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "elapsed_ms": null,
+            "agent": "planner",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "skipped",
+            "title": "答案生成已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "generation_status": "skipped",
+              "answer_type": "clarification",
+              "refused": true,
+              "refusal_reason": "insufficient_context",
+              "refusal_code": "missing_required_context",
+              "generation_total_ms": 2.49,
+              "verified_claim_count": 0
+            }
+          },
+          {
+            "stage": "grounding_validation",
+            "status": "failed",
+            "title": "事实与引用校验未通过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "passed": false,
+              "status": "not_run",
+              "task_complete": false,
+              "failure_stage": "planning",
+              "model_call_count": 1
+            }
+          }
+        ],
+        "missing_requirements": [],
+        "elapsed_ms": 7272.15,
+        "first_feedback_ms": 0.13
+      }
+    },
+    "error": null,
+    "created_at": "2026-10-19T15:22:51.797823+00:00",
+    "updated_at": "2026-10-19T15:22:59.082053+00:00",
+    "completed_at": "2026-10-19T15:22:59.082053+00:00"
+  }
+}

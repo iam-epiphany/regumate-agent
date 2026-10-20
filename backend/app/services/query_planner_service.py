@@ -7,7 +7,11 @@ import urllib.error
 import urllib.request
 from typing import Any
 from backend.app.schemas.qa import EvidenceRequirement
-from backend.app.services.evidence_contract_service import requirements_for_plan, target_terms
+from backend.app.services.evidence_contract_service import (
+    document_style_phrases,
+    requirements_for_plan,
+    target_terms,
+)
 from backend.app.services.performance_metrics import measure, timed
 
 from backend.app.core.config import (
@@ -298,14 +302,22 @@ def _mark_aspect_scope(question: str, aspects: list[QueryAspect], max_mandatory:
     if len(aspects) <= limit:
         return [replace(aspect, mandatory=True) for aspect in aspects]
     titles = list(dict.fromkeys(re.findall(r'《([^》]+)》', question)))
-    if len(titles) > 1:
-        limit = max(limit, len(titles))
+    # Source names may also be written as plain document-style phrases (for
+    # example "商业银行版恢复计划示例").  They are used only to keep one
+    # source-isolated aspect per named source; they never filter evidence.
+    source_names = _source_names_in_question(question)
+    if len(titles) > 1 or len(source_names) > 1:
+        limit = max(limit, len(source_names), len(titles))
     parts = _split_question_parts(question)
     scores = [_scope_priority(aspect, question, index) for index, aspect in enumerate(aspects)]
     mandatory: set[int] = set()
     if len(titles) > 1:
         for index, aspect in enumerate(aspects):
             if any(title in aspect.question for title in titles):
+                mandatory.add(index)
+    if len(source_names) > 1:
+        for index, aspect in enumerate(aspects):
+            if _source_match_count(aspect, source_names) == 1:
                 mandatory.add(index)
     if len(parts) > 1:
         for part in parts:
@@ -320,6 +332,137 @@ def _mark_aspect_scope(question: str, aspects: list[QueryAspect], max_mandatory:
     if not mandatory:
         mandatory.add(0)
     return [replace(aspect, mandatory=index in mandatory) for index, aspect in enumerate(aspects)]
+
+
+def _source_names_in_question(question: str) -> list[str]:
+    text = str(question or '')
+    names = [title.strip() for title in re.findall(r'《([^》]{2,80})》', text)]
+    stripped = re.sub(r'《[^》]*》', ' ', text)
+    for part in re.split(r'[和与及、，,。；;：:？?]', stripped):
+        candidate = part.strip(' “”"\'‘’《》,，。；;：: ')
+        if not candidate:
+            continue
+        # A source name is usually followed by a scope/predicate phrase such
+        # as "中关于…" or "对…"; keep the name itself rather than the tail.
+        candidate = re.split(
+            r'(?:中对|中关于|中的|对|关于|针对|是否|比较|对比|分别|有何|差异)',
+            candidate,
+            maxsplit=1,
+        )[0]
+        candidate = re.sub(r'^(?:根据|依据|按照|从|在|关于|对于|针对|请|说明|比较|对比|分别)+', '', candidate)
+        candidate = candidate.strip(' 的了中里内')
+        if 4 <= len(candidate) <= 80 and re.search(
+            r'示例|办法|规则|通知|附件|制度|规定|指南|指引|规范|意见|条例|细则|版', candidate
+        ):
+            names.append(candidate)
+    return list(dict.fromkeys(name for name in names if name))
+
+
+def _source_match_count(aspect: QueryAspect, source_names: list[str]) -> int:
+    """How many user-named sources one aspect explicitly targets."""
+
+    scope_sources = document_style_phrases(getattr(aspect, 'subject_scope', ()))
+    filter_source = str((aspect.table_filters or {}).get('source_title') or '')
+    matched = {
+        name for name in source_names
+        if name and (name in aspect.question or (filter_source and name in filter_source))
+    }
+    if not matched and len(scope_sources) == 1:
+        matched = {scope_sources[0]}
+    return len(matched)
+
+
+def _matched_source_names(aspect: QueryAspect, source_names: list[str]) -> list[str]:
+    filter_source = str((aspect.table_filters or {}).get('source_title') or '')
+    return [
+        name for name in source_names
+        if name and (name in aspect.question or (filter_source and name in filter_source))
+    ]
+
+
+def _named_source_match_count(aspect: QueryAspect, source_names: list[str]) -> int:
+    return len(_matched_source_names(aspect, source_names))
+
+
+def _target_key_set(aspect: QueryAspect) -> set[str]:
+    return {
+        re.sub(r"[\s“”\"'‘’《》，,。；;：:]+", "", str(term)).casefold()
+        for term in (aspect.targets or ())
+        if len(re.sub(r"\s+", "", str(term))) >= 2
+    }
+
+
+def _aspect_targets_overlap(left: QueryAspect, right: QueryAspect) -> float:
+    left_keys = _target_key_set(left)
+    right_keys = _target_key_set(right)
+    if not left_keys or not right_keys:
+        return 0.0
+    return len(left_keys & right_keys) / min(len(left_keys), len(right_keys))
+
+
+def _promote_cross_document_aspects(question: str, aspects: list[QueryAspect],
+                                    question_mode: str) -> list[QueryAspect]:
+    """Keep each user-named source as its own evidence obligation.
+
+    This is source-oriented, not sentence-oriented: any aspect that targets
+    exactly one named source is required, while an umbrella "compare both"
+    aspect is optional because it repeats the answer task rather than adding
+    a separate piece of evidence.  Duplicate source aspects produced by a
+    planner split are optional once every named source already has a real
+    source-isolated aspect.  No punctuation or comparison phrase is required
+    to trigger the rule.
+    """
+
+    if question_mode != 'open' or not 2 <= len(aspects) <= 8:
+        return aspects
+    source_names = _source_names_in_question(question)
+    if len(source_names) < 2:
+        return aspects
+    named_counts = {
+        aspect.aspect_id: _named_source_match_count(aspect, source_names)
+        for aspect in aspects
+    }
+    complete_named_aspects = [
+        aspect for aspect in aspects if named_counts[aspect.aspect_id] == 1
+    ]
+    match_counts = [(aspect, _source_match_count(aspect, source_names)) for aspect in aspects]
+    source_aspects = [(aspect, count) for aspect, count in match_counts if count == 1]
+    if len(source_aspects) < 2:
+        return aspects
+    use_named_only = len(complete_named_aspects) >= 2
+    kept_by_source: dict[str, list[QueryAspect]] = {}
+    promoted: list[QueryAspect] = []
+    for aspect, count in match_counts:
+        named_count = named_counts[aspect.aspect_id]
+        if named_count == 1:
+            matched = _matched_source_names(aspect, source_names)
+            source_key = matched[0] if matched else aspect.aspect_id
+            existing = kept_by_source.setdefault(source_key, [])
+            if any(_aspect_targets_overlap(aspect, kept) >= 0.6 for kept in existing):
+                # A planner split repeats the same source and the same target
+                # property.  Drop the duplicate retrieval aspect instead of
+                # spending prompt space on a second copy of the same evidence
+                # obligation.  A different quoted condition on the same source
+                # is not a duplicate.
+                continue
+            existing.append(aspect)
+            promoted.append(replace(aspect, mandatory=True))
+        elif count >= 2:
+            # The umbrella comparison aspect repeats the answer task, not an
+            # additional source obligation.
+            promoted.append(replace(aspect, mandatory=False))
+        elif use_named_only and count >= 1:
+            # A scope-only duplicate must not add a second required obligation
+            # after every named source is already covered.  Drop it only when
+            # it repeats the same target property; a different property stays
+            # available as optional context.
+            if any(_aspect_targets_overlap(aspect, kept) >= 0.6
+                   for group in kept_by_source.values() for kept in group):
+                continue
+            promoted.append(replace(aspect, mandatory=False))
+        else:
+            promoted.append(aspect)
+    return promoted
 
 
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
@@ -342,6 +485,7 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     if not plan.fallback_used:
         aspects = _mark_aspect_scope(plan.original_question, aspects,
                                      int((plan.budget or {}).get('max_aspects') or 1))
+    aspects = _promote_cross_document_aspects(plan.original_question, aspects, plan.question_mode)
     return replace(plan, aspects=tuple(aspects), requirements=())
 
 
@@ -352,6 +496,20 @@ def _plan_query_impl(question: str, options: list[str] | None = None) -> QueryPl
         return QueryPlan(original_question="", aspects=(), planner="empty", fallback_used=True, question_mode=question_mode)
 
     budget = plan_query_budget(cleaned_question)
+
+    # Questions that name an indexed spreadsheet plus a separate regulation
+    # are split by source before the table locator runs.  This prevents the
+    # first quoted regulation title from being mistaken for the table source.
+    multi_source_aspects = _multi_source_table_aspects(cleaned_question, options or [])
+    if multi_source_aspects:
+        return QueryPlan(
+            original_question=cleaned_question,
+            aspects=multi_source_aspects,
+            planner="deterministic-multi-source",
+            fallback_used=True,
+            budget=budget.to_debug_dict(),
+            question_mode=question_mode,
+        )
 
     # Explicit spreadsheet questions are deterministic enough to plan locally.
     # This avoids an API round trip and, more importantly, prevents an LLM from
@@ -709,6 +867,8 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     f"{budget.system_max_aspects} 个 aspect。按实际需要拆分，不必填满上限。每个 aspect 包含："
                     "aspect_id、question、evidence_need、search_queries、keywords、modality、table_task、table_filters、operation。"
                     "如果用户明确枚举了多个处理对象，一般每个处理对象单独成为一个 aspect；"
+                    "跨文档比较时，每个命名来源单独一个 aspect；若该 aspect 只针对某个具体文件/版本/附件，"
+                    "把用户问题中的精确来源名写入 table_filters.source_title；另加一个对比 aspect；不要把两个来源合并。"
                     "如果因为预算必须合并或遗漏项目，把项目名称写入 omitted_or_merged_items。"
                     "输出 JSON 顶层必须包含 aspects 和 omitted_or_merged_items。"
                     "search_queries 必须是对象数组，每个对象包含 query、query_type、rationale。"
@@ -1213,6 +1373,83 @@ def _clean_table_filters(value: Any) -> dict[str, Any]:
         "file_type",
     }
     return {key: value[key] for key in allowed if key in value and value[key] not in (None, "", [])}
+
+
+def _source_title_matches(candidate: str, indexed: str) -> bool:
+    from backend.app.services.retrieval_metadata_filter_service import _normalize_title
+    left = _normalize_title(candidate)
+    right = _normalize_title(re.sub(r'^(?:\d+_)|\.(?:xlsx?|csv)$', '', indexed))
+    return bool(left and right and (left in right or right in left))
+
+
+def _question_source_segments(question: str) -> list[str]:
+    segments = [
+        part.strip(" ，,。；;")
+        for part in re.split(r'(?:同时|并且|以及|另|；|;|。)+', str(question or ''))
+    ]
+    return [part for part in segments if len(part) >= 4]
+
+
+def _multi_source_table_aspects(question: str, options: list[str]) -> tuple[QueryAspect, ...]:
+    """Split a question that names a table plus at least one text source.
+
+    The deterministic table planner used to treat the first quoted title as the
+    table source, so a regulation title placed first could suppress the named
+    spreadsheet.  This split is source-oriented: the clause naming an indexed
+    spreadsheet becomes the table aspect, and every other explicitly named
+    source becomes a text aspect with its own local question.
+    """
+
+    table_sources = _TABLE_SOURCES.get()
+    if not table_sources:
+        return ()
+    segments = _question_source_segments(question)
+    titles = list(dict.fromkeys(re.findall(r'《([^》]+)》', question)))
+    if len(titles) < 2:
+        return ()
+    table_titles = [
+        title for title in titles
+        if any(_source_title_matches(title, source) for source in table_sources)
+    ]
+    text_titles = [title for title in titles if title not in table_titles]
+    if len(table_titles) != 1 or not text_titles:
+        return ()
+    table_title = table_titles[0]
+    table_segment = next(
+        (segment for segment in segments if table_title in segment), question
+    )
+    table_aspect = _fallback_table_aspect(table_segment, options=options)
+    if table_aspect is None:
+        return ()
+    table_aspect = replace(table_aspect, aspect_id="table_evidence", question=table_segment)
+    aspects: list[QueryAspect] = [table_aspect]
+    for index, title in enumerate(text_titles, start=1):
+        segment = next(
+            (item for item in segments if title in item),
+            re.sub(r'《[^》]*》', '', question),
+        )
+        body = re.sub(r'《[^》]*》', '', segment)
+        body = re.sub(
+            r'^(?:根据|依据|按照|从|在|对|关于|同时|并|以及|另|其中|另据)+[，,：:\s]*',
+            '', body,
+        )
+        body = re.sub(r'^[中里内][，,：:\s]*', '', body).strip(" ，,。；;")
+        sub_question = (
+            f"根据《{title}》，{body}" if body
+            else f"根据《{title}》，说明与当前问题直接相关的明确规定。"
+        )
+        filters = {"source_title": title}
+        aspects.append(QueryAspect(
+            aspect_id=f"source_text_{index}",
+            question=sub_question,
+            search_queries=_fallback_search_queries(sub_question),
+            evidence_need=f"《{title}》中与用户问题直接对应的制度原文",
+            keywords=tuple(_keywords_from_text(sub_question)),
+            modality="text",
+            table_filters=filters,
+            explicit_filter_keys=("source_title",),
+        ))
+    return tuple(aspects)
 
 
 def _fallback_table_aspect(question: str, options: list[str] | None = None) -> QueryAspect | None:
@@ -2131,6 +2368,16 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
     if "column_label" not in filters:
         column_terms = [c for c in _TABLE_COLUMNS.get() if c in value_question and c not in TABLE_SCOPE_TERMS
                         and not re.fullmatch(r'20\d{2}年|\d{1,2}月', c)]
+        if not column_terms:
+            # “X 的账面余额是多少” names the measurement column without an
+            # explicit “在…列” phrase.  Scope words are valid columns when the
+            # sentence directly asks for that value; they remain excluded from
+            # row/indicator extraction.
+            column_terms = [
+                c for c in _TABLE_COLUMNS.get()
+                if c in TABLE_SCOPE_TERMS and c in value_question
+                and re.search(rf"{re.escape(c)}\s*(?:是多少|为|的数值|的余额)", value_question)
+            ]
         column_terms.sort(key=len, reverse=True)
         if column_terms:
             filters['column_label'] = column_terms[0]

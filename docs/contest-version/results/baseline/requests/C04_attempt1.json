@@ -1,0 +1,951 @@
+{
+  "case": {
+    "id": "C04",
+    "category": "跨文档比较",
+    "demo": false,
+    "question": "《恢复计划示例（商业银行版）》与《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是否一致？",
+    "expected": {
+      "answered": true,
+      "answer_any_groups": [
+        [
+          "一致",
+          "相同",
+          "无实质差异",
+          "三要素",
+          "三个要素"
+        ]
+      ],
+      "sources_all": [
+        "恢复计划示例（商业银行版）",
+        "处置计划建议示例（商业银行版）"
+      ],
+      "requirements_all": [
+        "恢复计划示例（商业银行版）",
+        "处置计划建议示例（商业银行版）"
+      ],
+      "validation_passed": true,
+      "explanation_required": true,
+      "source_groups_min": 2
+    },
+    "notes": "比较任务本身不额外生成第三个取证义务；每个来源仍单独取证。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": false,
+    "failures": [
+      "expected an answer, got refusal/clarification",
+      "answer missing any of ['一致', '相同', '无实质差异', '三要素', '三个要素']",
+      "citation source missing 恢复计划示例（商业银行版）",
+      "citation source missing 处置计划建议示例（商业银行版）",
+      "validation did not pass all four conditions"
+    ],
+    "task_status": "refused",
+    "answer_type": "refusal",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 9496.54,
+    "model_calls": 1,
+    "explanation_present": false,
+    "outcome": null,
+    "validation": {
+      "missing_requirements": [
+        "《恢复计划示例（商业银行版）》的直接依据",
+        "《处置计划建议示例（商业银行版）》的直接依据"
+      ],
+      "passed": false,
+      "status": "not_run",
+      "task_complete": false,
+      "failure_stage": "evidence",
+      "model_call_count": 1,
+      "missing_required_aspect_ids": [
+        "A1",
+        "A2"
+      ]
+    },
+    "budget": null,
+    "first_feedback_ms": null
+  },
+  "task": {
+    "task_id": "a1ebb48a5cfa40b59d0b39e851d45cc3",
+    "client_request_id": "c04-3daa42466fc54d598ff0",
+    "question": "《恢复计划示例（商业银行版）》与《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是否一致？",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 4 个方面，用时 7.023s",
+        "elapsed_ms": 7023.35,
+        "summary": {
+          "aspect_count": 4,
+          "aspects": [
+            {
+              "aspect_id": "A1",
+              "question": "《恢复计划示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？",
+              "evidence_need": "在《恢复计划示例（商业银行版）》中定位“关键共享服务”相关章节或表格栏目，找出其列示的三个要素名称、逐个要素的定义说明及示例填写口径（含识别标准、范围限定、是否需列明服务提供方/重要性评估等处理要求）。",
+              "expected_evidence_type": "在《恢复计划示例（商业银行版）》中定位“关键共享服务”相关章节或表格栏目，找出其列示的三个要素名称、逐个要素的定义说明及示例填写口径（含识别标准、范围限定、是否需列明服务提供方/重要性评估等处理要求）。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "恢复计划示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "《恢复计划示例（商业银行版）》",
+                "关键共享服务"
+              ],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键共享服务包含哪三个要素",
+                "各要素",
+                "填报要求",
+                "表述"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划示例（商业银行版）中关键共享服务的三个要素分别是什么，各要素应如何填写和说明？",
+                  "query_type": "semantic_question",
+                  "rationale": "贴近用户对恢复计划示例中三要素构成与口径的直接询问，便于命中原文定义段。"
+                },
+                {
+                  "query": "关键共享服务应至少包括服务名称、服务提供方、对恢复计划重要性的评估三个要素，商业银行应在恢复计划中逐项列示并说明依赖关系。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度/示例说明的陈述句形态撰写，模拟原文证据句，提高向量命中定义条款的概率。"
+                },
+                {
+                  "query": "恢复计划示例 商业银行版 关键共享服务 要素 表格 服务名称 服务提供方 重要性",
+                  "query_type": "table_locator",
+                  "rationale": "用示例文件名、关键共享服务栏目与候选行列标签定位示例中的表格或清单位置。"
+                }
+              ],
+              "keywords": [
+                "恢复计划示例",
+                "商业银行版",
+                "关键共享服务",
+                "三个要素",
+                "服务提供方"
+              ]
+            },
+            {
+              "aspect_id": "A2",
+              "question": "《处置计划建议示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？",
+              "evidence_need": "在《处置计划建议示例（商业银行版）》中定位“关键共享服务”相关章节或表格栏目，找出其列示的三个要素名称、逐个要素的定义说明及示例填写口径（含识别标准、范围限定、是否需列明服务提供方/可处置性影响等处理要求）。",
+              "expected_evidence_type": "在《处置计划建议示例（商业银行版）》中定位“关键共享服务”相关章节或表格栏目，找出其列示的三个要素名称、逐个要素的定义说明及示例填写口径（含识别标准、范围限定、是否需列明服务提供方/可处置性影响等处理要求）。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "处置计划建议示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles"
+              ],
+              "subject_scope": [
+                "《处置计划建议示例（商业银行版）》",
+                "关键共享服务"
+              ],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键共享服务包含哪三个要素",
+                "各要素",
+                "填报要求",
+                "表述"
+              ],
+              "search_queries": [
+                {
+                  "query": "处置计划建议示例（商业银行版）中关键共享服务的三个要素分别是什么，各要素的填报口径是什么？",
+                  "query_type": "semantic_question",
+                  "rationale": "贴近用户对处置计划建议示例中三要素构成与口径的直接询问，便于命中原文章节。"
+                },
+                {
+                  "query": "商业银行应在处置计划建议中识别关键共享服务，并逐项说明服务名称、服务提供方及该服务中断对处置可行性的影响等要素。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以示例说明/制度原文的陈述句形态撰写，模拟证据句以提升语义召回。"
+                },
+                {
+                  "query": "处置计划建议示例 商业银行版 关键共享服务 要素 表格 服务名称 服务提供方 处置影响",
+                  "query_type": "table_locator",
+                  "rationale": "用示例文件名、关键共享服务栏目与候选行列标签定位示例中的表格或清单位置。"
+                }
+              ],
+              "keywords": [
+                "处置计划建议示例",
+                "商业银行版",
+                "关键共享服务",
+                "三个要素",
+                "处置可行性"
+              ]
+            },
+            {
+              "aspect_id": "A3_source1",
+              "question": "根据《恢复计划示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？",
+              "evidence_need": "分别取得两份示例中关键共享服务三个要素的原文表述后，逐要素比对名称与口径：需找到两份示例中对应的要素条目、栏目名称及其说明文字，作为判断一致或差异的留痕依据。",
+              "expected_evidence_type": "分别取得两份示例中关键共享服务三个要素的原文表述后，逐要素比对名称与口径：需找到两份示例中对应的要素条目、栏目名称及其说明文字，作为判断一致或差异的留痕依据。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "恢复计划示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_titles",
+                "source_title"
+              ],
+              "subject_scope": [
+                "《恢复计划示例（商业银行版）》",
+                "《处置计划建议示例（商业银行版）》",
+                "关键共享服务"
+              ],
+              "mandatory": false,
+              "intent": "lookup",
+              "targets": [
+                "关键共享服务",
+                "三个要素",
+                "一致",
+                "差异体现",
+                "哪个要素上"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划示例与处置计划建议示例中关键共享服务要素设置是否存在差异，两者对同一要素的界定口径是否相同？",
+                  "query_type": "semantic_question",
+                  "rationale": "直接面向跨文档比较意图，便于同时召回两份示例中相关段落作对照。"
+                },
+                {
+                  "query": "恢复计划与处置计划建议对关键共享服务的识别和列示要求应保持衔接一致，均需列明服务名称、服务提供方及重要性或影响评估。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度衔接口径的陈述句形态撰写，模拟原文证据句，支撑一致性判断。"
+                },
+                {
+                  "query": "恢复计划示例 商业银行版 与 处置计划建议示例 商业银行版 关键共享服务 要素对照 服务名称 服务提供方 重要性 处置影响",
+                  "query_type": "table_locator",
+                  "rationale": "用两份来源标题与要素标签锚定可对照的表格/清单位置，便于逐要素比对。"
+                }
+              ],
+              "keywords": [
+                "恢复计划示例",
+                "处置计划建议示例",
+                "关键共享服务",
+                "要素一致性",
+                "对照"
+              ]
+            },
+            {
+              "aspect_id": "A3_source2",
+              "question": "根据《处置计划建议示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？",
+              "evidence_need": "分别取得两份示例中关键共享服务三个要素的原文表述后，逐要素比对名称与口径：需找到两份示例中对应的要素条目、栏目名称及其说明文字，作为判断一致或差异的留痕依据。",
+              "expected_evidence_type": "分别取得两份示例中关键共享服务三个要素的原文表述后，逐要素比对名称与口径：需找到两份示例中对应的要素条目、栏目名称及其说明文字，作为判断一致或差异的留痕依据。",
+              "modality": "text",
+              "table_task": "none",
+              "table_filters": {
+                "source_title": "处置计划建议示例（商业银行版）",
+                "source_titles": [
+                  "恢复计划示例（商业银行版）",
+                  "处置计划建议示例（商业银行版）"
+                ]
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_titles",
+                "source_title"
+              ],
+              "subject_scope": [
+                "《恢复计划示例（商业银行版）》",
+                "《处置计划建议示例（商业银行版）》",
+                "关键共享服务"
+              ],
+              "mandatory": false,
+              "intent": "lookup",
+              "targets": [
+                "关键共享服务",
+                "三个要素",
+                "一致",
+                "差异体现",
+                "哪个要素上"
+              ],
+              "search_queries": [
+                {
+                  "query": "恢复计划示例与处置计划建议示例中关键共享服务要素设置是否存在差异，两者对同一要素的界定口径是否相同？",
+                  "query_type": "semantic_question",
+                  "rationale": "直接面向跨文档比较意图，便于同时召回两份示例中相关段落作对照。"
+                },
+                {
+                  "query": "恢复计划与处置计划建议对关键共享服务的识别和列示要求应保持衔接一致，均需列明服务名称、服务提供方及重要性或影响评估。",
+                  "query_type": "document_style_statement",
+                  "rationale": "以制度衔接口径的陈述句形态撰写，模拟原文证据句，支撑一致性判断。"
+                },
+                {
+                  "query": "恢复计划示例 商业银行版 与 处置计划建议示例 商业银行版 关键共享服务 要素对照 服务名称 服务提供方 重要性 处置影响",
+                  "query_type": "table_locator",
+                  "rationale": "用两份来源标题与要素标签锚定可对照的表格/清单位置，便于逐要素比对。"
+                }
+              ],
+              "keywords": [
+                "恢复计划示例",
+                "处置计划建议示例",
+                "关键共享服务",
+                "要素一致性",
+                "对照"
+              ]
+            }
+          ],
+          "planner": "openai_compatible:deepseek-v4-flash",
+          "fallback_used": false
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 4 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 4
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“《恢复计划示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 4,
+          "aspect_question": "《恢复计划示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？"
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 2",
+        "detail": "正在为“《处置计划建议示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 4,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？"
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 3",
+        "detail": "正在为“根据《恢复计划示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 4,
+          "aspect_question": "根据《恢复计划示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？"
+        },
+        "aspect_id": "A3_source1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 4",
+        "detail": "正在为“根据《处置计划建议示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 4,
+          "aspect_question": "根据《处置计划建议示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？"
+        },
+        "aspect_id": "A3_source2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 1 检索完成",
+        "detail": "已为“《恢复计划示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "《恢复计划示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 2 检索完成",
+        "detail": "已为“《处置计划建议示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 2,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中，关键共享服务包含哪三个要素？各要素的定义与填报要求如何表述？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 3 检索完成",
+        "detail": "已为“根据《恢复计划示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 3,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "根据《恢复计划示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A3_source1",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 4 检索完成",
+        "detail": "已为“根据《处置计划建议示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？”召回 12 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 4,
+          "total_aspects": 4,
+          "candidate_count": 12,
+          "aspect_question": "根据《处置计划建议示例（商业银行版）》：与中，关键共享服务的三个要素是否一致？差异体现在哪个要素上？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "A3_source2",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 4 个方面检索，召回 48 个可回溯候选片段。",
+        "elapsed_ms": 2395.69,
+        "summary": {
+          "total_aspects": 4,
+          "retrieved_aspects": 4,
+          "candidate_count": 48
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "completed",
+        "title": "重排候选片段完成",
+        "detail": "已完成 4 次重排，输出 80 个候选片段。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 48,
+          "rerank_input_count": 96,
+          "rerank_call_count": 4,
+          "reranked_count": 80
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 12/12 个片段，检索覆盖 4/4 个方面，进入 Prompt 2/4 个方面",
+        "elapsed_ms": 17.53,
+        "summary": {
+          "used_chunks": 12,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 2,
+          "retrieval_covered_aspects": 4,
+          "total_aspects": 4
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.004s",
+        "elapsed_ms": 3.61,
+        "summary": {
+          "prompt_chunk_count": 12
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "依据不足，系统直接形成拒答结论，未继续调用生成模型。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "refusal",
+          "refused": true,
+          "refusal_reason": "insufficient_context",
+          "refusal_code": "insufficient_evidence",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 3.41,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据",
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": [
+            "A1",
+            "A2"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "当前证据不足以完整回答。缺少：《恢复计划示例（商业银行版）》的直接依据；《处置计划建议示例（商业银行版）》的直接依据",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "refusal",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [
+          "《恢复计划示例（商业银行版）》的直接依据",
+          "《处置计划建议示例（商业银行版）》的直接依据"
+        ],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "evidence",
+        "model_call_count": 1,
+        "missing_required_aspect_ids": [
+          "A1",
+          "A2"
+        ]
+      },
+      "refusal_reason": "insufficient_context",
+      "refusal_code": "insufficient_evidence",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "A1",
+          "A2"
+        ],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [
+          "A1",
+          "A2"
+        ],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.08,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 7031.21,
+          "model_calls": 1,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 4,
+            "planner": "openai_compatible:deepseek-v4-flash",
+            "fallback_used": false,
+            "clarification": false,
+            "modalities": [
+              "text"
+            ]
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "prepare",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 95.34,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "terminal": false,
+            "terminal_reason": null,
+            "search_queries": 3,
+            "calls": 4
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "collect",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 2255.66,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "aspects": 4,
+            "batched": true,
+            "rerank_calls": 4
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.6,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.9,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.17,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.93,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A2"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.06,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source1"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.98,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source1"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 1.59,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source2"
+          ],
+          "summary": {
+            "candidates": 12
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.92,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A3_source2"
+          ],
+          "summary": {
+            "checked": 12,
+            "valid": 12,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 23.54,
+          "model_calls": 0,
+          "aspect_ids": [
+            "A1",
+            "A2",
+            "A3_source1",
+            "A3_source2"
+          ],
+          "summary": {
+            "selected_chunks": 12,
+            "complete": false,
+            "missing_requirements": [
+              "A1",
+              "A2"
+            ],
+            "missing_optional_requirements": []
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 7.46,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 12
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": 0.21,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": false,
+            "answer_mode": "text",
+            "required": 4,
+            "refusal_reason": "insufficient_context"
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "A1",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A2",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A3_source1",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              },
+              {
+                "aspect_id": "A3_source2",
+                "agent": "evidence",
+                "terminal": false,
+                "terminal_reason": null
+              }
+            ],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 1,
+            "answer_type": "refusal",
+            "refusal_reason": "insufficient_context"
+          }
+        }
+      ]
+    },
+    "error": null,
+    "created_at": "2026-10-19T14:39:58.225894+00:00",
+    "updated_at": "2026-10-19T14:40:07.722432+00:00",
+    "completed_at": "2026-10-19T14:40:07.722432+00:00"
+  }
+}

@@ -2,6 +2,7 @@ import { Copy, FileSpreadsheet, RefreshCw, ShieldAlert, ShieldCheck } from "luci
 
 import type { AgentTraceEntry, Citation, QAResponse } from "../../types/api";
 import { agentRoleLabel, agentStatusLabel, agentTaskLabel, formatElapsed } from "../../utils/agentLabels";
+import { outcomeLabel, validationView } from "../../utils/validation";
 
 interface AnswerResultProps {
   answer: QAResponse;
@@ -18,7 +19,8 @@ export function AnswerResult({ answer, options, onSelectCitation, onCopy, onReru
   const conclusion = normalizeConclusion(paragraphs[0] ?? (answer.refused ? "当前依据不足，无法给出确定结论。" : "当前未生成回答正文。"));
   const explanation = paragraphs.slice(1);
   const tableCitations = answer.citations.filter((citation) => citation.chunk_type === "table" || citation.evidence_role === "table_evidence");
-  const verified = answer.grounding_validation.status === "passed" && answer.grounding_validation.task_complete === true && answer.grounding_validation.passed === true;
+  const validation = validationView(answer);
+  const verified = validation.passed;
 
   return (
     <section className={answer.refused ? "answer-document answer-document--refused" : "answer-document"}>
@@ -33,7 +35,7 @@ export function AnswerResult({ answer, options, onSelectCitation, onCopy, onReru
         <div className="trust-summary" aria-label="答案可信状态">
           <span>{contextLabel(answer)}</span>
           <span>{answer.citations.length} 条引用</span>
-          <span>{validationLabel(answer)}</span>
+          <span>{validation.label}</span>
         </div>
       </header>
 
@@ -191,17 +193,7 @@ function contextLabel(answer: QAResponse): string {
   if (answer.answer_type === "service_error") return "服务异常";
   if (answer.answer_type === "clarification") return "待澄清";
   if (answer.refused || answer.context_package?.retrieval_summary.has_sufficient_context === false) return "依据不足";
-  return answer.grounding_validation.status === "passed" && answer.grounding_validation.task_complete === true
-    ? "问题已完整回答" : "完整性未确认";
-}
-
-function validationLabel(answer: QAResponse): string {
-  const validation = answer.grounding_validation;
-  if (validation.status === "passed" && validation.task_complete === true && validation.passed === true) return "依据核对通过";
-  if (validation.status === "failed") return "依据核对未通过";
-  if (validation.status === "error") return "核对服务异常";
-  if (validation.status === "not_run") return "尚未完成核对";
-  return "未记录核对状态";
+  return validationView(answer).passed ? "问题已完整回答" : outcomeLabel(answer);
 }
 
 function refusalReasonLabel(reason: string | null): string {

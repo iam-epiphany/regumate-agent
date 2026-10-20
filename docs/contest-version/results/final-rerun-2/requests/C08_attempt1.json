@@ -1,0 +1,1319 @@
+{
+  "case": {
+    "id": "C08",
+    "category": "表格计算",
+    "demo": false,
+    "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+    "expected": {
+      "answered": true,
+      "answer_any_groups": [
+        [
+          "253397.3954",
+          "253,397.3954",
+          "253397.40",
+          "253,397.40",
+          "253397.4",
+          "253,397.4"
+        ],
+        [
+          "275230.6254",
+          "275,230.6254",
+          "275230.63",
+          "275,230.63"
+        ],
+        [
+          "21833.23",
+          "21,833.23"
+        ]
+      ],
+      "sources_all": [
+        "2023年3季度保险业资金运用情况表"
+      ],
+      "validation_passed": true,
+      "answer_type_any": [
+        "table_deterministic"
+      ],
+      "explanation_required": true,
+      "calculation_required": true,
+      "calculation_operands_min": 2
+    },
+    "notes": "期望操作数 B6=275230.6254、B13=21833.23，结果 253397.3954 亿元。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": true,
+    "failures": [],
+    "task_status": "completed",
+    "answer_type": "table_deterministic",
+    "refused": false,
+    "citation_count": 1,
+    "duration_ms": 59.67,
+    "model_calls": 0,
+    "explanation_present": true,
+    "outcome": "answered",
+    "validation": {
+      "status": "passed",
+      "passed": true,
+      "citation_integrity": true,
+      "facts_supported": true,
+      "task_complete": true,
+      "method": "deterministic",
+      "reasons": [],
+      "missing_requirements": []
+    },
+    "budget": {
+      "category": "standard",
+      "total_seconds": 150.0,
+      "elapsed_ms": 49.37,
+      "model_calls": 0,
+      "model_call_limit": 5,
+      "first_feedback_ms": 0.13,
+      "upgraded": false
+    },
+    "first_feedback_ms": 0.13
+  },
+  "task": {
+    "task_id": "b342fa2bca6446dc8694470607ff068b",
+    "client_request_id": "c08-f55fda485af5480f8b13",
+    "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+    "options": [],
+    "include_debug": false,
+    "status": "completed",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 1 个方面，用时 0.015s",
+        "elapsed_ms": 14.8,
+        "summary": {
+          "aspect_count": 1,
+          "aspects": [
+            {
+              "aspect_id": "table_evidence",
+              "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+              "evidence_need": "表格工作表、行列标签、单元格坐标和值",
+              "expected_evidence_type": "表格工作表、行列标签、单元格坐标和值",
+              "modality": "table",
+              "table_task": "calculate",
+              "table_filters": {
+                "source_title": "2023年3季度保险业资金运用情况表",
+                "year": 2023,
+                "quarter": 3,
+                "indicator": "资金运用余额",
+                "row_label": "资金运用余额"
+              },
+              "operation": "difference",
+              "selectors": [
+                {
+                  "row_or_indicator": "银行存款",
+                  "ordered_transition": true
+                },
+                {
+                  "row_or_indicator": "资金运用余额"
+                }
+              ],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "year",
+                "quarter",
+                "indicator",
+                "row_label"
+              ],
+              "subject_scope": [],
+              "mandatory": true,
+              "intent": "calculate",
+              "targets": [
+                "资金运用余额",
+                "银行存款",
+                "账面余额",
+                "是多少",
+                "前者比后者多多少亿元"
+              ],
+              "search_queries": [
+                {
+                  "query": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+                  "query_type": "semantic_question",
+                  "rationale": "表格问题的自然语言意图"
+                },
+                {
+                  "query": "2023年3季度保险业资金运用情况表 资金运用余额",
+                  "query_type": "document_style_statement",
+                  "rationale": "接近表格标题和工作表名称"
+                },
+                {
+                  "query": "2023年3季度保险业资金运用情况表 2023 3 资金运用余额 资金运用余额",
+                  "query_type": "table_locator",
+                  "rationale": "表格结构定位锚点"
+                }
+              ],
+              "keywords": [
+                "2023",
+                "季度保险业资金运用情况表",
+                "资金运用余额和银行存款的",
+                "账面余额分别是多少",
+                "前者比后者多多少亿元",
+                "资金运用余额"
+              ]
+            }
+          ],
+          "planner": "deterministic-table",
+          "fallback_used": true,
+          "complex_task": false,
+          "budget_reasons": []
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 1 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "aspect_question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？"
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "方面 1 检索完成",
+        "detail": "已为“《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？”召回 1 个可回溯候选片段",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "candidate_count": 1,
+          "aspect_question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+          "retrieved_sections": [
+            "2023年3季度保险业资金运用情况表"
+          ]
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 1 个方面检索，召回 1 个可回溯候选片段。",
+        "elapsed_ms": 18.3,
+        "summary": {
+          "total_aspects": 1,
+          "retrieved_aspects": 1,
+          "candidate_count": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "skipped",
+        "title": "重排候选片段已跳过",
+        "detail": "当前候选片段已由结构化检索或兼容检索直接排序，无需额外重排。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 1,
+          "rerank_input_count": 0,
+          "rerank_call_count": 0,
+          "reranked_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 1/12 个片段，检索覆盖 1/1 个方面，进入 Prompt 1/1 个方面",
+        "elapsed_ms": 1.44,
+        "summary": {
+          "used_chunks": 1,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 1,
+          "retrieval_covered_aspects": 1,
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.001s",
+        "elapsed_ms": 1.24,
+        "summary": {
+          "prompt_chunk_count": 1
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "completed",
+        "title": "答案生成完成",
+        "detail": "已基于选定证据生成结构化回答。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "completed",
+          "answer_type": "table_deterministic",
+          "refused": false,
+          "refusal_reason": null,
+          "refusal_code": null,
+          "first_verified_claim_ms": 2.28,
+          "generation_total_ms": 3.56,
+          "verified_claim_count": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "completed",
+        "title": "事实与引用校验完成",
+        "detail": "答案中的引用和关键实体已完成证据核验。",
+        "elapsed_ms": null,
+        "summary": {
+          "passed": true,
+          "checked_claims": 1,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "waived_checks": {
+            "reason": "deterministic_calculation_result",
+            "unsupported_entities": [],
+            "unsupported_claim_entities": []
+          },
+          "calculation_trace_valid": true,
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "deterministic",
+          "validation_attempts": 0,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "计算结果为 253397.3954 亿元。计算式：275230.6254 - 21833.23 = 253397.3954。[1]",
+      "citations": [
+        {
+          "document_id": "DOC-20260717-021526E6BF22",
+          "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0009",
+          "filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+          "source_url": null,
+          "attachment_url": null,
+          "source_title": null,
+          "issuing_authority": null,
+          "publication_date": null,
+          "document_number": null,
+          "version_status": null,
+          "section_title": "2023年3季度保险业资金运用情况表",
+          "section_path": [
+            "2023年3季度保险业资金运用情况表"
+          ],
+          "section_number": null,
+          "parent_section_number": null,
+          "previous_chunk_id": null,
+          "next_chunk_id": null,
+          "page_number": null,
+          "excerpt": "表格计算证据：2023年3季度保险资金运用情况表!B6 - 2023年3季度保险资金运用情况表!B13 = 253397.3954。参与单元格：2023年3季度保险资金运用情况表!B13=21833.23；2023年3季度保险资金运用情况表!B6=275230.6254",
+          "score": 0.25,
+          "rerank_score": 0.25,
+          "chunk_type": "table_calculation",
+          "evidence_role": "table_evidence",
+          "metadata": {
+            "document_id": "DOC-20260717-021526E6BF22",
+            "page_number": null,
+            "chunk_type": "table_calculation",
+            "evidence_role": "table_evidence",
+            "vector_score": 0.25,
+            "rerank_score": 0.25,
+            "coverage_score": 1.0,
+            "section_number": null,
+            "parent_section_number": null,
+            "previous_chunk_id": null,
+            "next_chunk_id": null,
+            "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+            "source_format": "xlsx",
+            "inferred_year": 2023,
+            "inferred_month": null,
+            "inferred_quarter": 3,
+            "report_type": null,
+            "business_domain": "监管统计",
+            "source_url": null,
+            "spreadsheet_table": true,
+            "sheet_name": "2023年3季度保险资金运用情况表",
+            "sheet_index": 1,
+            "sheet_state": "visible",
+            "table_id": "DOC-20260717-021526E6BF22-SHEET-01",
+            "table_title": "2023年3季度保险业资金运用情况表",
+            "unit": "亿元",
+            "period": {
+              "year": 2023,
+              "month": null,
+              "quarter": 3,
+              "raw": "2023年3季度"
+            },
+            "table_headers": [
+              "项目",
+              "截至当期 / 账面余额",
+              "截至当期 / 规模占比",
+              "截至当期 / 同比增长"
+            ],
+            "row_header_columns": [
+              1
+            ],
+            "table_chunk_role": "row",
+            "row_index": 13,
+            "row_label": "其中：银行存款",
+            "row_cells": {
+              "项目": "其中：银行存款",
+              "截至当期 / 账面余额": "21833.23",
+              "截至当期 / 规模占比": "0.08882974031",
+              "截至当期 / 同比增长": "-0.02878605453"
+            },
+            "cells": [
+              {
+                "coordinate": "A13",
+                "row": 13,
+                "column": 1,
+                "row_label": "其中：银行存款",
+                "column_label": "项目",
+                "column_path": [
+                  "项目"
+                ],
+                "value": "其中：银行存款",
+                "normalized_value": "其中：银行存款",
+                "unit": "亿元",
+                "data_type": "s",
+                "is_formula": false,
+                "formula": null,
+                "merged_from": null
+              },
+              {
+                "coordinate": "B13",
+                "row": 13,
+                "column": 2,
+                "row_label": "其中：银行存款",
+                "column_label": "截至当期 / 账面余额",
+                "column_path": [
+                  "截至当期",
+                  "账面余额"
+                ],
+                "value": "21833.23",
+                "normalized_value": 21833.2299977221,
+                "unit": "亿元",
+                "data_type": "n",
+                "is_formula": false,
+                "formula": null,
+                "merged_from": null
+              },
+              {
+                "coordinate": "C13",
+                "row": 13,
+                "column": 3,
+                "row_label": "其中：银行存款",
+                "column_label": "截至当期 / 规模占比",
+                "column_path": [
+                  "截至当期",
+                  "规模占比"
+                ],
+                "value": "0.08882974031",
+                "normalized_value": 0.0888297403140739,
+                "unit": "亿元",
+                "data_type": "n",
+                "is_formula": true,
+                "formula": "=B13/B12",
+                "merged_from": null
+              },
+              {
+                "coordinate": "D13",
+                "row": 13,
+                "column": 4,
+                "row_label": "其中：银行存款",
+                "column_label": "截至当期 / 同比增长",
+                "column_path": [
+                  "截至当期",
+                  "同比增长"
+                ],
+                "value": "-0.02878605453",
+                "normalized_value": -0.0287860545324065,
+                "unit": "亿元",
+                "data_type": "n",
+                "is_formula": false,
+                "formula": null,
+                "merged_from": null
+              }
+            ],
+            "raw_table_preview": "表格：\n表格行证据：在《2023年3季度保险业资金运用情况表》工作表“2023年3季度保险资金运用情况表”中，行标签为“其中：银行存款”。单位：亿元。项目=“其中：银行存款”；截至当期 / 账面余额=“21833.23”；截至当期 / 规模占比=“0.08882974031”；截至当期 / 同比增长=“-0.02878605453”。",
+            "source_filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+            "table_context": "",
+            "raw_table_text": "表格：\n表格行证据：在《2023年3季度保险业资金运用情况表》工作表“2023年3季度保险资金运用情况表”中，行标签为“其中：银行存款”。单位：亿元。项目=“其中：银行存款”；截至当期 / 账面余额=“21833.23”；截至当期 / 规模占比=“0.08882974031”；截至当期 / 同比增长=“-0.02878605453”。",
+            "version_status": "unknown",
+            "file_sha256": "fb0fde60512f94e8e4fdfb33444b9b2b980a85f219d3f1652825d38a64e81e52",
+            "title": "2023年3季度保险业资金运用情况表",
+            "source_type": "uploaded_file",
+            "year": 2023,
+            "month": null,
+            "quarter": 3,
+            "dynamic_table_evidence": true,
+            "table_task": "calculate",
+            "operation": "difference",
+            "ordered_transition": true,
+            "match_status": "valid_calculation",
+            "refusal_reason": null,
+            "calculation_formula": "2023年3季度保险资金运用情况表!B6 - 2023年3季度保险资金运用情况表!B13",
+            "calculation_display_formula": "275230.6254 - 21833.23 = 253397.3954",
+            "calculation_result": 253397.3954,
+            "calculation_result_text": "253397.3954",
+            "calculation_cells": [
+              {
+                "document_id": "DOC-20260717-021526E6BF22",
+                "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0009",
+                "filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B13",
+                "value": "21833.23",
+                "normalized_value": 21833.2299977221,
+                "unit": "亿元",
+                "row_label": "其中：银行存款",
+                "column_label": "截至当期 / 账面余额",
+                "period": {
+                  "year": 2023,
+                  "month": null,
+                  "quarter": 3,
+                  "raw": "2023年3季度"
+                }
+              },
+              {
+                "document_id": "DOC-20260717-021526E6BF22",
+                "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0002",
+                "filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B6",
+                "value": "275230.6254",
+                "normalized_value": 275230.625444969,
+                "unit": "亿元",
+                "row_label": "资金运用余额",
+                "column_label": "截至当期 / 账面余额",
+                "period": {
+                  "year": 2023,
+                  "month": null,
+                  "quarter": 3,
+                  "raw": "2023年3季度"
+                }
+              }
+            ],
+            "selection_assumptions": [],
+            "evidence_id": "DOC-20260717-021526E6BF22-CHUNK-0009::CALC::difference",
+            "aspect_id": "table_evidence",
+            "aspect_question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+            "aspect_search_queries": [
+              {
+                "query": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+                "query_type": "semantic_question",
+                "rationale": "表格问题的自然语言意图"
+              },
+              {
+                "query": "2023年3季度保险业资金运用情况表 资金运用余额",
+                "query_type": "document_style_statement",
+                "rationale": "接近表格标题和工作表名称"
+              },
+              {
+                "query": "2023年3季度保险业资金运用情况表 2023 3 资金运用余额 资金运用余额",
+                "query_type": "table_locator",
+                "rationale": "表格结构定位锚点"
+              }
+            ],
+            "fusion_method": "structured_spreadsheet_retrieval",
+            "expected_evidence_type": "表格工作表、行列标签、单元格坐标和值",
+            "evidence_need": "表格工作表、行列标签、单元格坐标和值",
+            "prompt_matched_aspects": [
+              "table_evidence"
+            ],
+            "retrieval_aspect_id": "table_evidence",
+            "prompt_aspect_questions": {
+              "table_evidence": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？"
+            },
+            "prompt_selection_reason": "requirement_round_robin",
+            "requirement_bindings": {
+              "table_evidence_input1": {
+                "document_id": "DOC-20260717-021526E6BF22",
+                "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0009",
+                "filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B13",
+                "value": "21833.23",
+                "normalized_value": 21833.2299977221,
+                "unit": "亿元",
+                "row_label": "其中：银行存款",
+                "column_label": "截至当期 / 账面余额",
+                "period": {
+                  "year": 2023,
+                  "month": null,
+                  "quarter": 3,
+                  "raw": "2023年3季度"
+                }
+              },
+              "table_evidence_input2": {
+                "document_id": "DOC-20260717-021526E6BF22",
+                "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0002",
+                "filename": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B6",
+                "value": "275230.6254",
+                "normalized_value": 275230.625444969,
+                "unit": "亿元",
+                "row_label": "资金运用余额",
+                "column_label": "截至当期 / 账面余额",
+                "period": {
+                  "year": 2023,
+                  "month": null,
+                  "quarter": 3,
+                  "raw": "2023年3季度"
+                }
+              }
+            },
+            "supported_requirement_ids": [
+              "table_evidence_input1",
+              "table_evidence_input2"
+            ]
+          }
+        }
+      ],
+      "confidence": 0.25,
+      "refused": false,
+      "context_package": null,
+      "answer_type": "table_deterministic",
+      "generation_status": "completed",
+      "claims": [
+        {
+          "text": "计算结果为 253397.3954 亿元。计算式：275230.6254 - 21833.23 = 253397.3954。",
+          "citation_ids": [
+            "[1]"
+          ],
+          "role": "calculation",
+          "aspect_ids": [
+            "table_evidence"
+          ]
+        }
+      ],
+      "grounding_validation": {
+        "passed": true,
+        "checked_claims": 1,
+        "invalid_citation_ids": [],
+        "invalid_answer_citation_ids": [],
+        "missing_inline_citation_ids": [],
+        "unsupported_entities": [],
+        "unsupported_claim_entities": [],
+        "missing_claims": false,
+        "missing_claim_citations": [],
+        "semantic_passed": true,
+        "semantic_mode": "task_level",
+        "verifier_status": "passed",
+        "waived_checks": {
+          "reason": "deterministic_calculation_result",
+          "unsupported_entities": [],
+          "unsupported_claim_entities": []
+        },
+        "calculation_trace_valid": true,
+        "status": "passed",
+        "task_complete": true,
+        "citation_integrity": true,
+        "facts_supported": true,
+        "missing_requirements": [],
+        "reasons": [],
+        "method": "deterministic",
+        "validation_attempts": 0,
+        "validation_error_code": null,
+        "validation_error_type": null,
+        "validation_finish_reason": null,
+        "failure_stage": null,
+        "reason": "passed",
+        "repair_attempted": false,
+        "format_repair_attempted": false,
+        "semantic_repair_attempted": false,
+        "model_call_count": 0
+      },
+      "refusal_reason": null,
+      "refusal_code": null,
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "table_evidence",
+          "table_evidence_input1",
+          "table_evidence_input2"
+        ],
+        "covered_aspect_ids": [
+          "table_evidence",
+          "table_evidence_input1",
+          "table_evidence_input2"
+        ],
+        "missing_aspect_ids": [],
+        "complete": true
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.06,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 16.21,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 1,
+            "planner": "deterministic-table",
+            "fallback_used": true,
+            "clarification": false,
+            "modalities": [
+              "table"
+            ]
+          }
+        },
+        {
+          "agent": "table",
+          "role": "表格计算",
+          "task": "locate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 13.94,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "located": 1,
+            "terminal": true,
+            "terminal_reason": "structured_cells_located",
+            "match_status": "valid_calculation"
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.06,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "candidates": 1
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.42,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "checked": 1,
+            "valid": 1,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 2.75,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "selected_chunks": 1,
+            "complete": true,
+            "missing_requirements": [],
+            "missing_optional_requirements": []
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 2.84,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 1
+          }
+        },
+        {
+          "agent": "table",
+          "role": "表格计算",
+          "task": "deterministic",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.22,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "kind": "table",
+            "produced": true,
+            "refused": false,
+            "answer_type": "table_deterministic"
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.3,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": true,
+            "answer_mode": "text",
+            "required": 3
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "draft",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "answer_type": "table_deterministic",
+            "refused": false,
+            "refusal_reason": null,
+            "claims": 1,
+            "correction": false
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "verify",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.38,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "passed": true,
+            "status": "passed",
+            "method": "deterministic",
+            "reasons": [],
+            "missing_requirements": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "judge",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "decision": "accept",
+            "refusal_reason": null
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "table_evidence",
+                "agent": "table",
+                "terminal": true,
+                "terminal_reason": "structured_cells_located"
+              }
+            ],
+            "generation_attempts": 1,
+            "validations": 1,
+            "model_calls_total": 0,
+            "answer_type": "table_deterministic",
+            "refusal_reason": null
+          }
+        }
+      ],
+      "explanation": {
+        "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+        "outcome": "answered",
+        "cross_document": false,
+        "requirements": [
+          {
+            "requirement_id": "table_evidence",
+            "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+            "source_titles": [],
+            "mandatory": true,
+            "status": "covered",
+            "evidence_ids": [
+              "[1]"
+            ],
+            "missing_reason": null
+          },
+          {
+            "requirement_id": "table_evidence_input1",
+            "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+            "source_titles": [
+              "2023年3季度保险业资金运用情况表"
+            ],
+            "mandatory": true,
+            "status": "covered",
+            "evidence_ids": [
+              "[1]"
+            ],
+            "missing_reason": null
+          },
+          {
+            "requirement_id": "table_evidence_input2",
+            "question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？",
+            "source_titles": [
+              "2023年3季度保险业资金运用情况表"
+            ],
+            "mandatory": true,
+            "status": "covered",
+            "evidence_ids": [
+              "[1]"
+            ],
+            "missing_reason": null
+          }
+        ],
+        "claims": [
+          {
+            "claim_index": 1,
+            "text": "计算结果为 253397.3954 亿元。计算式：275230.6254 - 21833.23 = 253397.3954。",
+            "role": "calculation",
+            "evidence_ids": [
+              "[1]"
+            ],
+            "requirement_ids": [
+              "table_evidence",
+              "table_evidence_input1",
+              "table_evidence_input2"
+            ],
+            "aspect_ids": [
+              "table_evidence"
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "evidence_id": "[1]",
+            "chunk_id": "DOC-20260717-021526E6BF22-CHUNK-0009",
+            "document_id": "DOC-20260717-021526E6BF22",
+            "source": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+            "source_title": "2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表",
+            "section_title": "2023年3季度保险业资金运用情况表",
+            "section_path": [
+              "2023年3季度保险业资金运用情况表"
+            ],
+            "page_number": null,
+            "sheet_name": "2023年3季度保险资金运用情况表",
+            "cell": null,
+            "excerpt": "表格计算证据：2023年3季度保险资金运用情况表!B6 - 2023年3季度保险资金运用情况表!B13 = 253397.3954。参与单元格：2023年3季度保险资金运用情况表!B13=21833.23；2023年3季度保险资金运用情况表!B6=275230.6254",
+            "requirement_ids": [
+              "table_evidence",
+              "table_evidence_input1",
+              "table_evidence_input2"
+            ],
+            "claim_indices": [
+              1
+            ],
+            "citation_located": true
+          }
+        ],
+        "source_groups": [
+          {
+            "source_title": "",
+            "source_name": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+            "requirement_ids": [
+              "table_evidence"
+            ],
+            "evidence_ids": [
+              "[1]"
+            ],
+            "claim_indices": [
+              1
+            ],
+            "status": "covered"
+          },
+          {
+            "source_title": "2023年3季度保险业资金运用情况表",
+            "source_name": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+            "requirement_ids": [
+              "table_evidence_input1",
+              "table_evidence_input2"
+            ],
+            "evidence_ids": [
+              "[1]"
+            ],
+            "claim_indices": [
+              1
+            ],
+            "status": "covered"
+          }
+        ],
+        "calculations": [
+          {
+            "operation": "difference",
+            "formula": "2023年3季度保险资金运用情况表!B6 - 2023年3季度保险资金运用情况表!B13",
+            "display_formula": "275230.6254 - 21833.23 = 253397.3954",
+            "result": "253397.3954",
+            "unit": "亿元",
+            "operands": [
+              {
+                "label": "其中：银行存款",
+                "value": "21833.2299977221",
+                "unit": "亿元",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B13",
+                "source": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "evidence_id": "[1]"
+              },
+              {
+                "label": "资金运用余额",
+                "value": "275230.625444969",
+                "unit": "亿元",
+                "sheet_name": "2023年3季度保险资金运用情况表",
+                "cell": "B6",
+                "source": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+                "evidence_id": "[1]"
+              }
+            ],
+            "evidence_ids": [
+              "[1]"
+            ],
+            "source": "148_2023年3季度保险业资金运用情况表_2023年三季度保险业资金运用情况表.xlsx",
+            "verified": true,
+            "verification_note": "操作数、公式与结果已通过确定性校验"
+          }
+        ],
+        "validation": {
+          "status": "passed",
+          "passed": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "task_complete": true,
+          "method": "deterministic",
+          "reasons": [],
+          "missing_requirements": []
+        },
+        "budget": {
+          "category": "standard",
+          "total_seconds": 150.0,
+          "elapsed_ms": 49.37,
+          "model_calls": 0,
+          "model_call_limit": 5,
+          "first_feedback_ms": 0.13,
+          "upgraded": false
+        },
+        "stages": [
+          {
+            "stage": "planning",
+            "status": "running",
+            "title": "正在理解问题",
+            "elapsed_ms": null,
+            "agent": "planner",
+            "summary": {}
+          },
+          {
+            "stage": "planning",
+            "status": "completed",
+            "title": "问题理解完成",
+            "elapsed_ms": 14.8,
+            "agent": "planner",
+            "summary": {
+              "aspect_count": 1,
+              "planner": "deterministic-table",
+              "fallback_used": true,
+              "complex_task": false
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索相关依据",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 1
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "running",
+            "title": "正在检索方面 1",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 1,
+              "aspect_question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "方面 1 检索完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "aspect_index": 1,
+              "total_aspects": 1,
+              "candidate_count": 1,
+              "aspect_question": "《2023年3季度保险业资金运用情况表》中，资金运用余额和银行存款的账面余额分别是多少？前者比后者多多少亿元？"
+            }
+          },
+          {
+            "stage": "retrieval",
+            "status": "completed",
+            "title": "检索相关依据完成",
+            "elapsed_ms": 18.3,
+            "agent": "supervisor",
+            "summary": {
+              "total_aspects": 1,
+              "retrieved_aspects": 1,
+              "candidate_count": 1
+            }
+          },
+          {
+            "stage": "rerank",
+            "status": "skipped",
+            "title": "重排候选片段已跳过",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "candidate_count": 1,
+              "rerank_input_count": 0,
+              "rerank_call_count": 0,
+              "reranked_count": 0
+            }
+          },
+          {
+            "stage": "context_selection",
+            "status": "running",
+            "title": "正在精选最终上下文",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "context_selection",
+            "status": "completed",
+            "title": "上下文精选完成",
+            "elapsed_ms": 1.44,
+            "agent": "curation",
+            "summary": {
+              "used_chunks": 1,
+              "max_prompt_chunks": 12,
+              "covered_aspects": 1,
+              "retrieval_covered_aspects": 1,
+              "total_aspects": 1
+            }
+          },
+          {
+            "stage": "prompt_build",
+            "status": "running",
+            "title": "正在构造 LLM Prompt",
+            "elapsed_ms": null,
+            "agent": "curation",
+            "summary": {}
+          },
+          {
+            "stage": "prompt_build",
+            "status": "completed",
+            "title": "Prompt 构造完成",
+            "elapsed_ms": 1.24,
+            "agent": "curation",
+            "summary": {
+              "prompt_chunk_count": 1
+            }
+          },
+          {
+            "stage": "llm_generation",
+            "status": "running",
+            "title": "正在生成可信回答",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {}
+          },
+          {
+            "stage": "llm_generation",
+            "status": "completed",
+            "title": "答案生成完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "generation_status": "completed",
+              "answer_type": "table_deterministic",
+              "refused": false,
+              "first_verified_claim_ms": 2.28,
+              "generation_total_ms": 3.56,
+              "verified_claim_count": 1
+            }
+          },
+          {
+            "stage": "grounding_validation",
+            "status": "completed",
+            "title": "事实与引用校验完成",
+            "elapsed_ms": null,
+            "agent": "supervisor",
+            "summary": {
+              "passed": true,
+              "checked_claims": 1,
+              "missing_claims": false,
+              "semantic_passed": true,
+              "semantic_mode": "task_level",
+              "verifier_status": "passed",
+              "calculation_trace_valid": true,
+              "status": "passed",
+              "task_complete": true,
+              "citation_integrity": true,
+              "facts_supported": true,
+              "method": "deterministic",
+              "validation_attempts": 0,
+              "reason": "passed",
+              "repair_attempted": false,
+              "format_repair_attempted": false,
+              "semantic_repair_attempted": false,
+              "model_call_count": 0
+            }
+          }
+        ],
+        "missing_requirements": [],
+        "elapsed_ms": 49.37,
+        "first_feedback_ms": 0.13
+      }
+    },
+    "error": null,
+    "created_at": "2026-10-19T15:19:20.213460+00:00",
+    "updated_at": "2026-10-19T15:19:20.273127+00:00",
+    "completed_at": "2026-10-19T15:19:20.273127+00:00"
+  }
+}

@@ -35,8 +35,10 @@ describe("StreamingAnswerPreview", () => {
       />,
     );
 
-    expect(screen.getByText("逐句已核验")).toBeInTheDocument();
-    expect(screen.getByText("1 条已核验")).toBeInTheDocument();
+    expect(screen.getByText("过程预览")).toBeInTheDocument();
+    expect(screen.getByText("已核验片段（草稿）")).toBeInTheDocument();
+    expect(screen.getByText("1 条片段")).toBeInTheDocument();
+    expect(screen.getByText(/预览不等于最终答案/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看第 1 条依据" }));
     expect(onSelectCitation).toHaveBeenCalledWith("1");
   });

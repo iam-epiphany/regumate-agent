@@ -7,7 +7,13 @@ import pytest
 from backend.app.schemas.qa import AnswerClaim, EvidenceRequirement, RetrievalResult
 from backend.app.services import answer_generation_service as generation
 from backend.app.services import answer_validation_service as validation
-from backend.app.services.evidence_contract_service import build_evidence_bundle, target_terms
+from backend.app.services.evidence_contract_service import (
+    build_evidence_bundle,
+    requirement_attribute_matches,
+    requirements_for_plan,
+    source_matches,
+    target_terms,
+)
 from backend.app.services.performance_metrics import (
     qa_execution, RequestBudgetExceeded, model_call_count, reserve_model_call,
     request_budget_context, remaining_request_budget_seconds,
@@ -122,6 +128,61 @@ def test_required_file_format_is_part_of_source_identity():
     assert source_matches(['蓝杉操作规则（PDF）'], evidence(title='蓝杉操作规则.pdf'))
 
 
+@pytest.mark.parametrize('leading_title,parenthetical_title,actual_title', [
+    (
+        '商业银行版恢复计划示例',
+        '恢复计划示例（商业银行版）',
+        '500_银行保险机构恢复和处置计划实施暂行办法_附件1：恢复计划示例（商业银行版）.docx',
+    ),
+    (
+        '商业银行版处置计划建议示例',
+        '处置计划建议示例（商业银行版）',
+        '502_银行保险机构恢复和处置计划实施暂行办法_附件3：处置计划建议示例（商业银行版）.docx',
+    ),
+    (
+        '保险公司版恢复计划示例',
+        '恢复计划示例（保险公司版）',
+        '501_银行保险机构恢复和处置计划实施暂行办法_附件2：恢复计划示例（保险公司版）.docx',
+    ),
+])
+def test_version_qualifier_matches_before_or_inside_parentheses(
+    leading_title, parenthetical_title, actual_title,
+):
+    chunk = evidence(title=actual_title)
+    assert source_matches([leading_title], chunk)
+    assert source_matches([parenthetical_title], chunk)
+
+
+def test_version_qualifier_does_not_match_the_other_institution_type():
+    bank_title = (
+        '500_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件1：恢复计划示例（商业银行版）.docx'
+    )
+    insurance_title = (
+        '501_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件2：恢复计划示例（保险公司版）.docx'
+    )
+    assert not source_matches(['商业银行版恢复计划示例'], evidence(title=insurance_title))
+    assert not source_matches(['保险公司版恢复计划示例'], evidence(title=bank_title))
+    assert not source_matches(['恢复计划示例（商业银行版）'], evidence(title=insurance_title))
+    assert not source_matches(['恢复计划示例（保险公司版）'], evidence(title=bank_title))
+
+
+def test_pure_version_qualifier_matches_only_its_own_source():
+    bank_title = (
+        '500_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件1：恢复计划示例（商业银行版）.docx'
+    )
+    insurance_title = (
+        '501_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件2：恢复计划示例（保险公司版）.docx'
+    )
+    assert source_matches(['商业银行版'], evidence(title=bank_title))
+    assert source_matches(['保险公司版'], evidence(title=insurance_title))
+    assert not source_matches(['商业银行版'], evidence(title=insurance_title))
+    assert not source_matches(['保险公司版'], evidence(title=bank_title))
+
+
 def test_rule_application_is_not_a_request_for_investment_decisions():
     assert _explicit_request_boundary_code('依据《蓝杉规则》，请判断该事项是否应报送审核。') is None
     assert _explicit_request_boundary_code('请根据已上传材料评估申请方案的可行性。') is None
@@ -139,6 +200,25 @@ def test_section_list_keeps_prose_between_items_and_stops_at_next_section(monkey
     anchor.metadata.update(document_id='doc', source_section_scope=True)
     selected = rag_service._retrieval_support_structural_context(SimpleNamespace(scalars=True), [anchor])
     assert [c.chunk_id for c in selected] == ['s0', 's1', 's2', 's3']
+
+
+def test_definition_span_repairs_a_truncated_anchor_from_the_previous_chunk(monkeypatch):
+    from backend.app.services import rag_service, retrieval_support
+    texts = [
+        '关键功能是提供给第三方的关键业务或产品等金融服务，当这些金融服务出现中断时将带来严重影响。',
+        '关键功能在恢复阶段应优先保护，确保持续提供服务，或按计划有序关闭。',
+    ]
+    chunks = [SimpleNamespace(chunk_id=f'k{i}', text=text, source_file='恢复计划示例.docx',
+        section_title='关键功能', chunk_metadata='{}', document_id='doc', index_status='indexed')
+        for i, text in enumerate(texts)]
+    monkeypatch.setattr(retrieval_support, '_chunks_by_document', lambda *args: {'doc': chunks})
+    anchor = evidence(texts[1], '恢复计划示例.docx')
+    anchor.chunk_id = 'k1'
+    anchor.metadata['document_id'] = 'doc'
+    selected = rag_service._retrieval_support_structural_context(
+        SimpleNamespace(scalars=True), [anchor], question='关键功能的定义是什么？'
+    )
+    assert [chunk.chunk_id for chunk in selected] == ['k0', 'k1']
 
 
 def test_two_complete_definitions_are_not_crowded_out_by_unrelated_numbered_entries(monkeypatch):
@@ -409,6 +489,198 @@ def test_context_selection_reserves_each_required_source():
     bundle = build_evidence_bundle(list(plan.requirements), selected)
     assert bundle.complete
     assert all(bundle.coverage.values())
+
+
+def test_definition_attribute_requires_a_definition_clause_not_a_neighbour():
+    requirement = EvidenceRequirement(
+        requirement_id='definition', question='“关键功能”的定义是什么？',
+        intent='define', target_terms=['关键功能'], attribute_terms=['定义'],
+    )
+    definition = evidence('关键功能是指向第三方提供的、保障业务连续性的基础服务。')
+    neighbour = evidence('关键功能在恢复阶段应优先保护。')
+    assert requirement_attribute_matches(requirement, definition)
+    assert not requirement_attribute_matches(requirement, neighbour)
+
+
+def test_compared_duty_attribute_rejects_a_generic_overview_heading():
+    requirement = EvidenceRequirement(
+        requirement_id='duties', question='“职责分工”的规定是什么？',
+        intent='lookup', target_terms=['职责分工'], attribute_terms=['职责分工'],
+    )
+    duty_clause = evidence('（一）职责分工\n公司应当负责制度建设和执行监督。')
+    overview = evidence('一、概要（一）机构概况')
+    assert requirement_attribute_matches(requirement, duty_clause)
+    assert not requirement_attribute_matches(requirement, overview)
+
+
+def test_attribute_terms_rank_but_do_not_replace_the_source_contract():
+    requirement = EvidenceRequirement(
+        requirement_id='definition', question='分别说明“职责分工”的规定',
+        intent='lookup', target_terms=['职责分工'],
+        attribute_terms=['职责分工'], source_titles=['甲办法'],
+    )
+    overview = evidence('一、概要（一）机构概况', title='甲办法')
+    bundle = build_evidence_bundle([requirement], [overview])
+    # Lexical attribute matching is a retrieval/ranking hint.  Whether this
+    # clause actually supports the compared property is decided by the final
+    # semantic validation, not by an evidence-contract word match.
+    assert bundle.missing_requirements == []
+    assert bundle.decisions[0].reason == 'source_and_requirement_match'
+    assert bundle.complete
+
+    clause = evidence('（一）职责分工\n公司应当负责制度建设和执行监督。', title='甲办法')
+    bundle = build_evidence_bundle([requirement], [clause])
+    assert bundle.missing_requirements == []
+    assert bundle.complete
+
+
+def test_unit_incomplete_always_blocks_evidence_completeness():
+    bank_title = (
+        '500_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件1：恢复计划示例（商业银行版）.docx'
+    )
+    requirement = EvidenceRequirement(
+        requirement_id='definition', question='“关键功能”的定义是什么？',
+        intent='define', target_terms=['关键功能'], attribute_terms=['定义'],
+        source_titles=['商业银行版恢复计划示例'],
+    )
+    chunk = evidence(
+        '关键功能是提供给第三方的关键业务或产品等金融服务。',
+        title=bank_title,
+    )
+    chunk.metadata['unit_incomplete'] = True
+    bundle = build_evidence_bundle([requirement], [chunk])
+    assert bundle.missing_requirements == ['definition']
+    assert not bundle.complete
+
+    plain_requirement = EvidenceRequirement(
+        requirement_id='plain', question='说明关键功能。',
+        source_titles=['商业银行版恢复计划示例'],
+    )
+    plain_chunk = evidence('关键功能是提供给第三方的关键业务或产品等金融服务。',
+                           title=bank_title)
+    plain_chunk.metadata['unit_incomplete'] = True
+    bundle = build_evidence_bundle([plain_requirement], [plain_chunk])
+    assert bundle.missing_requirements == ['plain']
+
+
+def test_truncated_cross_document_sources_are_not_complete():
+    question = (
+        "商业银行版恢复计划示例与商业银行版处置计划建议示例中，"
+        "“关键功能”的定义是否相同？"
+    )
+    aspects = (
+        QueryAspect(
+            'source_a', '根据商业银行版恢复计划示例，说明“关键功能”的定义。',
+            (QuerySearchQuery('关键功能 定义', 'semantic_question'),),
+            '定义原文', ('关键功能',),
+            subject_scope=('商业银行版恢复计划示例',),
+        ),
+        QueryAspect(
+            'source_b', '根据商业银行版处置计划建议示例，说明“关键功能”的定义。',
+            (QuerySearchQuery('关键功能 定义', 'semantic_question'),),
+            '定义原文', ('关键功能',),
+            subject_scope=('商业银行版处置计划建议示例',),
+        ),
+        QueryAspect(
+            'comparison', '比较两个来源对“关键功能”的定义是否相同。',
+            (QuerySearchQuery('关键功能 定义', 'semantic_question'),),
+            '对比结论', ('关键功能',), mandatory=False,
+            subject_scope=('商业银行版恢复计划示例', '商业银行版处置计划建议示例'),
+        ),
+    )
+    plan = QueryPlan(question, aspects, 'test')
+    requirements = requirements_for_plan(plan)
+    bank_title = (
+        '500_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件1：恢复计划示例（商业银行版）.docx'
+    )
+    disposal_title = (
+        '502_银行保险机构恢复和处置计划实施暂行办法_'
+        '附件3：处置计划建议示例（商业银行版）.docx'
+    )
+    bank_chunk = evidence('关键功能是提供给第三方的关键业务或产品等金融服务。',
+                          title=bank_title)
+    bank_chunk.chunk_id = 'bank'
+    bank_chunk.metadata = {
+        'aspect_id': 'source_a',
+        'prompt_matched_aspects': ['source_a', 'comparison'],
+        'unit_incomplete': True,
+    }
+    disposal_chunk = evidence('关键功能是提供给第三方的关键业务或产品等金融服务。',
+                              title=disposal_title)
+    disposal_chunk.chunk_id = 'disposal'
+    disposal_chunk.metadata = {
+        'aspect_id': 'source_b',
+        'prompt_matched_aspects': ['source_b', 'comparison'],
+        'unit_incomplete': True,
+    }
+    bundle = build_evidence_bundle(requirements, [bank_chunk, disposal_chunk])
+    # A required source unit whose structure is truncated cannot be exempted
+    # by an attribute word hit; the answer must state the gap instead.
+    assert set(bundle.missing_requirements) == {'source_a', 'source_b'}
+    assert not bundle.complete
+    assert 'comparison' in bundle.missing_optional_requirements
+
+
+def test_prompt_selection_prefers_attribute_clause_over_a_higher_rerank_neighbour():
+    aspect = QueryAspect(
+        'definition', '“关键功能”的定义是什么？',
+        (QuerySearchQuery('关键功能 定义', 'semantic_question'),),
+        '定义', ('关键功能',),
+    )
+    requirement = EvidenceRequirement(
+        requirement_id='definition', question=aspect.question,
+        intent='define', target_terms=['关键功能'], attribute_terms=['定义'],
+    )
+    plan = QueryPlan(
+        '比较两个版本对“关键功能”的定义是否一致', (aspect,), 'test',
+        requirements=(requirement,),
+    )
+    neighbour = evidence('关键功能在恢复阶段应优先保护。')
+    neighbour.chunk_id = 'neighbour'
+    neighbour.metadata['rerank_score'] = 0.99
+    definition = evidence('关键功能是指向第三方提供的、保障业务连续性的基础服务。')
+    definition.chunk_id = 'definition'
+    definition.metadata['rerank_score'] = 0.05
+    selected, _ = _select_prompt_chunks(
+        plan.original_question, plan,
+        [AspectRetrieval(aspect, [neighbour, definition], [], {}, [])],
+    )
+    ids = [chunk.chunk_id for chunk in selected]
+    # The direct attribute clause is promoted ahead of a higher-scored
+    # neighbour.  The neighbour remains selectable context; attribute wording
+    # is not a hard exclusion rule.
+    assert ids[0] == 'definition'
+    assert 'neighbour' in ids
+
+
+def test_prompt_selection_prefers_duty_clause_body_over_short_heading():
+    aspect = QueryAspect(
+        'duties', '“职责分工”的规定是什么？',
+        (QuerySearchQuery('职责分工', 'semantic_question'),),
+        '规定', ('职责分工',),
+    )
+    requirement = EvidenceRequirement(
+        requirement_id='duties', question=aspect.question,
+        intent='lookup', target_terms=['职责分工'], attribute_terms=['职责分工'],
+    )
+    plan = QueryPlan(
+        '比较两个版本的“职责分工”是否一致', (aspect,), 'test',
+        requirements=(requirement,),
+    )
+    heading = evidence('（一）职责分工')
+    heading.chunk_id = 'heading'
+    heading.metadata['rerank_score'] = 0.99
+    body = evidence('（一）职责分工\n公司应当负责制度建设和执行监督。')
+    body.chunk_id = 'body'
+    body.metadata['rerank_score'] = 0.05
+    selected, _ = _select_prompt_chunks(
+        plan.original_question, plan,
+        [AspectRetrieval(aspect, [heading, body], [], {}, [])],
+    )
+    assert selected[0].chunk_id == 'body'
+
 
 
 def test_mixed_answer_cannot_proceed_with_only_table_evidence(monkeypatch):

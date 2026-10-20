@@ -1,0 +1,569 @@
+{
+  "case": {
+    "id": "C10",
+    "category": "制度与数据联合问答",
+    "demo": false,
+    "question": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？",
+    "expected": {
+      "answered": true,
+      "answer_any_groups": [
+        [
+          "集团内部机构",
+          "第三方机构"
+        ],
+        [
+          "服务对象",
+          "法律实体"
+        ],
+        [
+          "重大影响",
+          "突然中止",
+          "无序关闭"
+        ],
+        [
+          "110034.323",
+          "110,034.323",
+          "110034.32",
+          "110,034.32"
+        ]
+      ],
+      "sources_all": [
+        "处置计划建议示例（商业银行版）",
+        "2023年3季度保险业资金运用情况表"
+      ],
+      "requirements_all": [
+        "处置计划建议示例（商业银行版）",
+        "2023年3季度保险业资金运用情况表"
+      ],
+      "validation_passed": true,
+      "explanation_required": true
+    },
+    "notes": "制度三要素与表格数值分别取证。"
+  },
+  "attempt": 1,
+  "evaluation": {
+    "pass": false,
+    "failures": [
+      "expected an answer, got refusal/clarification",
+      "answer missing any of ['集团内部机构', '第三方机构']",
+      "answer missing any of ['服务对象', '法律实体']",
+      "answer missing any of ['重大影响', '突然中止', '无序关闭']",
+      "answer missing any of ['110034.323', '110,034.323', '110034.32', '110,034.32']",
+      "citation source missing 处置计划建议示例（商业银行版）",
+      "citation source missing 2023年3季度保险业资金运用情况表",
+      "validation did not pass all four conditions"
+    ],
+    "task_status": "refused",
+    "answer_type": "refusal",
+    "refused": true,
+    "citation_count": 0,
+    "duration_ms": 54.2,
+    "model_calls": 0,
+    "explanation_present": false,
+    "outcome": null,
+    "validation": {
+      "missing_requirements": [
+        "《处置计划建议示例（商业银行版）》的直接依据"
+      ],
+      "passed": false,
+      "status": "not_run",
+      "task_complete": false,
+      "failure_stage": "evidence",
+      "model_call_count": 0,
+      "missing_required_aspect_ids": [
+        "table_evidence"
+      ],
+      "reason": "table_evidence_not_found",
+      "table_refusal_reasons": [
+        "指定年份、月份或季度在表格索引中不存在。"
+      ]
+    },
+    "budget": null,
+    "first_feedback_ms": null
+  },
+  "task": {
+    "task_id": "1b3e081ace724042977d220616ac8b9a",
+    "client_request_id": "c10-3226f908b65c40b8bb61",
+    "question": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？",
+    "options": [],
+    "include_debug": false,
+    "status": "refused",
+    "progress_events": [
+      {
+        "stage": "planning",
+        "status": "running",
+        "title": "正在理解问题",
+        "detail": "正在拆分问题并生成检索计划……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "planning",
+        "status": "completed",
+        "title": "问题理解完成",
+        "detail": "已拆分为 1 个方面，用时 0.020s",
+        "elapsed_ms": 20.06,
+        "summary": {
+          "aspect_count": 1,
+          "aspects": [
+            {
+              "aspect_id": "table_evidence",
+              "question": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？",
+              "evidence_need": "表格工作表、行列标签、单元格坐标和值",
+              "expected_evidence_type": "表格工作表、行列标签、单元格坐标和值",
+              "modality": "table",
+              "table_task": "lookup",
+              "table_filters": {
+                "source_title": "处置计划建议示例（商业银行版）",
+                "source_titles": [
+                  "处置计划建议示例（商业银行版）",
+                  "2023年3季度保险业资金运用情况表"
+                ],
+                "year": 2023,
+                "quarter": 3,
+                "indicator": "债券",
+                "row_label": "债券"
+              },
+              "operation": "none",
+              "selectors": [],
+              "expected_unit": null,
+              "explicit_filter_keys": [
+                "source_title",
+                "source_titles",
+                "year",
+                "quarter",
+                "indicator",
+                "row_label"
+              ],
+              "subject_scope": [],
+              "mandatory": true,
+              "intent": "define",
+              "targets": [
+                "关键共享服务",
+                "三个要素",
+                "同时",
+                "债券",
+                "账面余额是多少"
+              ],
+              "search_queries": [
+                {
+                  "query": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？",
+                  "query_type": "semantic_question",
+                  "rationale": "表格问题的自然语言意图"
+                },
+                {
+                  "query": "处置计划建议示例（商业银行版） 债券",
+                  "query_type": "document_style_statement",
+                  "rationale": "接近表格标题和工作表名称"
+                },
+                {
+                  "query": "处置计划建议示例（商业银行版） ['处置计划建议示例（商业银行版）', '2023年3季度保险业资金运用情况表'] 2023 3 债券 债券",
+                  "query_type": "table_locator",
+                  "rationale": "表格结构定位锚点"
+                }
+              ],
+              "keywords": [
+                "处置计划建议示例",
+                "商业银行版",
+                "关键共享服务的三个要素是",
+                "什么",
+                "同时",
+                "2023",
+                "季度保险业资金运用情况表",
+                "债券的账面余额是多少"
+              ]
+            }
+          ],
+          "planner": "deterministic-table",
+          "fallback_used": true
+        },
+        "aspect_id": null,
+        "agent": "planner"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索相关依据",
+        "detail": "正在按 1 个问题方面召回知识库片段……",
+        "elapsed_ms": null,
+        "summary": {
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "running",
+        "title": "正在检索方面 1",
+        "detail": "正在为“《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？”检索相关依据……",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？"
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "failed",
+        "title": "方面 1 未找到足够依据",
+        "detail": "“《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？”暂未召回可回溯依据",
+        "elapsed_ms": null,
+        "summary": {
+          "aspect_index": 1,
+          "total_aspects": 1,
+          "candidate_count": 0,
+          "aspect_question": "《处置计划建议示例（商业银行版）》中，关键共享服务的三个要素是什么？同时，《2023年3季度保险业资金运用情况表》中，债券的账面余额是多少？",
+          "retrieved_sections": []
+        },
+        "aspect_id": "table_evidence",
+        "agent": "supervisor"
+      },
+      {
+        "stage": "retrieval",
+        "status": "completed",
+        "title": "检索相关依据完成",
+        "detail": "已完成 1 个方面检索，召回 0 个可回溯候选片段。",
+        "elapsed_ms": 9.73,
+        "summary": {
+          "total_aspects": 1,
+          "retrieved_aspects": 0,
+          "candidate_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "rerank",
+        "status": "skipped",
+        "title": "重排候选片段已跳过",
+        "detail": "检索未产生需要重排的候选片段。",
+        "elapsed_ms": null,
+        "summary": {
+          "candidate_count": 0,
+          "rerank_input_count": 0,
+          "rerank_call_count": 0,
+          "reranked_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "context_selection",
+        "status": "running",
+        "title": "正在精选最终上下文",
+        "detail": "正在按问题方面选择可引用依据……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "context_selection",
+        "status": "completed",
+        "title": "上下文精选完成",
+        "detail": "最终使用 0/12 个片段，检索覆盖 0/1 个方面，进入 Prompt 0/1 个方面",
+        "elapsed_ms": 1.43,
+        "summary": {
+          "used_chunks": 0,
+          "max_prompt_chunks": 12,
+          "covered_aspects": 0,
+          "retrieval_covered_aspects": 0,
+          "total_aspects": 1
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "running",
+        "title": "正在构造 LLM Prompt",
+        "detail": "正在将问题和依据片段组装为后续 LLM 输入……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "prompt_build",
+        "status": "completed",
+        "title": "Prompt 构造完成",
+        "detail": "已完成 Prompt 构造，用时 0.002s",
+        "elapsed_ms": 1.63,
+        "summary": {
+          "prompt_chunk_count": 0
+        },
+        "aspect_id": null,
+        "agent": "curation"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "running",
+        "title": "正在生成可信回答",
+        "detail": "正在基于已选证据生成结构化答案……",
+        "elapsed_ms": null,
+        "summary": null,
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "llm_generation",
+        "status": "skipped",
+        "title": "答案生成已跳过",
+        "detail": "依据不足，系统直接形成拒答结论，未继续调用生成模型。",
+        "elapsed_ms": null,
+        "summary": {
+          "generation_status": "skipped",
+          "answer_type": "refusal",
+          "refused": true,
+          "refusal_reason": "table_evidence_not_found",
+          "refusal_code": "insufficient_evidence",
+          "first_verified_claim_ms": null,
+          "generation_total_ms": 1.27,
+          "verified_claim_count": 0
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      },
+      {
+        "stage": "grounding_validation",
+        "status": "failed",
+        "title": "事实与引用校验未通过",
+        "detail": "关键事实未能由当前证据或可信计算结果支持。",
+        "elapsed_ms": null,
+        "summary": {
+          "missing_requirements": [
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 0,
+          "missing_required_aspect_ids": [
+            "table_evidence"
+          ],
+          "reason": "table_evidence_not_found",
+          "table_refusal_reasons": [
+            "指定年份、月份或季度在表格索引中不存在。"
+          ]
+        },
+        "aspect_id": null,
+        "agent": "supervisor"
+      }
+    ],
+    "answer_preview": null,
+    "answer": {
+      "answer": "当前知识库中未找到足够表格依据，无法给出确定答案。指定年份、月份或季度在表格索引中不存在。",
+      "citations": [],
+      "confidence": 0.0,
+      "refused": true,
+      "context_package": null,
+      "answer_type": "refusal",
+      "generation_status": "skipped",
+      "claims": [],
+      "grounding_validation": {
+        "missing_requirements": [
+          "《处置计划建议示例（商业银行版）》的直接依据"
+        ],
+        "passed": false,
+        "status": "not_run",
+        "task_complete": false,
+        "failure_stage": "evidence",
+        "model_call_count": 0,
+        "missing_required_aspect_ids": [
+          "table_evidence"
+        ],
+        "reason": "table_evidence_not_found",
+        "table_refusal_reasons": [
+          "指定年份、月份或季度在表格索引中不存在。"
+        ]
+      },
+      "refusal_reason": "table_evidence_not_found",
+      "refusal_code": "insufficient_evidence",
+      "missing_variables": [],
+      "ambiguous_variables": [],
+      "unsupported_formula": null,
+      "degraded": false,
+      "evidence_coverage": {
+        "expected_aspect_ids": [
+          "table_evidence"
+        ],
+        "covered_aspect_ids": [],
+        "missing_aspect_ids": [
+          "table_evidence"
+        ],
+        "complete": false
+      },
+      "agent_trace": [
+        {
+          "agent": "triage",
+          "role": "分诊",
+          "task": "route",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.07,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline"
+          }
+        },
+        {
+          "agent": "planner",
+          "role": "规划",
+          "task": "plan",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 21.65,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "aspects": 1,
+            "planner": "deterministic-table",
+            "fallback_used": true,
+            "clarification": false,
+            "modalities": [
+              "table"
+            ]
+          }
+        },
+        {
+          "agent": "table",
+          "role": "表格计算",
+          "task": "locate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 5.7,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "located": 0,
+            "terminal": true,
+            "terminal_reason": "structured_spreadsheet_refusal",
+            "match_status": "period_not_found"
+          }
+        },
+        {
+          "agent": "evidence",
+          "role": "制度检索",
+          "task": "expand",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.02,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "candidates": 0
+          }
+        },
+        {
+          "agent": "verifier",
+          "role": "核验",
+          "task": "trace_evidence",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 0.01,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "checked": 0,
+            "valid": 0,
+            "invalid": 0
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "curate",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 3.08,
+          "model_calls": 0,
+          "aspect_ids": [
+            "table_evidence"
+          ],
+          "summary": {
+            "selected_chunks": 0,
+            "complete": false,
+            "missing_requirements": [
+              "table_evidence"
+            ],
+            "missing_optional_requirements": []
+          }
+        },
+        {
+          "agent": "curation",
+          "role": "证据整编",
+          "task": "prompt",
+          "status": "completed",
+          "attempt": 1,
+          "elapsed_ms": 2.96,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "prompt_chunk_count": 0
+          }
+        },
+        {
+          "agent": "answer",
+          "role": "答案生成",
+          "task": "prepare",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": 0.02,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "deterministic": false,
+            "answer_mode": "text",
+            "required": 1,
+            "refusal_reason": "insufficient_context"
+          }
+        },
+        {
+          "agent": "supervisor",
+          "role": "调度",
+          "task": "route",
+          "status": "refused",
+          "attempt": 1,
+          "elapsed_ms": null,
+          "model_calls": 0,
+          "aspect_ids": [],
+          "summary": {
+            "route": "pipeline",
+            "boundary_code": null,
+            "aspect_routes": [
+              {
+                "aspect_id": "table_evidence",
+                "agent": "table",
+                "terminal": true,
+                "terminal_reason": "structured_spreadsheet_refusal"
+              }
+            ],
+            "generation_attempts": 0,
+            "validations": 0,
+            "model_calls_total": 0,
+            "answer_type": "refusal",
+            "refusal_reason": "table_evidence_not_found"
+          }
+        }
+      ]
+    },
+    "error": null,
+    "created_at": "2026-10-19T14:40:13.653440+00:00",
+    "updated_at": "2026-10-19T14:40:13.707638+00:00",
+    "completed_at": "2026-10-19T14:40:13.707638+00:00"
+  }
+}

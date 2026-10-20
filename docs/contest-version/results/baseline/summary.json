@@ -1,0 +1,652 @@
+{
+  "mode": "core",
+  "base_url": "http://127.0.0.1:8000",
+  "generated_at": "2026-10-19T22:40:26.974152+08:00",
+  "summary": {
+    "cases": 12,
+    "passed": 9,
+    "failed": 3,
+    "duration_ms": {
+      "count": 12,
+      "median": 2264.99,
+      "max": 31286.35
+    },
+    "by_category": {
+      "制度查询": {
+        "passed": 2,
+        "total": 2
+      },
+      "跨文档比较": {
+        "passed": 1,
+        "total": 2
+      },
+      "表格取数": {
+        "passed": 2,
+        "total": 2
+      },
+      "表格计算": {
+        "passed": 2,
+        "total": 2
+      },
+      "制度与数据联合问答": {
+        "passed": 0,
+        "total": 2
+      },
+      "证据不足或澄清": {
+        "passed": 2,
+        "total": 2
+      }
+    },
+    "failures": [
+      {
+        "id": "C04",
+        "attempt": 1,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['一致', '相同', '无实质差异', '三要素', '三个要素']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "validation did not pass all four conditions"
+        ]
+      },
+      {
+        "id": "C09",
+        "attempt": 1,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['提供给第三方的关键业务或产品等金融服务', '提供给第三方的关键业务或产品', '关键业务或产品等金融服务']",
+          "answer missing any of ['275230.6254', '275,230.6254', '275230.63', '275,230.63', '275230.6', '275,230.6']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 2023年3季度保险业资金运用情况表",
+          "validation did not pass all four conditions"
+        ]
+      },
+      {
+        "id": "C10",
+        "attempt": 1,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['集团内部机构', '第三方机构']",
+          "answer missing any of ['服务对象', '法律实体']",
+          "answer missing any of ['重大影响', '突然中止', '无序关闭']",
+          "answer missing any of ['110034.323', '110,034.323', '110034.32', '110,034.32']",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "citation source missing 2023年3季度保险业资金运用情况表",
+          "validation did not pass all four conditions"
+        ]
+      }
+    ]
+  },
+  "rows": [
+    {
+      "id": "C01",
+      "category": "制度查询",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 8102.82,
+        "model_calls": 3,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 2,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "model",
+          "validation_attempts": 1,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 3
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C02",
+      "category": "制度查询",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 14899.58,
+        "model_calls": 3,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 2,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "model",
+          "validation_attempts": 1,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 3
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C03",
+      "category": "跨文档比较",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "llm_grounded",
+        "refused": false,
+        "citation_count": 2,
+        "duration_ms": 31286.35,
+        "model_calls": 3,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 3,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "model",
+          "validation_attempts": 1,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 3
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C04",
+      "category": "跨文档比较",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": false,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['一致', '相同', '无实质差异', '三要素', '三个要素']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "validation did not pass all four conditions"
+        ],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 9496.54,
+        "model_calls": 1,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据",
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": [
+            "A1",
+            "A2"
+          ]
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C05",
+      "category": "表格取数",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 95.99,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 1,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "deterministic",
+          "validation_attempts": 0,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 0
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C06",
+      "category": "表格取数",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 105.62,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 1,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "deterministic",
+          "validation_attempts": 0,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 0
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C07",
+      "category": "表格计算",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 89.98,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 1,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "waived_checks": {
+            "reason": "deterministic_calculation_result",
+            "unsupported_entities": [],
+            "unsupported_claim_entities": []
+          },
+          "calculation_trace_valid": true,
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "deterministic",
+          "validation_attempts": 0,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 0
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C08",
+      "category": "表格计算",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "completed",
+        "answer_type": "table_deterministic",
+        "refused": false,
+        "citation_count": 1,
+        "duration_ms": 75.84,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "passed": true,
+          "checked_claims": 1,
+          "invalid_citation_ids": [],
+          "invalid_answer_citation_ids": [],
+          "missing_inline_citation_ids": [],
+          "unsupported_entities": [],
+          "unsupported_claim_entities": [],
+          "missing_claims": false,
+          "missing_claim_citations": [],
+          "semantic_passed": true,
+          "semantic_mode": "task_level",
+          "verifier_status": "passed",
+          "waived_checks": {
+            "reason": "deterministic_calculation_result",
+            "unsupported_entities": [],
+            "unsupported_claim_entities": []
+          },
+          "calculation_trace_valid": true,
+          "status": "passed",
+          "task_complete": true,
+          "citation_integrity": true,
+          "facts_supported": true,
+          "missing_requirements": [],
+          "reasons": [],
+          "method": "deterministic",
+          "validation_attempts": 0,
+          "validation_error_code": null,
+          "validation_error_type": null,
+          "validation_finish_reason": null,
+          "failure_stage": null,
+          "reason": "passed",
+          "repair_attempted": false,
+          "format_repair_attempted": false,
+          "semantic_repair_attempted": false,
+          "model_call_count": 0
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C09",
+      "category": "制度与数据联合问答",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": false,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['提供给第三方的关键业务或产品等金融服务', '提供给第三方的关键业务或产品', '关键业务或产品等金融服务']",
+          "answer missing any of ['275230.6254', '275,230.6254', '275230.63', '275,230.63', '275230.6', '275,230.6']",
+          "citation source missing 恢复计划示例（商业银行版）",
+          "citation source missing 2023年3季度保险业资金运用情况表",
+          "validation did not pass all four conditions"
+        ],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 176.54,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "missing_requirements": [
+            "《恢复计划示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 0,
+          "missing_required_aspect_ids": [
+            "table_evidence"
+          ],
+          "reason": "table_evidence_not_found",
+          "table_refusal_reasons": [
+            "指定年份、月份或季度在表格索引中不存在。"
+          ]
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C10",
+      "category": "制度与数据联合问答",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": false,
+        "failures": [
+          "expected an answer, got refusal/clarification",
+          "answer missing any of ['集团内部机构', '第三方机构']",
+          "answer missing any of ['服务对象', '法律实体']",
+          "answer missing any of ['重大影响', '突然中止', '无序关闭']",
+          "answer missing any of ['110034.323', '110,034.323', '110034.32', '110,034.32']",
+          "citation source missing 处置计划建议示例（商业银行版）",
+          "citation source missing 2023年3季度保险业资金运用情况表",
+          "validation did not pass all four conditions"
+        ],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 54.2,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "missing_requirements": [
+            "《处置计划建议示例（商业银行版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 0,
+          "missing_required_aspect_ids": [
+            "table_evidence"
+          ],
+          "reason": "table_evidence_not_found",
+          "table_refusal_reasons": [
+            "指定年份、月份或季度在表格索引中不存在。"
+          ]
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C11",
+      "category": "证据不足或澄清",
+      "demo": true,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 6529.98,
+        "model_calls": 0,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "missing_requirements": [
+            "《2026年第四季度保险业资金运用情况表》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 0,
+          "missing_required_aspect_ids": [
+            "table_evidence"
+          ],
+          "reason": "table_evidence_not_found",
+          "table_refusal_reasons": [
+            "指定年份、月份或季度在表格索引中不存在。"
+          ]
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    },
+    {
+      "id": "C12",
+      "category": "证据不足或澄清",
+      "demo": false,
+      "attempt": 1,
+      "evaluation": {
+        "pass": true,
+        "failures": [],
+        "task_status": "refused",
+        "answer_type": "refusal",
+        "refused": true,
+        "citation_count": 0,
+        "duration_ms": 4353.43,
+        "model_calls": 1,
+        "explanation_present": false,
+        "outcome": null,
+        "validation": {
+          "missing_requirements": [
+            "《某未入库商业银行恢复计划（2025年版）》的直接依据"
+          ],
+          "passed": false,
+          "status": "not_run",
+          "task_complete": false,
+          "failure_stage": "evidence",
+          "model_call_count": 1,
+          "missing_required_aspect_ids": [
+            "A1"
+          ]
+        },
+        "budget": null,
+        "first_feedback_ms": null
+      }
+    }
+  ]
+}

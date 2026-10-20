@@ -39,6 +39,12 @@ class PlannerAgent(SpecialistAgent):
         with table_schema_context(board.db, question):
             query_plan = rag_service.plan_query(question, options=options)
         board.query_plan = query_plan
+        # The plan is the earliest point where the three structural complexity
+        # rules can be evaluated.  Upgrading here (rather than at each stage)
+        # also lets a durable task persist the category before retrieval.
+        from backend.app.services.request_budget_service import apply_plan_budget
+        budget_decision = apply_plan_budget(query_plan)
+        board.notes["budget_decision"] = budget_decision.to_debug_dict()
         if not query_plan.clarification_reason:
             planning_elapsed_ms = rag_service._elapsed_ms(planning_started_at)
             rag_service._report_progress(
@@ -54,6 +60,8 @@ class PlannerAgent(SpecialistAgent):
                         "aspects": [aspect.to_debug_dict() for aspect in query_plan.aspects],
                         "planner": query_plan.planner,
                         "fallback_used": query_plan.fallback_used,
+                        "complex_task": budget_decision.complex_task,
+                        "budget_reasons": list(budget_decision.reasons),
                     },
                 },
             )

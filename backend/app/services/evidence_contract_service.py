@@ -32,8 +32,39 @@ def title_key(value: str) -> str:
     return _normalize_title(re.sub(r'[^\w\u4e00-\u9fff]', '', text).replace('_', ''))
 
 
+_LEADING_VERSION_QUALIFIER_RE = re.compile(r'^\s*([^\s，,。；;：:（）()]{2,30}?版)(?=.+)')
+_PURE_VERSION_QUALIFIER_RE = re.compile(r'^\s*([^\s，,。；;：:（）()]{2,30}?版)\s*$')
+_CORE_NAME_MARKER_RE = re.compile(r'示例|办法|规则|通知|附件|制度|规定|指南|指引|规范|意见|条例|细则')
+
+
+def _title_core_and_qualifiers(value: str) -> tuple[str, list[str]]:
+    """Split a source title into its core name and version/scope qualifiers.
+
+    Qualifiers may be written after the core in parentheses
+    (``恢复计划示例（商业银行版）``) or before it
+    (``商业银行版恢复计划示例``).  Keeping both forms as qualifiers lets the
+    same comparator validate either wording without treating the qualifier as
+    part of the document name.  A title consisting only of a version qualifier
+    (``商业银行版``) yields an empty core and one qualifier.
+    """
+
+    text = str(value or '')
+    qualifiers = re.findall(r'[（(]([^）)]+)[）)]', text)
+    core = re.sub(r'[（(][^）)]*[）)]', '', text)
+    leading = _LEADING_VERSION_QUALIFIER_RE.match(core)
+    if leading:
+        qualifiers.insert(0, leading.group(1))
+        core = core[leading.end():]
+    else:
+        pure = _PURE_VERSION_QUALIFIER_RE.match(core)
+        if pure and not _CORE_NAME_MARKER_RE.search(pure.group(1)):
+            qualifiers.insert(0, pure.group(1))
+            core = ''
+    return core, list(dict.fromkeys(item.strip() for item in qualifiers if item.strip()))
+
+
 def _title_core_key(value: str) -> str:
-    """Title identity without parenthetical qualifiers.
+    """Title identity without version/scope qualifiers.
 
     Qualifiers are checked separately so a period/version phrase cannot be
     silently dropped, while a table-located document whose title omits the
@@ -41,7 +72,8 @@ def _title_core_key(value: str) -> str:
     metadata proves the period.
     """
 
-    return title_key(re.sub(r'[（(][^）)]*[）)]', '', str(value or '')))
+    core, _ = _title_core_and_qualifiers(value)
+    return title_key(core)
 
 
 def _title_actual_text(chunk: RetrievalResult) -> str:
@@ -109,14 +141,20 @@ def _qualifier_matches(qualifier: str, actual_text: str, metadata: dict[str, Any
 
 def _title_matches(title: str, actual_text: str, metadata: dict[str, Any], chunk: RetrievalResult,
                    *, full_text: str | None = None) -> bool:
-    core = _title_core_key(title)
-    if not core:
-        return False
-    actual_core = _title_core_key(actual_text)
-    if core not in actual_core:
-        return False
+    core, qualifiers = _title_core_and_qualifiers(title)
+    core_key = _title_core_key(core)
     qualifier_text = full_text if full_text is not None else actual_text
-    for qualifier in re.findall(r'[（(]([^）)]+)[）)]', str(title or '')):
+    if not core_key:
+        # A pure version qualifier (“商业银行版”) has no core name; it can
+        # only be validated against the qualifier evidence itself.
+        return bool(qualifiers) and all(
+            _qualifier_matches(qualifier, qualifier_text, metadata, chunk)
+            for qualifier in qualifiers
+        )
+    actual_core = _title_core_key(actual_text)
+    if core_key not in actual_core:
+        return False
+    for qualifier in qualifiers:
         if not _qualifier_matches(qualifier, qualifier_text, metadata, chunk):
             return False
     return True
@@ -136,18 +174,217 @@ def source_matches(titles: list[str], chunk: RetrievalResult) -> bool:
     return True
 
 
+_COMPARISON_MARKER_RE = re.compile(r'是否一致|是否相同|有何异同|有何差异|是否不同|异同|差异|比较|对比|分别')
+_ATTRIBUTE_END_RE = re.compile(r'是否一致|是否相同|有何异同|有何差异|是否不同|异同|差异')
+_GENERIC_ATTRIBUTE_TERMS = {'规定', '要求', '表述', '内容', '情况', '方面', '界定'}
+_GENERIC_TARGET_TERMS = {'规定', '一致', '差异', '包括', '内容', '情况', '方面', '要求'}
+_DOCUMENT_STYLE_RE = re.compile(r'示例|办法|规则|通知|附件|制度|规定|指南|指引|规范|意见|条例|细则|版')
+_QUOTED_PHRASE_RE = re.compile(r'[“"‘\']([^”"’\']{2,80})[”"’\']')
+_COMPARISON_SOURCE_SEPARATOR_RE = re.compile(r'[和与及、]')
+
+
+def is_cross_document_comparison(question: str) -> bool:
+    """Whether the wording asks to compare at least two named sources.
+
+    This is deliberately wording-level: no document names, topics or IDs are
+    encoded.  A comparison verb alone (for example a numeric "difference"
+    question) is not enough; the question must also coordinate two operands.
+    """
+
+    text = str(question or '')
+    return bool(_COMPARISON_MARKER_RE.search(text) and _COMPARISON_SOURCE_SEPARATOR_RE.search(text))
+
+
+def _clean_attribute_term(value: str) -> str:
+    text = unicodedata.normalize('NFKC', str(value or '')).strip()
+    text = text.strip('“”"\'‘’《》（）()[]【】,，。；;：: ')
+    text = re.sub(r'^(?:关于|对于|针对|就|对|在|其中|其|该|两者|双方|二者|各)+', '', text)
+    text = text.strip('“”"\'‘’《》（）()[]【】,，。；;：: ')
+    text = re.sub(r'(?:有哪些|有何|有什么|存在哪些|是否存在|有)$', '', text)
+    text = text.strip('的“”"\'‘’《》（）()[]【】,，。；;：: ')
+    text = re.sub(r'(?:的)?(?:规定|要求|表述|内容|情况|方面|界定)$', '', text)
+    text = text.strip('的“”"\'‘’《》（）()[]【】,，。；;：: ')
+    if not text or text in _GENERIC_ATTRIBUTE_TERMS or len(text) < 2 or len(text) > 40:
+        return ''
+    if '《' in text or '》' in text:
+        return ''
+    return text
+
+
+def _is_quoted_entity(value: str) -> bool:
+    text = str(value or '').strip()
+    return bool(re.fullmatch(r'[“"‘\'][^”"’\']{1,80}[”"’\']', text))
+
+
+def _attribute_from_prefix(prefix: str) -> str:
+    """Extract the compared attribute from text before a comparison predicate."""
+
+    patterns = (
+        r'中(.+?)的(?:规定|要求|表述|内容|情况|方面|界定)?$',
+        r'对(.+?)的(.+?)$',
+    )
+    for index, pattern in enumerate(patterns):
+        match = re.search(pattern, prefix)
+        if not match:
+            continue
+        candidate = match.group(1) if index == 0 else match.group(2)
+        # “中，“关键功能”的定义” captures the quoted entity, not the
+        # compared property.  Leave it to the trailing “的” phrase below.
+        if _is_quoted_entity(candidate):
+            continue
+        cleaned = _clean_attribute_term(candidate)
+        if cleaned:
+            return cleaned
+    if '的' in prefix:
+        cleaned = _clean_attribute_term(prefix.rsplit('的', 1)[-1])
+        if cleaned:
+            return cleaned
+    for quoted in reversed(_QUOTED_PHRASE_RE.findall(prefix)):
+        cleaned = _clean_attribute_term(quoted)
+        if cleaned:
+            return cleaned
+    candidate = prefix.rsplit('的', 1)[-1] if '的' in prefix else prefix
+    return _clean_attribute_term(candidate)
+
+
+def comparison_attribute_terms(question: str) -> list[str]:
+    """Extract the property that must be compared across the named sources.
+
+    The extractor stays grammatical rather than topic-specific: it looks at
+    the phrase immediately preceding a comparison predicate, removes generic
+    wording such as "规定", and falls back to the last quoted phrase when the
+    predicate itself is generic (for example "关于“职责分工”的规定是否一致").
+    """
+
+    text = unicodedata.normalize('NFKC', str(question or ''))
+    text = re.sub(r'《[^》]*》', ' ', text)
+    terms: list[str] = []
+    for match in _ATTRIBUTE_END_RE.finditer(text):
+        prefix = text[:match.start()]
+        prefix = re.split(r'[，,。；;：:？?！!\n]', prefix)[-1]
+        cleaned = _attribute_from_prefix(prefix)
+        if cleaned:
+            terms.append(cleaned)
+    if not terms:
+        # A planner may rewrite "X 和 Y 的 Z 是否一致" into "X 中 Z 是什么"
+        # or "X 中关于 Z 的规定".  Keep the same attribute in those forms.
+        clauses = [part for part in re.split(r'[，,。；;：:？?！!\n]', text) if part.strip()]
+        clause = clauses[-1] if clauses else text
+        clause = re.split(r'是否一致|是否相同|有何异同|有何差异|是否不同|异同|差异', clause)[0]
+        cleaned = _attribute_from_prefix(clause)
+        if cleaned:
+            terms.append(cleaned)
+    if not terms:
+        asked = re.search(r'的([^，。；;：:？?]{2,40}?)(?:是什么|如何定义|怎样定义|怎么定义|包括哪些|有哪些|指什么)', text)
+        if asked:
+            cleaned = _clean_attribute_term(asked.group(1))
+            if cleaned:
+                terms.append(cleaned)
+        elif '定义' in text:
+            terms.append('定义')
+    return list(dict.fromkeys(term for term in terms if term))[:5]
+
+
+def document_style_phrases(values: Any) -> list[str]:
+    """Return user-stated source-looking phrases from a subject scope.
+
+    Only wording shape is used (document/version suffixes and a bounded
+    length), so the helper is independent of a particular corpus file name.
+    """
+
+    phrases: list[str] = []
+    for value in values or ():
+        text = str(value or '')
+        for part in re.split(r'[，,。；;：:、\n]|[和与及]', text):
+            candidate = part.strip(' “”"\'‘’《》,，。；;：: ')
+            if 4 <= len(candidate) <= 80 and _DOCUMENT_STYLE_RE.search(candidate):
+                phrases.append(candidate)
+    return list(dict.fromkeys(phrases))
+
+
+def _attribute_haystack(chunk: RetrievalResult) -> tuple[str, str]:
+    metadata = chunk.metadata or {}
+    parts = [str(chunk.text or ''), str(chunk.section_title or ''),
+             ' '.join(str(item) for item in (chunk.section_path or [])),
+             str(chunk.source_doc or '')]
+    for key in ('source_title', 'filename', 'source_filename'):
+        value = metadata.get(key)
+        if value:
+            parts.append(str(value))
+    normalized = unicodedata.normalize('NFKC', ' '.join(parts))
+    return normalized, re.sub(r'\s+', '', normalized).casefold()
+
+
+def requirement_attribute_matches(requirement: EvidenceRequirement, chunk: RetrievalResult) -> bool:
+    """Check that a chunk evidences the compared attribute, not just its source."""
+
+    terms = list(requirement.attribute_terms or [])
+    if not terms:
+        return True
+    normalized, compact = _attribute_haystack(chunk)
+    term_values = list(dict.fromkeys(
+        term for term in terms
+        if term and term not in _GENERIC_ATTRIBUTE_TERMS
+    ))
+    if not term_values:
+        return False
+    if requirement.intent == 'define':
+        targets = [
+            term for term in (requirement.target_terms or term_values)
+            if 2 <= len(term) <= 40 and term not in _GENERIC_TARGET_TERMS
+        ]
+        for target in targets:
+            pattern = (
+                rf'(?:所称)?{re.escape(target)}\s*(?:[（(][^）)]{{0,20}}[）)])?'
+                r'\s*(?:，|,)?\s*(?:是指|指|定义为|系指|是)'
+            )
+            if re.search(pattern, normalized):
+                return True
+        return False
+    for term in term_values:
+        if re.sub(r'\s+', '', unicodedata.normalize('NFKC', term)).casefold() in compact:
+            return True
+    if requirement.intent in {'lookup', 'list'}:
+        for term in requirement.target_terms or ():
+            cleaned = re.sub(r'\s+', '', unicodedata.normalize('NFKC', str(term or ''))).casefold()
+            if len(cleaned) >= 4 and cleaned not in _GENERIC_TARGET_TERMS and cleaned in compact:
+                return True
+    return False
+
+
 def requirements_for_plan(plan: Any) -> list[EvidenceRequirement]:
     requirements = []
+    # Attribute terms are hints for locating and ranking a compared clause.
+    # They are deliberately not used as a hard evidence filter: the final
+    # semantic validator decides whether a clause actually supports a claim.
+    plan_attribute_terms = (
+        comparison_attribute_terms(str(getattr(plan, 'original_question', '') or ''))
+        if str(getattr(plan, 'question_mode', 'open') or 'open') == 'open' else []
+    )
     for aspect in plan.aspects:
         source = str(aspect.table_filters.get('source_title') or '')
         sources = re.findall(r'《([^》]+)》', aspect.question)
         if source:
             sources = [source]
         mandatory = bool(getattr(aspect, 'mandatory', True))
+        attribute_terms: list[str] = []
+        fallback_sources: list[str] = []
+        if plan_attribute_terms and aspect.modality == 'text':
+            scope_phrases = document_style_phrases(getattr(aspect, 'subject_scope', ()))
+            # A single user-stated, source-looking scope phrase can identify
+            # the source of a source-isolated aspect even when the planner did
+            # not use book-title marks.  Multiple phrases stay a comparison
+            # aspect and keep the source-only contract.
+            if len(scope_phrases) == 1:
+                attribute_terms = list(plan_attribute_terms)
+                if not source:
+                    fallback_sources = [scope_phrases[0]]
+        resolved_sources = list(dict.fromkeys(sources or fallback_sources))
         requirements.append(EvidenceRequirement(
             requirement_id=aspect.aspect_id, question=aspect.question,
             intent=aspect.intent, mandatory=mandatory,
-            target_terms=list(aspect.targets), source_titles=list(dict.fromkeys(sources))
+            target_terms=list(aspect.targets), attribute_terms=attribute_terms,
+            source_titles=resolved_sources
             if aspect.modality == 'text' or len(aspect.selectors) <= 1 else [],
             subject_scope=list(aspect.subject_scope),
             constraints=dict(aspect.table_filters), selectors=list(aspect.selectors)))
@@ -203,11 +440,14 @@ def build_evidence_bundle(requirements: list[EvidenceRequirement], chunks: list[
             if requirement.requirement_id not in tags and len(requirements) != 1:
                 continue
             seen_requirement = True
-            matches = requirement_source_matches(requirement, chunk)
-            stage = 'filtered' if not matches else 'selected' if chunk.chunk_id in selected_ids else 'not_selected'
+            source_ok = requirement_source_matches(requirement, chunk)
+            stage = 'filtered' if not source_ok else 'selected' if chunk.chunk_id in selected_ids else 'not_selected'
+            reason = ('explicit_source_conflict' if not source_ok else
+                      'context_budget' if stage == 'not_selected' else
+                      'source_and_requirement_match')
             decisions.append(EvidenceDecision(chunk_id=chunk.chunk_id, requirement_id=requirement.requirement_id,
-                stage=stage, reason='explicit_source_conflict' if not matches else 'context_budget' if stage == 'not_selected' else 'source_and_requirement_match'))
-            if matches and chunk.chunk_id in selected_ids:
+                stage=stage, reason=reason))
+            if source_ok and chunk.chunk_id in selected_ids:
                 ids.append(chunk.chunk_id)
         coverage[requirement.requirement_id] = list(dict.fromkeys(ids))
         if not seen_requirement:
@@ -215,7 +455,8 @@ def build_evidence_bundle(requirements: list[EvidenceRequirement], chunks: list[
                                                stage='missing', reason='not_recalled'))
     missing_all = [r.requirement_id for r in requirements if not coverage[r.requirement_id] or
                    (r.source_titles and not any(source_matches(r.source_titles, c) for c in chunks)) or
-                   any(c.metadata.get('unit_incomplete') and c.chunk_id in coverage[r.requirement_id] for c in chunks)]
+                   any(c.metadata.get('unit_incomplete') and c.chunk_id in coverage[r.requirement_id]
+                       for c in chunks)]
     by_id = {r.requirement_id: r for r in requirements}
     missing = [rid for rid in missing_all if by_id[rid].mandatory]
     missing_optional = [rid for rid in missing_all if not by_id[rid].mandatory]
