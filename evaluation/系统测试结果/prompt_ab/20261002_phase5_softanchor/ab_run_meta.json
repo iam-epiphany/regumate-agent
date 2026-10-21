@@ -1,7 +1,0 @@
-{
-  "label": "phase5_softanchor",
-  "subset": "scripts\\evaluation\\prompt_ab_subset.json",
-  "subset_sha256": "471ded0543ba1c91a580a53ca0ff9d7bea39cccaef1dc85c00177e1d90afbaa8",
-  "base_url": "http://127.0.0.1:8000",
-  "created_at": "2026-10-02T00:17:44+00:00"
-}

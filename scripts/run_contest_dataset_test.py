@@ -249,7 +249,12 @@ def upload_contest_files(base_url: str, files: list[Path], timeout: float) -> di
                 print(f"[{index:03d}/500] 已存在，重新排队索引: {path.name} status={status}")
                 continue
 
-        response = upload_file(base_url, path, timeout)
+        response = upload_file(
+            base_url,
+            path,
+            timeout,
+            allow_content_duplicate=True,
+        )
         document_id = str(response["document_id"])
         tracked[path.name] = document_id
         uploaded += 1
@@ -388,20 +393,43 @@ def existing_documents_by_filename(base_url: str, timeout: float) -> dict[str, d
     return result
 
 
-def upload_file(base_url: str, path: Path, timeout: float) -> dict[str, Any]:
+def upload_file(
+    base_url: str,
+    path: Path,
+    timeout: float,
+    *,
+    allow_content_duplicate: bool = False,
+) -> dict[str, Any]:
     boundary = f"----ReguMateContest{uuid4().hex}"
     content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     file_bytes = path.read_bytes()
+    file_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    field_parts: list[bytes] = []
+    if allow_content_duplicate:
+        field_parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="allow_content_duplicate"\r\n\r\n'
+                f"true\r\n"
+            ).encode("utf-8")
+        )
     head = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
-        f"Content-Type: {content_type}\r\n\r\n"
-    ).encode("utf-8")
+        b"".join(field_parts)
+        + (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
     tail = f"\r\n--{boundary}--\r\n".encode("ascii")
     body = head + file_bytes + tail
     headers = {
         "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "Idempotency-Key": f"contest-dataset-{hashlib.sha256(path.read_bytes()).hexdigest()[:24]}",
+        # Idempotency is scoped to one source entry, not to file bytes: the
+        # official corpus can contain byte-identical files with different
+        # names, and both must be imported as distinct documents.
+        "Idempotency-Key": "contest-dataset-"
+        + hashlib.sha256(f"{path.name}:{file_sha256}".encode("utf-8")).hexdigest()[:24],
     }
     return request_json(
         "POST",

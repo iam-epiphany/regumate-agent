@@ -1,77 +1,59 @@
-# ReguMate 可信 RAG 问答系统
+# ReguMate 监管可信问答
 
-ReguMate 是一套面向银行监管资料的本地知识库与问答系统。
+ReguMate 面向银行监管制度、填报说明和统计报表，提供文档入库、资料检索、表格取数与计算、带依据的问答和操作记录。回答基于已上传的知识库，用户可以查看引用原文及计算依据。
 
-用户可以上传监管制度、统计报表等文件，系统会自动整理其中的文字和表格内容，并建立可检索的知识库。在提问时，ReguMate 会从已上传的资料中查找依据，给出回答并标明引用来源；当现有资料无法支持结论时，系统会明确提示依据不足，而不是自行补充或猜测。
+## 系统亮点
 
-## 一、项目结构
+- **制度与报表一起查**：支持文本和电子表格解析，结合关键词、向量检索与重排组织证据；可围绕多份资料提出问题。
+- **表格答案可复核**：对支持的表格任务定位工作表和单元格，展示取数、单位、公式及计算记录。
+- **回答与引用联合核验**：分别检查引用能否定位、事实是否有支持、问题要求是否覆盖。依据不足时提示补充资料、澄清问题或拒答。
+- **多智能体分工**：由 Supervisor 调度分诊、文档身份、规划、表格计算、制度检索、核验、证据整编和答案生成。界面可以查看处理进度及协作轨迹。
+- **文档身份管理**：保留文件标题、发文机关、文号、日期和版本信息，支持人工编辑与确认；无法识别的字段保留为未知。身份信息不等同于法规效力认定。
+- **知识库与操作日志**：支持单文件和批量上传、重复文件预检、索引状态查看、失败重试、原文查看与删除，并记录上传、问答等操作。
 
-```text
-ReguMate-Agent/
-  backend/                 # FastAPI 后端，包含 API、schema、model、service、core 分层
-  frontend/                # React + TypeScript + Vite 前端
-  data/                    # 官方监管资料、官方 300 题问答集、自制 200 题评测集
-  evaluation/              # 评测区：文档解析结果 + 系统测试结果（详见第九章）
-  docs/                    # 开发文档、接口说明、交付说明
-  scripts/                 # 预检、模型预热、批量上传、评测和发布校验脚本
-  outputs/                 # 关键审计产物
-  docker-compose.yml       # 标准 Docker Compose 启动配置
-  docker-compose.gpu.yml   # NVIDIA GPU 加速补充配置
-  Dockerfile               # 应用镜像构建文件
-  scripts/launcher/        # 启动/停止脚本（run.bat/sh、stop.bat/sh、docker-run、rebuild-run）
-  README.md                # 项目使用说明
-```
+## 1. 准备运行环境
 
-核心代码遵循 `api / schemas / models / services / core` 分层：router 只负责 HTTP 入参与出参，业务逻辑放在 service，数据库表结构放在 model，API 契约放在 schema，配置和数据库连接等基础设施放在 core。
+推荐使用 Docker Compose。安装并启动 Docker Desktop（Windows/macOS）或 Docker Engine 与 Compose 插件（Linux）。使用 NVIDIA GPU 时，还需配置 Docker 的 NVIDIA GPU 支持；其他机器可使用 CPU 模式。
 
-## 二、运行环境
+首次构建和模型准备需要访问镜像源、Python/Node 依赖源及 HuggingFace 模型源。在线问答还需要可访问的大模型 API。Docker 镜像已包含文档解析所需的 LibreOffice 和 antiword，无需在宿主机另装。
 
-推荐以 Docker Compose 运行，评审或演示机器不需要单独安装 Python、Node.js、Qdrant、LibreOffice 或 CUDA Toolkit。
+解压提交包或进入代码目录后，确认根目录有 `docker-compose.yml`、`Dockerfile`、`backend/`、`frontend/` 和 `scripts/`。以下命令均从该目录执行。
 
-- 操作系统：Windows 10/11、Linux、macOS。本文以 Windows PowerShell 为主。
-- 必需软件：Docker Desktop 或 Docker Engine，包含 Docker Compose v2。
-- 建议资源：内存 16GB 以上，磁盘空闲 25GB 以上。
-- GPU：NVIDIA GPU 可加速 embedding/rerank；无 NVIDIA GPU、macOS 或普通 CPU 机器可以使用 CPU 模式，但首次入库和评测会明显变慢。
-- 网络：首次构建和启动可能访问 Docker Hub、Debian apt、npm、PyPI、HuggingFace，以及 `.env` 中配置的大模型 API 地址。
+## 2. 填写配置
 
-## 二·五、国内网络（无代理）安装说明
+首次运行时复制模板；已有 `.env` 时直接编辑，避免覆盖自己的配置。
 
-以下依赖项在无 VPN 的国内网络下均可正常获取，无需代理：
-
-- **基础镜像与 Qdrant 镜像**：来自 Docker Hub，国内拉取较慢时可在 Docker Desktop 设置中配置镜像加速器（如 Docker 官方加速器或云厂商加速地址）。
-- **Python 依赖与前端依赖**：`Dockerfile` 已默认使用国内镜像源（PyPI 清华源、npm 淘宝镜像），构建时无需代理；海外环境可用 `--build-arg PIP_INDEX_URL=https://pypi.org/simple --build-arg NPM_REGISTRY=https://registry.npmjs.org` 切回官方源。
-- **本地模型（BGE-M3 / BGE reranker）**：首次预热自动从 HuggingFace 国内镜像 `hf-mirror.com` 下载（`HF_ENDPOINT` 默认已配置），无需代理；如镜像缺失可临时设置 `HF_ENDPOINT=https://huggingface.co` 并配合代理。
-- **大模型 API**：`LLM_BASE_URL` 默认指向 DeepSeek（国内服务），直连即可。
-
-## 三、配置
-
-提交包只提供 `.env.example` 空配置模板，不包含真实 `.env`、API Key 或内部服务地址。首次部署时复制模板并填入自己的配置；README 不展示真实 Key。
+Windows PowerShell：
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-运行预算默认值已在模板中给出：普通问题 150 秒，复杂任务 240 秒，单请求最多 5 次模型调用。
+Linux/macOS：
 
-常用项如下：
+```sh
+cp .env.example .env
+```
+
+填写自己的大模型配置，例如：
 
 ```dotenv
 LLM_PROVIDER=openai_compatible
-LLM_API_KEY=你的Key
+LLM_API_KEY=填写自己的密钥
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 ```
 
-`LLM_BASE_URL` 填 API 根地址，不要带 `/chat/completions`。BGE-M3 embedding 和 BGE reranker 是本地模型，不由这些大模型配置替代。
+`LLM_BASE_URL` 填提供商的 API 根地址，不包含 `/chat/completions`。可替换为其他兼容接口的地址与模型名。本地 BGE-M3 和 BGE reranker 负责检索向量与重排，不由上述大模型配置替代。
 
-## 四、正式运行
+提交包仅附带密钥为空的 `.env.example`，实际 `.env` 留在部署机器上。
 
-后续命令都在项目根目录执行，也就是能看到 `docker-compose.yml`、`backend/`、`frontend/`、`scripts/` 的目录。
+## 3. 启动系统
 
-### Windows PowerShell
+### NVIDIA GPU 模式
 
-有 NVIDIA GPU 时：
+Windows PowerShell：
 
 ```powershell
 $env:REGUMATE_TORCH_FLAVOR = "cuda"
@@ -79,7 +61,15 @@ $env:MODEL_DEVICE = "cuda"
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
 
-无 GPU 或不希望使用 GPU 时：
+Linux：
+
+```sh
+REGUMATE_TORCH_FLAVOR=cuda MODEL_DEVICE=cuda docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+### CPU 模式（含 macOS）
+
+Windows PowerShell：
 
 ```powershell
 $env:REGUMATE_TORCH_FLAVOR = "cpu"
@@ -88,134 +78,59 @@ $env:REGUMATE_APP_IMAGE = "regumate/app:contest-cpu"
 docker compose up -d --build
 ```
 
-查看启动状态：
-
-```powershell
-docker compose ps
-docker compose logs -f app
-Invoke-RestMethod http://127.0.0.1:8000/api/health
-Invoke-RestMethod http://127.0.0.1:8000/api/health/rag
-```
-
-> `/api/health/ready` 在知识库尚未导入资料时会返回 503（其语义是“知识库完成
-> 初始化后可以正式问答”）。首次启动先运行下方“脚本上传与评测”上传官方资料，
-> 上传完成后再用 `/api/health/ready` 确认问答入口就绪。
-
-首次启动后建议先预热本地 BGE 模型：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\warmup_models.ps1
-```
-
-预热会把 `BAAI/bge-m3` 和 `BAAI/bge-reranker-v2-m3` 下载或加载到 `data/model_cache`。这一步只需要在首次运行、清空模型缓存或更换运行环境后执行；模型已经缓存后，后续启动不需要重复预热。
-
-国内网络下载模型已默认走 HuggingFace 镜像（`HF_ENDPOINT=https://hf-mirror.com`，无需代理）；如需直连官方源，在 `.env` 中设置 `HF_ENDPOINT=https://huggingface.co`。下载模型不走 LLM 代理配置，也不要求代理软件。
-
-启动成功后打开：
-
-- Web 页面：<http://127.0.0.1:8000>
-- API 文档：<http://127.0.0.1:8000/docs>
-- Qdrant 控制台：<http://127.0.0.1:6333/dashboard>
-
-停止服务：
-
-```powershell
-docker compose down
-```
-
-`docker compose down` 不会删除 `data/` 下的上传文件、模型缓存、Qdrant 数据和评测结果。
-
-### Linux
-
-NVIDIA GPU：
+Linux/macOS：
 
 ```sh
-REGUMATE_TORCH_FLAVOR=cuda MODEL_DEVICE=cuda \
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+REGUMATE_TORCH_FLAVOR=cpu MODEL_DEVICE=cpu REGUMATE_APP_IMAGE=regumate/app:contest-cpu docker compose up -d --build
 ```
 
-CPU：
+这些临时变量只作用于当前终端。需要固定使用 CPU 时，也可将相同的值写入 `.env`。
 
-```sh
-REGUMATE_TORCH_FLAVOR=cpu MODEL_DEVICE=cpu REGUMATE_APP_IMAGE=regumate/app:contest-cpu \
-docker compose up -d --build
+启动后访问：
+
+| 入口 | 默认地址 |
+|---|---|
+| ReguMate 网页 | <http://127.0.0.1:8000> |
+| API 文档 | <http://127.0.0.1:8000/docs> |
+| Qdrant 控制台 | <http://127.0.0.1:6333/dashboard> |
+
+应用端口被占用时，在 `.env` 修改 `REGUMATE_APP_PORT`，并使用新端口访问。GPU 启动后仍显示 CPU 时，检查 Docker GPU 支持及系统状态中的设备说明。
+
+## 4. 准备本地模型
+
+首次部署可主动预热模型。
+
+Windows PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\warmup_models.ps1 -BaseUrl http://127.0.0.1:8000
 ```
 
-检查与停止：
-
-```sh
-docker compose ps
-docker compose logs -f app
-curl http://127.0.0.1:8000/api/health
-curl http://127.0.0.1:8000/api/health/ready
-docker compose down
-```
-
-首次启动后可预热本地模型：
+Linux/macOS：
 
 ```sh
 curl -X POST http://127.0.0.1:8000/api/health/warmup
 ```
 
-### macOS
+未准备模型时，服务会按配置查找本地模型或下载到模型缓存。默认模型源使用 HuggingFace 镜像；如需调整，可在 `.env` 设置 `HF_ENDPOINT`。完全离线部署需先准备依赖、镜像及本地模型，不能仅依靠源码提交包启动。
 
-macOS 不使用 CUDA，按 CPU 模式运行：
+## 5. 导入知识库
 
-```sh
-REGUMATE_TORCH_FLAVOR=cpu MODEL_DEVICE=cpu REGUMATE_APP_IMAGE=regumate/app:contest-cpu \
-docker compose up -d --build
-```
+### 通过网页上传
 
-检查与停止命令同 Linux。
+1. 打开网页，进入左侧“知识库”。
+2. 点击“选择文档”或“批量上传”，提交监管制度、填报说明或统计报表。
+3. 按预检提示处理重复文件、文件名冲突等问题。
+4. 等待文档完成解析与索引。状态为 `indexed` 后可参与问答；处理失败时查看错误提示并重试。
+5. 点击文档查看解析内容和身份信息，需要时编辑并人工确认。
 
-## 五、Windows 快速启动脚本
+支持 `.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.csv`、`.jsonl`、`.md`、`.txt`、`.html` 和 `.htm`。默认单文件上限为 50 MiB，可通过 `MAX_UPLOAD_BYTES` 调整。PDF 需要有可提取文本；纯扫描材料请先转换为可检索文本。
 
-脚本只是降低 Windows 使用门槛；正式、跨平台说明以上面的 Docker 命令为准。
+“保存修改”与“保存并确认已核对”是不同操作。确认后再修改身份字段，原确认会撤销，需要重新核对。
 
-```powershell
-.\scripts\launcher\run.bat            # 启动完整系统；镜像不存在时自动构建
-.\scripts\launcher\rebuild-run.bat    # 依赖、Dockerfile 或前端构建产物变化后重建再启动
-.\scripts\launcher\stop.bat           # 停止服务，不删除数据
-```
+### 批量导入官方资料
 
-如果 Docker Desktop 未启动，先打开 Docker Desktop，等状态变为 Running 后再运行脚本。
-
-## 六、使用流程
-
-1. 打开 <http://127.0.0.1:8000>。
-2. 先查看左侧“系统状态”。如果“问答就绪”提示模型未预热或服务未完成初始化，先按“正式运行”中的预热命令执行一次，再刷新页面确认状态。
-3. 进入“文档库”，上传监管制度、填报说明、统计资料，或可提取文本的 `pdf`、`doc/docx`、`xls/xlsx`、`csv` 等文件。
-4. 上传后等待文档状态变为 `indexed`。状态未完成时不要急着提问；如果出现失败状态，先查看错误信息并重新上传可解析版本。
-5. 进入“可信问答”，围绕已经上传的材料提问。问题中可以写明制度名称、报表名称、字段、口径、时间或条款线索，检索会更稳定。
-6. 查看回答正文、引用来源和证据片段。可信回答应能回到具体文件、页码、chunk 或表格单元格。
-7. 如果系统提示依据不足，说明当前知识库没有足够证据，需要补充资料、等待索引完成，或把问题改得更具体。
-8. 如需批量导入官方评测数据，优先使用“脚本上传与评测”中的上传脚本，再回到网页手动提问或运行 QA 测试。
-
-### 多智能体协作轨迹
-
-问答主链由 Supervisor 统一调度八个专业 Agent（分诊、文件身份、规划、表格计算、制度检索、核验、证据整编、答案生成）协作完成；Supervisor 只按问题计划、证据包和校验报告中的确定性字段做路由，自身不调用大模型。回答卡片提供可折叠的“智能体协作轨迹”（每一步由哪个 Agent 执行、状态、耗时、模型调用次数），技术视图的各阶段也标注执行 Agent；`GET /api/qa/agents` 返回注册表。轨迹只用于可观测，答案是否“已核验”仍只由事实与引用校验结果决定。设计契约与验收记录见 `docs/multi-agent-architecture.md`。
-
-### 文档身份可信链
-
-文档详情抽屉顶部提供“文档身份卡”，展示制度标题、发文机关、文号、发布日期、生效/失效日期、版本状态、替代关系、来源和文件哈希。系统只做保守提取，无法可靠识别的字段显示“未知”，不会要求用户在上传时强制补全，也不会根据日期或文件名自动断言法规现行、废止或替代关系。
-
-“保存修改”与“保存并确认已核对”是两个独立动作。人工可以显式把字段置为未知；确认时允许仍有未知字段，并生成当前身份快照哈希。确认后的任一身份字段再次发生变化，旧确认会自动撤销。身份信息只用于检索和版本风险提示，不代表系统已核验法规法律效力。
-
-### 结构坐标与证据面审计
-
-引用卡片会把已有章节信息解码为“制度 → 章/节 → 条”的结构坐标；无法解析时保留原章节标题或显示“定位未记录”，不猜测条号。展示视图新增“证据面审计”，按用户要求逐项检查来源、目标词、数值阈值、适用条件、定义句式和表格操作数是否出现在入选证据中，并显示候选/入选数量与结构补全条数。
-
-该检查是确定性的，不增加模型调用，也不替代“引用可定位 / 事实支持 / 要求完整性”的最终核验。设计说明见 `docs/tech-radar/2026-10-implementation-notes.md`，评测口径见 `docs/tech-radar/evidence-evaluation-protocol.md`。
-
-### 100 题挑战集状态
-
-基于冻结 500 份官方文档构建的内部挑战集（含在线运行器与离线评分器）仅保留在开发仓库中，不随提交包分发；以下为该挑战集的内部状态记录。题集包含 30 道中等题、70 道困难题，并按 40 道开发集和 60 道封存集隔离。
-
-首次封存运行已原样封存，结果为 42/60，未达到发布门槛；失败证据、限制和哈希见 `outputs/evaluation/trust_challenge_100/holdout_failure_report.md`。2026-07-24 Stage 5 当前代码在 60 题封存集上的质量回归为 57/60、overall 95.00%、answerable 93.33%、refusal 100%，作为内部封存困难集回归结果记录在开发仓库评测文档中。该题集状态为 `codex_verified`，未经过银行监管专家人工复核，60 题封存集也不是第三方独立盲测；不得把该结果表述为外部专家成绩或第三方盲测成绩。
-
-## 七、脚本上传与评测
-
-官方评测数据默认放在：
+提交包包含官方资料时，目录应为：
 
 ```text
 data/contest_dataset/
@@ -223,199 +138,126 @@ data/contest_dataset/
   dataset/nfra_page_attachments_500/
 ```
 
-### Windows PowerShell 脚本
+从 Git 克隆的代码不包含官方原始资料，需要自行将资料放入上述目录。
 
-预检环境：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\preflight.ps1
-```
-
-上传 500 个官方附件并等待索引完成：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\upload_contest_knowledge_base.ps1
-```
-
-CPU 机器追加 `-AllowCpu`：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\upload_contest_knowledge_base.ps1 -AllowCpu
-```
-
-运行快速 QA 测试：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_qa_test.ps1 -Mode Quick -Limit 20
-```
-
-运行完整 QA 测试：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_qa_test.ps1 -Mode Full
-```
-
-结果会写入：
-
-```text
-evaluation/系统测试结果/官方300题/contest_qa_test/<timestamp>/
-```
-
-旧的一体化脚本仍可用于“启动系统、上传、评测”连续流程：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_contest_dataset_test.ps1 -Mode Quick -Limit 20
-```
-
-### Linux/macOS 容器内命令
-
-先按上文启动系统，然后在容器内运行 Python 脚本：
+应用启动后，可在容器内运行统一上传脚本：
 
 ```sh
-docker compose exec -T app python scripts/upload_contest_knowledge_base.py \
-  --base-url http://127.0.0.1:8000 \
-  --contest-root /app/data/contest_dataset \
-  --allow-cpu
-
-docker compose exec -T app python scripts/run_contest_qa_test.py \
-  --base-url http://127.0.0.1:8000 \
-  --contest-root /app/data/contest_dataset \
-  --limit 20 \
-  --allow-cpu
+docker compose exec -T app python scripts/upload_contest_knowledge_base.py --base-url http://127.0.0.1:8000 --contest-root /app/data/contest_dataset --allow-cpu
 ```
 
-Linux NVIDIA GPU 机器可去掉 `--allow-cpu`。如果模型尚未预热，先按“正式运行”中的 `curl -X POST http://127.0.0.1:8000/api/health/warmup` 执行一次。
+该命令也可在 PowerShell 执行。脚本检查资料、准备模型、上传附件并等待索引完成。`--allow-cpu` 允许 CPU 部署；需要检查 GPU 环境时去掉该参数。已入库文件按现有状态跳过或重新排队。
 
-## 八、系统测试（官方 300 题开放问答）
+## 6. 提问与查看依据
 
-> 评测口径更新（2026-10-21）：只以官方 300 题作为优化与验收目标；自命题 200 题不再维护、不再运行，也不作为优化依据。官方 300 题按“不带选项直接提问”跑测，当前结果为 **281/300（93.7%）**，299 题作答，作答内 94.0%；拒答 1、澄清 0、服务异常 0。10 道表格选择题在去选项后缺少候选集合，属于题目歧义，不计为系统错误。详见 `docs/evaluation/official300_open_20261020.md` 第 0.0a 节。
+1. 进入左侧“可信问答”，围绕已上传资料提问。
+2. 尽量写明文件名称、机构、期间、字段、统计口径或条款线索。
+3. 等待处理进度完成，查看回答和核验提示。
+4. 展开引用查看来源与原文；表格问题结合单元格和计算记录复核。
+5. 需要理解处理过程时查看协作轨迹，或切换“展示视图”查看结论与依据的关联。
+6. 出现澄清或依据不足提示时，补充问题条件或上传所需资料。
 
-### 为什么自命题 200 题
+问答历史可从页面中的历史入口查看。左侧“操作日志”用于查看上传、问答及其他操作记录；“系统状态”用于检查模型、向量库与问答就绪情况。
 
-官方 300 题为**选择题**，主要验证检索与识别能力，但无法完全展示系统的
-真实能力：选择题不需要系统自主组织答案，也无法考察答案中数字/日期/机构/
-文号是否准确、证据引用是否真实命中来源、依据不足时是否诚实拒答等开放
-问答关键能力。因此我们依据银行业真实业务场景（信贷审批、风险分类、资本
-管理、消保投诉、反洗钱、支付结算、普惠金融、监管报送等）自命题 **200 道
-开放问答题**（旧批 100 + 新批 100，覆盖定义/规则/阈值/名单/表格取数/
-表格计算/跨文档/拒答八类题型），编写金标与确定性评分器，用于测试系统的
-开放问答能力。测试结论见包外《测试报告_ReguMate可信RAG问答》（md + pdf）。
+## 7. 日常维护
 
-### 一键全量测评（推荐）
+查看服务状态与日志：
 
-系统启动后，一条命令完成官方 300 题 + 自命题 200 题跑测与评分：
+```sh
+docker compose ps
+docker compose logs --tail 100 app
+docker compose logs --tail 100 qdrant
+```
+
+Windows 检查接口：
 
 ```powershell
-python scripts/run_all_evaluations.py --base-url http://127.0.0.1:8000
+Invoke-RestMethod http://127.0.0.1:8000/api/health
+Invoke-RestMethod http://127.0.0.1:8000/api/health/ready
 ```
 
-流程：健康检查 → 官方 300 题计时（正确率+延迟）→ 自命题 200 题串行跑测
-（逐题延迟）→ 确定性评分 → 汇总表。产物写入
-`evaluation/系统测试结果/一键评测_<时间戳>/`（含 summary.json、官方300计时、
-逐题诊断与评分汇总）。
+Linux/macOS 可使用 `curl`。`/api/health` 检查服务存活，`/api/health/rag` 查看模型与检索依赖，`/api/health/ready` 检查问答是否就绪。首次部署、尚未导入资料时，就绪接口可能返回 503；可先上传文档。
 
-> 说明：200 题开放问答单题约 15–35 秒（LLM 生成主导），全量约 1–2 小时；
-> 官方 300 题约 5–15 分钟。跑测为串行执行以保证逐题延迟测量纯净。
-> GPU 环境（`--gpus all` 启动）可显著加速：开放题平均 28 s → 18 s。
+停止服务：
 
-### 分步跑法
+```sh
+docker compose down
+```
 
-官方 300 题（选择题，计时+正确率）：
+重新启动时使用对应设备模式的启动命令。修改源码后加 `--build` 重建镜像。修改 `.env` 后重新执行 `docker compose up -d`，让配置应用到容器。
+
+### 运行数据位置
+
+| 数据 | Docker Compose 默认位置 |
+|---|---|
+| 上传的知识库原文件 | `data/evaluation/final_runtime/documents/originals/` |
+| SQLite 数据库 | Docker 命名卷 `regumate_db`，容器内 `/app/db_runtime/app.db` |
+| Qdrant 向量索引 | `data/qdrant/` |
+| 本地模型 | `data/models/` |
+| 模型缓存 | `data/model_cache/` |
+| 审计归档 | `data/evaluation/final_runtime/audit_archives/` |
+
+备份时同时保留知识库文件、SQLite 数据卷和 Qdrant 索引；为保持一致，建议先停止应用写入。普通 `docker compose down` 保留数据，`docker compose down -v` 会移除 Compose 数据卷，请勿将它作为日常停止命令。
+
+提交包默认不包含已建好的运行数据库与索引。新部署应导入资料后再提问。直接在宿主机运行后端时，默认数据路径与 Docker 部署不同，以 `backend/app/core/config.py` 和实际环境变量为准。
+
+### 常见问题
+
+- **页面无法访问**：先检查 Docker 是否启动、容器是否运行以及 `REGUMATE_APP_PORT` 是否被占用。
+- **模型未就绪**：查看应用日志，检查模型目录、模型源网络和离线配置，再运行预热命令。
+- **文档处理失败**：查看该文件的错误信息，确认格式受支持且有可提取内容；转换文件后重新上传。
+- **回答提示依据不足**：确认资料已索引，检查问题中的机构、时间与文档范围是否与资料一致。
+- **更改密钥后仍报错**：检查 API 根地址和模型名，重新创建应用容器以应用 `.env`。
+
+## 8. 官方题目跑测（可选）
+
+只使用官方 300 题，先不带选项直接提问，再离线核对答案。题目默认位于 `outputs/official300_open/open_questions_all.jsonl`，原始问答表放在 `data/contest_dataset/QA数据.xlsx`。
+
+在已安装项目 Python 依赖的宿主机上运行：
 
 ```powershell
-python scripts/evaluation/run_official300_timing.py http://127.0.0.1:8000 evaluation/系统测试结果/<输出目录>
+python scripts/evaluation/run_official300_open.py --base-url http://127.0.0.1:8000 --out outputs/official300_open/open_300_results.json
+python scripts/evaluation/score_official300_open.py --results outputs/official300_open/open_300_results.json --out-dir outputs/official300_open/open_300_report
 ```
 
-自命题 200 题跑测：
+需要生成等价问答题时使用 `scripts/evaluation/rewrite_official300_open.py`。有答案分歧时回到监管原文核对。运行产物留在 `outputs/official300_open/`。
 
-```powershell
-python scripts/evaluation/run_pair_regression.py --questions data/自命题200题评测集/去锚100题/questions.jsonl `
-  --out evaluation/系统测试结果/<输出目录>/old_outputs.json --base-url http://127.0.0.1:8000
-python scripts/evaluation/run_pair_regression.py --questions data/自命题200题评测集/去锚100题B/questions.jsonl `
-  --out evaluation/系统测试结果/<输出目录>/new_outputs.json --base-url http://127.0.0.1:8000
-```
+## 9. 开发与生成提交包
 
-确定性评分（输出逐题诊断与分类汇总）：
-
-```powershell
-python scripts/evaluation/score_pair_regression.py --out-dir evaluation/系统测试结果/<输出目录>
-```
-
-评测问答集、金标、评分器与字段说明：`data/自命题200题评测集/README.md`。
-
-## 九、评测区（evaluation/）目录说明
-
-`evaluation/` 为赛题交付的评测区，分两大部分：
+项目目录：
 
 ```text
-evaluation/
-├── readme.txt                      # 本目录说明
-├── 文档解析结果/                    # 赛题交付：文档解析与索引流程产物
-│   ├── ingest_manifest.json        # 500 份文件入库清单（doc_id、路径、大小、SHA-256）
-│   ├── parse_manifest.json         # 500 份文件解析结果清单（chunk/cell 数量）
-│   └── 文档解析结果说明.md          # 知识库规模、解析方式、证据粒度与一键重建方法
-└── 系统测试结果/                    # 赛题交付：检索与生成评测报告及原始产物
-    ├── 官方300题/
-    │   ├── CPU_20260805/           # 官方 300 题 CPU 计时（300/300，avg 7.03 s）
-    │   └── GPU_20260805/           # 官方 300 题 GPU 计时（300/300，avg 0.54 s）
-    ├── 自命题200题/
-    │   ├── CPU_最终验收20260805/    # 200 题 CPU 跑测+评分（183/200，avg 28.4 s）
-    │   └── GPU_20260805/           # 200 题 GPU 跑测+评分（180/200，avg 17.9 s）
-    └── 测试报告_ReguMate可信RAG问答.md / .pdf   # 综合测试报告
+backend/          后端接口、解析、检索、计算与核验
+frontend/         网页源代码
+scripts/          启停、导入、维护与官方跑测工具
+docs/             技术与接口文档
+data/             官方资料与本地运行数据
+outputs/          官方题目输入及运行产物
 ```
 
-说明：
-- **文档解析结果**：系统知识库界面点击文档名即可查看单份文件的解析内容（chunk 列表/表格摘要/章节元数据）；manifest 为全部 500 份文件的解析清单与溯源（SHA-256）。解析结果本体（SQLite/Qdrant）不随包分发，按 `文档解析结果说明.md` 中的重建命令一键生成后即可在界面查看，与评测所用知识库一致。
-- **系统测试结果**：官方 300 题（选择题）与自制 200 题（开放问答）的正确率、证据引用命中率、拒答率与 CPU/GPU 处理时间，随包提供逐题诊断与评分汇总（可复现，见第八章）。测试报告同时位于包外「ReguMate-提交文档/」一份（防评审漏看）。
-- 其余开发期历史评测目录（如去锚100题、官方300选择题-回归* 等）不属于交付内容。
-
-## 十、开发验证
-
-后端单元测试：
+后端开发检查：
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -r requirements-dev.in
 python -m pytest -q
 ```
 
-前端类型检查、构建和测试：
+前端开发检查：
 
 ```powershell
 cd frontend
 npm ci
+npm run lint
 npm run build
-npm test -- --run
+npm test
 cd ..
 ```
 
-评审演示优先使用 Docker Compose 启动系统，再运行“脚本上传与评测”中的命令。
-
-## 十一、参赛版展示与交付
-
-本轮参赛版在现有问答页增加“展示视图”，与“日常问答”使用同一请求和同一答案，不增加模型调用。展示视图分为任务区、结论区和侧边依据区：点击结论会定位它依赖的证据和计算记录，点击证据会定位使用它的结论。核验状态分别展示“引用可定位”“事实支持”“要求完整性”，只有四项条件全部为真才标记为通过。
-
-运行预算：
-
-- 普通问题 150 秒；
-- 复杂任务 240 秒（至少两个必需来源、制度＋表格、或至少三个独立事项）；
-- 单请求最多 5 次模型调用；
-- 复杂任务从请求最初开始时间一次性升级截止时间，重试、恢复和嵌套调用不会重新起算。
-
-参赛文档与验收入口：
-
-- `docs/contest-version/README.md`：技术说明与架构图；
-- `docs/contest-version/core_cases.json`：12 个核心用例；
-- `docs/contest-version/results.md`：基线、最终版首轮和演示连续 3 次记录；
-- `docs/contest-version/demo-script.md`：5 分钟和 10 分钟演示讲稿；
-- `docs/contest-version/pitch.md`：亮点讲解文案；
-- `scripts/contest/preflight_contest.py`：GPU、本地模型、向量库和在线模型就绪检查；
-- `scripts/contest/run_core_cases.py`：只提交问题、不注入答案的验收运行器。
-
-统一打包入口：
+在 Windows 项目根目录生成并校验提交包：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_delivery_package.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_delivery.ps1
 ```
 
-交付包只提供 `.env.example` 空配置模板，不复制真实 `.env`，不生成 SHA-256 清单。默认包包含代码、文档、测试、赛题数据和展示结果，不包含本地模型缓存与 Qdrant 运行数据；需要离线演示数据时使用 `-IncludeRuntimeData`。旧入口 `build_submission_package.ps1` 已改为委托统一入口，避免复制密钥或生成额外哈希文件。
+输出为 `dist-delivery/ReguMate-Agent-Contest/` 和 `dist-delivery/ReguMate-Agent-Contest.zip`。默认包含代码、技术文档、空配置模板、可用的官方资料和默认题目输入；依赖、模型、已入库运行数据、临时文件及真实 `.env` 不随包提供。

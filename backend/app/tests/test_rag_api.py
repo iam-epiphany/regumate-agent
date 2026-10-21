@@ -523,6 +523,25 @@ def test_upload_preflight_reports_exact_duplicate_and_upload_rejects_duplicate(f
     assert len(client.get("/api/documents").json()["documents"]) == 1
 
 
+def test_upload_can_explicitly_allow_content_duplicate_with_distinct_filenames(fake_indexing_services) -> None:
+    reset_database()
+    content = "identical bytes for two separately named official attachments"
+    first_response = client.post(
+        "/api/documents/upload",
+        files={"file": ("376_source.txt", content, "text/plain")},
+    )
+    assert first_response.status_code == 202
+
+    second_response = client.post(
+        "/api/documents/upload",
+        data={"allow_content_duplicate": "true"},
+        files={"file": ("377_source.txt", content, "text/plain")},
+    )
+    assert second_response.status_code == 202
+    assert second_response.json()["document_id"] != first_response.json()["document_id"]
+    assert len(client.get("/api/documents").json()["documents"]) == 2
+
+
 def test_same_filename_different_content_can_be_renamed_or_overwritten(fake_indexing_services) -> None:
     reset_database()
     first_response = client.post(

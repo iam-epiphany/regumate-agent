@@ -33,6 +33,9 @@ ReguMate-Agent-Delivery*/
 .env.*
 !.env.example
 
-outputs/
+outputs/*
+!outputs/official300_open/
+outputs/official300_open/*
+!outputs/official300_open/open_questions_all.jsonl
 reports/generated/
 backend/storage/

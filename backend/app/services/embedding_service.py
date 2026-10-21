@@ -2,6 +2,7 @@ import math
 import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import Lock
 from typing import Any
 
 from backend.app.core import config
@@ -34,7 +35,7 @@ class TextEmbedding:
 
 
 @lru_cache(maxsize=1)
-def _get_bge_m3_model() -> Any:
+def _load_bge_m3_model() -> Any:
     try:
         from FlagEmbedding import BGEM3FlagModel
     except ImportError as exc:
@@ -55,6 +56,27 @@ def _get_bge_m3_model() -> Any:
         raise EmbeddingServiceError(str(exc)) from exc
     except Exception as exc:
         raise EmbeddingServiceError("BGE-M3 embedding 模型加载失败") from exc
+
+
+_MODEL_LOAD_LOCK = Lock()
+
+
+def _get_bge_m3_model() -> Any:
+    """Return the single process-wide model, loading it exactly once.
+
+    ``lru_cache`` only caches the return value; two threads that miss at the
+    same time both execute the loader.  Background warmup and the indexing
+    worker can do exactly that on startup, placing two BGE-M3 instances on an
+    8 GB GPU and leaving the first failure to poison all later encodes.  The
+    explicit lock serializes the cold load while keeping inference outside it.
+    """
+
+    with _MODEL_LOAD_LOCK:
+        return _load_bge_m3_model()
+
+
+_get_bge_m3_model.cache_clear = _load_bge_m3_model.cache_clear  # type: ignore[attr-defined]
+_get_bge_m3_model.cache_info = _load_bge_m3_model.cache_info  # type: ignore[attr-defined]
 
 
 def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> list[TextEmbedding]:
@@ -100,9 +122,13 @@ def embed_texts(texts: list[str], *, batch_size: int = EMBEDDING_BATCH_SIZE) -> 
                             return_colbert_vecs=False,
                         )
             except Exception as retry_exc:
-                raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from retry_exc
+                raise EmbeddingServiceError(
+                    f"BGE-M3 embedding 生成失败：{type(retry_exc).__name__}: {retry_exc}"
+                ) from retry_exc
         else:
-            raise EmbeddingServiceError("BGE-M3 embedding 生成失败") from exc
+            raise EmbeddingServiceError(
+                f"BGE-M3 embedding 生成失败：{type(exc).__name__}: {exc}"
+            ) from exc
 
     dense_vectors = encoded.get("dense_vecs")
     sparse_vectors = encoded.get("lexical_weights")

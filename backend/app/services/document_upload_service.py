@@ -25,6 +25,7 @@ from backend.app.services.document_storage import (
 from backend.app.services.document_metadata_service import (
     apply_document_metadata,
     resolve_version_relation,
+    title_from_filename,
 )
 from backend.app.services.index_task_service import enqueue_document_index
 
@@ -83,6 +84,7 @@ async def create_document_upload(
     metadata_source: str = "user",
     max_bytes: int = MAX_UPLOAD_BYTES,
     enqueue_index: Callable[[str], bool] = enqueue_document_index,
+    allow_content_duplicate: bool = False,
 ) -> tuple[Document, DocumentIndexTask]:
     filename = sanitize_upload_filename(filename_override or file.filename or "unknown")
     filename_norm = normalize_filename(filename)
@@ -121,14 +123,15 @@ async def create_document_upload(
             max_bytes=max_bytes,
         )
         storage_path = stored.path
-        exact_duplicate = find_exact_duplicate(
-            db,
-            size=stored.size,
-            file_sha256=stored.file_sha256,
-            exclude_document_id=overwrite_document_id,
-        )
-        if exact_duplicate is not None:
-            raise ExactDuplicateDocumentError(exact_duplicate)
+        if not allow_content_duplicate:
+            exact_duplicate = find_exact_duplicate(
+                db,
+                size=stored.size,
+                file_sha256=stored.file_sha256,
+                exclude_document_id=overwrite_document_id,
+            )
+            if exact_duplicate is not None:
+                raise ExactDuplicateDocumentError(exact_duplicate)
         filename_conflict = find_filename_conflict(
             db,
             filename_norm=filename_norm,
@@ -153,7 +156,7 @@ async def create_document_upload(
         size=stored.size,
         file_sha256=stored.file_sha256,
         storage_path=str(storage_path),
-        title=Path(filename).stem.split("_", maxsplit=1)[-1],
+        title=title_from_filename(filename),
         source_type="uploaded_file",
         version_status="unknown",
         metadata_status="inferred",

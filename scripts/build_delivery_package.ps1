@@ -14,7 +14,7 @@ $ProjectRootFull = (Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\')
 
 function Ensure-InProject([string]$Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
-    if (-not $full.StartsWith($ProjectRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (-not $full.StartsWith($ProjectRootFull + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to operate outside project root: $full"
     }
     return $full
@@ -139,38 +139,17 @@ foreach ($directory in $dataDirectories) {
     }
 }
 $runtimeEvaluation = Join-Path $ProjectRoot 'data\evaluation\final_runtime'
-if (Test-Path -LiteralPath $runtimeEvaluation) {
+if ($IncludeRuntimeData -and (Test-Path -LiteralPath $runtimeEvaluation)) {
     Copy-Directory $runtimeEvaluation (Join-Path $DeliveryRoot 'data\evaluation\final_runtime') `
         -ExcludeDirs @('audit_archives', 'models', 'qdrant') `
         -ExcludeFiles @('*.log')
 }
-New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'data\evaluation\final') | Out-Null
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'outputs\evaluation')) {
-    Copy-Directory (Join-Path $ProjectRoot 'outputs\evaluation') (Join-Path $DeliveryRoot 'outputs\evaluation') `
-        -ExcludeDirs @('__pycache__') `
-        -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
-}
-foreach ($file in @(
-    'data\evaluation\final\frozen_parameters.json',
-    'data\evaluation\final\ingest_manifest.json',
-    'data\evaluation\final\official_excel_cells.json',
-    'data\evaluation\final\parse_manifest.json'
-)) {
-    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $file)) {
-        Copy-FileToDelivery $file
-    }
-}
-
-New-Item -ItemType Directory -Force -Path (Join-Path $DeliveryRoot 'dist-delivery') | Out-Null
-$optionalDeliveryFiles = @(
-    'dist-delivery\regumate-images.tar'
-)
-$missingOptionalDeliveryFiles = @()
-foreach ($file in $optionalDeliveryFiles) {
-    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $file)) {
-        Copy-FileToDelivery $file
-    } else {
-        $missingOptionalDeliveryFiles += $file
+# These are source inputs, not generated results. The default runner needs the
+# complete question set on fresh checkouts and inside source-only deliveries.
+Copy-FileToDelivery 'outputs\official300_open\open_questions_all.jsonl'
+foreach ($inputFile in Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'outputs\official300_open') -Filter 'open_questions*.jsonl' -File) {
+    if ($inputFile.Name -ne 'open_questions_all.jsonl') {
+        Copy-FileToDelivery ('outputs\official300_open\' + $inputFile.Name)
     }
 }
 
@@ -192,6 +171,8 @@ $contentsPath = Join-Path $DeliveryRoot 'DELIVERY_CONTENTS.txt'
 $contents = @(
     "ReguMate delivery directory",
     "Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))",
+    "Source commit: $(git rev-parse HEAD)",
+    "Runtime data included: $([bool]$IncludeRuntimeData)",
     "Files: $fileCount",
     ("Uncompressed size: {0:N2} GB" -f ($size / 1GB)),
     "",
@@ -205,15 +186,19 @@ $contents = @(
     "Excluded from delivery: .git, IDE files, Python/Node caches, node_modules, frontend dist, development databases, temporary staging directories, historical audit logs, repeated evaluation runs, the real .env, and generated SHA-256 manifests. The package ships .env.example only.",
     "Qdrant internal *.log files are retained because they are part of the persisted vector index."
 )
-if ($missingOptionalDeliveryFiles.Count -gt 0) {
-    $contents += @(
-        "",
-        "Optional delivery files not present at generation time:"
-    ) + ($missingOptionalDeliveryFiles | ForEach-Object { "- $_" })
-}
 $contents | Set-Content -LiteralPath $contentsPath -Encoding utf8
+
+$archivePath = Ensure-InProject (Join-Path $DistRoot "$DeliveryName.zip")
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $DeliveryRootFull,
+    $archivePath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $true
+)
 
 Write-Host "Delivery directory: $DeliveryRoot" -ForegroundColor Green
 Write-Host "Files: $fileCount"
 Write-Host ("Uncompressed size: {0:N2} GB" -f ($size / 1GB))
 Write-Host "Manifest: $contentsPath" -ForegroundColor Green
+Write-Host "Submission archive: $archivePath" -ForegroundColor Green

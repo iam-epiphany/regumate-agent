@@ -173,3 +173,52 @@ def test_rerank_service_passes_local_path_to_flag_reranker(monkeypatch, tmp_path
     assert calls == [str(model_path)]
     assert calls[0] != "BAAI/bge-reranker-v2-m3"
     rerank_service._get_reranker.cache_clear()
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+
+def test_embedding_model_cold_load_is_serialized(monkeypatch, tmp_path) -> None:
+    model_path = make_model_dir(tmp_path / "models" / "bge-m3")
+    calls: list[str] = []
+    guard = threading.Lock()
+
+    class SlowBGEM3FlagModel:
+        def __init__(self, model_name_or_path: str, use_fp16: bool, devices: str | None = None):
+            with guard:
+                calls.append(model_name_or_path)
+            time.sleep(0.1)
+
+    monkeypatch.setitem(sys.modules, "FlagEmbedding", SimpleNamespace(BGEM3FlagModel=SlowBGEM3FlagModel))
+    monkeypatch.setattr(config, "REGUMATE_OFFLINE_MODE", True)
+    monkeypatch.setattr(config, "EMBEDDING_MODEL_PATH", str(model_path))
+    embedding_service._get_bge_m3_model.cache_clear()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: embedding_service._get_bge_m3_model(), range(8)))
+
+    assert calls == [str(model_path)]
+    embedding_service._get_bge_m3_model.cache_clear()
+
+
+def test_reranker_cold_load_is_serialized(monkeypatch, tmp_path) -> None:
+    model_path = make_model_dir(tmp_path / "models" / "bge-reranker-v2-m3")
+    calls: list[str] = []
+    guard = threading.Lock()
+
+    class SlowFlagReranker:
+        def __init__(self, model_name_or_path: str, use_fp16: bool, devices: str | None = None):
+            with guard:
+                calls.append(model_name_or_path)
+            time.sleep(0.1)
+
+    monkeypatch.setitem(sys.modules, "FlagEmbedding", SimpleNamespace(FlagReranker=SlowFlagReranker))
+    monkeypatch.setattr(config, "REGUMATE_OFFLINE_MODE", True)
+    monkeypatch.setattr(config, "RERANKER_MODEL_PATH", str(model_path))
+    rerank_service._get_reranker.cache_clear()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: rerank_service._get_reranker(), range(8)))
+
+    assert calls == [str(model_path)]
+    rerank_service._get_reranker.cache_clear()

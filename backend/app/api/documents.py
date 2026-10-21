@@ -99,6 +99,7 @@ async def upload_document(
     filename_override: str | None = Form(None),
     overwrite_document_id: str | None = Form(None),
     metadata_json: str | None = Form(None),
+    allow_content_duplicate: bool = Form(False),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
@@ -114,6 +115,7 @@ async def upload_document(
             metadata=metadata,
             max_bytes=MAX_UPLOAD_BYTES,
             enqueue_index=enqueue_document_index,
+            allow_content_duplicate=allow_content_duplicate,
         )
         return _to_upload_response(document, task)
     except DocumentTooLargeError as exc:
@@ -346,6 +348,7 @@ def preflight_document_upload(
 )
 async def upload_documents_batch(
     files: list[UploadFile] = File(...),
+    allow_content_duplicate: bool = Form(False),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
 ) -> DocumentBatchUploadResponse:
@@ -367,6 +370,7 @@ async def upload_documents_batch(
                 request_id=request_id,
                 max_bytes=MAX_UPLOAD_BYTES,
                 enqueue_index=enqueue_document_index,
+                allow_content_duplicate=allow_content_duplicate,
             )
             items.append(
                 DocumentBatchUploadItem(

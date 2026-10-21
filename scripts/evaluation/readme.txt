@@ -1,16 +1,7 @@
-﻿scripts/evaluation/ —— 评测脚本
-================================================
+scripts/evaluation/ —— 官方 300 题评测入口
 
-作用：官方 300 题与自命题 200 题跑测、评分、回归与审计脚本。
-
-  run_official300_timing.py   官方 300 题计时（CPU/GPU）
-  run_official_qa.py / open_official_qa.py   官方开放问答跑测
-  run_pair_regression.py      自命题 200 题跑测
-  score_pair_regression.py    自命题 200 题确定性评分
-  rigorous_v3_scorer.py       严格评分器
-  banking_workbench/          自命题评分器模块
-  run_quality_gate.py / .ps1  质量门禁
-  audit_no_hardcoding.py      反硬编码审计
-  build_open_v3_gold.py       官方开放问答金标构建
-  capture_baseline_identity.py / verify_frozen_artifacts.py  基线与封存校验
-  run_public_batch.py         公开批次评测
+run_official300_open.py：默认读取 outputs/official300_open/open_questions_all.jsonl，不带选项直接提问。
+rewrite_official300_open.py：将官方题目改写为等价问答题。
+score_official300_open.py：离线判分，分歧以监管原文事实为准。
+产物写入 outputs/official300_open/，报告写入 docs/evaluation/。
+其余开发期脚本源码保留，但非官方题集已清理，不再作为评测目标或验收依据。

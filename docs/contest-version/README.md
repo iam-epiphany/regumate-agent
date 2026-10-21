@@ -1,4 +1,4 @@
-﻿# ReguMate 参赛版技术说明
+# ReguMate 参赛版技术说明
 
 本说明与当前代码一致，重点解释本轮回答主链修正、展示视图、运行预算和验收结果。这里的“参赛版”不是另起一套系统：它沿用现有的 Supervisor＋专业 Agent 架构、检索索引、表格计算和验证服务，只整合已有能力并把真实执行过程展示出来。
 
@@ -116,7 +116,7 @@ QueryPlan 形成后，满足任一条件归为复杂任务：
 - 基线与最终版使用同一组 12 个核心用例：每类两个，覆盖制度查询、跨文档比较、表格取数、表格计算、制度与数据联合问答、证据不足或澄清。
 - 基线为 9/12；最终版首轮为 12/12；6 个演示用例在最终版各运行 3 次，全部通过。
 - 计划内真实请求共 36 次：基线 12 次＋最终版首轮 12 次＋演示补跑 12 次。
-- 详细表格、耗时、预算类别和中间修复记录见 [`results.md`](results.md)。
+- 历史演示结果和中间修复记录已清理；以下验收数字仅保留为历史技术记录。
 - 后端测试：`679 passed, 2 skipped`；前端测试：`58 passed`；前端类型检查、构建和 lint 通过。
 - 反硬编码扫描：125 个生产文件，0 findings（辅助检查，不替代换实体/换文档测试）。
 - 本轮没有生成新的全量正确率，也不把 6 个演示案例的成绩称为独立泛化成绩。
@@ -137,6 +137,6 @@ QueryPlan 形成后，满足任一条件归为复杂任务：
 - 跨文档证据：`backend/app/services/evidence_contract_service.py`、`backend/app/services/query_planner_service.py`
 - 表格与公式：`backend/app/services/spreadsheet_retrieval_service.py`、`backend/app/services/formula_parser_service.py`
 - 前端展示：`frontend/src/components/qa/ShowcaseView.tsx`
-- 核心用例与报告：`docs/contest-version/core_cases.json`、`docs/contest-version/results.md`
+- 保留的核心用例定义：`docs/contest-version/core_cases.json`；正式评测仅使用官方 300 题。
 - 运行器：`scripts/contest/run_core_cases.py`、`scripts/contest/preflight_contest.py`
 - 统一打包：`scripts/build_delivery_package.ps1`（默认不包含本地模型与 Qdrant 运行数据；加 `-IncludeRuntimeData` 进入离线演示模式）；交付检查：`scripts/verify_delivery.ps1`

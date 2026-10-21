@@ -1,5 +1,0 @@
-services:
-  app:
-    volumes:
-      - ./backend:/app/backend
-      - ./scripts:/app/scripts

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from backend.app.core.rag_features import features, event
 from functools import lru_cache
 import hashlib
+from threading import Lock
 from typing import Any
 
 from backend.app.core import config
@@ -34,7 +35,7 @@ class RerankedChunk:
 
 
 @lru_cache(maxsize=1)
-def _get_reranker() -> Any:
+def _load_reranker() -> Any:
     try:
         from FlagEmbedding import FlagReranker
     except ImportError as exc:
@@ -55,6 +56,20 @@ def _get_reranker() -> Any:
         raise RerankServiceError(str(exc)) from exc
     except Exception as exc:
         raise RerankServiceError("BGE reranker 模型加载失败") from exc
+
+
+_RERANKER_LOAD_LOCK = Lock()
+
+
+def _get_reranker() -> Any:
+    """Load the reranker once even when warmup and inference race."""
+
+    with _RERANKER_LOAD_LOCK:
+        return _load_reranker()
+
+
+_get_reranker.cache_clear = _load_reranker.cache_clear  # type: ignore[attr-defined]
+_get_reranker.cache_info = _load_reranker.cache_info  # type: ignore[attr-defined]
 
 
 def rerank_candidates(

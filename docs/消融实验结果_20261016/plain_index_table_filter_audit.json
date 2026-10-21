@@ -1,9 +1,0 @@
-{
-  "configuration": "A0/A1 frozen text-index baselines",
-  "recursive_chunk_metadata_with_year_or_month": 0,
-  "primary_table_questions_per_profile": 20,
-  "table_questions_with_zero_raw_candidates_per_profile": 18,
-  "table_refusals_per_profile": 20,
-  "finding": "Planner period filters are retained although minimal text-index metadata omits period fields. Interpret structured-index gains as the current pipeline capability bundle, not pure Dense algorithm superiority.",
-  "action": "Preserve frozen code and first results; disclose limitation in report and PPT notes/labels; do not delete or replace valid failed questions."
-}

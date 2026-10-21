@@ -231,13 +231,62 @@ def apply_document_metadata(
     return document_metadata_snapshot(document)
 
 
+_GENERIC_TITLE_RE = re.compile(r"^(?:附件\s*\d*\s*[：:]?|附\s*件\s*[：:]?|目\s*录)\s*$")
+_SECTION_TITLE_RE = re.compile(
+    r"^(?:第[一二三四五六七八九十百零\d]+[章节条]|"
+    r"[一二三四五六七八九十]+、|"
+    r"[（(][一二三四五六七八九十\d]+[）)]|"
+    r"\d+[\.、])"
+)
+
+
+def title_from_filename(filename: str) -> str:
+    """Return a human title from the curated corpus filename.
+
+    Official attachments are named ``<serial>_<notice>_<attachment title>``.
+    The last segment is the most specific title; generic ``附件N`` segments are
+    stripped so a document is not indexed under a title like "附件1".
+    """
+
+    stem = Path(filename).stem
+    parts = [part.strip() for part in stem.split("_") if part.strip()]
+    for part in reversed(parts):
+        cleaned = re.sub(r"^附件\s*\d*\s*[：:]\s*", "", part).strip()
+        cleaned = re.sub(r"^附\s*件\s*[：:]\s*", "", cleaned).strip()
+        if not cleaned or _GENERIC_TITLE_RE.fullmatch(cleaned) or cleaned.isdigit():
+            continue
+        return cleaned
+    return stem
+
+
+def _is_document_title_candidate(text: str | None) -> bool:
+    value = " ".join(str(text or "").split()).strip()
+    if len(value) < 4 or len(value) > 200:
+        return False
+    if _GENERIC_TITLE_RE.fullmatch(value):
+        return False
+    if re.fullmatch(r"DOC-\d{8}-[0-9A-F]{12}", value):
+        return False
+    if _SECTION_TITLE_RE.match(value):
+        return False
+    return True
+
+
+def _first_meaningful_heading(parsed: ParsedDocument, max_blocks: int = 8) -> str | None:
+    for block in parsed.blocks[:max_blocks]:
+        if block.block_type == "heading" and _is_document_title_candidate(block.text):
+            return block.text.strip()
+    return None
+
+
 def infer_metadata_from_parsed(parsed: ParsedDocument, filename: str) -> dict[str, Any]:
     text = parsed.text[:12000]
     compact = " ".join(text.split())
     header_text = _header_text(parsed, fallback=text[:4000])
     footer_text = text[-3000:]
-    filename_title = Path(filename).stem.split("_", maxsplit=1)[-1]
-    title = _first_heading(parsed) or str(parsed.metadata.get("source_title") or filename_title)
+    filename_title = title_from_filename(filename)
+    heading = _first_meaningful_heading(parsed)
+    title = heading or filename_title
     authority = _extract_labeled_authority(header_text, footer_text)
     document_number_match = re.search(
         r"(?:[\u4e00-\u9fffA-Za-z]{1,18})[〔\[]\d{4}[〕\]]\d{1,6}号",
