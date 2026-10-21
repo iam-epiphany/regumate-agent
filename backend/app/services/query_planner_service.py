@@ -1575,6 +1575,18 @@ def _demote_planner_expansions(
 
     if len(aspects) <= 1:
         return aspects
+    if '名单' in question:
+        # A user-named list attachment is the answer scope.  Planner aspects
+        # about the parent notice's other clauses are retrieval hints, not
+        # additional answer obligations.
+        result = [
+            aspect if ('名单' in aspect.question or '编报' in aspect.question)
+            else replace(aspect, mandatory=False)
+            for aspect in aspects
+        ]
+        if not any(aspect.mandatory for aspect in result):
+            result[0] = replace(result[0], mandatory=True)
+        return result
     demoted = []
     for aspect in aspects:
         added = [
