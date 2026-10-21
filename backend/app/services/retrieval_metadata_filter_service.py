@@ -198,6 +198,7 @@ def _title_candidate_matches(expected: Any, candidates: list[Any]) -> bool:
 def _normalize_title(value: Any) -> str:
     normalized = _normalize(value)
     normalized = re.sub(r"(\d{4}年)版", r"\1", normalized)
+    normalized = re.sub(r"[_\-/]", "", normalized)
     # Users often omit the generic “情况” token or use the concise insurance
     # sector names printed in a workbook heading.  Canonicalize only these
     # title-level aliases; period and business subject remain part of the hard

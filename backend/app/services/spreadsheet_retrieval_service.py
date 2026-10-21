@@ -242,16 +242,19 @@ def _indexed_spreadsheet_matches(
     candidates = [candidate for candidate in candidates if candidate.score > 0 or candidate.selected_cell]
     candidates.sort(key=lambda item: item.score, reverse=True)
     if table_task == "compare" and operation in {"max", "min"}:
-        selected = (
-            _cells_for_selectors(
+        usable_selectors = [item for item in selectors if not _generic_comparison_selector(item)]
+        if usable_selectors:
+            selected = _cells_for_selectors(
                 candidates,
-                selectors,
+                usable_selectors,
                 question=question,
                 question_column_target=question_column_target,
             )
-            if selectors
-            else _unique_numeric_candidates(candidates)
-        )
+        else:
+            selected = _numeric_candidates_for_column(
+                candidates,
+                label_filters.get("column_label") or filters.get("column_label"),
+            )
         winner = _comparison_candidate(selected, operation)
         if winner:
             winner.metadata["comparison_operation"] = operation
@@ -1310,6 +1313,13 @@ def _spreadsheet_candidates(db: Session, question: str, filters: dict[str, Any])
         metadata = _metadata(chunk)
         if not metadata.get("spreadsheet_table") or metadata.get("table_chunk_role") != "row":
             continue
+        sheet_filter = normalize_table_text(filters.get("sheet"))
+        if sheet_filter and sheet_filter not in normalize_table_text(metadata.get("sheet_name")):
+            continue
+        if any(filters.get(key) is not None for key in ("year", "month", "quarter")) and not _period_matches(
+            filters, metadata, document.filename
+        ):
+            continue
         score = _candidate_score(question, filters, document, chunk, metadata)
         if score <= 0:
             continue
@@ -1580,6 +1590,56 @@ def _first_numeric_cell(metadata: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(cell, dict) and isinstance(cell.get("normalized_value"), (int, float)):
             return cell
     return None
+
+
+def _generic_comparison_selector(selector: dict[str, Any]) -> bool:
+    label = normalize_table_text(
+        selector.get("label") or selector.get("row_label") or selector.get("row_or_indicator") or ""
+    )
+    return label in {"数值", "值", "指标", "哪一项", "项目", "项目名称", "指标名称"}
+
+
+def _numeric_candidates_for_column(
+    candidates: list[SpreadsheetCandidate], column_target: Any
+) -> list[SpreadsheetCandidate]:
+    """Pick one numeric cell per row in the requested column.
+
+    A "which item is highest" question is a column scan, not a set of
+    independent row selectors.  The generic selector produced by the fallback
+    planner (for example ``{"label": "数值"}``) must not collapse the scan to
+    one arbitrary cell.
+    """
+
+    target = normalize_table_text(column_target)
+    selected: list[SpreadsheetCandidate] = []
+    seen: set[tuple[str, str, str]] = set()
+    for candidate in candidates:
+        cell = None
+        if target:
+            for item in candidate.metadata.get("cells") or []:
+                if not isinstance(item, dict) or not isinstance(item.get("normalized_value"), (int, float)):
+                    continue
+                label = normalize_table_text(
+                    " ".join(
+                        str(part)
+                        for part in [item.get("column_label"), *(item.get("column_path") or [])]
+                        if part
+                    )
+                )
+                if target in label or label in target:
+                    cell = item
+                    break
+        if cell is None:
+            cell = _first_numeric_cell(candidate.metadata)
+        if not cell or not isinstance(cell.get("normalized_value"), (int, float)):
+            continue
+        candidate.selected_cell = cell
+        key = _candidate_cell_key(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(candidate)
+    return selected
 
 
 def _metadata(chunk: DocumentChunk) -> dict[str, Any]:

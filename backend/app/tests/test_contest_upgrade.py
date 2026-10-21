@@ -161,6 +161,15 @@ def test_explanation_links_requirements_claims_sources_and_calculation() -> None
                     "stage": "selected", "reason": "source_and_requirement_match",
                 }],
             },
+            "evidence_sufficiency": {
+                "schema_version": "1.0", "status": "partial",
+                "requirements": [], "missing_requirements": [],
+                "partial_requirements": ["source_a"], "missing_facets": ["source_a:condition_missing"],
+                "expansion": {"attempted": True, "expanded_chunks": 1, "expanded_chunk_ids": ["chunk-2"],
+                              "reasons": {"referenced_clause": 1}, "added_token_estimate": 30},
+                "counts": {"requirements": 1, "candidates": 2, "selected": 1},
+                "notes": [],
+            },
         },
     )
     claim = AnswerClaim(text="答案为 A。关键功能是指向第三方提供的金融服务。[1]",
@@ -193,6 +202,9 @@ def test_explanation_links_requirements_claims_sources_and_calculation() -> None
     assert explanation.calculations[0].display_formula == "3500 - 1800 = 1700"
     assert len(explanation.calculations[0].operands) == 2
     assert explanation.calculations[0].operands[0].cell == "B2"
+    assert explanation.sufficiency is not None
+    assert explanation.sufficiency["status"] == "partial"
+    assert explanation.sufficiency["counts"]["candidates"] == 2
     # Explanation is a local projection; no prompt/debug package is required.
     assert explanation.budget.model_call_limit >= 1
 

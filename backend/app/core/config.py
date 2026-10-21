@@ -233,7 +233,7 @@ QA_MODEL_CALL_LIMIT = _env_int("QA_MODEL_CALL_LIMIT", 5, minimum=1)
 MODEL_INFERENCE_LOCK_WAIT_SECONDS = _env_float("MODEL_INFERENCE_LOCK_WAIT_SECONDS", 90.0, minimum=0.1)
 # The existing model's reasoning tokens share this bounded output allowance.
 # A small cap can truncate before the structured answer starts.
-ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 8192, minimum=1)
+ANSWER_GENERATION_MAX_TOKENS = _env_int("ANSWER_GENERATION_MAX_TOKENS", 12288, minimum=1)
 ANSWER_GENERATION_DISABLE_THINKING = _env_bool(
     "ANSWER_GENERATION_DISABLE_THINKING",
     _env_bool("ANSWER_GENERATION_INCLUDE_THINKING", LLM_DISABLE_THINKING),

@@ -1851,3 +1851,25 @@ def test_requirements_for_open_comparison_bind_source_and_attribute() -> None:
         assert requirements["comparison"].attribute_terms == []
         assert requirements["source_a"].source_titles == [source_a]
         assert requirements["source_b"].source_titles == [source_b]
+
+
+def test_bind_requirement_questions_strips_planner_parenthetical_expansion() -> None:
+    question = (
+        "按照《银行函证工作操作指引》，会计师事务所实施银行函证时，"
+        "应如何确定询证函的邮寄地址，并完成询证函的发出与回函收取？"
+    )
+    aspect = QueryAspect(
+        aspect_id="A1",
+        question=(
+            "按照《银行函证工作操作指引》，会计师事务所实施银行函证时，"
+            "应如何确定询证函的邮寄地址（包括地址来源、核实方式与地址确认要求）？"
+        ),
+        search_queries=(),
+        evidence_need="地址确定",
+        keywords=(),
+    )
+    result = query_planner_service._bind_requirement_questions(question, [aspect])
+    assert result[0].requirement_question == (
+        "按照《银行函证工作操作指引》，会计师事务所实施银行函证时，"
+        "应如何确定询证函的邮寄地址？"
+    )

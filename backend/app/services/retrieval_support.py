@@ -624,11 +624,18 @@ def _finish_aspect_matches(
         match.metadata["evidence_need"] = aspect.evidence_need
 
     supplements = _supplement_requirement(db, aspect, matches,
-        document_ids=set(retrieval_filter.document_ids or mcq_material_document_ids or ()),
+        document_ids=set(retrieval_filter.document_ids or mcq_material_document_ids or ())
+        or _resolved_source_scope(db, aspect),
         document_chunk_cache=document_chunk_cache)
     # The same chunk may acquire a stronger, explicit support role. Preserve
     # it until the shared deduplicator chooses the strongest evidence record.
     matches.extend(supplements)
+    scope_ids = set(retrieval_filter.document_ids or mcq_material_document_ids or ()) or _resolved_source_scope(db, aspect)
+    if scope_ids:
+        for match in matches:
+            if match.citation.document_id in scope_ids:
+                match.metadata["source_scope_match"] = True
+                match.metadata["source_scope_document_ids"] = sorted(scope_ids)
 
     for item in diagnostics_by_query:
         chunk_ids_for_query = {
@@ -1663,7 +1670,12 @@ def _critical_lexical_terms(text: str) -> list[str]:
     return list(dict.fromkeys(term for term in terms if len(_normalize_exact_support_text(term)) >= 2))
 
 
-def _table_row_source_unit(chunk: DocumentChunk, document_chunks: list[DocumentChunk]) -> list[DocumentChunk]:
+def _table_row_source_unit(
+    chunk: DocumentChunk,
+    document_chunks: list[DocumentChunk],
+    *,
+    include_siblings: bool = False,
+) -> list[DocumentChunk]:
     """A PDF/Word table row needs its header and preceding scope paragraph."""
     metadata = _chunk_metadata(chunk)
     if metadata.get('table_chunk_role') != 'row' or not metadata.get('table_id'):
@@ -1677,6 +1689,17 @@ def _table_row_source_unit(chunk: DocumentChunk, document_chunks: list[DocumentC
     position = document_chunks.index(summary)
     previous = document_chunks[position-1] if position else None
     scope = [previous] if previous and not _chunk_metadata(previous).get('table_id') else []
+    # For a small parsed table, carry all row records with the anchor.  A
+    # single row such as “团体” is ambiguous when the question asks for
+    # “个人”; the sibling row is the same evidence unit, not a new retrieval
+    # pass.
+    rows = [
+        item for item in document_chunks
+        if _chunk_metadata(item).get('table_id') == table_id
+        and _chunk_metadata(item).get('table_chunk_role') == 'row'
+    ]
+    if include_siblings and 1 < len(rows) <= 8:
+        return [*scope, summary, *rows]
     return [*scope, summary, chunk]
 
 
@@ -2958,6 +2981,32 @@ def _filter_indexed_matches(db: Session, matches: list[RetrievalMatch]) -> list[
         )
     return [match for match in matches if match.citation.document_id in indexed_ids]
 
+def _resolved_source_scope(db: Session, aspect: QueryAspect) -> set[str]:
+    """Resolve an explicit source title to document ids for lexical recovery.
+
+    Some PDF/table aspects carry a source title but no precomputed
+    ``retrieval_filter.document_ids``.  Without this, the bounded lexical
+    fallback has no scope and a correct source is never scanned.
+    """
+
+    filters = dict(getattr(aspect, "table_filters", {}) or {})
+    if not (filters.get("source_title") or filters.get("filename")):
+        return set()
+    try:
+        from backend.app.services.retrieval_metadata_filter_service import (
+            build_retrieval_metadata_filter,
+        )
+
+        resolved = build_retrieval_metadata_filter(
+            db,
+            filters,
+            getattr(aspect, "explicit_filter_keys", ()) or ("source_title",),
+        )
+    except Exception:
+        return set()
+    return set(resolved.document_ids or ())
+
+
 def _supplement_requirement(db, aspect, matches, *, document_ids, document_chunk_cache):
     """One question-derived recovery pass, with no model advice."""
     if aspect.aspect_id.startswith('multiple_choice_evidence'):
@@ -2970,7 +3019,12 @@ def _supplement_requirement(db, aspect, matches, *, document_ids, document_chunk
             if any(re.search(re.escape(term)+r'.{0,8}(?:是指|是由|指的是|定义为)', text)
                    for term in aspect.targets):
                 return []
-        elif any(m.evidence_role == 'direct_evidence' and m.rerank_score >= 0.55 for m in matches):
+        elif any(
+            m.evidence_role == 'direct_evidence'
+            and m.rerank_score >= 0.55
+            and (not document_ids or m.citation.document_id in document_ids)
+            for m in matches
+        ):
             return []
     if aspect.intent == 'define':
         supplements = _definition_clause_support_matches(db, aspect, matches, document_chunk_cache=document_chunk_cache)
@@ -2983,7 +3037,9 @@ def _supplement_requirement(db, aspect, matches, *, document_ids, document_chunk
         if document_ids and match.citation.document_id not in document_ids:
             continue
         match.metadata.update(aspect_id=aspect.aspect_id, aspect_question=aspect.question,
-                              recovery_pass=1, expected_evidence_type=aspect.evidence_need)
+                              recovery_pass=1, expected_evidence_type=aspect.evidence_need,
+                              source_scope_match=bool(document_ids),
+                              source_scope_document_ids=sorted(document_ids))
         result.append(match)
     return result
 

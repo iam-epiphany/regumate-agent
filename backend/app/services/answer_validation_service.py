@@ -4,18 +4,33 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backend.app.core.config import (SEMANTIC_GROUNDING_API_KEY, SEMANTIC_GROUNDING_BASE_URL,
+from backend.app.core.config import (
     ANSWER_GENERATION_MAX_TOKENS,
-    SEMANTIC_GROUNDING_DISABLE_THINKING, SEMANTIC_GROUNDING_MODEL, SEMANTIC_GROUNDING_PROVIDER,
-    SEMANTIC_GROUNDING_RESPONSE_FORMAT, QA_REQUEST_TOTAL_BUDGET_SECONDS)
-from backend.app.schemas.qa import AnswerClaim, EvidenceRequirement, RetrievalResult, ValidationReport
+    QA_REQUEST_TOTAL_BUDGET_SECONDS,
+    SEMANTIC_GROUNDING_API_KEY,
+    SEMANTIC_GROUNDING_BASE_URL,
+    SEMANTIC_GROUNDING_DISABLE_THINKING,
+    SEMANTIC_GROUNDING_MODEL,
+    SEMANTIC_GROUNDING_PROVIDER,
+    SEMANTIC_GROUNDING_RESPONSE_FORMAT,
+)
+from backend.app.core.rag_features import features
+from backend.app.schemas.qa import (
+    AnswerClaim,
+    EvidenceRequirement,
+    RetrievalResult,
+    ValidationReport,
+)
 from backend.app.services.evidence_contract_service import source_matches
 from backend.app.services.grounding_validation_service import validate_grounded_answer
 from backend.app.services.json_utils import extract_json
-from backend.app.services.llm_client import ChatCompletionConfig, ChatCompletionError, chat_completion_content
+from backend.app.services.llm_client import (
+    ChatCompletionConfig,
+    ChatCompletionError,
+    chat_completion_content,
+)
 from backend.app.services.performance_metrics import RequestBudgetExceeded, timed
 from backend.app.services.prompt_builder import SEMANTIC_SUPPORT_RULE
-from backend.app.core.rag_features import features
 
 
 def validation_passed(report: dict[str, Any] | None) -> bool:
@@ -36,7 +51,8 @@ def validate_answer(question: str, answer: str, claims: list[AnswerClaim], evide
                     *, requirements: list[str], deterministic: bool = False,
                     options: list[str] | None = None, option_labels: list[str | None] | None = None,
                     computation: bool = False,
-                    requirement_details: list[EvidenceRequirement] | None = None) -> dict[str, Any]:
+                    requirement_details: list[EvidenceRequirement] | None = None,
+                    partial_mode: bool = False) -> dict[str, Any]:
     base = validate_grounded_answer(answer, claims, evidence)
     if computation:
         from backend.app.services.formula_parser_service import calculate_formula_answer
@@ -127,10 +143,15 @@ def validate_answer(question: str, answer: str, claims: list[AnswerClaim], evide
                     raise ValueError('invalid validation schema')
                 supported = {n for n in data['supported_claims'] if type(n) is int and 1 <= n <= len(claims)}
                 report.facts_supported = supported == set(range(1, len(claims)+1))
-                report.task_complete = data['complete']
+                report.task_complete = bool(data['complete']) and not partial_mode
                 report.missing_requirements = [str(x) for x in data.get('missing_requirements', [])]
                 report.reasons = [str(x) for x in data.get('reasons', [])]
-                report.status = 'passed' if report.task_complete and report.facts_supported and not report.missing_requirements else 'failed'
+                if partial_mode and report.facts_supported and not report.missing_requirements:
+                    report.status = 'failed'
+                    report.task_complete = False
+                    report.reasons = ['partial_answer']
+                else:
+                    report.status = 'passed' if report.task_complete and report.facts_supported and not report.missing_requirements else 'failed'
                 break
             except RequestBudgetExceeded:
                 raise

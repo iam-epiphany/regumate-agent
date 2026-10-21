@@ -738,6 +738,11 @@ def _is_comparison_question(question: str) -> bool:
 
 def _normalize_for_match(text: str) -> str:
     normalized = re.sub(r"\s+", "", text)
+    # File names use underscores between the source and its attachment title;
+    # user questions do not.  Remove separators and canonicalize the optional
+    # “版” suffix before comparing document identity.
+    normalized = re.sub(r"[_\-/]", "", normalized)
+    normalized = re.sub(r"(\d{4}年)版", r"\1", normalized)
     replacements = {
         "同一个": "同一",
         "怎样": "怎么",

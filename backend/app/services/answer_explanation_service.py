@@ -27,6 +27,7 @@ from backend.app.services.performance_metrics import (
     model_call_count,
     request_budget_snapshot,
 )
+from backend.app.services.structure_locator_service import locator_from_chunk
 
 _EVIDENCE_MISSING_REASONS = {
     "insufficient_context",
@@ -200,6 +201,7 @@ def _build_sources(cited_results: list[Any], label_map: dict[str, str],
             ),
             section_title=getattr(chunk, "section_title", None),
             section_path=list(getattr(chunk, "section_path", ()) or ()),
+            structure_label=(locator_from_chunk(chunk) or {}).get("display"),
             page_number=(int(metadata["page_number"]) if str(metadata.get("page_number") or "").isdigit() else None),
             sheet_name=str(metadata.get("sheet_name")) if metadata.get("sheet_name") else None,
             cell=str(metadata.get("cell")) if metadata.get("cell") else None,
@@ -340,6 +342,8 @@ def _outcome(answer_type: str, refused: bool, reason: str | None,
     if answer_type == "service_error":
         return "service_error"
     if not refused:
+        if validation.get("partial_answer"):
+            return "partial_answer"
         return "answered"
     if answer_type == "formula_refusal" or reason in _CALCULATION_REASONS:
         return "calculation_gap"
@@ -397,6 +401,7 @@ def build_answer_explanation(
         citation_integrity=bool(validation_raw.get("citation_integrity")),
         facts_supported=bool(validation_raw.get("facts_supported")),
         task_complete=bool(validation_raw.get("task_complete")),
+        partial_answer=bool(validation_raw.get("partial_answer")),
         method=str(validation_raw.get("method") or "none"),
         reasons=[str(item) for item in (validation_raw.get("reasons") or [])],
         missing_requirements=[
@@ -468,6 +473,7 @@ def build_answer_explanation(
         source_groups=source_groups,
         calculations=calculations,
         validation=validation,
+        sufficiency=summary.get("evidence_sufficiency"),
         budget=budget,
         stages=stages,
         missing_requirements=[

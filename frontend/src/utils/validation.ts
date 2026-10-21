@@ -53,6 +53,7 @@ export function checkLabel(value: boolean, recorded: boolean, positive: string, 
 export function outcomeLabel(answer: QAResponse | null): string {
   const outcome = answer?.explanation?.outcome;
   if (outcome === "answered") return "已形成可核验结论";
+  if (outcome === "partial_answer") return "已作答（部分依据）";
   if (outcome === "clarification") return "需要补充问题信息";
   if (outcome === "model_refusal") return "模型未形成确定结论";
   if (outcome === "evidence_missing") return "缺少必要依据";

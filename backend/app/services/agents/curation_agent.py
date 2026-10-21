@@ -27,6 +27,9 @@ class CurationAgent(SpecialistAgent):
 
     def _curate(self, board: Blackboard, query_plan: Any, aspect_retrievals: list[Any]) -> AgentResult:
         from backend.app.services import rag_service
+        from backend.app.services.evidence_sufficiency_service import (
+            audit_evidence_sufficiency,
+        )
 
         question = query_plan.original_question
         citation_validation = rag_service._merge_citation_validation(
@@ -45,10 +48,19 @@ class CurationAgent(SpecialistAgent):
         context_chunks, prompt_selection = rag_service._select_prompt_chunks(
             question, query_plan, aspect_retrievals
         )
-        context_chunks = rag_service._retrieval_support_structural_context(board.db, context_chunks, question=question)
+        context_chunks = rag_service._retrieval_support_structural_context(
+            board.db,
+            context_chunks,
+            question=question,
+            complete_table_rows=True,
+        )
         context_chunks = rag_service._reserve_definition_clauses(
             board.db, context_chunks, query_plan, aspect_retrievals
         )
+        context_chunks = rag_service._reserve_target_clauses(
+            board.db, context_chunks, query_plan, aspect_retrievals
+        )
+        rag_service._bind_cross_aspect_evidence(context_chunks, query_plan)
         from backend.app.services.evidence_contract_service import build_evidence_bundle
         bundle = build_evidence_bundle(list(query_plan.requirements), context_chunks,
                                       list({c.chunk_id: c for c in
@@ -119,6 +131,14 @@ class CurationAgent(SpecialistAgent):
         retrieval_summary["has_sufficient_context"] = bool(context_chunks) and bundle.complete
         retrieval_summary["missing_requirements"] = bundle.missing_requirements
         retrieval_summary["missing_optional_requirements"] = bundle.missing_optional_requirements
+        sufficiency = audit_evidence_sufficiency(
+            requirements=query_plan.requirements,
+            context_chunks=context_chunks,
+            coverage=bundle.coverage,
+            missing_requirements=bundle.missing_requirements,
+            aspect_retrievals=aspect_retrievals,
+        )
+        retrieval_summary["evidence_sufficiency"] = sufficiency
         bundle.diagnostics = retrieval_summary
         return AgentResult(
             output=bundle,
@@ -127,6 +147,8 @@ class CurationAgent(SpecialistAgent):
                 "complete": bool(bundle.complete),
                 "missing_requirements": list(bundle.missing_requirements),
                 "missing_optional_requirements": list(bundle.missing_optional_requirements),
+                "sufficiency_status": sufficiency["status"],
+                "missing_facets": len(sufficiency["missing_facets"]),
             },
         )
 

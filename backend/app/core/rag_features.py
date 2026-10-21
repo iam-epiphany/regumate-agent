@@ -5,12 +5,12 @@ must use a separate database and a collection explicitly reserved for experiment
 """
 from __future__ import annotations
 
-from contextvars import ContextVar
-from dataclasses import asdict, dataclass
-from functools import lru_cache, wraps
 import inspect
 import json
 import os
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
+from functools import lru_cache, wraps
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -30,6 +30,7 @@ class RagFeatures:
     calculation: bool = True
     chunking: str = "structured"
     contextual_embedding: bool = True
+    partial_answer: bool = True
 
 
 @lru_cache(maxsize=1)

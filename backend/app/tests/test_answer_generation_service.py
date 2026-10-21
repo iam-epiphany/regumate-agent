@@ -1,8 +1,13 @@
 import json
+from dataclasses import replace
 
+from backend.app.core.rag_features import RagFeatures
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
 from backend.app.services import answer_generation_service
-from backend.app.services.answer_generation_service import GeneratedAnswer, generate_answer
+from backend.app.services.answer_generation_service import (
+    GeneratedAnswer,
+    generate_answer,
+)
 from backend.app.services.grounding_validation_service import validate_grounded_answer
 
 
@@ -805,6 +810,11 @@ def test_pre_generation_gate_refuses_when_context_misses_required_aspect(monkeyp
 
     monkeypatch.setattr(answer_generation_service, "_call_llm", fail_llm)
     monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(
+        answer_generation_service,
+        "features",
+        lambda: replace(RagFeatures(), partial_answer=False),
+    )
 
     generated = generate_answer(
         "两个事项如何处理",
@@ -819,6 +829,61 @@ def test_pre_generation_gate_refuses_when_context_misses_required_aspect(monkeyp
     assert generated.generation_status == "skipped"
     assert generated.grounding_validation["missing_requirements"] == ["requirement_two"]
     assert not llm_calls
+
+
+def test_pre_generation_gate_allows_partial_answer_when_one_aspect_is_covered(monkeypatch) -> None:
+    chunks = [
+        _chunk(
+            chunk_id="C1",
+            citation_label="[1]",
+            text="披露期限为2025年12月31日。",
+            metadata={"aspect_id": "requirement_one", "prompt_matched_aspects": ["requirement_one"]},
+        ),
+    ]
+
+    def fake_llm(*args, **kwargs):
+        return GeneratedAnswer(
+            answer="披露期限为2025年12月31日。[1]",
+            answer_type="llm_grounded",
+            generation_status="completed",
+            claims=[AnswerClaim(text="披露期限为2025年12月31日。[1]", citation_ids=["[1]"],
+                                aspect_ids=["requirement_one"])],
+        )
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", fake_llm)
+    monkeypatch.setattr(answer_generation_service, "_deterministic_table_answer", lambda *a, **k: None)
+    monkeypatch.setattr(
+        answer_generation_service,
+        "verify_draft",
+        lambda ctx, generated: {
+            "status": "failed",
+            "passed": False,
+            "task_complete": False,
+            "citation_integrity": True,
+            "facts_supported": True,
+            "missing_requirements": [],
+            "failure_stage": "validation",
+        },
+    )
+    monkeypatch.setattr(
+        answer_generation_service,
+        "features",
+        lambda: replace(RagFeatures(), partial_answer=True),
+    )
+
+    generated = generate_answer(
+        "披露期限是什么？",
+        chunks,
+        has_sufficient_context=False,
+        answer_mode="text",
+        required_aspect_ids=["requirement_one", "requirement_two"],
+    )
+
+    assert generated.refused is False
+    assert generated.answer_type == "llm_grounded"
+    assert generated.grounding_validation["partial_answer"] is True
+    assert generated.grounding_validation["missing_requirements"] == ["requirement_two"]
+    assert generated.grounding_validation["task_complete"] is False
 
 
 def test_pre_generation_gate_requires_explicit_choice_evidence() -> None:

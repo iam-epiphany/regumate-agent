@@ -112,12 +112,25 @@ class Citation(BaseModel):
     previous_chunk_id: str | None = None
     next_chunk_id: str | None = None
     page_number: int | None = None
+    # Deterministic structural coordinate (document -> chapter/section ->
+    # article).  It is derived from the existing citation fields so that a
+    # citation can be decoded and compared without another model or lookup.
+    structure_locator: dict[str, Any] | None = None
+    structure_label: str | None = None
     excerpt: str
     score: float | None = None
     rerank_score: float | None = None
     chunk_type: str = "paragraph"
     evidence_role: str = "related_context"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any, /) -> None:
+        from backend.app.services.structure_locator_service import locator_from_citation
+
+        if self.structure_locator is None:
+            self.structure_locator = locator_from_citation(self)
+        if self.structure_label is None and self.structure_locator:
+            self.structure_label = str(self.structure_locator.get("display") or "") or None
 
 
 class RetrievalResult(BaseModel):
@@ -220,6 +233,7 @@ class ExplanationSource(BaseModel):
     source_title: str | None = None
     section_title: str | None = None
     section_path: list[str] = Field(default_factory=list)
+    structure_label: str | None = None
     page_number: int | None = None
     sheet_name: str | None = None
     cell: str | None = None
@@ -271,6 +285,7 @@ class ExplanationValidation(BaseModel):
     citation_integrity: bool = False
     facts_supported: bool = False
     task_complete: bool = False
+    partial_answer: bool = False
     method: str = "none"
     reasons: list[str] = Field(default_factory=list)
     missing_requirements: list[str] = Field(default_factory=list)
@@ -307,6 +322,7 @@ class AnswerExplanation(BaseModel):
     source_groups: list[ExplanationSourceGroup] = Field(default_factory=list)
     calculations: list[ExplanationCalculation] = Field(default_factory=list)
     validation: ExplanationValidation = Field(default_factory=ExplanationValidation)
+    sufficiency: dict[str, Any] | None = None
     budget: ExplanationBudget = Field(default_factory=ExplanationBudget)
     stages: list[ExplanationStage] = Field(default_factory=list)
     missing_requirements: list[str] = Field(default_factory=list)

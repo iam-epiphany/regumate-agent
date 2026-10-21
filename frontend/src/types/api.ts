@@ -295,6 +295,62 @@ export interface DocumentDetailResponse {
   chunk_limit: number;
 }
 
+export interface StructureLevel {
+  kind: "part" | "chapter" | "section" | "article" | "paragraph" | "item" | "heading";
+  label: string;
+  number: number | null;
+  suffix: string | null;
+  raw: string;
+}
+
+export interface StructureLocator {
+  schema_version: string;
+  document_id: string;
+  document_title: string | null;
+  index_version: string | null;
+  parser_version: string | null;
+  path: StructureLevel[];
+  display: string;
+  key: string;
+  resolution_status: "resolved" | "partial" | "unresolved";
+}
+
+export interface EvidenceSufficiencyFacet {
+  facet: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface EvidenceSufficiencyRequirement {
+  requirement_id: string;
+  status: "covered" | "partial" | "missing" | "unbound";
+  facets: EvidenceSufficiencyFacet[];
+  evidence_ids: string[];
+  reason_codes: string[];
+}
+
+export interface EvidenceSufficiency {
+  schema_version: string;
+  status: "sufficient" | "partial" | "insufficient" | "not_applicable";
+  requirements: EvidenceSufficiencyRequirement[];
+  missing_requirements: string[];
+  partial_requirements: string[];
+  missing_facets: string[];
+  expansion: {
+    attempted: boolean;
+    expanded_chunks: number;
+    expanded_chunk_ids: string[];
+    reasons: Record<string, number>;
+    added_token_estimate: number;
+  };
+  counts: {
+    requirements: number;
+    candidates: number;
+    selected: number;
+  };
+  notes: string[];
+}
+
 export interface Citation {
   document_id: string;
   chunk_id: string;
@@ -308,6 +364,8 @@ export interface Citation {
   version_status?: string | null;
   section_title: string | null;
   section_path?: string[];
+  structure_locator?: StructureLocator | null;
+  structure_label?: string | null;
   page_number: number | null;
   excerpt: string;
   score: number | null;
@@ -493,6 +551,7 @@ export interface AgentRegistryResponse {
 
 export type ExplanationOutcome =
   | "answered"
+  | "partial_answer"
   | "clarification"
   | "model_refusal"
   | "evidence_missing"
@@ -529,6 +588,7 @@ export interface ExplanationSource {
   source_title: string | null;
   section_title: string | null;
   section_path: string[];
+  structure_label?: string | null;
   page_number: number | null;
   sheet_name: string | null;
   cell: string | null;
@@ -576,6 +636,7 @@ export interface ExplanationValidation {
   citation_integrity: boolean;
   facts_supported: boolean;
   task_complete: boolean;
+  partial_answer?: boolean;
   method: string;
   reasons: string[];
   missing_requirements: string[];
@@ -610,6 +671,7 @@ export interface AnswerExplanation {
   source_groups: ExplanationSourceGroup[];
   calculations: ExplanationCalculation[];
   validation: ExplanationValidation;
+  sufficiency?: EvidenceSufficiency | null;
   budget: ExplanationBudget;
   stages: ExplanationStage[];
   missing_requirements: string[];

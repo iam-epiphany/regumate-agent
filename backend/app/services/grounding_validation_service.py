@@ -121,7 +121,10 @@ def validate_grounded_answer(
 
 def _normalize(value: Any) -> str:
     normalized = str(value or "").translate(
-        str.maketrans({"％": "%", "－": "-", "−": "-", "﹣": "-"})
+        str.maketrans({
+            "％": "%", "－": "-", "−": "-", "﹣": "-",
+            "〔": "", "〕": "", "【": "", "】": "", "[": "", "]": "",
+        })
     )
     return re.sub(r"[\s,，]", "", normalized).lower()
 
@@ -149,12 +152,15 @@ def _chunk_support_text(chunk: RetrievalResult) -> str:
     metadata_parts = [
         chunk.source_doc,
         chunk.section_title,
-        *chunk.section_path,
+        *(chunk.section_path or (chunk.metadata or {}).get('section_path') or []),
         metadata.get("source_title"),
         metadata.get("source_filename"),
         metadata.get("filename"),
         metadata.get("table_title"),
         metadata.get("sheet_name"),
+        metadata.get("catalogue_summary"),
+        metadata.get("section_list_summary"),
+        metadata.get("section_path_label"),
     ]
     return "\n".join(str(part) for part in [chunk.text, *metadata_parts] if part)
 
