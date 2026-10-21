@@ -1799,34 +1799,6 @@ def _verbatim_refusal_answer(
     )
 
 
-def _keep_first_paragraph_for_arrangement(
-    generated: GeneratedAnswer, ctx: GenerationContext
-) -> None:
-    """A “如何安排” question is answered by the first cited arrangement sentence."""
-
-    if not re.search(r'如何安排|如何组织|如何开展', str(ctx.question or '')):
-        return
-    if generated.answer_type not in {'llm_grounded', 'extractive_fallback'}:
-        return
-    paragraphs = [
-        part.strip()
-        for part in re.split(r'\n\s*\n', str(generated.answer or ''))
-        if part.strip()
-    ]
-    if len(paragraphs) < 2:
-        return
-    first = paragraphs[0]
-    if len(first) < 20 or not re.search(r'\[\d+\]', first):
-        return
-    generated.answer = first
-    kept = [
-        claim for claim in generated.claims
-        if any(citation_id in first for citation_id in claim.citation_ids)
-    ]
-    if kept:
-        generated.claims = kept
-
-
 def run_generation_loop(
     ctx: GenerationContext,
     *,
@@ -1901,7 +1873,6 @@ def run_generation_loop(
                 generated.grounding_validation = {'passed': False, 'status': 'not_run', 'task_complete': False,
                                                  'reason': 'model_refusal', 'failure_stage': 'generation'}
                 return generated
-            _keep_first_paragraph_for_arrangement(generated, ctx)
             validation = verify(ctx, generated)
             generated.grounding_validation = {
                 **generated.grounding_validation, **validation,

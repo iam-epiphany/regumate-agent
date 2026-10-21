@@ -1411,7 +1411,10 @@ def _retrieval_support_structural_context(
         # first two ordered chunks normally contain the retrieved anchor plus
         # the definition/preceding clause repaired above.
         for anchor, unit, _incomplete in primary:
-            for chunk in unit[:2]:
+            reserve_order = [anchor] + [
+                chunk for chunk in unit[:2] if chunk.chunk_id != anchor.chunk_id
+            ][:1]
+            for chunk in reserve_order:
                 if chunk.chunk_id in seen or len(result) >= MAX_PROMPT_CHUNKS:
                     continue
                 cost = _int_or_none(chunk.metadata.get('token_count')) or max(len(chunk.text)//2, 1)
