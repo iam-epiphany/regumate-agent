@@ -8,17 +8,19 @@ from sqlalchemy.orm import sessionmaker
 from backend.app.core.database import Base
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.services.query_planner_service import QueryAspect, QuerySearchQuery
+from backend.app.services.spreadsheet_cell_index_service import (
+    rebuild_spreadsheet_cell_index,
+)
 from backend.app.services.spreadsheet_retrieval_service import (
     SpreadsheetCandidate,
     _calculation_match_from_selected,
     _indexed_cell_score,
     _row_target_matches,
-    _specific_column_target_from_question,
     _source_title_matches,
+    _specific_column_target_from_question,
     get_last_spreadsheet_diagnostic,
     retrieve_spreadsheet_matches,
 )
-from backend.app.services.spreadsheet_cell_index_service import rebuild_spreadsheet_cell_index
 
 
 @pytest.fixture()
@@ -81,6 +83,63 @@ def test_spreadsheet_retrieval_supports_max_compare(db_session) -> None:
     assert matches[0].citation.metadata["row_label"] == "上海 / 原保险保费收入"
     assert matches[0].citation.metadata["cell"] == "C6"
     assert matches[0].citation.metadata["value"] == "18.8"
+
+
+def test_spreadsheet_max_scans_column_with_generic_selector(db_session) -> None:
+    values = (("原保险保费收入", 34878.78), ("赔付支出", 28138.86), ("手续费及佣金支出", 333.3))
+    for index, (label, value) in enumerate(values, start=6):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-MAX-{index}",
+            row_label=label,
+            value=value,
+            coordinate=f"C{index}",
+            column_label="本年累计 / 本期",
+        )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-MAX-TOTAL",
+        row_label="合计",
+        value=9315959.46,
+        coordinate="C20",
+        column_label="本年累计 / 本期",
+    )
+    aspect = _aspect(
+        "哪一项数值最高？",
+        table_task="compare",
+        operation="max",
+        table_filters={"column_label": "本年累计 / 本期"},
+        selectors=({"label": "数值"},),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["row_label"] == "合计"
+    assert matches[0].citation.metadata["value"] == "9315959.46"
+
+
+def test_spreadsheet_max_respects_sheet_filter(db_session) -> None:
+    _add_table_row(
+        db_session, chunk_id="DOC-SHEET-A", row_label="甲指标", value=10, coordinate="C6",
+        column_label="本年累计 / 本期", source_title="表A",
+    )
+    _add_table_row(
+        db_session, chunk_id="DOC-SHEET-B", row_label="乙指标", value=999, coordinate="C6",
+        column_label="本年累计 / 本期", source_title="表B",
+    )
+    aspect = _aspect(
+        "表A中哪一项数值最高？",
+        table_task="compare",
+        operation="max",
+        table_filters={"sheet": "表A", "column_label": "本年累计 / 本期"},
+        selectors=({"label": "数值"},),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["row_label"] == "甲指标"
 
 
 @pytest.mark.parametrize("largest_label", ["新增保险金额", "授权额度"])

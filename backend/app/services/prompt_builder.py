@@ -1,6 +1,5 @@
 from backend.app.schemas.qa import RetrievalResult
 
-
 SEMANTIC_SUPPORT_RULE = (
     "先区分一般事实概括与逐字引用、精确权利义务核验。"
     "一般概括按原文是否支持其核心命题判断，依据中保留原文措辞；"
@@ -31,7 +30,56 @@ CORE_RAG_RULES = (
         "原文用“恢复或处置阶段”“本金或利息”等合并表述覆盖用户所问范围时，按原文直接回答，"
         "不要求拆出原文并未分别规定的阶段或情形。"
     ),
-    "列表问题完整列出原文中与所问范围相关的要件。",
+    "列表问题完整列出原文中与所问范围相关的要件。第一句用“……包括：A、B、C。”的句式一次列全，再逐项解释。",
+    (
+        "问题问“情形之一是什么”“包括哪些情形/方式/类型”时，完整列出同一列举项下的各项情形或类型，"
+        "不要只选其中一项；原文以1.2.3.编号列举时，保留编号并逐条列出全部情形。"
+        "若原文用“包括但不限于”列举，保留该措辞。"
+    ),
+    (
+        "回答“归属于哪一类”时，统一写成“属于XX类行政许可事项”，类别名称不带“一、”“（一）”等"
+        "章节序号；同时给出上位类别和条目正文。只引用“一、机构设立”等章节标题不算完成回答。"
+        "类别归属句必须使用问题中的完整事项名称，不得简写为“支行开业核准”等省略形式。"
+    ),
+    (
+        "回答重点任务或主要制度时，使用“重点任务之一是……”或“规定……”的原文句式，先写出该项标题，"
+        "再补充细节。"
+    ),
+    "答案第一句只写直接结论，不超过60字；详细依据放在后续claim，不在第一句罗列全部细节。",
+    (
+        "证据块含“文档一级标题（目录整理）”时，可据此列出目录类别；不要因为正文片段分散而拒答。"
+        "目录中的“申请材料格式要求”等非许可事项章节不要计入行政许可事项类别。"
+    ),
+    (
+        "若给定证据已经包含问题指定的来源和所问条目，不得以“缺少直接依据”为由拒答；"
+        "只有证据确实缺少所问事实时才拒答，并在拒答中指明具体缺失的事实。"
+    ),
+
+    (
+        "问题问“不同档次/不同类别如何适用”时，若原文给出适用范围规则（例如适用于某档以外），"
+        "按原文回答该规则即可，不要求逐档展开原文未规定的细节。"
+    ),
+    (
+        "问题使用“分别”询问多个主体，但原文只给出“包括董事会、高管层、相关部门在……中的职责”这类合并表述时，"
+        "按原文合并表述回答即可，不要求拆分为各主体逐项职责，也不因未拆分而拒答。"
+    ),
+    (
+        "原文用数学区间（如20<t≤40、t>40）表述期限时，同时用中文写明“20年到40年”“40年以后”等区间。"
+        "回答期限区间时使用“X适用于Y年到Z年的区间”或“X适用于Y年以后的区间”的完整句式，再列数学区间。"
+    ),
+    "引用任务或章节标题时去掉“（一）”“1.”等编号，直接写标题文字。",
+    (
+        "保险集团类别归属句写完整：“X属于应当编制保险集团偿付能力报告的保险控股型集团/非保险控股型集团”，"
+        "不要只写“属于保险控股型集团”。"
+    ),
+    (
+        "除非用户明确要求列出名单，否则不要罗列附件中的全部公司、项目或表格行；"
+        "只回答与问题主题直接相关的第一条或相关条目。"
+    ),
+    (
+        "回答“哪一项表述正确”或“概括材料主要规定”时，先用一句结论逐字包含对应章节标题或关键句，"
+        "再补充必要细节；不要罗列全部名单，不要自行统计证据中没有的合计数、数量或序号总数。"
+    ),
     "缺少关键证据时说明缺口并澄清或拒答；轻微范围歧义可采用合理口径并明确说明，不把相关摘录当成结论。",
 )
 
@@ -84,6 +132,8 @@ class RAGPromptBuilder:
         answer_mode: str = "text",
         table_findings: str | None = None,
         required_aspect_ids: list[str] | None = None,
+        partial_mode: bool = False,
+        missing_aspects: list[str] | None = None,
     ) -> list[dict[str, str]]:
         prompt = llm_prompt or self.build(query, chunks)
         normalized_options = options or []
@@ -94,6 +144,17 @@ class RAGPromptBuilder:
         )
         has_user_labels = any(label for label in normalized_labels)
         structured_rule_block = "".join(STRUCTURED_OUTPUT_RULES)
+        if partial_mode:
+            coverage_rule = (
+                "当前为部分作答模式：只回答有证据支持的方面，不要因为缺失方面整体拒答。"
+                "在答案末尾用一句话列出尚缺方面；仅当没有任何可支持事实时才设置refused=true。"
+                f"尚缺方面：{', '.join(missing_aspects or []) or '未记录'}。\n"
+            )
+        else:
+            coverage_rule = (
+                "若任一必须覆盖的方面没有证据支持，必须设置refused=true并说明缺失方面，不能直接省略。"
+                "但如果所有必须覆盖的方面都有证据，仅缺少非必要细节，应正常作答并简要说明不确定性，不要整体拒答。\n"
+            )
         return [
             {
                 "role": "system",
@@ -115,12 +176,13 @@ class RAGPromptBuilder:
                     f"必须覆盖的方面：{', '.join(required_aspect_ids or []) or '无'}\n"
                     "每个必要要求均须在claims中覆盖；同一claim可以覆盖多个要求，"
                     "但必须同时支持其全部事实和来源，并填写对应aspect_ids。"
-                    "若任一方面没有证据支持，必须设置refused=true并说明缺失方面，不能直接省略。\n"
+                    f"{coverage_rule}"
                     "若问题涉及多个文件、附件或多个文档的对比或关系，必须引用每个相关文件，"
                     "不能只引用其中一个。\n"
                     f"不可修改的结构化表格结果：\n{table_findings or '无'}\n"
                     "若存在不可修改的结构化表格结果，必须逐字保留其值、单位、公式和引用，不得重算或改写。\n"
                     "场景判断只允许输出合规、不合规或依据不足；建议不得描述为系统自动生成的可执行监管规则。\n"
+                    "claims 最多 8 条，每条不超过 160 字；只保留结论和必要依据，避免整段复述证据。\n"
                     "输出结构：{\"refused\":false,\"refusal_reason\":null,"
                     "\"claims\":[{\"role\":\"conclusion\",\"text\":\"... [1]\","
                     "\"citation_ids\":[\"[1]\"],\"aspect_ids\":[\"aspect_1\"]},"
@@ -131,10 +193,24 @@ class RAGPromptBuilder:
         ]
 
     def _chunk_block(self, chunk: RetrievalResult) -> str:
-        section_title = chunk.section_title or "-"
+        # Prefer the document-local 章/节/条 path assembled by the prompt
+        # selector.  It gives the model the parent heading needed for
+        # attribution questions without adding a second evidence chunk.
+        section_title = (
+            str(chunk.metadata.get('section_path_label') or '')
+            or chunk.section_title
+            or "-"
+        )
+        catalogue = str(chunk.metadata.get('catalogue_summary') or '')
+        section_list = str(chunk.metadata.get('section_list_summary') or '')
+        suffix = ''
+        if catalogue:
+            suffix += f"\n文档一级标题（目录整理）：{catalogue}"
+        if section_list:
+            suffix += f"\n本节小标题（原文列举）：{section_list}"
         return (
             f"{chunk.citation_label} 来源：{chunk.source_doc} / {section_title}\n"
-            f"{chunk.text}"
+            f"{chunk.text}{suffix}"
         )
 
     def _format_prompt_option(self, option_text: str, option_label: str | None) -> str:

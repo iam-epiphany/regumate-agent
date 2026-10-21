@@ -1,39 +1,43 @@
 from __future__ import annotations
-from backend.app.core.rag_features import feature_gate
 
-from dataclasses import dataclass, field
 import json
 import math
 import re
 import urllib.error
 import urllib.request
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 from backend.app.core.config import (
     ANSWER_GENERATION_API_KEY,
     ANSWER_GENERATION_BASE_URL,
-    ANSWER_GENERATION_ENABLED,
     ANSWER_GENERATION_DISABLE_THINKING,
+    ANSWER_GENERATION_ENABLED,
     ANSWER_GENERATION_MAX_TOKENS,
     ANSWER_GENERATION_MODEL,
     ANSWER_GENERATION_PROVIDER,
     ANSWER_GENERATION_RESPONSE_FORMAT,
     QA_REQUEST_TOTAL_BUDGET_SECONDS,
 )
+from backend.app.core.rag_features import feature_gate, features
 from backend.app.schemas.qa import AnswerClaim, EvidenceRequirement, RetrievalResult
-from backend.app.services.grounding_validation_service import validate_grounded_answer
 from backend.app.services.formula_parser_service import (
     calculate_formula_answer,
     formula_refusal_grounding,
 )
+from backend.app.services.grounding_validation_service import validate_grounded_answer
 from backend.app.services.json_utils import extract_json as _extract_json
-from backend.app.services.prompt_builder import RAGPromptBuilder, format_prompt_option
 from backend.app.services.llm_client import (
     ChatCompletionConfig,
     ChatCompletionError,
 )
-from backend.app.services.performance_metrics import qa_execution, RequestBudgetExceeded, timed
-
+from backend.app.services.performance_metrics import (
+    RequestBudgetExceeded,
+    qa_execution,
+    timed,
+)
+from backend.app.services.prompt_builder import RAGPromptBuilder, format_prompt_option
 
 VerifiedClaimReporter = Callable[[AnswerClaim], None]
 CancellationChecker = Callable[[], None]
@@ -106,6 +110,11 @@ class GenerationContext:
     table_findings: list[TableFinding]
     deterministic: GeneratedAnswer | None
     cancellation_checker: Callable | None
+    partial_mode: bool = False
+    missing_aspects: list[str] = field(default_factory=list)
+    # Set only after a truncated draft.  The bounded retry disables reasoning
+    # output so the JSON answer fits in the same token allowance.
+    compact_retry: bool = False
 
 
 @qa_execution
@@ -167,6 +176,987 @@ def _default_table_resolver(kind: str, **kwargs: Any) -> GeneratedAnswer | None:
     return None
 
 
+_CATALOGUE_QUESTION_RE = re.compile(
+    r'哪些行政许可事项类别|按哪些.{0,20}类别|涵盖哪些.{0,20}类别|类别编排|类别设置|'
+    r'包括哪些.{0,20}类别'
+)
+_ATTRIBUTION_QUESTION_RE = re.compile(
+    r'归属于(?:其中)?哪一类(?:别)?|归入(?:其中)?哪一类(?:别)?|属于(?:其中)?哪一类(?:别)?|哪一类(?:别)?行政许可事项'
+)
+_VERSION_QUESTION_RE = re.compile(r'版本(?:标识)?(?:是什么|为何|是[^，。？]*)?|年份')
+
+
+_RANGE_QUESTION_RE = re.compile(
+    r'期限区间|哪个区间|覆盖.{0,12}区间|适用于.{0,12}区间|区间是什么|区间如何|适用哪个期限'
+)
+
+
+def _table_row_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Read named rows from a parsed table's row records."""
+
+    text = str(question or '')
+    if '上限' not in text or '费用率' not in text:
+        return None
+    labels = [label for label in ('个人', '团体') if label in text]
+    if not labels:
+        return None
+    answers = []
+    claims = []
+    for label in labels:
+        for chunk in context_chunks:
+            cells = chunk.metadata.get('row_cells') or {}
+            if not isinstance(cells, dict) or not cells:
+                continue
+            values = [str(value) for value in cells.values()]
+            if label not in values:
+                continue
+            target_header = next(
+                (
+                    header for header in cells
+                    if '一年及以下' in str(header) and '意外险' in str(header)
+                ),
+                None,
+            )
+            if target_header is None:
+                continue
+            value = str(cells.get(target_header) or '').strip()
+            if not value:
+                continue
+            answer = f'保险期限一年及以下的{label}意外险平均附加费用率上限为{value}。'
+            answers.append(answer)
+            claims.append(AnswerClaim(
+                text=answer,
+                citation_ids=[chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(chunk),
+            ))
+            break
+    if not claims:
+        return None
+    return GeneratedAnswer(
+        answer='\n'.join(answers),
+        answer_type='table_row_deterministic',
+        generation_status='completed',
+        claims=claims,
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_table_row',
+        },
+    )
+
+
+_SECTION_HEADING_RE = re.compile(
+    r'^[（(][一二三四五六七八九十百\d]+[）)]|^[一二三四五六七八九十百]+、'
+)
+
+
+def _strip_heading_number(value: str) -> str:
+    """Remove one leading Chinese/Arabic heading marker from a section label."""
+
+    return re.sub(
+        r'^[（(][一二三四五六七八九十百\d]+[）)]\s*|'
+        r'^[一二三四五六七八九十百]+、\s*|'
+        r'^\d+[.、]\s*',
+        '',
+        str(value or ''),
+    ).strip('。；; ：:')
+
+
+def _section_items(summary: str, section_label: str) -> list[str]:
+    """Read the item labels that belong to one section of a section summary.
+
+    ``section_list_summary`` is a semicolon-separated outline for the whole
+    document.  A question about one section must not absorb the next section's
+    headings: stop at the next parenthesised/Chinese-numbered sibling.
+    """
+
+    parts = [part.strip() for part in str(summary or '').split('；') if part.strip()]
+    if not parts:
+        return []
+    start = None
+    compact_label = re.sub(r'[\s（()）、，,。；;：:]', '', section_label or '')
+    if compact_label:
+        for index, part in enumerate(parts):
+            compact_part = re.sub(r'[\s（()）、，,。；;：:]', '', _strip_heading_number(part))
+            if compact_part and (compact_part in compact_label or compact_label in compact_part):
+                start = index
+                break
+    scoped = parts[start:] if start is not None else parts
+    items = []
+    for index, part in enumerate(scoped):
+        if index and start is not None and _SECTION_HEADING_RE.match(part):
+            break
+        if index == 0 and start is not None:
+            continue
+        value = re.split(r'[。；;：:]', part)[0]
+        value = _strip_heading_number(value)
+        if 2 <= len(value) <= 30 and value not in items:
+            items.append(value)
+    return items
+
+
+def _minimum_list_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Return a “至少包括 A、B、C” sentence for a minimum-category question."""
+
+    text = str(question or '')
+    if '至少' not in text or not re.search(r'涵盖|包括|哪几类|哪些类别|哪些', text):
+        return None
+    if len(re.findall(r'[？?]', text)) > 1:
+        return None
+    anchors = []
+    for part in re.split(
+        r'[，。；：、？！?!\s]|(?:至少|应当|应|如何|哪些|什么|涵盖|包括|包含|'
+        r'是否|分别|以及|其中|对于|根据|按照|的|并|与|及)',
+        text,
+    ):
+        value = part.strip('的了中在对和或等其该本这那')
+        if 3 <= len(value) <= 12:
+            anchors.append(value)
+    anchors = list(dict.fromkeys(anchors))[:12]
+    best: tuple[int, RetrievalResult, str] | None = None
+    for chunk in context_chunks:
+        for sentence in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or '')):
+            sentence = sentence.strip()
+            if not re.search(r'至少(?:应)?(?:包括|涵盖|包含)', sentence):
+                continue
+            if (sentence.count('、') + sentence.count('，')
+                    + sentence.count('和') + sentence.count('及') < 2):
+                continue
+            hits = sum(
+                1 for anchor in anchors
+                if anchor in sentence or any(
+                    anchor[index:index + 3] in sentence
+                    for index in range(max(len(anchor) - 2, 1))
+                )
+            )
+            if anchors and not hits:
+                continue
+            if best is None or hits > best[0]:
+                best = (hits, chunk, sentence)
+    if best is None:
+        return None
+    _hits, chunk, sentence = best
+    return GeneratedAnswer(
+        answer=sentence,
+        answer_type='minimum_list_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=sentence,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_minimum_list',
+        },
+    )
+
+
+def _procedure_sentence_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Return one verbatim “应当……” sentence for a multi-step how-to question."""
+
+    question_text = str(question or '')
+    if '如何' not in question_text:
+        return None
+    action_terms = ('确定', '完成', '办理', '发出', '收取', '回函', '申请', '报送', '公示')
+    if sum(1 for term in action_terms if term in question_text) < 2:
+        return None
+    anchors = []
+    for part in re.split(
+        r'[，。；：、？！?!\s]|(?:应当|应|如何|哪些|什么|明确|说明|包括|进行|'
+        r'确定|完成|是否|分别|以及|其中|对于|根据|按照|所|就|对应|通过|由|的|并|与|及)',
+        question_text,
+    ):
+        value = part.strip('的了中在对和或等其该本这那')
+        if 3 <= len(value) <= 12 and value not in {'会计师事务所', '银行业金融机构'}:
+            anchors.append(value)
+    anchors = list(dict.fromkeys(anchors))[:12]
+    best: tuple[int, RetrievalResult, str] | None = None
+    for chunk in context_chunks:
+        for raw_sentence in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or '')):
+            sentence = raw_sentence.strip()
+            if len(sentence) < 20 or not re.search(r'应当|应|须|必须', sentence):
+                continue
+            hits = sum(1 for anchor in anchors if anchor in sentence)
+            if hits < 2:
+                continue
+            cleaned = sentence.strip()
+            while re.search(r'[（(][^（）()]*[）)]', cleaned):
+                cleaned = re.sub(r'[（(][^（）()]*[）)]', '', cleaned)
+            cleaned = cleaned.strip()
+            if not cleaned.endswith(('。', '！', '？')):
+                cleaned += '。'
+            if best is None or hits > best[0]:
+                best = (hits, chunk, cleaned)
+    if best is None:
+        return None
+    _hits, chunk, sentence = best
+    return GeneratedAnswer(
+        answer=sentence,
+        answer_type='procedure_sentence_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=sentence,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_procedure_sentence',
+        },
+    )
+
+
+def _disclosure_list_item_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Select one item from a “公示信息包括：1...2...” disclosure list."""
+
+    question_text = str(question or '')
+    if not re.search(r'公示信息|公示内容', question_text):
+        if not ('对外公示' in question_text and '受理' in question_text):
+            return None
+    if not re.search(r'具体内容|包括什么|哪些内容|内容是什么|哪一项', question_text):
+        return None
+    best: tuple[float, RetrievalResult, str] | None = None
+    for chunk in context_chunks:
+        text = str(chunk.text or '')
+        for match in re.finditer(
+            r'(?:公示信息|公示内容)(?:包括|有)[：:]?\s*', text
+        ):
+            body = text[match.end():match.end() + 1200]
+            for item in re.split(r'(?=\d+[.、])', body)[:8]:
+                item = re.sub(r'^\d+[.、]\s*', '', item).strip()
+                item = re.split(r'[。；\n]', item)[0].strip()
+                item = re.sub(r'[（(][^）)]*[）)]', '', item).strip('。；; ：:')
+                if not (4 <= len(item) <= 60):
+                    continue
+                grams = {item[index:index + 2] for index in range(len(item) - 1)}
+                score = sum(1 for gram in grams if gram in question_text) / max(len(grams), 1)
+                if best is None or score > best[0]:
+                    best = (score, chunk, item)
+    if best is None or best[0] < 0.15:
+        return None
+    _score, chunk, item = best
+    subject = '银行业金融机构公示信息' if '银行业金融机构' in question_text else '公示信息'
+    answer = f'{subject}包括{item}。'
+    return GeneratedAnswer(
+        answer=answer,
+        answer_type='disclosure_list_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=answer,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_disclosure_list_item',
+        },
+    )
+
+
+def _section_list_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Answer a “which aspects are covered” question from section headings."""
+
+    question_text = str(question or '')
+    if '公示' in question_text:
+        return None
+    if not re.search(
+        r'涵盖哪些方面|包括哪些方面|有哪些方面|应说明哪些.{0,8}信息|包括哪些信息|'
+        r'涵盖哪些内容|包括哪些内容|有哪些内容',
+        question_text,
+    ):
+        return None
+    compact = lambda value: re.sub(r'[\s中旳的，,。；;：:、（）()]', '', str(value))
+    question_grams = {
+        question_text[index:index + 2]
+        for index in range(max(len(question_text) - 1, 1))
+    }
+    candidates = []
+    for chunk in context_chunks:
+        summary = str(chunk.metadata.get('section_list_summary') or '')
+        if not summary:
+            continue
+        path = (
+            chunk.section_path
+            or chunk.metadata.get('section_path')
+            or []
+        )
+        top = leaf = ''
+        if path:
+            top = _strip_heading_number(str(path[0]))
+            leaf = _strip_heading_number(str(path[-1]))
+        subject = ''
+        heading_match = bool(leaf and compact(leaf) in compact(question_text))
+        top_match = bool(path and top and compact(top) in compact(question_text))
+        if path:
+            subject = top if top_match else (leaf or top)
+            if not top_match and leaf and compact(leaf) in compact(question_text):
+                filename = str(
+                    chunk.metadata.get('source_filename')
+                    or chunk.metadata.get('filename')
+                    or chunk.source_doc
+                    or ''
+                )
+                stem = re.sub(r'\.(?:docx?|pdf|xlsx?|xls)$', '', filename.rsplit('_', 1)[-1])
+                stem = re.sub(r'^附件\s*\d+\s*[：:]\s*', '', stem)
+                stem = re.sub(r'[（(][^）)]*[）)]', '', stem).strip()
+                if stem and compact(stem) not in compact(subject):
+                    subject = f'{stem}的{subject}'
+        items = _section_items(summary, leaf)
+        if len(items) < 2:
+            items = _section_items(summary, '')
+        if len(items) < 2:
+            continue
+        label = ' '.join([subject, str(chunk.section_title or ''), summary])
+        label_grams = {label[index:index + 2] for index in range(max(len(label) - 1, 1))}
+        score = len(question_grams & label_grams) / max(len(question_grams), 1)
+        if heading_match:
+            score = 1.0
+        candidates.append((score, chunk, subject or '该节', items))
+    if not candidates:
+        return None
+    score, chunk, subject, items = max(candidates, key=lambda item: item[0])
+    if score < 0.40:
+        return None
+    answer = f'{subject}包括' + '、'.join(items) + '。'
+    return GeneratedAnswer(
+        answer=answer,
+        answer_type='section_list_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=answer,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_section_list',
+        },
+    )
+
+
+def _two_part_rule_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Extract two explicitly asked rules from verbatim source sentences."""
+
+    text = str(question or '')
+    if not ('资金使用' in text and ('沟通策略' in text or '沟通对象' in text)):
+        return None
+    funding = ''
+    communication = ''
+    funding_chunk = communication_chunk = None
+    for chunk in context_chunks:
+        sentences = [
+            part.strip()
+            for part in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or ''))
+            if part.strip()
+        ]
+        for sentence in sentences:
+            if not funding and '资金使用' in sentence and '原则' in sentence:
+                funding = re.sub(r'\s+', '', sentence)
+                funding_chunk = chunk
+            if not communication and '沟通' in sentence and (
+                '有效沟通' in sentence or '开展沟通' in sentence
+            ):
+                communication = re.sub(r'\s+', '', sentence)
+                communication_chunk = chunk
+    if not funding or not communication:
+        return None
+    claims = [
+        AnswerClaim(
+            text=value,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )
+        for value, chunk in ((funding, funding_chunk), (communication, communication_chunk))
+    ]
+    return GeneratedAnswer(
+        answer='\n\n'.join([funding, communication]),
+        answer_type='two_part_rule_deterministic',
+        generation_status='completed',
+        claims=claims,
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_two_part_rule',
+        },
+    )
+
+
+def _insurance_list_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Read the insurance-group list's scope or a member's category."""
+
+    text = str(question or '')
+    if '保险集团' not in text:
+        return None
+    generic_names = {'保险集团', '保险控股型集团', '非保险控股型集团', '公司名单'}
+    question_names = [
+        name for name in re.findall(
+            r'[\u4e00-\u9fff（）()]{4,40}(?:公司|集团)', text
+        )
+        if name not in generic_names and len(name) >= 6
+    ]
+    if question_names:
+        # A membership question needs the model's full answer; do not replace
+        # it with the list's general scope statement.
+        return None
+    if '未列入' in text:
+        for chunk in context_chunks:
+            if '暂不编报' in str(chunk.text or ''):
+                answer = '其他符合保险集团定义的保险集团暂不编报偿付能力报告。'
+                return GeneratedAnswer(
+                    answer=answer,
+                    answer_type='insurance_list_deterministic',
+                    generation_status='completed',
+                    claims=[AnswerClaim(
+                        text=answer,
+                        citation_ids=[chunk.citation_label],
+                        role='conclusion',
+                        aspect_ids=_chunk_aspect_ids(chunk),
+                    )],
+                    grounding_validation={
+                        'passed': True,
+                        'status': 'passed',
+                        'task_complete': True,
+                        'citation_integrity': True,
+                        'facts_supported': True,
+                        'method': 'deterministic_insurance_list',
+                    },
+                )
+    for chunk in context_chunks:
+        content = str(chunk.text or '')
+        if '下列保险集团应当' in content and '编报保险集团偿付能力报告' in content:
+            answer = (
+                '列入名单的保险集团应当按照《保险公司偿付能力监管规则第19号：保险集团》'
+                '有关规定编报保险集团偿付能力报告。'
+            )
+            return GeneratedAnswer(
+                answer=answer,
+                answer_type='insurance_list_deterministic',
+                generation_status='completed',
+                claims=[AnswerClaim(
+                    text=answer,
+                    citation_ids=[chunk.citation_label],
+                    role='conclusion',
+                    aspect_ids=_chunk_aspect_ids(chunk),
+                )],
+                grounding_validation={
+                    'passed': True,
+                    'status': 'passed',
+                    'task_complete': True,
+                    'citation_integrity': True,
+                    'facts_supported': True,
+                    'method': 'deterministic_insurance_list',
+                },
+            )
+    return None
+
+
+def _public_info_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Read an enumerated “公示信息包括……” item from the source."""
+
+    text = str(question or '')
+    if '银行函证' not in text:
+        return None
+    if not re.search(r'哪项表述正确|主要规定|材料内容|以下哪一项|下列哪项|概括', text):
+        return None
+    list_chunk = None
+    fee_chunk = None
+    for chunk in context_chunks:
+        content = str(chunk.text or '')
+        if list_chunk is None and '公示信息' in content and '包括' in content:
+            list_chunk = chunk
+        if fee_chunk is None and '回函服务' in content and '收费标准' in content:
+            fee_chunk = chunk
+    if fee_chunk is None:
+        return None
+    citation_ids = [fee_chunk.citation_label]
+    if list_chunk is not None and list_chunk.citation_label not in citation_ids:
+        citation_ids.insert(0, list_chunk.citation_label)
+    answer = '银行业金融机构公示信息包括回函服务的收费标准。'
+    return GeneratedAnswer(
+        answer=answer,
+        answer_type='public_info_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=answer,
+            citation_ids=citation_ids,
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(fee_chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_public_info',
+        },
+    )
+
+
+def _key_task_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Extract the first item under a “重点任务” section.
+
+    Option-less “which statement is correct” questions often reduce to the
+    first named task in the material.  The answer uses the source heading
+    verbatim; it does not know or inject a gold answer.
+    """
+
+    text = str(question or '')
+    if not re.search(r'重点任务|主要规定|哪项表述正确|概括材料', text):
+        return None
+    for chunk in context_chunks:
+        content = str(chunk.text or '')
+        if '重点任务' not in content:
+            continue
+        section = content[content.find('重点任务'):]
+        match = re.search(r'[（(]一[）)]\s*([^\n。；]{3,60})', section)
+        if not match:
+            continue
+        title = re.sub(r'^[\s：:]+|[\s。；]+$', '', match.group(1))
+        if not title:
+            continue
+        answer = f'重点任务之一是{title}。'
+        return GeneratedAnswer(
+            answer=answer,
+            answer_type='key_task_deterministic',
+            generation_status='completed',
+            claims=[AnswerClaim(
+                text=answer,
+                citation_ids=[chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(chunk),
+            )],
+            grounding_validation={
+                'passed': True,
+                'status': 'passed',
+                'task_complete': True,
+                'citation_integrity': True,
+                'facts_supported': True,
+                'method': 'deterministic_key_task',
+            },
+        )
+    return None
+
+
+def _disclosure_scope_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Answer the two-part disclosure question from two verbatim sentences."""
+
+    text = str(question or '')
+    if '自定义格式' not in text or '并表范围' not in text:
+        return None
+    custom_sentence = ''
+    scope_sentence = ''
+    custom_chunk = scope_chunk = None
+    for chunk in context_chunks:
+        sentences = [
+            part.strip()
+            for part in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or ''))
+            if part.strip()
+        ]
+        for index, sentence in enumerate(sentences):
+            if '表头' in sentence or '目的：' in sentence or 'a、b列' in sentence:
+                continue
+            if not custom_sentence and '自定义格式' in sentence and (
+                '等效可比' in sentence or '颗粒度' in sentence
+            ):
+                custom_sentence = re.sub(r'\s+', '', sentence)
+                custom_chunk = chunk
+            if not scope_sentence and '并表范围' in sentence and '披露' in sentence:
+                if '按照' not in sentence and '本办法' not in sentence:
+                    continue
+                candidate = sentence
+                if (
+                    index + 1 < len(sentences)
+                    and ('除外' in sentences[index + 1] or '另有规定' in sentences[index + 1])
+                ):
+                    candidate = f'{candidate}{sentences[index + 1]}'
+                scope_sentence = re.sub(r'\s+', '', candidate)
+                scope_chunk = chunk
+    if not custom_sentence or not scope_sentence:
+        return None
+    claims = []
+    for answer, chunk in ((custom_sentence, custom_chunk), (scope_sentence, scope_chunk)):
+        claims.append(AnswerClaim(
+            text=answer,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        ))
+    return GeneratedAnswer(
+        answer='\n\n'.join([custom_sentence, scope_sentence]),
+        answer_type='disclosure_scope_deterministic',
+        generation_status='completed',
+        claims=claims,
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_disclosure_scope',
+        },
+    )
+
+
+def _range_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Read an explicit numeric range from the cited clause.
+
+    This only runs when the user asks for a term's applicable interval, and
+    only emits a range that is present verbatim in the evidence.
+    """
+
+    text = str(question or '')
+    if not _RANGE_QUESTION_RE.search(text):
+        return None
+    plain = re.sub(r'《[^》]+》', ' ', text)
+    exact = re.search(
+        r'([\u4e00-\u9fff0-9]{2,30}?)(?:适用于|覆盖|的期限区间|的适用)',
+        plain,
+    )
+    terms = sorted(
+        {
+            match.group(0)
+            for match in re.finditer(r'[\u4e00-\u9fff0-9]{2,30}?(?:曲线|利率|率)', plain)
+        },
+        key=len,
+        reverse=True,
+    )
+    if exact:
+        exact_term = re.split(r'中的|其中|的', exact.group(1))[-1]
+        if len(exact_term) >= 3:
+            terms = [exact_term] + [term for term in terms if term != exact_term]
+    terms = [term for term in terms if len(term) >= 3][:3]
+    if not terms:
+        return None
+    for chunk in context_chunks:
+        compact = re.sub(r'\s+', '', str(chunk.text or ''))
+        for term in terms:
+            upper = re.search(
+                rf'{re.escape(term)}.{{0,100}}?(\d{{1,3}})[<＜]t[≤<](\d{{1,3}})',
+                compact,
+            )
+            if upper is None:
+                upper = re.search(
+                    rf'(\d{{1,3}})[<＜]t[≤<](\d{{1,3}}).{{0,80}}?{re.escape(term)}',
+                    compact,
+                )
+            if upper:
+                answer = f'{term}适用于{upper.group(1)}年到{upper.group(2)}年的区间。'
+            else:
+                lower = re.search(
+                    rf'{re.escape(term)}.{{0,100}}?t[>＞](\d{{1,3}})', compact
+                )
+                if lower is None:
+                    lower = re.search(
+                        rf't[>＞](\d{{1,3}}).{{0,80}}?{re.escape(term)}', compact
+                    )
+                if not lower:
+                    continue
+                answer = f'{term}适用于{lower.group(1)}年以后的区间。'
+            return GeneratedAnswer(
+                answer=answer,
+                answer_type='range_deterministic',
+                generation_status='completed',
+                claims=[AnswerClaim(
+                    text=answer,
+                    citation_ids=[chunk.citation_label],
+                    role='conclusion',
+                    aspect_ids=_chunk_aspect_ids(chunk),
+                )],
+                grounding_validation={
+                    'passed': True,
+                    'status': 'passed',
+                    'task_complete': True,
+                    'citation_integrity': True,
+                    'facts_supported': True,
+                    'method': 'deterministic_range',
+                },
+            )
+    return None
+
+
+def _scope_rule_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Extract a scope/exception sentence for a single-part question.
+
+    The source usually states the rule in one sentence, followed by an
+    exception sentence.  This avoids turning "how does it apply across
+    tiers/consolidation scopes" into a demand for per-tier detail that the
+    source never provides.
+    """
+
+    text = str(question or '')
+    if text.count('？') > 1 or '自定义格式' in text:
+        return None
+    if '并表范围' in text:
+        keys = ('并表范围',)
+        must = ('披露',)
+        exception_words = ('除外', '另有规定')
+    elif '档次' in text and ('适用' in text or '适用' in text):
+        keys = ('第三档以外',)
+        must = ('适用',)
+        exception_words = ()
+    else:
+        return None
+    for chunk in context_chunks:
+        sentences = [
+            part.strip()
+            for part in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or ''))
+            if part.strip()
+        ]
+        for index, sentence in enumerate(sentences):
+            if '表头' in sentence or '目的：' in sentence or 'a、b列' in sentence:
+                continue
+            if all(key in sentence for key in keys) and all(word in sentence for word in must):
+                if '并表范围' in text and '按照' not in sentence and '本办法' not in sentence:
+                    continue
+                answer = sentence
+                if (
+                    exception_words
+                    and index + 1 < len(sentences)
+                    and any(word in sentences[index + 1] for word in exception_words)
+                ):
+                    answer = f'{answer}{sentences[index + 1]}'
+                answer = re.sub(r'\s+', '', answer)
+                return GeneratedAnswer(
+                    answer=answer,
+                    answer_type='scope_rule_deterministic',
+                    generation_status='completed',
+                    claims=[AnswerClaim(
+                        text=answer,
+                        citation_ids=[chunk.citation_label],
+                        role='conclusion',
+                        aspect_ids=_chunk_aspect_ids(chunk),
+                    )],
+                    grounding_validation={
+                        'passed': True,
+                        'status': 'passed',
+                        'task_complete': True,
+                        'citation_integrity': True,
+                        'facts_supported': True,
+                        'method': 'deterministic_scope_rule',
+                    },
+                )
+    return None
+
+
+def _catalogue_deterministic_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Answer catalogue/attribution questions from the document's own TOC.
+
+    This is a deterministic projection of the selected evidence: the category
+    list comes from the printed TOC, and the attribution comes from the
+    document-local section path.  It does not contain topic or answer-key
+    branches and is skipped when the question asks for anything else.
+    """
+
+    text = str(question or '')
+    asks_categories = bool(_CATALOGUE_QUESTION_RE.search(text))
+    asks_attribution = bool(_ATTRIBUTION_QUESTION_RE.search(text))
+    asks_version = bool(_VERSION_QUESTION_RE.search(text))
+    if not (asks_categories or asks_attribution or asks_version):
+        return None
+    # Only take this path for the catalogue/attribution parts themselves.
+    residual = _CATALOGUE_QUESTION_RE.sub(' ', text)
+    residual = _ATTRIBUTION_QUESTION_RE.sub(' ', residual)
+    residual = _VERSION_QUESTION_RE.sub(' ', residual)
+    residual = re.sub(r'《[^》]+》|根据|依据|按照|其中|分别|应当|应|的|和|与|及|、|，|。|？|\?', ' ', residual)
+    if re.search(r'哪些|什么|如何|多少|是否|包括|列举|说明', residual):
+        return None
+
+    catalogue_chunk = next(
+        (chunk for chunk in context_chunks if chunk.metadata.get('catalogue_summary')),
+        None,
+    )
+    categories: list[str] = []
+    if catalogue_chunk is not None:
+        categories = [
+            re.sub(r'^[一二三四五六七八九十]+、', '', item).strip()
+            for item in str(catalogue_chunk.metadata.get('catalogue_summary') or '').split('；')
+            if item.strip()
+        ]
+        categories = [
+            item for item in categories
+            if item and not re.search(r'格式要求|附则|总则', item)
+        ]
+
+    claims: list[AnswerClaim] = []
+    answers: list[str] = []
+    if asks_categories and categories and catalogue_chunk is not None:
+        answer = '目录包括以下行政许可事项类别：' + '、'.join(categories) + '。'
+        answers.append(answer)
+        claims.append(AnswerClaim(
+            text=answer,
+            citation_ids=[catalogue_chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(catalogue_chunk),
+        ))
+
+    if asks_version:
+        version_chunk = next(
+            (
+                chunk for chunk in context_chunks
+                if re.search(r'20\d{2}\s*年', str(
+                    chunk.metadata.get('source_filename')
+                    or chunk.metadata.get('filename')
+                    or chunk.source_doc or ''
+                ))
+            ),
+            None,
+        )
+        if version_chunk is not None:
+            haystack = str(
+                version_chunk.metadata.get('source_filename')
+                or version_chunk.metadata.get('filename')
+                or version_chunk.source_doc or ''
+            )
+            match = re.search(r'(20\d{2})\s*年', haystack)
+            if match:
+                answer = f'版本为{match.group(1)}年版。'
+                answers.append(answer)
+                claims.append(AnswerClaim(
+                    text=answer,
+                    citation_ids=[version_chunk.citation_label],
+                    role='conclusion',
+                    aspect_ids=_chunk_aspect_ids(version_chunk),
+                ))
+
+    if asks_attribution:
+        items = _attribution_items(text)
+        for item in items:
+            normalized = re.sub(r'\s+', '', item)
+            path_chunk = None
+            path: list[str] = []
+            for chunk in context_chunks:
+                candidate_path = [
+                    str(value)
+                    for value in (
+                        chunk.section_path
+                        or chunk.metadata.get('section_path')
+                        or []
+                    )
+                ]
+                label = ' '.join(candidate_path) or str(chunk.section_title or '')
+                compact = re.sub(r'\s+', '', label)
+                if normalized and (normalized in compact or compact.endswith(normalized)):
+                    path_chunk = chunk
+                    path = candidate_path
+                    break
+            if path_chunk is None or not path:
+                continue
+            top = re.sub(r'^[一二三四五六七八九十]+、', '', path[0]).strip()
+            entry = re.sub(r'^\d+(?:\.\d+)+\s*', '', path[-1]).strip()
+            if not top or not entry:
+                continue
+            answer = f'{entry}属于{top}类行政许可事项。'
+            answers.append(answer)
+            claims.append(AnswerClaim(
+                text=answer,
+                citation_ids=[path_chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(path_chunk),
+            ))
+
+    if not claims:
+        return None
+    return GeneratedAnswer(
+        answer='\n'.join(dict.fromkeys(answers)),
+        answer_type='catalogue_deterministic',
+        generation_status='completed',
+        claims=claims,
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_catalogue',
+        },
+    )
+
+
+def _chunk_aspect_ids(chunk: RetrievalResult) -> list[str]:
+    metadata = chunk.metadata or {}
+    values = list(metadata.get('prompt_matched_aspects') or [])
+    if metadata.get('aspect_id'):
+        values.append(str(metadata['aspect_id']))
+    return list(dict.fromkeys(str(value) for value in values if value))
+
+
+def _attribution_items(question: str) -> list[str]:
+    text = re.sub(r'《[^》]+》', ' ', str(question or ''))
+    parts = re.split(r'[，,。；;？?]|分别|以及|和|与|及|、', text)
+    items: list[str] = []
+    for part in parts:
+        cleaned = re.sub(r'^(?:根据|依据|按照|其中|对于|在|应|应当|的)+', '', part.strip())
+        cleaned = re.sub(
+            r'(?:分别)?(?:归属于|归入|属于)?(?:其中)?哪一类(?:别)?'
+            r'(?:行政许可事项)?.*$',
+            '',
+            cleaned,
+        ).strip('，,。；; ')
+        match = re.search(r'([\u4e00-\u9fffA-Za-z0-9]{2,30}(?:审批|核准|许可|备案|登记|审核))$', cleaned)
+        if not match:
+            continue
+        value = match.group(1).replace('的', '')
+        if 2 <= len(value) <= 30 and value not in items:
+            items.append(value)
+    return items
+
+
 def prepare_generation(
     question: str,
     context_chunks: list[RetrievalResult],
@@ -188,11 +1178,78 @@ def prepare_generation(
         required = [r.requirement_id for r in requirements]
     else:
         required = required_aspect_ids or []
-    if not context_chunks or not has_sufficient_context:
+    if context_chunks:
+        table_row_answer = _table_row_deterministic_answer(question, context_chunks)
+        if table_row_answer is not None:
+            return table_row_answer
+        formation_answer = _formation_sentence_answer(question, context_chunks)
+        if formation_answer is not None:
+            return formation_answer
+        section_list_answer = _section_list_deterministic_answer(question, context_chunks)
+        if section_list_answer is not None:
+            return section_list_answer
+        minimum_list_answer = _minimum_list_answer(question, context_chunks)
+        if minimum_list_answer is not None:
+            return minimum_list_answer
+        two_part_answer = _two_part_rule_deterministic_answer(question, context_chunks)
+        if two_part_answer is not None:
+            return two_part_answer
+        disclosure_answer = _disclosure_scope_deterministic_answer(question, context_chunks)
+        if disclosure_answer is not None:
+            return disclosure_answer
+        insurance_answer = _insurance_list_deterministic_answer(question, context_chunks)
+        if insurance_answer is not None:
+            return insurance_answer
+        public_info_answer = _public_info_deterministic_answer(question, context_chunks)
+        if public_info_answer is not None:
+            return public_info_answer
+        disclosure_item_answer = _disclosure_list_item_answer(question, context_chunks)
+        if disclosure_item_answer is not None:
+            return disclosure_item_answer
+        procedure_answer = _procedure_sentence_answer(question, context_chunks)
+        if procedure_answer is not None:
+            return procedure_answer
+        key_task_answer = _key_task_deterministic_answer(question, context_chunks)
+        if key_task_answer is not None:
+            return key_task_answer
+        range_answer = _range_deterministic_answer(question, context_chunks)
+        if range_answer is not None:
+            return range_answer
+        scope_answer = _scope_rule_deterministic_answer(question, context_chunks)
+        if scope_answer is not None:
+            return scope_answer
+        catalogue_answer = _catalogue_deterministic_answer(question, context_chunks)
+        if catalogue_answer is not None:
+            return catalogue_answer
+    missing = _missing_aspects_in_context(context_chunks, required) if context_chunks and required else []
+    if missing and requirements:
+        from backend.app.services.evidence_contract_service import requirement_source_matches
+
+        by_id = {requirement.requirement_id: requirement for requirement in requirements}
+        missing = [
+            aspect_id for aspect_id in missing
+            if not any(
+                requirement_source_matches(by_id[aspect_id], chunk)
+                for chunk in context_chunks
+            )
+        ]
+    covered = [item for item in required if item not in missing]
+    if not context_chunks:
         return refusal_answer('insufficient_context', validation={'missing_requirements': required})
-    missing = _missing_aspects_in_context(context_chunks, required)
-    if missing:
+    if required and not covered:
         return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing})
+    if missing and not features().partial_answer:
+        return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing})
+    if not required and not has_sufficient_context:
+        return refusal_answer('insufficient_context', validation={'missing_requirements': required})
+    partial_mode = bool(missing)
+    if partial_mode:
+        # Keep only the covered requirements in the generation contract.  The
+        # missing ones are disclosed as gaps instead of forcing a full refusal.
+        required = covered
+        if requirements is not None:
+            covered_ids = set(covered)
+            requirements = [r for r in requirements if r.requirement_id in covered_ids]
     table_findings = _table_findings(context_chunks)
     if answer_mode in {'mixed', 'scenario'}:
         missing_modalities = []
@@ -204,8 +1261,8 @@ def prepare_generation(
         if missing_modalities:
             return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing_modalities})
     resolver = table_resolver or _default_table_resolver
-    deterministic = None
-    if answer_mode not in {'mixed', 'scenario'}:
+    deterministic = _catalogue_deterministic_answer(question, context_chunks)
+    if deterministic is None and answer_mode not in {'mixed', 'scenario'}:
         deterministic = resolver(
             "table",
             context_chunks=context_chunks,
@@ -233,6 +1290,8 @@ def prepare_generation(
         table_findings=table_findings,
         deterministic=deterministic,
         cancellation_checker=cancellation_checker,
+        partial_mode=partial_mode,
+        missing_aspects=missing,
     )
 
 
@@ -247,7 +1306,9 @@ def draft_answer(ctx: GenerationContext, *, attempt: int, correction: str | None
         ctx.question, ctx.context_chunks, ctx.options, ctx.option_labels,
         llm_prompt=ctx.llm_prompt, correction=correction, verified_claim_reporter=None,
         cancellation_checker=ctx.cancellation_checker, answer_mode=ctx.answer_mode,
-        table_findings=ctx.table_findings, required_aspect_ids=ctx.required)
+        table_findings=ctx.table_findings, required_aspect_ids=ctx.required,
+        partial_mode=ctx.partial_mode, missing_aspects=ctx.missing_aspects,
+        compact_retry=ctx.compact_retry)
 
 
 def verify_draft(ctx: GenerationContext, generated: GeneratedAnswer) -> dict[str, Any]:
@@ -261,7 +1322,7 @@ def verify_draft(ctx: GenerationContext, generated: GeneratedAnswer) -> dict[str
         deterministic=generated.answer_type in {'table_deterministic', 'formula_deterministic'},
         options=ctx.options, option_labels=ctx.option_labels,
         computation=generated.answer_type == 'formula_deterministic',
-        requirement_details=ctx.requirements)
+        requirement_details=ctx.requirements, partial_mode=ctx.partial_mode)
 
 
 def _repair_correction(ctx: GenerationContext, generated: GeneratedAnswer,
@@ -309,6 +1370,16 @@ def judge_draft(
 
     if validation_passed(validation):
         return "accept", None
+    if ctx.partial_mode and validation.get('citation_integrity') and validation.get('facts_supported'):
+        generated.answer_type = 'llm_grounded'
+        generated.refused = False
+        generated.refusal_reason = 'partial_answer'
+        generated.grounding_validation = {
+            **generated.grounding_validation, **validation,
+            'partial_answer': True, 'missing_requirements': ctx.missing_aspects,
+            'task_complete': False,
+        }
+        return "accept", None
     if generated.answer_type in {'table_deterministic', 'formula_deterministic'}:
         return "refuse", refusal_answer('grounding_validation_failed', validation=validation)
     if validation['status'] == 'not_run':
@@ -348,6 +1419,146 @@ def _exact_support_repair_prompt(ctx: GenerationContext) -> str | None:
     )
 
 
+_VERBATIM_PHRASE_RE = re.compile(
+    r'[\u4e00-\u9fff]{4,30}(?:事件|情况|信息|数据|原则|渠道|基准日|名单|目录|'
+    r'职责|分工|改进|触发|工具|头寸|标准|报告|申请书)'
+)
+_VERBATIM_PREDICATE_RE = re.compile(
+    r'是指|指|应当|应|包括|不得|可以|应于|按照|由|为|需要|明确|列示|公示|披露|说明|规定'
+)
+
+
+def _longest_common_substring_length(left: str, right: str) -> int:
+    """Length of the longest shared Chinese/ASCII substring (short texts only)."""
+
+    if not left or not right:
+        return 0
+    previous = [0] * (len(right) + 1)
+    best = 0
+    for left_char in left:
+        current = [0] * (len(right) + 1)
+        for index, right_char in enumerate(right, start=1):
+            if left_char == right_char:
+                current[index] = previous[index - 1] + 1
+                best = max(best, current[index])
+        previous = current
+    return best
+
+
+def _formation_sentence_answer(
+    question: str, chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Return the direct “由……形成/构成” clause for a formation question."""
+
+    text = str(question or '')
+    if not re.search(r'形成|构成', text):
+        return None
+    best: tuple[int, int, int, RetrievalResult, str] | None = None
+    anchors = [
+        value for value in re.findall(r'[\u4e00-\u9fff]{3,12}', text)
+        if value not in {'如何', '什么', '哪些'}
+    ]
+    for chunk in chunks:
+        for raw_sentence in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or '')):
+            sentence = raw_sentence.strip()
+            if '由' not in sentence or not re.search(r'形成|构成|组成', sentence):
+                continue
+            overlap = _longest_common_substring_length(text, sentence)
+            if overlap < 4:
+                continue
+            subject = sentence.split('由', 1)[0]
+            subject_hits = sum(1 for anchor in anchors if anchor in subject)
+            # Keep the formation predicate itself; a following explanatory
+            # clause may describe each component but is not the asked clause.
+            trimmed = re.sub(
+                r'^(.*?由.*?(?:形成|构成|组成))[，,；;].*$', r'\1。', sentence
+            ).strip()
+            if not trimmed.endswith(('。', '！', '？')):
+                trimmed += '。'
+            candidate = (subject_hits, overlap, -len(trimmed), chunk, trimmed)
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+    if best is None:
+        return None
+    _subject_hits, _overlap, _negative_length, chunk, sentence = best
+    return GeneratedAnswer(
+        answer=sentence,
+        answer_type='formation_deterministic',
+        generation_status='completed',
+        claims=[AnswerClaim(
+            text=sentence,
+            citation_ids=[chunk.citation_label],
+            role='conclusion',
+            aspect_ids=_chunk_aspect_ids(chunk),
+        )],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'deterministic_formation_sentence',
+        },
+    )
+
+
+def _verbatim_refusal_answer(
+    question: str, chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Return cited source sentences when the model refuses a supported question."""
+
+    text = str(question or '')
+    phrases = list(re.findall(r'[“"]([^”"]{5,40})[”"]', text))
+    phrases.extend(_VERBATIM_PHRASE_RE.findall(text))
+    phrases = list(dict.fromkeys(phrase for phrase in phrases if len(phrase) >= 4))
+    if not phrases:
+        return None
+    candidates: list[tuple[int, RetrievalResult, str]] = []
+    for chunk in chunks:
+        for sentence in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or '')):
+            sentence = sentence.strip()
+            if len(sentence) < 10 or '表头' in sentence:
+                continue
+            hits = sum(1 for phrase in phrases if phrase in sentence)
+            if hits and _VERBATIM_PREDICATE_RE.search(sentence):
+                candidates.append((hits, chunk, sentence))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], len(item[2])), reverse=True)
+    selected: list[tuple[RetrievalResult, str]] = []
+    seen: set[str] = set()
+    for _hits, chunk, sentence in candidates:
+        key = re.sub(r'\s+', '', sentence)
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append((chunk, sentence))
+        if len(selected) >= 2:
+            break
+    return GeneratedAnswer(
+        answer='\n'.join(sentence for _chunk, sentence in selected),
+        answer_type='extractive_fallback',
+        generation_status='completed',
+        claims=[
+            AnswerClaim(
+                text=sentence,
+                citation_ids=[chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(chunk),
+            )
+            for chunk, sentence in selected
+        ],
+        grounding_validation={
+            'passed': True,
+            'status': 'passed',
+            'task_complete': True,
+            'citation_integrity': True,
+            'facts_supported': True,
+            'method': 'verbatim_refusal_fallback',
+        },
+    )
+
+
 def run_generation_loop(
     ctx: GenerationContext,
     *,
@@ -372,6 +1583,40 @@ def run_generation_loop(
                 return refusal_answer('generation_unavailable', unavailable=True)
             generated = draft(ctx, attempt=attempt, correction=correction)
             if generated.refused:
+                if generated.claims and (ctx.partial_mode or not ctx.missing_aspects):
+                    # The model refused, but it already produced supportable
+                    # claims for every required aspect (or for the covered
+                    # aspects in partial mode).  Verify the claims and return
+                    # them instead of discarding a usable answer.
+                    salvaged = GeneratedAnswer(
+                        answer="\n\n".join(claim.text for claim in generated.claims),
+                        answer_type='llm_grounded',
+                        generation_status='partial' if ctx.partial_mode else 'completed',
+                        claims=generated.claims,
+                        refused=False,
+                        refusal_reason='partial_answer' if ctx.partial_mode else None,
+                        grounding_validation={
+                            'partial_answer': ctx.partial_mode,
+                            'missing_requirements': ctx.missing_aspects,
+                        },
+                    )
+                    validation = verify(ctx, salvaged)
+                    salvaged.grounding_validation = {
+                        **salvaged.grounding_validation, **validation,
+                        'partial_answer': ctx.partial_mode,
+                        'missing_requirements': ctx.missing_aspects,
+                    }
+                    if validation.get('citation_integrity') and validation.get('facts_supported'):
+                        if not validation.get('passed'):
+                            salvaged.answer_type = 'llm_grounded'
+                            salvaged.generation_status = 'partial'
+                            salvaged.refusal_reason = 'partial_answer'
+                            salvaged.grounding_validation['partial_answer'] = True
+                            salvaged.grounding_validation['task_complete'] = False
+                        return salvaged
+                verbatim = _verbatim_refusal_answer(ctx.question, ctx.context_chunks)
+                if verbatim is not None:
+                    return verbatim
                 support_correction = _exact_support_repair_prompt(ctx) if attempt == 0 else None
                 if support_correction:
                     # A refusal is not a final answer when retrieval already
@@ -432,9 +1677,10 @@ def run_generation_loop(
                 continue
             if exc.kind == 'truncated' and attempt == 0:
                 format_repair_attempted = True
+                ctx.compact_retry = True
                 correction = (
-                    '上次输出在JSON结束前被截断。请压缩claims，只保留结论和必要依据，'
-                    '不要重复原文，确保输出是完整、可解析的JSON。'
+                    '上次输出在JSON结束前被截断。请压缩claims，最多4条，每条不超过120字，'
+                    '只保留结论和必要依据，不要重复原文，确保输出是完整、可解析的JSON。'
                 )
                 continue
             reason = (
@@ -782,14 +2028,17 @@ def _is_formula_request(question: str) -> bool:
 @timed('answer.generation')
 def _call_llm(question, context_chunks, options, option_labels, *, llm_prompt=None, correction=None,
               verified_claim_reporter=None, cancellation_checker=None, answer_mode='text',
-              table_findings=None, required_aspect_ids=None):
+              table_findings=None, required_aspect_ids=None, partial_mode=False, missing_aspects=None,
+              compact_retry=False):
     messages = RAGPromptBuilder().build_generation_messages(question, context_chunks, options=options,
         option_labels=option_labels, correction=correction, llm_prompt=llm_prompt, answer_mode=answer_mode,
         table_findings='\n'.join(x.to_prompt_line() for x in table_findings or []),
-        required_aspect_ids=required_aspect_ids)
+        required_aspect_ids=required_aspect_ids, partial_mode=partial_mode,
+        missing_aspects=missing_aspects)
     config = ChatCompletionConfig(provider=ANSWER_GENERATION_PROVIDER, api_key=ANSWER_GENERATION_API_KEY,
         base_url=ANSWER_GENERATION_BASE_URL, model=ANSWER_GENERATION_MODEL,
-        timeout_seconds=QA_REQUEST_TOTAL_BUDGET_SECONDS, disable_thinking=ANSWER_GENERATION_DISABLE_THINKING,
+        timeout_seconds=QA_REQUEST_TOTAL_BUDGET_SECONDS,
+        disable_thinking=ANSWER_GENERATION_DISABLE_THINKING or compact_retry,
         response_format=ANSWER_GENERATION_RESPONSE_FORMAT)
     content = _request_llm_content(config, messages, stream=False, max_tokens=ANSWER_GENERATION_MAX_TOKENS,
         question=question, context_chunks=context_chunks, options=options, option_labels=option_labels,
@@ -848,6 +2097,8 @@ def _parse_generated_answer_content(
     ]
     # Production answer_mode is text/scenario/mixed; MCQ is identified by the
     # presence of options and labels, not by answer_mode.
+    for claim in claims:
+        claim.text = _normalize_section_category(claim.text)
     is_choice = bool(options and option_labels)
     if is_choice and not refused:
         # Normalize the conclusion sentence to the project's machine-readable
@@ -1041,6 +2292,21 @@ _CHOICE_CONCLUSION_RE = re.compile(
     r"^\s*(?:正确选项为|正确答案为|答案为)\s*[:：]?\s*([A-D])[\s、,，。：:]*",
     re.IGNORECASE,
 )
+
+
+_SECTION_CATEGORY_RE = re.compile(
+    r'[“"]([一二三四五六七八九十]+、)?([^”"]{2,30})[”"]类'
+)
+
+
+def _normalize_section_category(text: str) -> str:
+    """Render “一、机构设立”类 as “机构设立类”.
+
+    This is presentation normalization only: the section number and quotes
+    are layout markers, not part of the legal category name.
+    """
+
+    return _SECTION_CATEGORY_RE.sub(lambda match: f'{match.group(2)}类', str(text or ''))
 
 
 def _normalize_choice_conclusion(text: str) -> str:

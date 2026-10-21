@@ -7,9 +7,10 @@ supervisor itself never calls a model.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from backend.app.services.agents.contracts import AgentResult, Blackboard
 from backend.app.services.agents.registry import AgentRegistry, default_registry
@@ -48,8 +49,8 @@ class Supervisor:
     def gather_aspects(self, board: Blackboard, query_plan: Any) -> list[AspectRetrieval]:
         from backend.app.services import rag_service, retrieval_support
         from backend.app.services.retrieval_support import (
-            _AspectPrepResult,
             _DEFAULT_PREPARE_ASPECT_RETRIEVAL,
+            _AspectPrepResult,
             _TableStageResult,
             legacy_retrieval_override_active,
         )
@@ -301,16 +302,19 @@ class Supervisor:
                 query_plan,
                 progress_reporter=board.reporter,
             )
+            generation_question = rag_service._generation_question(question, query_plan)
             injected = self.registry.get("curation").execute(
                 board,
                 "prompt",
-                question=question,
+                question=generation_question,
                 context_chunks=bundle.evidence,
             )
+            retrieval_summary = dict(bundle.diagnostics or {})
+            retrieval_summary['generation_question'] = generation_question
             package = LLMContextPackage(
                 query=question,
                 instruction=rag_service.CONTEXT_INSTRUCTION,
-                retrieval_summary=bundle.diagnostics,
+                retrieval_summary=retrieval_summary,
                 context_chunks=bundle.evidence,
                 llm_prompt=injected.output,
             )
@@ -446,7 +450,10 @@ class Supervisor:
                 prepared = self.registry.get("answer").execute(
                     board,
                     "prepare",
-                    question=board.question,
+                    question=(
+                        package.retrieval_summary.get('generation_question')
+                        or board.question
+                    ),
                     context_chunks=package.context_chunks,
                     options=board.options,
                     option_labels=board.option_labels,
@@ -524,7 +531,11 @@ class Supervisor:
                 if labels and generated.answer_type != 'service_error':
                     generated.answer = '当前证据不足以完整回答。缺少：' + '；'.join(labels)
             from backend.app.services.answer_validation_service import validation_passed
-            if not generated.refused and not validation_passed(generated.grounding_validation):
+            if (
+                not generated.refused
+                and not validation_passed(generated.grounding_validation)
+                and not generated.grounding_validation.get('partial_answer')
+            ):
                 generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
                 generated.answer_type = "refusal"
                 generated.refused = True
@@ -617,7 +628,9 @@ class Supervisor:
                     cited_results,
                 ),
             )
-            from backend.app.services.answer_explanation_service import build_answer_explanation
+            from backend.app.services.answer_explanation_service import (
+                build_answer_explanation,
+            )
             response.explanation = build_answer_explanation(
                 question=board.original_question,
                 generated=generated,

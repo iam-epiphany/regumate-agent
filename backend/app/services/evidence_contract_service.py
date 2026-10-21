@@ -90,8 +90,14 @@ def _title_actual_text(chunk: RetrievalResult) -> str:
 
 def _qualifier_matches(qualifier: str, actual_text: str, metadata: dict[str, Any], chunk: RetrievalResult) -> bool:
     raw = unicodedata.normalize('NFKC', str(qualifier or '')).strip()
+    # A year written as “2023年版” and a filename written as “2023年” are the
+    # same edition marker.  Keep the year itself as the hard constraint; only
+    # drop the optional “版” suffix.
+    raw = re.sub(r'(\d{4}年)版', r'\1', raw)
     compact = re.sub(r'[\s\-_/]', '', raw).casefold()
+    actual_text = unicodedata.normalize('NFKC', str(actual_text or ''))
     actual_compact = re.sub(r'[\s\-_/]', '', actual_text).casefold()
+    actual_compact = re.sub(r'(\d{4}年)版', r'\1', actual_compact)
     if not compact:
         return True
     if compact in actual_compact:
@@ -151,7 +157,16 @@ def _title_matches(title: str, actual_text: str, metadata: dict[str, Any], chunk
             _qualifier_matches(qualifier, qualifier_text, metadata, chunk)
             for qualifier in qualifiers
         )
-    actual_core = _title_core_key(actual_text)
+    # Parentheticals in a real filename are qualifiers, not part of the core
+    # name: “保险公司偿付能力监管规则（Ⅱ）” must still match the filename
+    # “...保险公司偿付能力监管规则（Ⅱ）...”, and an unclosed “（2023年.pdf”
+    # must not hide the preceding title.  Compare the compacted core after
+    # removing parenthetical groups, while still checking the qualifiers
+    # against the full source identity below.
+    actual_core_text = re.sub(r'[（(][^）)]*[）)]', '', actual_text)
+    actual_core = title_key(actual_core_text)
+    if core_key not in actual_core:
+        actual_core = title_key(actual_text)
     if core_key not in actual_core:
         return False
     for qualifier in qualifiers:
@@ -319,9 +334,14 @@ def requirement_attribute_matches(requirement: EvidenceRequirement, chunk: Retri
     """Check that a chunk evidences the compared attribute, not just its source."""
 
     terms = list(requirement.attribute_terms or [])
-    if not terms:
+    if not terms and requirement.intent != 'define':
         return True
     normalized, compact = _attribute_haystack(chunk)
+    # A definition requirement without explicit comparison attributes still
+    # has target terms ("风险价值", "关键功能").  Use them to find the actual
+    # defining sentence instead of accepting any neighbour in the same file.
+    if not terms and requirement.intent == 'define':
+        terms = list(requirement.target_terms or [])
     term_values = list(dict.fromkeys(
         term for term in terms
         if term and term not in _GENERIC_ATTRIBUTE_TERMS
@@ -336,7 +356,7 @@ def requirement_attribute_matches(requirement: EvidenceRequirement, chunk: Retri
         for target in targets:
             pattern = (
                 rf'(?:所称)?{re.escape(target)}\s*(?:[（(][^）)]{{0,20}}[）)])?'
-                r'\s*(?:，|,)?\s*(?:是指|指|定义为|系指|是)'
+                r'\s*(?:，|,)?\s*(?:是指|指|定义为|系指|是|[:：])'
             )
             if re.search(pattern, normalized):
                 return True
@@ -357,9 +377,12 @@ def requirements_for_plan(plan: Any) -> list[EvidenceRequirement]:
     # Attribute terms are hints for locating and ranking a compared clause.
     # They are deliberately not used as a hard evidence filter: the final
     # semantic validator decides whether a clause actually supports a claim.
+    original_question = str(getattr(plan, 'original_question', '') or '')
     plan_attribute_terms = (
-        comparison_attribute_terms(str(getattr(plan, 'original_question', '') or ''))
-        if str(getattr(plan, 'question_mode', 'open') or 'open') == 'open' else []
+        comparison_attribute_terms(original_question)
+        if str(getattr(plan, 'question_mode', 'open') or 'open') == 'open'
+        and is_cross_document_comparison(original_question)
+        else []
     )
     for aspect in plan.aspects:
         source = str(aspect.table_filters.get('source_title') or '')
@@ -380,10 +403,18 @@ def requirements_for_plan(plan: Any) -> list[EvidenceRequirement]:
                 if not source:
                     fallback_sources = [scope_phrases[0]]
         resolved_sources = list(dict.fromkeys(sources or fallback_sources))
+        requirement_question = str(
+            getattr(aspect, 'requirement_question', None) or aspect.question
+        )
+        requirement_targets = (
+            list(aspect.targets)
+            if requirement_question == aspect.question
+            else target_terms(requirement_question)
+        )
         requirements.append(EvidenceRequirement(
-            requirement_id=aspect.aspect_id, question=aspect.question,
+            requirement_id=aspect.aspect_id, question=requirement_question,
             intent=aspect.intent, mandatory=mandatory,
-            target_terms=list(aspect.targets), attribute_terms=attribute_terms,
+            target_terms=requirement_targets, attribute_terms=attribute_terms,
             source_titles=resolved_sources
             if aspect.modality == 'text' or len(aspect.selectors) <= 1 else [],
             subject_scope=list(aspect.subject_scope),
@@ -406,7 +437,16 @@ def requirement_source_matches(requirement: EvidenceRequirement, chunk: Retrieva
         full_text = actual + ' ' + _title_actual_text(chunk)
         return all(_title_matches(title, actual, chunk.metadata or {}, chunk, full_text=full_text)
                    for title in requirement.source_titles)
-    return source_matches(requirement.source_titles, chunk)
+    if source_matches(requirement.source_titles, chunk):
+        return True
+    # Retrieval may already have resolved the user-stated title to a concrete
+    # document scope (including a parent notification whose content lives in
+    # its attachments).  That resolution is the same identity proof used to
+    # build the candidate set; keep selection and bundle coverage consistent
+    # instead of re-rejecting the chunk with a narrower title matcher.
+    scope_ids = {str(value) for value in chunk.metadata.get('source_scope_document_ids') or ()}
+    document_id = str(chunk.metadata.get('document_id') or '')
+    return bool(chunk.metadata.get('source_scope_match') and document_id in scope_ids)
 
 
 def build_evidence_bundle(requirements: list[EvidenceRequirement], chunks: list[RetrievalResult],
@@ -454,7 +494,10 @@ def build_evidence_bundle(requirements: list[EvidenceRequirement], chunks: list[
             decisions.append(EvidenceDecision(chunk_id='', requirement_id=requirement.requirement_id,
                                                stage='missing', reason='not_recalled'))
     missing_all = [r.requirement_id for r in requirements if not coverage[r.requirement_id] or
-                   (r.source_titles and not any(source_matches(r.source_titles, c) for c in chunks)) or
+                   (r.source_titles and not any(
+                       (source_matches(r.source_titles, c) if r.parent_id else requirement_source_matches(r, c))
+                       for c in chunks
+                   )) or
                    any(c.metadata.get('unit_incomplete') and c.chunk_id in coverage[r.requirement_id]
                        for c in chunks)]
     by_id = {r.requirement_id: r for r in requirements}

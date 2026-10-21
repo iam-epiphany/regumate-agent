@@ -22,6 +22,16 @@ describe("ShowcaseView", () => {
     expect(screen.getByText("计算已核验")).toBeInTheDocument();
   });
 
+  it("shows the evidence-set audit without turning it into a verification pass", () => {
+    render(<ShowcaseView answer={answerWithExplanation()} question="比较两份材料的定义" events={[]} active={false} taskStatus="completed" />);
+
+    expect(screen.getByText("证据面审计")).toBeInTheDocument();
+    expect(screen.getByText("信息面完整")).toBeInTheDocument();
+    expect(screen.getByText(/9\s*\/\s*2/)).toBeInTheDocument();
+    expect(screen.getByText("《处置计划建议示例》 · 第二章 · 第五条")).toBeInTheDocument();
+    expect(screen.getByText(/不替代最终引用、事实与任务完整性核验/)).toBeInTheDocument();
+  });
+
   it("shows unrecorded rather than inferred success for an old record", () => {
     const answer: QAResponse = {
       answer: "旧记录中的结论。[1]",
@@ -184,6 +194,7 @@ function fullExplanation(): AnswerExplanation {
       {
         evidence_id: "[2]", chunk_id: "chunk-2", document_id: "doc-b", source: "处置计划建议示例.docx",
         source_title: "商业银行版处置计划建议示例", section_title: "第二章 定义", section_path: [],
+        structure_label: "《处置计划建议示例》 · 第二章 · 第五条",
         page_number: 4, sheet_name: null, cell: null,
         excerpt: "关键功能包括向第三方提供的金融服务。", requirement_ids: ["source_b"],
         claim_indices: [], citation_located: true,
@@ -213,6 +224,16 @@ function fullExplanation(): AnswerExplanation {
       status: "passed", passed: true, citation_integrity: true,
       facts_supported: true, task_complete: true, method: "model",
       reasons: [], missing_requirements: [],
+    },
+    sufficiency: {
+      schema_version: "1.0", status: "sufficient",
+      requirements: [], missing_requirements: [], partial_requirements: [], missing_facets: [],
+      expansion: {
+        attempted: true, expanded_chunks: 2, expanded_chunk_ids: ["chunk-1", "chunk-2"],
+        reasons: { referenced_clause: 2 }, added_token_estimate: 80,
+      },
+      counts: { requirements: 2, candidates: 9, selected: 2 },
+      notes: [],
     },
     budget: {
       category: "complex", total_seconds: 240, elapsed_ms: 42000,

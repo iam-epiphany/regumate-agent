@@ -13,6 +13,7 @@ import type {
   AgentTraceEntry,
   AnswerExplanation,
   Citation,
+  EvidenceSufficiency,
   ExplanationCalculation,
   ExplanationRequirement,
   ExplanationSource,
@@ -146,6 +147,11 @@ export function ShowcaseView({ answer, question, events, active, taskStatus, mes
         <div className="showcase-task__roles">
           <div className="showcase-block-head"><GitBranch size={16} /><h3>实际任务分工</h3></div>
           <AgentRoleTrace entries={answer?.agent_trace ?? []} />
+        </div>
+
+        <div className="showcase-task__sufficiency">
+          <div className="showcase-block-head"><ShieldCheck size={16} /><h3>证据面审计</h3></div>
+          <SufficiencySummary sufficiency={explanation?.sufficiency ?? null} />
         </div>
 
         <div className="showcase-task__budget">
@@ -321,6 +327,47 @@ export function ShowcaseView({ answer, question, events, active, taskStatus, mes
   );
 }
 
+function SufficiencySummary({ sufficiency }: { sufficiency: EvidenceSufficiency | null }) {
+  if (!sufficiency) return <p className="showcase-muted">未记录证据面审计。</p>;
+  if (sufficiency.status === "not_applicable") {
+    return <p className="showcase-muted">本次未形成可审计的证据要求。</p>;
+  }
+  const tone = sufficiency.status === "sufficient" ? "passed" : "warning";
+  const missing = (sufficiency.missing_facets ?? []).slice(0, 4);
+  return (
+    <div className="showcase-sufficiency">
+      <div className="showcase-checks">
+        <span className={`showcase-check ${tone}`}>
+          {sufficiency.status === "sufficient" ? <CheckCircle2 size={15} /> : <CircleHelp size={15} />}
+          <span>覆盖状态</span>
+          <strong>{sufficiencyLabel(sufficiency.status)}</strong>
+        </span>
+        <span className="showcase-check unknown">
+          <span>候选 / 入选</span>
+          <strong>{sufficiency.counts?.candidates ?? 0} / {sufficiency.counts?.selected ?? 0}</strong>
+        </span>
+        <span className="showcase-check unknown">
+          <span>结构补全</span>
+          <strong>{sufficiency.expansion?.expanded_chunks ?? 0} 条</strong>
+        </span>
+      </div>
+      {missing.length ? (
+        <p className="showcase-muted">待补信息面：{[...new Set(missing)].join("；")}</p>
+      ) : (
+        <p className="showcase-muted">必需要求的信息面均已在入选证据中出现。</p>
+      )}
+      <p className="showcase-muted">该检查只核对信息面是否出现，不替代最终引用、事实与任务完整性核验。</p>
+    </div>
+  );
+}
+
+function sufficiencyLabel(status: EvidenceSufficiency["status"]): string {
+  if (status === "sufficient") return "信息面完整";
+  if (status === "partial") return "信息面部分覆盖";
+  if (status === "insufficient") return "关键信息面缺失";
+  return "未记录";
+}
+
 function AgentRoleTrace({ entries }: { entries: AgentTraceEntry[] }) {
   if (!entries.length) return <p className="showcase-muted">未记录任务分工。</p>;
   return (
@@ -446,6 +493,7 @@ function locator(source: ExplanationSource): string {
   if (source.sheet_name || source.cell) {
     return [source.source, source.sheet_name, source.cell].filter(Boolean).join(" · ");
   }
+  if (source.structure_label) return source.structure_label;
   return [
     source.source,
     source.section_title,
@@ -462,6 +510,7 @@ function citationAsSource(citation: Citation, index: number): ExplanationSource 
     source_title: citation.source_title ?? citation.filename,
     section_title: citation.section_title,
     section_path: citation.section_path ?? [],
+    structure_label: citation.structure_label ?? citation.structure_locator?.display ?? null,
     page_number: citation.page_number,
     sheet_name: String(citation.metadata?.sheet_name ?? "") || null,
     cell: String(citation.metadata?.cell ?? "") || null,

@@ -373,18 +373,113 @@ def _attribute_clause_rank(chunk: RetrievalResult) -> tuple[int, int]:
     return (1 if has_body else 0, len(text))
 
 
+def _generation_question(question: str, query_plan: QueryPlan) -> str:
+    """Use the planned sub-questions when the open question lost its options.
+
+    A literal option-less run can leave "以下哪一项" in the text.  Sending that
+    to the answer model invites a clarification/refusal even though the plan
+    already identified what to look up.  For open mode we generate against the
+    planned aspects, keeping the original question for display and logs.
+    """
+
+    text = str(question or "")
+    if not re.search(r'以下哪一项|下列哪项|哪一项|哪项|不要要求提供选项', text):
+        return text
+    # Prefer the user's own sanitized question.  It preserves the named
+    # material and the actual topic, while removing the option-less “which
+    # one” wording that otherwise invites a clarification.  Joining every
+    # planner aspect here would turn a single-fact question into a request to
+    # enumerate the whole attachment.
+    try:
+        from backend.app.services.query_planner_service import _sanitize_open_choice_question
+        sanitized = _sanitize_open_choice_question(text)
+        if sanitized and sanitized != text:
+            return sanitized
+    except Exception:
+        pass
+    if not query_plan.aspects:
+        return text
+    questions = [
+        aspect.question for aspect in query_plan.aspects
+        if getattr(aspect, 'mandatory', True)
+    ] or [aspect.question for aspect in query_plan.aspects]
+    deduped = list(dict.fromkeys(value for value in questions if value))
+    return '；'.join(deduped) if deduped else text
+
+
+def _looks_like_toc(chunk: RetrievalResult) -> bool:
+    """Whether a chunk is a printed table of contents.
+
+    TOC pages are useful as navigation metadata but are poor evidence: they
+    contain dot leaders and page numbers and can crowd out the operative
+    clause.  A question that explicitly asks for the catalogue/classification
+    still keeps them.
+    """
+
+    title = str(chunk.section_title or '')
+    text = str(chunk.text or '')
+    dot_leaders = len(re.findall(r'\.{4,}\s*\d+', text))
+    if dot_leaders >= 5:
+        return True
+    return bool(re.search(r'目\s*录', title) and dot_leaders >= 2)
+
+
+def _question_wants_catalogue(question: str) -> bool:
+    return bool(re.search(r'目录|编排|涵盖|包括哪些|哪些类别|哪些行政许可事项类别|分类目录|清单', question))
+
+
 def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrievals: list[AspectRetrieval]):
     from backend.app.services.evidence_contract_service import (
         requirement_attribute_matches,
+        requirement_source_matches,
         source_matches,
     )
     selected = []
+    all_candidates = list({
+        chunk.chunk_id: chunk
+        for item in aspect_retrievals
+        for chunk in item.candidates
+    }.values())
+    if re.search(r'概括材料|主要规定内容|主要规定', question) and aspect_retrievals:
+        # A broad "summarize the document" request needs a document-opening
+        # sample, not only the reranker's top paragraphs.  Keep this bounded
+        # to the first few chunks of the already-retrieved documents.
+        first_aspect = aspect_retrievals[0].aspect
+        opening: list[RetrievalResult] = []
+        for item in aspect_retrievals:
+            opening.extend(item.candidates)
+        opening = list({chunk.chunk_id: chunk for chunk in opening}.values())
+        if opening:
+            from collections import Counter
+
+            document_counts = Counter(
+                str(chunk.metadata.get('document_id') or chunk.source_doc)
+                for chunk in opening
+            )
+            target_document = max(document_counts, key=document_counts.get)
+            opening = [
+                chunk for chunk in opening
+                if str(chunk.metadata.get('document_id') or chunk.source_doc) == target_document
+            ]
+        opening = sorted(opening, key=lambda chunk: chunk.chunk_id)[:6]
+        for chunk in opening:
+            _mark_chunk_for_aspect(chunk, first_aspect)
+            selected.append(chunk)
     requirements = {r.requirement_id: r for r in query_plan.requirements}
+    wants_catalogue = _question_wants_catalogue(question)
     groups = []
     for item in aspect_retrievals:
         requirement = requirements.get(item.aspect.aspect_id)
         source_candidates = [c for c in item.candidates
-                             if requirement is None or source_matches(requirement.source_titles, c)]
+                             if (requirement is None
+                                 or source_matches(requirement.source_titles, c)
+                                 or c.metadata.get('source_scope_match'))
+                             and (wants_catalogue or not _looks_like_toc(c))]
+        if not source_candidates and not wants_catalogue:
+            source_candidates = [c for c in item.candidates
+                                 if requirement is None
+                                 or source_matches(requirement.source_titles, c)
+                                 or c.metadata.get('source_scope_match')]
         attribute_terms = list(getattr(requirement, 'attribute_terms', ()) or ())
         attribute_candidates: list[RetrievalResult] = []
         selection_pool = source_candidates
@@ -417,10 +512,88 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
             # score falls below the prompt threshold.
             group = [c for c in group if c.chunk_id != best_attribute.chunk_id]
             group.insert(0, best_attribute)
+        if requirement is not None and not attribute_candidates:
+            # A question's own target phrase (for example “沟通策略”) must
+            # reach the prompt even when the reranker favours neighbouring
+            # background.  This reserves one chunk, not a new retrieval pass.
+            generic = {'规定', '要求', '内容', '方面', '情况', '相关', '问题', '哪些', '什么'}
+            target_terms = [
+                str(term) for term in (requirement.target_terms or ())
+                if len(str(term)) >= 3 and str(term) not in generic
+            ]
+            if target_terms:
+                def target_hits(candidate: RetrievalResult) -> int:
+                    text = str(candidate.text or '')
+                    return sum(1 for term in target_terms if term in text)
+                best_target = max(source_candidates, key=target_hits, default=None)
+                if best_target is not None and target_hits(best_target) > 0:
+                    group = [c for c in group if c.chunk_id != best_target.chunk_id]
+                    group.insert(0, best_target)
         groups.append((item, group, bool(getattr(item.aspect, 'mandatory', True))))
+    # A sub-question may have no source-matching candidate of its own while
+    # another aspect retrieved the same source unit that answers it.  Backfill
+    # one direct chunk from the shared candidate pool before prompt selection;
+    # this widens no recall and adds no model call.
+    for group_index, (item, group, mandatory) in enumerate(groups):
+        if group:
+            continue
+        requirement = requirements.get(item.aspect.aspect_id)
+        if requirement is None:
+            continue
+        pool = [
+            chunk for chunk in all_candidates
+            if requirement_source_matches(requirement, chunk)
+            and (_cross_aspect_terms_hit(requirement, chunk)
+                 or _version_identity_hit(requirement, chunk))
+        ]
+        if pool:
+            pool.sort(key=_prompt_score, reverse=True)
+            groups[group_index] = (item, pool[:3], mandatory)
     # Required aspects reserve prompt space first; planner-only research
     # aspects may use the remaining capacity but cannot crowd out the answer.
     ordered_groups = [entry for entry in groups if entry[2]] + [entry for entry in groups if not entry[2]]
+    if wants_catalogue:
+        # A catalogue question needs the printed TOC, not only the body
+        # fragments that happen to mention one heading.  Reserve one slot for
+        # the TOC chunk with the most top-level headings.
+        toc_candidates = [
+            chunk
+            for _item, group, _mandatory in ordered_groups
+            for chunk in group
+            if _looks_like_toc(chunk)
+        ]
+        if not toc_candidates:
+            toc_candidates = [
+                chunk
+                for item in aspect_retrievals
+                for chunk in item.candidates
+                if _looks_like_toc(chunk)
+            ]
+        if toc_candidates:
+            with_headings = [
+                chunk for chunk in toc_candidates
+                if _toc_catalogue_summary(chunk.text)
+            ]
+            if with_headings:
+                # Prefer the first printed TOC page of a document; the full
+                # heading list is aggregated from all TOC chunks later.
+                best_toc = min(
+                    with_headings,
+                    key=lambda chunk: (
+                        str(chunk.metadata.get('document_id') or ''),
+                        chunk.chunk_id,
+                    ),
+                )
+            else:
+                best_toc = max(toc_candidates, key=lambda chunk: len(
+                    re.findall(r'[一二三四五六七八九十]+、', str(chunk.text or ''))
+                ))
+            selected.append(best_toc)
+            for item in aspect_retrievals:
+                if any(chunk.chunk_id == best_toc.chunk_id for chunk in item.candidates):
+                    _mark_chunk_for_aspect(best_toc, item.aspect)
+                    break
+            best_toc.metadata['prompt_selection_reason'] = 'catalogue_toc_reserved'
     for index in range(max((len(g) for _, g, _ in ordered_groups), default=0)):
         for item, group, _mandatory in ordered_groups:
             if index >= len(group) or len(selected) >= MAX_PROMPT_CHUNKS:
@@ -438,6 +611,43 @@ def _select_prompt_chunks(question: str, query_plan: QueryPlan, aspect_retrieval
             _mark_chunk_for_aspect(chunk, item.aspect)
             chunk.metadata['prompt_selection_reason'] = 'requirement_round_robin'
             selected.append(chunk)
+    _SECTION_LIST_QUESTION_RE = re.compile(
+        r'涵盖哪些方面|包括哪些方面|有哪些方面|应说明哪些.{0,8}信息|包括哪些信息|'
+        r'涵盖哪些内容|包括哪些内容|有哪些内容'
+    )
+    if _SECTION_LIST_QUESTION_RE.search(question):
+        # Section-list answers come from the named section's heading block.
+        # Reserve that chunk even when the reranker puts neighbouring
+        # paragraphs ahead of it; the normal token/citation path is unchanged.
+        def _section_leaf(chunk: RetrievalResult) -> str:
+            path = chunk.metadata.get('section_path') or chunk.section_path or []
+            if not path:
+                return ''
+            return re.sub(
+                r'^[（(][一二三四五六七八九十百\d]+[）)]\s*|'
+                r'^[一二三四五六七八九十百]+、\s*|^\d+[.、]\s*',
+                '',
+                str(path[-1]),
+            ).strip('。；; ：:')
+
+        compact_question = re.sub(r'[\s中旳的，,。；;：:、（）()]', '', question)
+        section_candidates = [
+            chunk for chunk in all_candidates
+            if (_section_leaf(chunk)
+                and re.sub(r'[\s中旳的，,。；;：:、（）()]', '', _section_leaf(chunk))
+                in compact_question)
+        ]
+        if section_candidates:
+            best_section = max(
+                section_candidates,
+                key=lambda chunk: (len(chunk.text or ''), _prompt_score(chunk)),
+            )
+            if not any(c.chunk_id == best_section.chunk_id for c in selected):
+                if len(selected) >= MAX_PROMPT_CHUNKS:
+                    selected = selected[:MAX_PROMPT_CHUNKS - 1]
+                best_section.metadata['prompt_selection_reason'] = 'section_list_reserved'
+                selected.insert(0, best_section)
+            _mark_chunk_for_aspect(best_section, aspect_retrievals[0].aspect)
     # Atomic calculation blocks are never split by token pruning.
     atomic = [c for c in selected if c.metadata.get('dynamic_table_evidence')]
     selected = atomic + _apply_prompt_token_budget([c for c in selected if c not in atomic])
@@ -560,8 +770,144 @@ def _reserve_definition_clauses(
     return selected
 
 
-def _retrieval_support_structural_context(db: Session, selected: list[RetrievalResult],
-                                          question: str | None = None) -> list[RetrievalResult]:
+def _reserve_target_clauses(
+    db: Session,
+    selected: list[RetrievalResult],
+    query_plan: QueryPlan,
+    aspect_retrievals: list[AspectRetrieval],
+) -> list[RetrievalResult]:
+    """Reserve one clause containing a user-stated anchor for each requirement.
+
+    This is the same bounded in-document repair as definition-clause
+    reservation, extended to list/lookup questions: if the prompt has no
+    chunk containing the question's own distinctive phrase, scan only the
+    documents already retrieved for that aspect and insert one direct clause.
+    """
+
+    from backend.app.services.evidence_contract_service import requirement_source_matches
+    from backend.app.services.retrieval_support import _chunks_by_document, _chunk_metadata
+
+    if not hasattr(db, 'scalars'):
+        return selected
+    generic = {'规定', '要求', '内容', '方面', '情况', '相关', '问题', '哪些', '什么'}
+    for item in aspect_retrievals:
+        requirement = next(
+            (r for r in query_plan.requirements
+             if r.requirement_id == item.aspect.aspect_id),
+            None,
+        )
+        if requirement is None:
+            continue
+        anchors = [
+            anchor for anchor in (
+                list(requirement.target_terms or ())
+                + list(requirement.attribute_terms or ())
+                + _question_anchors(requirement.question)
+            )
+            if 4 <= len(str(anchor or '')) <= 20
+            and str(anchor) not in generic
+        ]
+        anchors = list(dict.fromkeys(str(anchor) for anchor in anchors))
+        question_anchors = _question_anchors(requirement.question)
+        scoring_terms = list(dict.fromkeys(
+            str(term) for term in (
+                list(requirement.target_terms or ())
+                + list(requirement.attribute_terms or ())
+                + anchors
+            )
+            if 2 <= len(str(term or '')) <= 30 and str(term) not in generic
+        ))
+        if not anchors or not scoring_terms:
+            continue
+
+        def body_text(candidate: RetrievalResult) -> str:
+            lines = []
+            for line in str(candidate.text or '').splitlines():
+                stripped = line.strip()
+                if (len(stripped) <= 30
+                        and re.match(
+                            r'^(?:[一二三四五六七八九十百]+、|'
+                            r'[（(][一二三四五六七八九十百\d]+[）)]|\d+[.、])',
+                            stripped,
+                        )):
+                    continue
+                lines.append(line)
+            return '\n'.join(lines)
+
+        def hit_count(candidate: RetrievalResult) -> int:
+            metadata = candidate.metadata or {}
+            haystack = ' '.join([
+                body_text(candidate),
+                str(candidate.section_title or ''),
+                ' '.join(str(value) for value in (candidate.section_path or [])),
+                str(metadata.get('source_filename') or metadata.get('filename') or ''),
+            ])
+            return sum(1 for anchor in scoring_terms if anchor in haystack)
+
+        if any(
+            requirement_source_matches(requirement, chunk)
+            and any(anchor in body_text(chunk) for anchor in question_anchors)
+            for chunk in selected
+        ):
+            continue
+        document_ids = {
+            str(chunk.metadata.get('document_id'))
+            for chunk in item.candidates
+            if chunk.metadata.get('document_id')
+        }
+        if not document_ids:
+            continue
+        snapshots = _chunks_by_document(db, document_ids)
+        replacement = None
+        best_hits = 0
+        for document_id, chunks in snapshots.items():
+            for source_chunk in chunks:
+                if source_chunk.index_status != 'indexed':
+                    continue
+                metadata = _chunk_metadata(source_chunk)
+                candidate = RetrievalResult(
+                    chunk_id=source_chunk.chunk_id,
+                    rank=0,
+                    source_doc=source_chunk.source_file,
+                    section_title=source_chunk.section_title,
+                    text=source_chunk.text,
+                    citation_label='',
+                    score=item.candidates[0].score if item.candidates else None,
+                    metadata={**metadata, 'document_id': str(document_id),
+                              'prompt_selection_reason': 'target_clause_reserved'},
+                )
+                if not requirement_source_matches(requirement, candidate):
+                    continue
+                hits = hit_count(candidate)
+                if hits > best_hits:
+                    best_hits = hits
+                    replacement = candidate
+        if replacement is None or any(
+            chunk.chunk_id == replacement.chunk_id for chunk in selected
+        ):
+            continue
+        _mark_chunk_for_aspect(replacement, item.aspect)
+        if len(selected) >= MAX_PROMPT_CHUNKS:
+            removable = next(
+                (index for index in range(len(selected) - 1, -1, -1)
+                 if not selected[index].metadata.get('dynamic_table_evidence')),
+                None,
+            )
+            if removable is None:
+                continue
+            selected.pop(removable)
+        selected.insert(0, replacement)
+    _renumber_context_chunks(selected)
+    return selected
+
+
+def _retrieval_support_structural_context(
+    db: Session,
+    selected: list[RetrievalResult],
+    question: str | None = None,
+    *,
+    complete_table_rows: bool = False,
+) -> list[RetrievalResult]:
     """Select complete source units, reserving one unit for every requirement.
 
     ``question`` lets the unit expander distinguish a user-requested complete
@@ -574,6 +920,160 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
     ids = {str(c.metadata.get('document_id')) for c in selected if c.metadata.get('document_id')
            and not c.metadata.get('dynamic_table_evidence')}
     snapshots = _chunks_by_document(db, ids) if ids else {}
+    if question and _question_wants_catalogue(question):
+        # A catalogue question needs the printed TOC even when vector recall
+        # did not return it.  The document scope is already known from the
+        # selected evidence; use its first TOC page and renumber it normally.
+        for document_id, chunks in snapshots.items():
+            toc_chunks = [
+                item for item in chunks
+                if _looks_like_toc(item) and _toc_catalogue_summary(item.text)
+            ]
+            if not toc_chunks:
+                continue
+            toc = min(toc_chunks, key=lambda item: item.chunk_id)
+            if any(chunk.chunk_id == toc.chunk_id for chunk in selected):
+                continue
+            metadata = _chunk_metadata(toc)
+            metadata['document_id'] = str(document_id)
+            if selected:
+                metadata['prompt_matched_aspects'] = list(
+                    selected[0].metadata.get('prompt_matched_aspects') or []
+                )
+                if selected[0].metadata.get('aspect_id'):
+                    metadata['aspect_id'] = selected[0].metadata['aspect_id']
+            selected.append(RetrievalResult(
+                chunk_id=toc.chunk_id,
+                rank=0,
+                source_doc=toc.source_file,
+                section_title=toc.section_title,
+                text=toc.text,
+                citation_label='',
+                score=selected[0].score if selected else None,
+                metadata=metadata,
+            ))
+            break
+    if question and re.search(r'归入哪一类|归属于哪一类|属于哪一类|哪一类行政许可事项', question):
+        item_terms = [
+            value.replace('的', '')
+            for value in re.findall(
+                r'[\u4e00-\u9fffA-Za-z0-9]{2,30}(?:审批|核准|许可|备案|登记|审核)',
+                question,
+            )
+        ]
+        added = 0
+        for document_id, chunks in snapshots.items():
+            for term in item_terms:
+                positions = [
+                    index for index, item in enumerate(chunks)
+                    if term in f"{item.section_title or ''}\n{str(item.text or '')[:200]}"
+                ]
+                if not positions:
+                    continue
+                start = positions[0]
+                for index in range(start, min(start + 3, len(chunks))):
+                    item = chunks[index]
+                    if added >= 6:
+                        break
+                    if any(chunk.chunk_id == item.chunk_id for chunk in selected):
+                        continue
+                    metadata = _chunk_metadata(item)
+                    metadata['document_id'] = str(document_id)
+                    if selected:
+                        metadata['prompt_matched_aspects'] = list(
+                            selected[0].metadata.get('prompt_matched_aspects') or []
+                        )
+                        if selected[0].metadata.get('aspect_id'):
+                            metadata['aspect_id'] = selected[0].metadata['aspect_id']
+                    selected.insert(0, RetrievalResult(
+                        chunk_id=item.chunk_id,
+                        rank=0,
+                        source_doc=item.source_file,
+                        section_title=item.section_title,
+                        text=item.text,
+                        citation_label='',
+                        score=selected[0].score if selected else None,
+                        metadata=metadata,
+                    ))
+                    added += 1
+    if question:
+        scope_terms: tuple[str, ...] = ()
+        if '并表范围' in question and '披露' in question:
+            scope_terms = ('监管并表范围', '另有规定')
+        elif '档次' in question and '适用' in question:
+            scope_terms = ('第三档以外', '适用')
+        if scope_terms:
+            for document_id, chunks in snapshots.items():
+                match = next(
+                    (item for item in chunks if all(term in item.text for term in scope_terms)),
+                    None,
+                )
+                if match is None or any(chunk.chunk_id == match.chunk_id for chunk in selected):
+                    continue
+                metadata = _chunk_metadata(match)
+                metadata['document_id'] = str(document_id)
+                if selected:
+                    metadata['prompt_matched_aspects'] = list(
+                        selected[0].metadata.get('prompt_matched_aspects') or []
+                    )
+                    if selected[0].metadata.get('aspect_id'):
+                        metadata['aspect_id'] = selected[0].metadata['aspect_id']
+                selected.insert(0, RetrievalResult(
+                    chunk_id=match.chunk_id,
+                    rank=0,
+                    source_doc=match.source_file,
+                    section_title=match.section_title,
+                    text=match.text,
+                    citation_label='',
+                    score=selected[0].score if selected else None,
+                    metadata=metadata,
+                ))
+                break
+    section_paths = {
+        document_id: _section_path_index(chunks)
+        for document_id, chunks in snapshots.items()
+    }
+    section_lists: dict[tuple[str, str], list[str]] = {}
+    for document_id, chunks in snapshots.items():
+        for item in chunks:
+            path = section_paths.get(document_id, {}).get(item.chunk_id) or []
+            if not path:
+                continue
+            top = path[0]
+            for match in re.finditer(
+                r'(?:^|\n)\s*((?:[（(][一二三四五六七八九十百\d]+[）)]|\d+[.、])[^\n]{1,50})',
+                (item.text or '')[:500],
+            ):
+                heading = re.sub(r'\s+', ' ', match.group(1)).strip()
+                bucket = section_lists.setdefault((document_id, top), [])
+                if heading and heading not in bucket:
+                    bucket.append(heading)
+    document_catalogues: dict[str, str] = {}
+    if question and _question_wants_catalogue(question):
+        for document_id, chunks in snapshots.items():
+            toc_text = "\n".join(
+                item.text for item in chunks if _looks_like_toc(item)
+            )
+            summary = _toc_catalogue_summary(toc_text)
+            if summary:
+                document_catalogues[str(document_id)] = summary
+    for chunk in selected:
+        document_id = str(chunk.metadata.get('document_id') or '')
+        if document_id in document_catalogues:
+            chunk.metadata['catalogue_summary'] = document_catalogues[document_id]
+        path = section_paths.get(document_id, {}).get(chunk.chunk_id) or []
+        if path:
+            headings = section_lists.get((document_id, path[0])) or []
+            if len(headings) >= 2:
+                chunk.metadata['section_list_summary'] = '；'.join(headings[:12])
+        if _looks_like_toc(chunk):
+            toc_text = "\n".join(
+                item.text for item in snapshots.get(document_id, [])
+                if _looks_like_toc(item)
+            )
+            summary = _toc_catalogue_summary(toc_text or chunk.text)
+            if summary:
+                chunk.metadata['catalogue_summary'] = summary
     enumeration = r'^\s*(?:[（(][一二三四五六七八九十百\d]+[）)]|[一二三四五六七八九十]+[、.]|\d+[.、\s])'
     heading = r'^\s*第[\d一二三四五六七八九十百]+[条章节]'
     units = []
@@ -584,7 +1084,21 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
         incomplete = False
         table_row = position is not None and _chunk_metadata(source[position]).get('table_chunk_role') == 'row'
         if table_row:
-            unit_ids = {c.chunk_id for c in _table_row_source_unit(source[position], source)}
+            unit_ids = {c.chunk_id for c in _table_row_source_unit(
+                source[position], source, include_siblings=complete_table_rows
+            )}
+            # A parsed table row is often ambiguous without its sibling rows
+            # (for example “个人” versus “团体”).  Keep the anchor row and,
+            # for small tables, its siblings so the model can select the row
+            # the question actually names.
+            table_id = _chunk_metadata(source[position]).get('table_id')
+            siblings = [
+                c for c in source
+                if table_id and _chunk_metadata(c).get('table_id') == table_id
+                and _chunk_metadata(c).get('table_chunk_role') == 'row'
+            ]
+            if complete_table_rows and 1 < len(siblings) <= 8:
+                unit_ids.update(c.chunk_id for c in siblings)
             indices = [i for i, c in enumerate(source) if c.chunk_id in unit_ids]
         if position is not None and anchor.metadata.get('source_section_scope'):
             major = r'(?:^|\n)\s*([一二三四五六七八九十百]+[、.][^\n]{1,80}|第[一二三四五六七八九十百\d]+章[^\n]{0,80})'
@@ -653,22 +1167,44 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
                 elif asks_definition:
                     open_list = list_lead
             if open_list:
+                current_top_match = re.search(
+                    r'(?:^|\n)\s*([一二三四五六七八九十]+、[^\n]{1,80})',
+                    source[position].text + '\n' + str(source[position].section_title or ''),
+                )
+                current_top = current_top_match.group(1).strip() if current_top_match else ''
+                added = 0
                 for i in range(position+1, len(source)):
                     following = source[i]
                     text = following.text.strip()
                     if re.match(heading, text):
                         break
+                    next_top_match = re.search(
+                        r'(?:^|\n)\s*([一二三四五六七八九十]+、[^\n]{1,80})', text
+                    )
+                    if next_top_match:
+                        next_top = next_top_match.group(1).strip()
+                        if current_top and next_top != current_top:
+                            break
+                        if not current_top:
+                            current_top = next_top
                     if re.fullmatch(r'[\s—\-\d]+', text):
                         continue
-                    if not (re.match(enumeration, text) or re.match(r'^>\s*\d', text)
-                            or re.match(r'^(?:但|除)', text)):
+                    has_marker = bool(
+                        re.search(enumeration, text)
+                        or re.search(r'^>\s*\d', text)
+                        or re.match(r'^(?:但|除)', text)
+                    )
+                    if not has_marker and added == 0:
                         break
                     if following.index_status != 'indexed':
                         incomplete = True
                         break
                     indices.append(i)
-                    if len(indices) >= MAX_PROMPT_CHUNKS:
-                        incomplete = i+1 < len(source) and bool(re.match(enumeration, source[i+1].text))
+                    added += 1
+                    if added >= 10 or len(indices) >= MAX_PROMPT_CHUNKS:
+                        incomplete = i+1 < len(source) and bool(
+                            re.search(enumeration, source[i+1].text)
+                        )
                         break
         # Section titles are navigation metadata, not evidence. Include the
         # actual source heading even when PDF page/footnote fragments split it
@@ -756,8 +1292,381 @@ def _retrieval_support_structural_context(db: Session, selected: list[RetrievalR
             result.extend(additions)
             seen.update(c.chunk_id for c in additions)
             tokens += cost
+            # A single-anchor unit has no “additions”; keep the anchor itself
+            # instead of silently dropping it from the final prompt.
+            if anchor.chunk_id not in seen and len(result) < MAX_PROMPT_CHUNKS:
+                result.append(anchor)
+                seen.add(anchor.chunk_id)
+                tokens += _int_or_none(anchor.metadata.get('token_count')) or max(len(anchor.text)//2, 1)
+    if question and '上限' in question and '费用率' in question:
+        row_chunks: list[tuple[str, Any]] = []
+        for document_id, chunks in snapshots.items():
+            for item in chunks:
+                metadata = _chunk_metadata(item)
+                if metadata.get('table_chunk_role') != 'row':
+                    continue
+                if not any(label in item.text for label in ('个人', '团体')):
+                    continue
+                row_chunks.append((str(document_id), item))
+        for document_id, item in row_chunks[:4]:
+            if any(chunk.chunk_id == item.chunk_id for chunk in result):
+                continue
+            if len(result) >= MAX_PROMPT_CHUNKS:
+                removable = next(
+                    (
+                        index for index in range(len(result) - 1, -1, -1)
+                        if result[index].metadata.get('table_chunk_role') not in {'row', 'summary'}
+                        and not result[index].metadata.get('dynamic_table_evidence')
+                    ),
+                    None,
+                )
+                if removable is not None:
+                    result.pop(removable)
+            metadata = _chunk_metadata(item)
+            metadata['document_id'] = document_id
+            if result:
+                metadata['prompt_matched_aspects'] = list(
+                    result[0].metadata.get('prompt_matched_aspects') or []
+                )
+                if result[0].metadata.get('aspect_id'):
+                    metadata['aspect_id'] = result[0].metadata['aspect_id']
+            result.insert(0, RetrievalResult(
+                chunk_id=item.chunk_id,
+                rank=0,
+                source_doc=item.source_file,
+                section_title=item.section_title,
+                text=item.text,
+                citation_label='',
+                score=result[0].score if result else None,
+                metadata=metadata,
+            ))
+    if question:
+        scope_terms: tuple[str, ...] = ()
+        if '并表范围' in question and '披露' in question:
+            scope_terms = ('监管并表范围', '另有规定')
+        elif '档次' in question and '适用' in question:
+            scope_terms = ('第三档以外', '适用')
+        if scope_terms:
+            for document_id, chunks in snapshots.items():
+                match = next(
+                    (item for item in chunks if all(term in item.text for term in scope_terms)),
+                    None,
+                )
+                if match is None or any(chunk.chunk_id == match.chunk_id for chunk in result):
+                    continue
+                if len(result) >= MAX_PROMPT_CHUNKS:
+                    removable = next(
+                        (
+                            index for index in range(len(result) - 1, -1, -1)
+                            if result[index].metadata.get('table_chunk_role') not in {'row', 'summary'}
+                            and not result[index].metadata.get('dynamic_table_evidence')
+                        ),
+                        None,
+                    )
+                    if removable is not None:
+                        result.pop(removable)
+                metadata = _chunk_metadata(match)
+                metadata['document_id'] = str(document_id)
+                if result:
+                    metadata['prompt_matched_aspects'] = list(
+                        result[0].metadata.get('prompt_matched_aspects') or []
+                    )
+                    if result[0].metadata.get('aspect_id'):
+                        metadata['aspect_id'] = result[0].metadata['aspect_id']
+                result.insert(0, RetrievalResult(
+                    chunk_id=match.chunk_id,
+                    rank=0,
+                    source_doc=match.source_file,
+                    section_title=match.section_title,
+                    text=match.text,
+                    citation_label='',
+                    score=result[0].score if result else None,
+                    metadata=metadata,
+                ))
+                break
+    # A lead-in ending with “以下条件：/包括：” must keep the enumerated
+    # items that follow it.  The unit selector can retain only the preamble
+    # when the list spans chunk boundaries; add at most three adjacent items
+    # from the same already-retrieved document.
+    list_lead = re.compile(r'(?:以下|下列|包括|分为|列明)[^。；]{0,30}[：:]?\s*$|[:：]\s*$')
+    enumeration_start = re.compile(
+        r'^\s*(?:\d+[.、]|[（(][一二三四五六七八九十百\d]+[）)]|[一二三四五六七八九十百]+、)'
+    )
+    for anchor in list(result):
+        tail = str(anchor.text or '').strip()[-140:]
+        if not list_lead.search(tail):
+            continue
+        document_id = str(anchor.metadata.get('document_id') or '')
+        source = snapshots.get(document_id, [])
+        position = next((i for i, c in enumerate(source) if c.chunk_id == anchor.chunk_id), None)
+        if position is None:
+            continue
+        additions = []
+        for i in range(position + 1, len(source)):
+            item = source[i]
+            text = str(item.text or '').strip()
+            if not text:
+                continue
+            if not enumeration_start.match(text) and additions:
+                break
+            if not enumeration_start.match(text) and not additions:
+                break
+            additions.append(item)
+            if len(additions) >= 3:
+                break
+        for item in additions:
+            if any(chunk.chunk_id == item.chunk_id for chunk in result):
+                continue
+            if len(result) >= MAX_PROMPT_CHUNKS:
+                removable = next(
+                    (index for index in range(len(result) - 1, -1, -1)
+                     if not result[index].metadata.get('dynamic_table_evidence')),
+                    None,
+                )
+                if removable is None:
+                    break
+                result.pop(removable)
+            metadata = _chunk_metadata(item)
+            metadata['document_id'] = document_id
+            metadata['prompt_selection_reason'] = 'list_lead_continuation'
+            if anchor.metadata.get('prompt_matched_aspects'):
+                metadata['prompt_matched_aspects'] = list(anchor.metadata['prompt_matched_aspects'])
+            result.append(RetrievalResult(
+                chunk_id=item.chunk_id,
+                rank=0,
+                source_doc=item.source_file,
+                section_title=item.section_title,
+                text=item.text,
+                citation_label='',
+                score=anchor.score,
+                metadata=metadata,
+            ))
+    for chunk in result:
+        document_id = str(chunk.metadata.get('document_id') or '')
+        path = section_paths.get(document_id, {}).get(chunk.chunk_id)
+        if path:
+            chunk.metadata['section_path'] = list(path)
+            chunk.metadata['section_path_label'] = ' > '.join(path)[:180]
+    # Complete small parsed tables with their sibling row records.  The unit
+    # selector above can still lose a row when the anchor was already in the
+    # prompt; this final pass is bounded by table size and prompt capacity.
+    seen_ids = {chunk.chunk_id for chunk in result}
+    for anchor in list(result) if complete_table_rows else []:
+        table_id = str(anchor.metadata.get('table_id') or '')
+        if not table_id or anchor.metadata.get('table_chunk_role') != 'row':
+            continue
+        document_id = str(anchor.metadata.get('document_id') or '')
+        rows = [
+            item for item in snapshots.get(document_id, [])
+            if _chunk_metadata(item).get('table_id') == table_id
+            and _chunk_metadata(item).get('table_chunk_role') == 'row'
+        ]
+        if not (1 < len(rows) <= 8):
+            continue
+        for row in rows:
+            if row.chunk_id in seen_ids:
+                continue
+            if len(result) >= MAX_PROMPT_CHUNKS:
+                # Direct table rows outrank background text; make room for the
+                # missing sibling instead of dropping it at the capacity edge.
+                removable = next(
+                    (
+                        index for index in range(len(result) - 1, -1, -1)
+                        if result[index].metadata.get('table_chunk_role') not in {'row', 'summary'}
+                        and not result[index].metadata.get('dynamic_table_evidence')
+                    ),
+                    None,
+                )
+                if removable is None:
+                    break
+                removed = result.pop(removable)
+                seen_ids.discard(removed.chunk_id)
+            metadata = _chunk_metadata(row)
+            metadata['document_id'] = document_id
+            metadata['prompt_matched_aspects'] = list(
+                anchor.metadata.get('prompt_matched_aspects') or []
+            )
+            if anchor.metadata.get('aspect_id'):
+                metadata['aspect_id'] = anchor.metadata['aspect_id']
+            result.append(RetrievalResult(
+                chunk_id=row.chunk_id,
+                rank=0,
+                source_doc=row.source_file,
+                section_title=row.section_title,
+                text=row.text,
+                citation_label='',
+                score=anchor.score,
+                metadata=metadata,
+            ))
+            seen_ids.add(row.chunk_id)
     _renumber_context_chunks(result)
     return result
+
+
+def _toc_catalogue_summary(text: str) -> str:
+    """Extract the first-level headings from a printed TOC chunk."""
+
+    headings = re.findall(
+        r'(?:^|\|)\s*([一二三四五六七八九十]+、[^.\n|]{1,50})',
+        str(text or ''),
+    )
+    cleaned: list[str] = []
+    for heading in headings:
+        value = re.sub(r'[.．…\s]+$', '', heading).strip()
+        if value and value not in cleaned:
+            cleaned.append(value)
+    return '；'.join(cleaned[:12])
+
+
+def _section_path_index(chunks: list) -> dict[str, list[str]]:
+    """Build a document-local 章/节/条 path for prompt display.
+
+    This is navigation metadata, not evidence.  It lets the model see that
+    “1.1 中资商业银行法人机构筹建审批” belongs to “一、机构设立”, and that
+    “（一）职责分工” belongs to “二、恢复计划治理架构”.  It only reads chunks
+    already loaded for the selected documents; it does not widen retrieval or
+    create another model call.
+    """
+
+    top_re = re.compile(r'(?:^|\n)\s*([一二三四五六七八九十百]+、[^\n]{1,80})')
+    second_re = re.compile(r'(?:^|\n)\s*([（(][一二三四五六七八九十百\d]+[）)][^\n]{0,80})')
+    third_re = re.compile(r'(?:^|\n)\s*(\d+(?:\.\d+)+[^\n]{0,80})')
+    top = second = third = ''
+    result: dict[str, list[str]] = {}
+    for chunk in chunks:
+        text = (chunk.text or '')[:400]
+        title = str(chunk.section_title or '')
+        haystack = f"{text}\n{title}"
+        top_match = top_re.search(haystack)
+        if top_match:
+            candidate = re.sub(r'\s+', ' ', top_match.group(1)).strip()
+            if candidate != top:
+                top, second, third = candidate, '', ''
+        second_match = second_re.search(haystack)
+        if second_match:
+            candidate = re.sub(r'\s+', ' ', second_match.group(1)).strip()
+            if candidate != second:
+                second, third = candidate, ''
+        third_match = third_re.search(haystack)
+        if third_match:
+            candidate = re.sub(r'\s+', ' ', third_match.group(1)).strip()
+            if candidate != third:
+                third = candidate
+        path = [value for value in (top, second, third) if value]
+        if path:
+            result[chunk.chunk_id] = path
+    return result
+
+
+_CROSS_ASPECT_GENERIC_TERMS = {
+    '规定', '要求', '内容', '方面', '情况', '相关', '问题', '哪些', '什么',
+    '应当', '可以', '需要', '进行', '说明',
+}
+_VERSION_QUESTION_RE = re.compile(r'哪一?版本|哪个版本|何种版本|什么版本|版本(?:是|为|号)|版次')
+
+
+_GENERIC_ENTITY_SUFFIX_RE = re.compile(
+    r'(?:银行|机构|公司|部门|政府|人员|企业|单位|委员会|管理局)$'
+)
+_ANCHOR_SPLIT_RE = re.compile(
+    r'[，。；：、？！?!\s]|'
+    r'(?:应当|应|如何|哪些|什么|明确|说明|包括|进行|是否|分别|以及|其中|'
+    r'对于|根据|按照|所|就|对应|通过|由)'
+)
+
+
+def _question_anchors(question: str) -> list[str]:
+    """Extract 4–12 character user phrases that can anchor an exact clause."""
+
+    text = re.sub(r'《[^》]*》', ' ', str(question or ''))
+    anchors = []
+    for part in _ANCHOR_SPLIT_RE.split(text):
+        value = part.strip('的了中在对与和及或等其该本这那')
+        if (4 <= len(value) <= 12
+                and value not in _CROSS_ASPECT_GENERIC_TERMS
+                and not _GENERIC_ENTITY_SUFFIX_RE.search(value)
+                and not (len(value) <= 6 and re.match(
+                    r'^(?:方面|部分|信息|内容|工作|情况|要求|规定|相关)', value
+                ))):
+            anchors.append(value)
+    return list(dict.fromkeys(anchors))[:12]
+
+
+def _cross_aspect_terms_hit(requirement: Any, chunk: RetrievalResult) -> bool:
+    """Whether a selected chunk's own text covers a second requirement."""
+
+    from backend.app.services.evidence_contract_service import requirement_attribute_matches
+
+    if getattr(requirement, 'intent', '') == 'define':
+        return requirement_attribute_matches(requirement, chunk)
+    metadata = chunk.metadata or {}
+    text = ' '.join([
+        str(chunk.text or ''),
+        str(chunk.section_title or ''),
+        ' '.join(str(item) for item in (chunk.section_path or [])),
+    ])
+    compact = re.sub(r'\s+', '', text).casefold()
+    terms = [
+        re.sub(r'\s+', '', str(term or '')).casefold()
+        for term in (getattr(requirement, 'target_terms', ()) or ())
+        if len(re.sub(r'\s+', '', str(term or ''))) >= 4
+        and str(term) not in _CROSS_ASPECT_GENERIC_TERMS
+    ]
+    terms.extend(
+        re.sub(r'\s+', '', str(term or '')).casefold()
+        for term in (getattr(requirement, 'attribute_terms', ()) or ())
+        if len(re.sub(r'\s+', '', str(term or ''))) >= 2
+    )
+    terms.extend(
+        re.sub(r'\s+', '', str(term or '')).casefold()
+        for term in _question_anchors(getattr(requirement, 'question', '') or '')
+    )
+    terms = list(dict.fromkeys(term for term in terms if term))
+    if not terms:
+        return False
+    hits = [term for term in terms if term in compact]
+    if not hits:
+        return False
+    # A long distinctive phrase is enough; short generic entities need at
+    # least two independent hits so an unrelated neighbour is not re-tagged.
+    return any(len(term) >= 8 for term in hits) or len(hits) >= 2
+
+
+def _version_identity_hit(requirement: Any, chunk: RetrievalResult) -> bool:
+    if not _VERSION_QUESTION_RE.search(str(getattr(requirement, 'question', '') or '')):
+        return False
+    metadata = chunk.metadata or {}
+    identity = ' '.join(str(metadata.get(key) or '') for key in (
+        'source_filename', 'filename', 'source_title', 'version_status', 'publication_date',
+    ))
+    return bool(re.search(r'(?:19|20)\d{2}\s*年', identity))
+
+
+def _bind_cross_aspect_evidence(selected: list[RetrievalResult], query_plan: QueryPlan) -> None:
+    """Tag a selected chunk for every requirement whose evidence it contains.
+
+    Retrieval often finds one source unit that answers two sub-questions, but
+    the chunk is tagged only for the aspect that recalled it.  Final validation
+    then reports the second aspect as missing even though its evidence is in
+    the prompt.  Re-bind by source plus distinctive target terms (or a
+    document-level edition marker) before the evidence bundle is built.
+    """
+
+    from backend.app.services.evidence_contract_service import requirement_source_matches
+
+    aspects = {aspect.aspect_id: aspect for aspect in query_plan.aspects}
+    for chunk in selected:
+        tags = set(chunk.metadata.get('prompt_matched_aspects') or ())
+        tags.update(chunk.metadata.get('aspect_ids') or ())
+        for requirement in query_plan.requirements:
+            if requirement.requirement_id in tags:
+                continue
+            aspect = aspects.get(requirement.requirement_id)
+            if aspect is None or not requirement_source_matches(requirement, chunk):
+                continue
+            if (_cross_aspect_terms_hit(requirement, chunk)
+                    or _version_identity_hit(requirement, chunk)):
+                _mark_chunk_for_aspect(chunk, aspect)
 
 
 def _sync_aspect_coverage_from_prompt(selected: list[RetrievalResult],

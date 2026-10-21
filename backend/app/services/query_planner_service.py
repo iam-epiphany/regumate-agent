@@ -150,19 +150,48 @@ class QueryAspect:
     explicit_filter_keys: tuple[str, ...] = ()
     subject_scope: tuple[str, ...] = ()
     mandatory: bool = True
+    # User-facing answer obligation.  Retrieval/generation may use a rewritten
+    # aspect question, but validation must not demand entities or sub-details
+    # the user never asked for.
+    requirement_question: str | None = None
     intent: str = field(default='', init=False)
     targets: tuple[str, ...] = field(default=(), init=False)
 
     def __post_init__(self) -> None:
-        if not self.targets:
-            quoted = re.findall(r'[“\"‘\']([^”\"’\']{2,80})[”\"’\']', self.question)
-            object.__setattr__(self, 'targets', tuple(quoted or target_terms(self.question)))
         if not self.intent:
             intent_text = re.sub(r'《[^》]+》', '', self.question)
             intent = ('calculate' if self.operation != 'none' else
                       'define' if re.search(r'定义|是什么|含义|界定', intent_text) else
                       'list' if re.search(r'哪些|列出|包括', intent_text) else 'lookup')
             object.__setattr__(self, 'intent', intent)
+        if not self.targets:
+            quoted = re.findall(r'[“\"‘\']([^”\"’\']{2,80})[”\"’\']', self.question)
+            target_values = list(quoted or target_terms(self.question))
+            if not quoted:
+                plain_question = re.sub(r'《[^》]+》', ' ', self.question)
+                target_values.extend(re.findall(
+                    r'[\u4e00-\u9fff]{2,10}(?:策略|原则|主体|对象|方式|类型|方面|条件|范围|期限|'
+                    r'标准|程序|职责|内容|信息|数据|机构|公司|工具|资本|风险|比例|限额|情形|类别|档次|版本|标识)',
+                    plain_question,
+                ))
+            if self.intent == 'define':
+                # “《制度》中‘章节’的内容，风险价值应如何定义？” asks for the
+                # definition of 风险价值, not of the section label.  Prefer the
+                # explicit defined term over the quoted location.
+                plain = re.sub(r'《[^》]+》', ' ', self.question)
+                defined = re.search(
+                    r'[“"]?([^“”"，。；：：？?]{2,30}?)[”"]?\s*(?:应|应当)?'
+                    r'(?:如何|怎样|怎么)\s*(?:定义|界定|理解)',
+                    plain,
+                )
+                if defined:
+                    term = defined.group(1).strip(' 的')
+                    term = re.sub(r'[（(][^）)]*[）)]', '', term).strip()
+                    if 2 <= len(term) <= 30 and not re.search(
+                        r'规定|要求|内容|方面|情况|相关|前述|上述|该|其', term
+                    ):
+                        target_values = [term]
+            object.__setattr__(self, 'targets', tuple(dict.fromkeys(target_values))[:24])
 
     @property
     def expected_evidence_type(self) -> str:
@@ -183,6 +212,7 @@ class QueryAspect:
             "explicit_filter_keys": list(self.explicit_filter_keys),
             "subject_scope": list(self.subject_scope),
             "mandatory": self.mandatory,
+            "requirement_question": self.requirement_question,
             "intent": self.intent,
             "targets": list(self.targets),
             "search_queries": [query.to_debug_dict() for query in self.search_queries],
@@ -468,13 +498,45 @@ def _promote_cross_document_aspects(question: str, aspects: list[QueryAspect],
 def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
     plan = _plan_query_impl(question, options)
     if (plan.budget or {}).get('capacity_limited'):
+        if plan.question_mode == 'open':
+            # Open-mode callers want an answer, not a request to split the
+            # question.  Keep the planner's aspects (or a bounded fallback)
+            # and record the omitted items instead of returning an empty plan.
+            planned = list(plan.aspects) or _fallback_aspects(
+                plan.original_question, plan_query_budget(plan.original_question)
+            )
+            planned = planned[:QUERY_PLANNER_MAX_ASPECTS]
+            if planned:
+                budget = dict(plan.budget or {})
+                budget['capacity_limited'] = False
+                budget['omitted_or_merged_items'] = list(
+                    (plan.budget or {}).get('omitted_or_merged_items') or ()
+                )
+                return replace(
+                    plan,
+                    aspects=tuple(planned),
+                    requirements=(),
+                    clarification_reason=None,
+                    budget=budget,
+                )
         return replace(plan, aspects=(), requirements=(),
                        clarification_reason='问题包含较多独立事项，请分批提问或明确本次优先回答的事项。')
+    if plan.clarification_reason and not [option for option in options or [] if str(option or '').strip()] \
+            and _should_answer_without_options(plan.original_question):
+        sanitized = _sanitize_open_choice_question(plan.original_question)
+        fallback = _fallback_aspects(sanitized, plan_query_budget(sanitized))
+        plan = replace(
+            plan,
+            aspects=tuple(fallback),
+            planner='fallback-open-no-options',
+            fallback_used=True,
+            clarification_reason=None,
+        )
     aspects = []
     for aspect in plan.aspects:
         titles = list(dict.fromkeys(re.findall(r"《([^》]+)》", aspect.question)))
         if aspect.modality == "text" and len(titles) > 1:
-            body = re.sub(r"《[^》]+》", "", aspect.question)
+            body = _clean_source_body(aspect.question)
             for index, title in enumerate(titles, 1):
                 aspects.append(replace(aspect, aspect_id=f"{aspect.aspect_id}_source{index}",
                     question=f"根据《{title}》：{body}",
@@ -482,10 +544,20 @@ def plan_query(question: str, options: list[str] | None = None) -> QueryPlan:
                     explicit_filter_keys=tuple(set(aspect.explicit_filter_keys) | {"source_title"})))
         else:
             aspects.append(aspect)
+    aspects = [_apply_format_filter(aspect) for aspect in aspects]
+    aspects = _merge_attachment_family_aspects(plan.original_question, aspects)
+    aspects = _prune_optionless_research_aspects(plan.original_question, aspects)
     if not plan.fallback_used:
         aspects = _mark_aspect_scope(plan.original_question, aspects,
                                      int((plan.budget or {}).get('max_aspects') or 1))
+    aspects = _promote_coordinated_aspects(plan.original_question, aspects)
+    aspects = _ensure_question_part_coverage(
+        plan.original_question, aspects, plan_query_budget(plan.original_question)
+    )
+    aspects = _bind_requirement_questions(plan.original_question, aspects)
+    aspects = _inject_quoted_anchor_queries(plan.original_question, aspects)
     aspects = _promote_cross_document_aspects(plan.original_question, aspects, plan.question_mode)
+    aspects = _demote_planner_expansions(plan.original_question, aspects)
     return replace(plan, aspects=tuple(aspects), requirements=())
 
 
@@ -554,9 +626,16 @@ def _plan_query_impl(question: str, options: list[str] | None = None) -> QueryPl
             question_mode=question_mode,
         )
 
-    anchored_aspects = _explicit_document_anchor_aspects(
-        cleaned_question,
-        max_aspects=budget.system_max_aspects,
+    # A quoted anchor is only a safe deterministic shortcut when the user
+    # asked one question about it.  For a multi-part question, collapsing to
+    # the anchor would silently drop the other parts.
+    anchored_aspects = (
+        ()
+        if len(_explicit_question_parts(cleaned_question)) > 1
+        else _explicit_document_anchor_aspects(
+            cleaned_question,
+            max_aspects=budget.system_max_aspects,
+        )
     )
     if anchored_aspects:
         return QueryPlan(
@@ -1038,7 +1117,7 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
     if table_aspect is not None:
         return [table_aspect]
 
-    parts = _split_question_parts(question)
+    parts = _explicit_question_parts(question)
     if not parts:
         parts = [question]
 
@@ -1046,6 +1125,14 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
     for index, part in enumerate(parts[:budget.max_aspects], start=1):
         keywords = _keywords_from_text(part)
         explicit_filters = extract_explicit_metadata_filters(part)
+        # When the user names one source and then asks several sub-questions,
+        # the source title applies to every part.  Previously only the first
+        # part carried the hard source constraint, so later parts could be
+        # answered from an unrelated document.
+        if not explicit_filters.get("source_title"):
+            inherited_title = _source_title_for_part(question, part)
+            if inherited_title:
+                explicit_filters["source_title"] = inherited_title
         aspects.append(
             QueryAspect(
                 aspect_id=f"aspect_{index}",
@@ -1055,6 +1142,7 @@ def _fallback_aspects(question: str, budget: QueryBudget | None = None) -> list[
                 keywords=tuple(keywords),
                 table_filters=explicit_filters,
                 explicit_filter_keys=tuple(explicit_filters),
+                requirement_question=part,
             )
         )
     expanded = _expand_explicit_anchor_aspects(
@@ -1267,6 +1355,478 @@ def _split_question_parts(question: str) -> list[str]:
         for part in re.split(r"[？?。；;]|如果|若|以及|并且|同时|，且", question)
         if part.strip()
     ]
+
+
+_QUESTION_PART_MARKER_RE = re.compile(
+    r"如何|怎样|怎么|哪些|什么|是否|多少|分别|包括|列举|列出|界定|定义|"
+    r"含义|处理|要求|规定|安排|适用|期限|对象|原则|条件|范围|情形|标准|"
+    r"程序|职责|内容|归属|类别|版本|方式|类型|主体"
+)
+_SKIP_PART_PREFIX_RE = re.compile(r"^(?:若|如果|如|当|对于|在|其中|同时|并且|以及)")
+
+
+def _explicit_question_parts(question: str) -> list[str]:
+    """Return substantive sub-questions the user explicitly asked.
+
+    The splitter is deliberately wording-level.  It is used only to make sure
+    a planner rewrite did not silently drop one of several questions; it does
+    not add domain facts or source-specific branches.
+    """
+
+    parts: list[str] = []
+    for part in _split_question_parts(question):
+        compact = re.sub(r"\s+", "", part)
+        if len(compact) < 6:
+            continue
+        if re.fullmatch(r'(?:请直接给出规定内容|不要要求提供选项|请直接回答).*', compact):
+            continue
+        if re.match(r'^(?:并)?(?:完整)?保留', compact):
+            continue
+        if re.match(r'^(?:请)?(?:完整)?(?:给出|写明)', compact) and re.search(
+            r'条件|范围|期限|例外', compact
+        ):
+            continue
+        if not _QUESTION_PART_MARKER_RE.search(compact):
+            continue
+        # Conditions are context, not separate answer obligations.  Keep a
+        # conditional fragment only when it itself asks for an outcome.
+        if _SKIP_PART_PREFIX_RE.search(compact) and not re.search(
+            r"哪些|什么|如何|怎样|怎么|是否|多少|分别|包括|列举|列出|界定|定义|"
+            r"含义|处理|要求|规定|安排|适用|期限|对象|原则|条件|范围|情形|标准|"
+            r"程序|职责|内容|归属|类别|版本|方式|类型|主体",
+            compact,
+        ):
+            continue
+        parts.append(part)
+    return list(dict.fromkeys(parts))
+
+
+def _clean_source_body(question: str) -> str:
+    """Remove title marks and dangling “所附/中的” after a source split."""
+
+    body = re.sub(r'《[^》]+》', '', str(question or ''))
+    body = re.sub(r'^(?:根据|依据|按照|对于|在|关于|回答|检索)[，,：:\s]*', '', body)
+    body = re.sub(r'^(?:所附|中的|中)[，,：:\s]*', '', body)
+    body = re.sub(r'^(?:相关)?内容[，,：:\s]*', '', body)
+    return body.strip('，,：: ').strip()
+
+
+def _source_title_for_part(question: str, part: str) -> str:
+    """Inherit the single user-named source for a split sub-question."""
+
+    part_titles = list(dict.fromkeys(re.findall(r"《([^》]+)》", part)))
+    if len(part_titles) == 1:
+        return part_titles[0]
+    titles = list(dict.fromkeys(re.findall(r"《([^》]+)》", question)))
+    if len(titles) == 1:
+        return titles[0]
+    if not titles:
+        return ""
+    position = question.find(part)
+    if position < 0:
+        return titles[0]
+    before = [match.group(1) for match in re.finditer(r"《([^》]+)》", question) if match.end() <= position]
+    return before[-1] if before else titles[0]
+
+
+def _part_covered_by_aspect(part: str, aspect: QueryAspect) -> bool:
+    part_text = _scope_text(re.sub(r"《[^》]+》", " ", part))
+    if len(part_text) < 4:
+        return True
+    aspect_text = _scope_text(
+        " ".join([aspect.question, *aspect.keywords, *[query.query for query in aspect.search_queries]])
+    )
+    if not aspect_text:
+        return False
+    if part_text in aspect_text or aspect_text in part_text:
+        return True
+    part_grams = {part_text[index:index + 2] for index in range(max(len(part_text) - 1, 1))}
+    if not part_grams:
+        return True
+    recall = len(part_grams & {aspect_text[index:index + 2] for index in range(max(len(aspect_text) - 1, 1))})
+    if recall / len(part_grams) >= 0.62:
+        return True
+    part_terms = {term for term in _keywords_from_text(part) if len(term) >= 2}
+    aspect_terms = set(aspect.keywords) | set(_keywords_from_text(aspect.question))
+    return bool(part_terms) and len(part_terms & aspect_terms) >= min(2, len(part_terms))
+
+
+def _attachment_family_titles(question: str) -> tuple[str, str] | None:
+    """Return (parent, child) when the question points at an attachment.
+
+    The corpus stores many parent notifications as one file per attachment;
+    the parent itself is often not a separate document.  Treating the parent
+    title as a second mandatory source produces a false "missing source"
+    refusal even though the attachment contains the answer.
+    """
+
+    text = str(question or '')
+    patterns = (
+        r'《([^》]+)》\s*所附\s*《([^》]+)》',
+        r'《([^》]+)》\s*所涉及\s*《([^》]+)》',
+        r'《([^》]+)》\s*所引\s*《([^》]+)》',
+        r'《([^》]+)》\s*中(?:的)?\s*《([^》]+)》',
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1), match.group(2)
+    titles = list(dict.fromkeys(re.findall(r'《([^》]+)》', text)))
+    if len(titles) == 2:
+        first, second = titles
+        regulation = re.search(r'通知|办法|规则|规定|意见|条例|细则', first)
+        attachment = re.search(r'名单|示例|曲线|附件|表|目录|解释|模板|指引|要求|标准', second)
+        pointer = re.search(
+            r'所附|附件|检索|中的|中《|中关于|有关|名单|列示|材料|内容和要求|相关规定',
+            text,
+        )
+        if regulation and attachment and pointer:
+            return first, second
+    return None
+
+
+def _apply_format_filter(aspect: QueryAspect) -> QueryAspect:
+    title = str(aspect.table_filters.get('source_title') or '')
+    match = re.search(r'[（(]\s*(PDF|Word|Excel|DOCX|XLSX)\s*[）)]', title, re.IGNORECASE)
+    if not match:
+        return aspect
+    value = match.group(1).lower()
+    file_type = {'word': 'docx', 'excel': 'xlsx'}.get(value, value)
+    return replace(
+        aspect,
+        table_filters={**aspect.table_filters, 'file_type': file_type},
+        explicit_filter_keys=tuple(set(aspect.explicit_filter_keys) | {'file_type'}),
+    )
+
+
+def _merge_attachment_family_aspects(question: str, aspects: list[QueryAspect]) -> list[QueryAspect]:
+    """Map parent-title aspects to the concrete attachment document.
+
+    This is a corpus-family resolution, not a document-specific branch: the
+    relation is read from the user's own “《parent》所附《child》” wording.
+    """
+
+    family = _attachment_family_titles(question)
+    if family is None:
+        return aspects
+    parent, child = family
+    mapped: list[QueryAspect] = []
+    for aspect in aspects:
+        source = str(aspect.table_filters.get('source_title') or '')
+        if source == parent:
+            body = _clean_source_body(aspect.question)
+            new_question = f"根据《{child}》：{body}" if body else aspect.question
+            filters = {**aspect.table_filters, 'source_title': child}
+            aspect = replace(
+                aspect,
+                question=new_question,
+                table_filters=filters,
+                explicit_filter_keys=tuple(set(aspect.explicit_filter_keys) | {'source_title'}),
+            )
+        mapped.append(aspect)
+    deduped: list[QueryAspect] = []
+    seen: set[tuple[str, str]] = set()
+    for aspect in mapped:
+        source = str(aspect.table_filters.get('source_title') or '')
+        key = (re.sub(r'《[^》]+》', '', aspect.question), source) if source else ('', '')
+        if source and key in seen:
+            continue
+        if source:
+            seen.add(key)
+        deduped.append(aspect)
+    return deduped
+
+
+_OPTIONLESS_RESEARCH_RE = re.compile(
+    r'位于何处|何种形式|正文及附件结构|差异或衔接|执行时间|过渡期|例外条件|'
+    r'实施要求|执行安排|引用|附件定位|执行要求|正文'
+)
+
+
+def _prune_optionless_research_aspects(
+    question: str, aspects: list[QueryAspect]
+) -> list[QueryAspect]:
+    """Drop research-only expansions for an option-less choice question."""
+
+    if not _should_answer_without_options(question) or not aspects:
+        return aspects
+    kept = [aspect for aspect in aspects if not _OPTIONLESS_RESEARCH_RE.search(aspect.question)]
+    if not kept:
+        kept = list(aspects)
+    sanitized = _sanitize_open_choice_question(question)
+    kept.sort(key=lambda aspect: _scope_overlap(aspect.question, sanitized), reverse=True)
+    kept = kept[:2]
+    return [replace(aspect, mandatory=True) for aspect in kept]
+
+
+_EXPANSION_MARKERS = (
+    '分别', '各自', '具体职责', '具体类别', '载体', '实施要求',
+    '执行安排', '过渡期', '例外条件', '逐档', '逐项',
+    '定义', '概念', '含义', '划分标准', '适用前提',
+    '核实方式', '确认要求', '异常处理', '签收登记', '留痕要求',
+    '排除', '例外情形', '划分条件', '判断标准', '不得划入',
+)
+
+
+def _demote_planner_expansions(
+    question: str, aspects: list[QueryAspect]
+) -> list[QueryAspect]:
+    """Demote an aspect that adds answer obligations the user did not state."""
+
+    if len(aspects) <= 1:
+        return aspects
+    demoted = []
+    for aspect in aspects:
+        added = [
+            marker for marker in _EXPANSION_MARKERS
+            if marker in aspect.question and marker not in question
+        ]
+        demoted.append(replace(aspect, mandatory=False) if added else aspect)
+    if not any(aspect.mandatory for aspect in demoted):
+        demoted[0] = replace(demoted[0], mandatory=True)
+    return demoted
+
+
+def _promote_coordinated_aspects(question: str, aspects: list[QueryAspect]) -> list[QueryAspect]:
+    """Keep both sides of an explicit “A 与 B 分别……” question.
+
+    The planner often emits one aspect per item plus an umbrella comparison
+    aspect.  The scope limiter then keeps only one item mandatory, so half of
+    the user's question is never validated.  Mark the item-level aspects
+    mandatory and leave the umbrella aspect optional.
+    """
+
+    if not aspects or '分别' not in question:
+        return aspects
+    match = re.search(
+        r'([^，。；：？]{2,40}?)(?:与|和|及|、)([^，。；：？]{2,40}?)(?:分别|均|都)',
+        question,
+    )
+    terms: list[str] = []
+    if match:
+        for value in match.groups():
+            value = re.split(r'的', value)[-1]
+            value = re.sub(r'[“”"\'《》\s]', '', value)
+            if 2 <= len(value) <= 20:
+                terms.append(value)
+    promoted: set[int] = set()
+    if len(terms) == 2:
+        for index, aspect in enumerate(aspects):
+            hits = sum(1 for term in terms if term in aspect.question)
+            if hits == 1:
+                promoted.add(index)
+    if len(promoted) < 2:
+        promoted.update(range(min(2, len(aspects))))
+    return [
+        replace(aspect, mandatory=True) if index in promoted else aspect
+        for index, aspect in enumerate(aspects)
+    ]
+
+
+def _ensure_question_part_coverage(
+    question: str,
+    aspects: list[QueryAspect],
+    budget: QueryBudget,
+) -> list[QueryAspect]:
+    """Keep every explicit sub-question in the plan.
+
+    An LLM or deterministic anchor rewrite may collapse "A how? and B how?"
+    into a single aspect about A.  The missing B is then never retrieved or
+    validated.  Add the missing part as a normal requirement, inheriting the
+    user-stated source when there is one; no answer text or gold data is used.
+    """
+
+    if not isinstance(budget, QueryBudget):
+        return aspects
+    parts = _explicit_question_parts(question)
+    if len(parts) < 2:
+        return aspects
+    current = list(aspects)
+    uncovered = [part for part in parts if not any(_part_covered_by_aspect(part, aspect) for aspect in current)]
+    if not uncovered:
+        return aspects
+
+    # A single generic aspect that covers none of the user's sub-questions is
+    # a research rewrite, not an answer obligation.  Drop it before adding the
+    # explicit parts so it cannot cause a false "missing requirement" refusal.
+    if len(current) == 1 and not any(_part_covered_by_aspect(part, current[0]) for part in parts):
+        current = []
+
+    limit = max(int(budget.max_aspects or 1), len(parts), 2)
+    limit = min(limit, QUERY_PLANNER_MAX_ASPECTS)
+    existing_ids = {aspect.aspect_id for aspect in current}
+    for index, part in enumerate(uncovered, start=1):
+        if len(current) >= limit:
+            break
+        title = _source_title_for_part(question, part)
+        sub_question = part
+        if title and f"《{title}》" not in sub_question:
+            sub_question = f"根据《{title}》：{sub_question}"
+        queries = list(_fallback_search_queries(sub_question))
+        if title and not any(title in query.query for query in queries):
+            queries.insert(0, QuerySearchQuery(
+                query=f"{title} {re.sub(r'[“”\"\'《》]', ' ', part)}",
+                query_type="document_title",
+                rationale="inherit the user-stated source for this sub-question",
+            ))
+        filters = {"source_title": title} if title else {}
+        aspect_id = f"part_{index}"
+        while aspect_id in existing_ids:
+            aspect_id = f"part_{index}_{len(current)}"
+        existing_ids.add(aspect_id)
+        current.append(QueryAspect(
+            aspect_id=aspect_id,
+            question=sub_question,
+            search_queries=tuple(_dedupe_search_queries(queries)[:QUERY_PLANNER_MAX_SEARCH_QUERIES]),
+            evidence_need=_infer_evidence_type(part),
+            keywords=tuple(_dedupe(_keywords_from_text(sub_question))[:8]),
+            table_filters=filters,
+            explicit_filter_keys=tuple(filters),
+            mandatory=True,
+            requirement_question=part,
+        ))
+    return current
+
+
+_PLANNER_ADDED_ENTITY_RE = re.compile(
+    r'董事会|监事会|高级管理层|高管层|牵头部门|相关部门|业务部门|'
+    r'高级管理人员|地方政府|股东|客户|员工|社会公众|监管部门|'
+    r'母公司|子公司|分支机构|第一档|第二档|第三档|各档'
+)
+
+
+def _bind_requirement_questions(question: str, aspects: list[QueryAspect]) -> list[QueryAspect]:
+    """Keep validation tied to what the user asked, not planner additions.
+
+    Retrieval may expand "相关主体职责" into a list of example organs; that is
+    useful for search, but the answer must not be rejected because the source
+    does not separately describe an organ the user never named.
+    """
+
+    if re.search(r'以下哪一项|下列哪项|哪一项|哪项', question):
+        return aspects
+    parts = _explicit_question_parts(question)
+    if not parts:
+        return aspects
+    result: list[QueryAspect] = []
+    for aspect in aspects:
+        if aspect.requirement_question:
+            result.append(aspect)
+            continue
+        parentheticals = re.findall(r'[（(]([^）)]*)[）)]', aspect.question)
+        added_parentheticals = [
+            value for value in parentheticals
+            if value and value not in question
+        ]
+        if added_parentheticals:
+            base = re.sub(r'[（(][^）)]*[）)]', '', aspect.question).strip()
+            if base:
+                result.append(replace(aspect, requirement_question=base))
+                continue
+        scores = [_part_covered_by_aspect(part, aspect) for part in parts]
+        best = max(range(len(parts)), key=lambda index: (
+            _scope_overlap(parts[index], aspect.question), scores[index]
+        ))
+        part = parts[best]
+        added = [
+            term for term in _PLANNER_ADDED_ENTITY_RE.findall(aspect.question)
+            if term not in part
+        ]
+        if added:
+            result.append(replace(aspect, requirement_question=part))
+        else:
+            result.append(aspect)
+    return result
+
+
+def _inject_quoted_anchor_queries(question: str, aspects: list[QueryAspect]) -> list[QueryAspect]:
+    """Keep a user-quoted section/term in the aspect's search queries.
+
+    For "《商业银行资本管理办法》中“账簿划分和名词解释”的内容，A？B？",
+    the source title alone matches every attachment.  The quoted section name
+    is the discriminator that selects the right attachment; if the planner
+    drops it from the search queries, an unrelated attachment can rank first.
+    """
+
+    anchors = [
+        value.strip()
+        for value in re.findall(r'[“"]([^”"]{2,60})[”"]', question)
+        if value.strip()
+    ]
+    if not anchors:
+        return aspects
+    result: list[QueryAspect] = []
+    for aspect in aspects:
+        applicable = [anchor for anchor in anchors if anchor in aspect.question]
+        if not applicable:
+            result.append(aspect)
+            continue
+        queries = list(aspect.search_queries)
+        missing = [
+            anchor for anchor in applicable
+            if not any(anchor in query.query for query in queries)
+        ]
+        if missing:
+            anchor_text = " ".join(missing)
+            base = f"{anchor_text} {aspect.question}"
+            queries.insert(0, QuerySearchQuery(
+                query=base,
+                query_type="document_style_statement",
+                rationale="retain the user-quoted section/term for exact location",
+            ))
+        keywords = list(aspect.keywords)
+        for anchor in applicable:
+            if anchor not in keywords:
+                keywords.insert(0, anchor)
+        result.append(replace(
+            aspect,
+            search_queries=tuple(_dedupe_search_queries(queries)[:QUERY_PLANNER_MAX_SEARCH_QUERIES]),
+            keywords=tuple(_dedupe(keywords)[:8]),
+        ))
+    return result
+
+
+def _sanitize_open_choice_question(question: str) -> str:
+    """Turn an option-less "which one" question into a content request.
+
+    The literal run intentionally removes options, so a few rewritten
+    questions still contain "以下哪一项".  Asking for options would dead-end;
+    the useful open-mode fallback is to ask for the material's operative
+    content.  This is only used after the planner has requested clarification.
+    """
+
+    text = str(question or "")
+    text = re.sub(
+        r'[，,。；;]?\s*(?:检索[^，。；;]*后[，,]?)?(?:以下|下列)哪(?:一)?项[^？?]*[？?]?',
+        '，请概括材料的主要规定内容。',
+        text,
+    )
+    # The literal runner appends this meta-instruction.  It is not a second
+    # substantive question and must not become a separate mandatory aspect.
+    text = re.sub(
+        r'(?:请直接给出规定内容|不要要求提供选项|请直接回答|不要要求提供选项)[^。？?]*[。？?]?',
+        '',
+        text,
+    )
+    return re.sub(r'。{2,}', '。', text).strip('，,。；; ')
+
+
+def _should_answer_without_options(question: str) -> bool:
+    """Whether a multiple-choice-looking open question can still be answered.
+
+    When the caller passes no options, "which one" is not answerable as a
+    choice, but the user may still want the material's operative content.
+    This guard is only used for open mode and requires a named source or an
+    explicit "give the content" instruction.
+    """
+
+    text = re.sub(r"\s+", "", str(question or ""))
+    if not re.search(r"以下哪一项|下列哪项|哪一项|哪项", text):
+        return False
+    return bool(
+        re.search(r"《[^》]+》", text)
+        or re.search(r"请直接给出|不要要求提供选项|直接说明|材料内容", text)
+    )
 
 
 def _extract_json_object(content: str) -> str:

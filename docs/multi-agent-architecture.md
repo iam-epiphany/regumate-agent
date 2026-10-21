@@ -45,7 +45,7 @@ flowchart TD
 | Table | `table` | 结构化表格定位、比较、确定性计算、公式计算 | `_prepare_table_stage`（新拆分）、`_deterministic_table_answer`、`_deterministic_formula_answer` | 0 |
 | Evidence | `evidence` | 元数据筛选、选项精确支持、混合检索、重排、有界补检索、相邻与跨文档引用扩展 | `_prepare_text_stage`（新拆分）、`_collect_prepared_candidates_many`、`collect_candidates_with_query_hits`、`rerank_candidate_groups`、`_finish_aspect_matches`、`_expand_neighbor_matches` | 0 |
 | Verifier | `verifier` | 证据溯源校验、答案统一校验、修复/拒答裁决 | `_validate_context_chunks`、`validate_answer`、`judge_draft`（新拆分） | ≤1 每次校验 |
-| Curation | `curation` | 上下文精选、完整源单元、EvidenceBundle、Prompt 构造 | `_select_prompt_chunks`、`_retrieval_support_structural_context`、`build_evidence_bundle`、`RAGPromptBuilder` | 0 |
+| Curation | `curation` | 上下文精选、完整源单元、EvidenceBundle、证据面审计、Prompt 构造 | `_select_prompt_chunks`、`_retrieval_support_structural_context`、`build_evidence_bundle`、`audit_evidence_sufficiency`、`RAGPromptBuilder` | 0 |
 | Answer | `answer` | 生成前置检查、确定性/模型草稿 | `prepare_generation`、`draft_answer`（新拆分） | ≤1 每次草稿 |
 | Identity | `identity` | 文件身份直接回答 | `answer_document_identity_question` | 0 |
 
@@ -183,6 +183,7 @@ def _prepare_aspect_retrieval(db, aspect, progress_reporter=None, document_chunk
 ### 4.3 `retrieve_evidence` 与 `build_context_package`
 
 - `retrieve_evidence(db, query_plan, progress_reporter=None)`：仍先调用 `rag_service._retrieve_aspects`（模块属性），随后 `curation.execute(task="curate", aspect_retrievals=...)` 执行原函数剩余全部逻辑（context_selection 事件、`_select_prompt_chunks`、`_retrieval_support_structural_context`、`build_evidence_bundle`、决策合并、覆盖同步、summary、`has_sufficient_context`）。
+- `curate` 末尾对最终上下文执行 `audit_evidence_sufficiency`，把要求级信息面覆盖、缺口、扩展条数与代理成本写入 `retrieval_summary["evidence_sufficiency"]`。该报告只用于展示与离线诊断，不改变 `bundle.complete`、`facts_supported` 或拒答判定。
 - `build_context_package(db, question, options=None, progress_reporter=None)`：`planner.execute(task="plan")`（含 planning 事件与 `table_schema_context`，通过 `rag_service.plan_query` 模块属性调用）→ clarification 直接返回原有空包 → `rag_service.retrieve_evidence` → `curation.execute(task="prompt")`（prompt_build 事件 + `RAGPromptBuilder().build`）。
 - 两者都通过 `current_board()` 取得当前请求的 Blackboard；独立调用（`/qa/retrieve`、测试）时得到临时板，并把 `board.trace` 写入 `LLMContextPackage.agent_trace`。
 
