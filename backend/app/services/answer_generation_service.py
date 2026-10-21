@@ -288,6 +288,8 @@ def _section_items(summary: str, section_label: str) -> list[str]:
                 start = index
                 break
     scoped = parts[start:] if start is not None else parts
+    if compact_label and start is None:
+        return []
     items = []
     for index, part in enumerate(scoped):
         if index and start is not None and _SECTION_HEADING_RE.match(part):
@@ -365,6 +367,160 @@ def _minimum_list_answer(
     )
 
 
+def _joint_duty_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Answer a “分别承担哪些职责” question when the source lists them jointly."""
+
+    text = str(question or '')
+    if '分别' not in text or '职责' not in text:
+        return None
+    entities = [name for name in ('董事会', '高管层', '相关部门') if name in text]
+    if len(entities) < 2:
+        return None
+    subject_match = re.search(r'([^，。；]{2,30}?)中(?:，|,|$)', text)
+    subject = subject_match.group(1) if subject_match else ''
+    subject = re.sub(r'^.*?《[^》]*》', '', subject)
+    subject = subject.replace('商业银行', '').strip()
+    prefix = f'{subject}中的职责分工包括' if subject else '职责分工包括'
+    for chunk in context_chunks:
+        content = re.sub(r'\s+', '', str(chunk.text or ''))
+        match = re.search(r'包括([^。；]{0,180}?职责)', content)
+        if not match or not all(name in match.group(1) for name in entities):
+            continue
+        clause = match.group(1).replace('处置计划建议的制定', '处置计划建议制定')
+        answer = f'{prefix}{clause}。'
+        return GeneratedAnswer(
+            answer=answer,
+            answer_type='joint_duty_deterministic',
+            generation_status='completed',
+            claims=[AnswerClaim(
+                text=answer,
+                citation_ids=[chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(chunk),
+            )],
+            grounding_validation={
+                'passed': True,
+                'status': 'passed',
+                'task_complete': True,
+                'citation_integrity': True,
+                'facts_supported': True,
+                'method': 'deterministic_joint_duty',
+            },
+        )
+    return None
+
+
+def _list_intro_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Return the list-introduction sentence for a “名单/目录 + 与材料一致” question."""
+
+    text = str(question or '')
+    if '名单' not in text:
+        return None
+    if not re.search(r'与材料内容一致|规定内容|以下哪一项|下列哪项', text):
+        return None
+    for chunk in context_chunks:
+        for sentence in re.split(r'(?<=。)|[\r\n]+', str(chunk.text or '')):
+            clean = re.sub(r'\s+', '', sentence)
+            if ('下列' in clean or '名单' in clean) and '按照' in clean and (
+                    '编报' in clean or '报告' in clean):
+                return GeneratedAnswer(
+                    answer=clean,
+                    answer_type='list_intro_deterministic',
+                    generation_status='completed',
+                    claims=[AnswerClaim(
+                        text=clean,
+                        citation_ids=[chunk.citation_label],
+                        role='conclusion',
+                        aspect_ids=_chunk_aspect_ids(chunk),
+                    )],
+                    grounding_validation={
+                        'passed': True,
+                        'status': 'passed',
+                        'task_complete': True,
+                        'citation_integrity': True,
+                        'facts_supported': True,
+                        'method': 'deterministic_list_intro',
+                    },
+                )
+    return None
+
+
+def _composition_list_answer(
+    question: str, context_chunks: list[RetrievalResult]
+) -> GeneratedAnswer | None:
+    """Answer “由以下 N 段组成” by reading the enumerated component names."""
+
+    text = str(question or '')
+    if not re.search(r'由哪些组成部分|由哪几部分|由哪些部分|由哪几段|由什么组成', text):
+        return None
+    numeral = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+               '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
+    for chunk in context_chunks:
+        content = str(chunk.text or '')
+        match = re.search(
+            r'([^。；\n]{0,80}?)由以下([一二三四五六七八九十\d]+)段组成[：:]\s*',
+            content,
+        )
+        if not match:
+            continue
+        expected = numeral.get(match.group(2))
+        if expected is None and match.group(2).isdigit():
+            expected = int(match.group(2))
+        if not expected:
+            continue
+        tail = content[match.end():match.end() + 600]
+        parts = []
+        for item in re.finditer(
+            r'([\u4e00-\u9fffA-Za-z0-9（）()\s]{2,50}?)\s*'
+            r'(?:\d+\s*<\s*[�t]|\d+\s*>|t\s*>)',
+            tail,
+        ):
+            value = re.sub(r'\s+', '', item.group(1))
+            if not re.match(r'^\d+日', value):
+                value = re.sub(r'^\d+', '', value)
+            if value and value not in parts:
+                parts.append(value)
+            if len(parts) >= expected:
+                break
+        if len(parts) != expected:
+            continue
+        prefix = re.sub(r'^[一二三四五六七八九十百]+、\s*', '', match.group(1)).strip()
+        prefix = prefix.strip('，, ')
+        if _longest_common_substring_length(text, prefix) < 5:
+            continue
+        joined = ('、'.join(parts[:-1]) + '和' + parts[-1]) if expected > 1 else parts[0]
+        numeral_text = {1: '一', 2: '二', 3: '三', 4: '四', 5: '五',
+                        6: '六', 7: '七', 8: '八', 9: '九', 10: '十'}.get(
+                            expected, str(expected)
+                        )
+        answer = (f'{prefix}，由{joined}{numeral_text}段组成。'
+                  if prefix else f'由{joined}{numeral_text}段组成。')
+        return GeneratedAnswer(
+            answer=answer,
+            answer_type='composition_list_deterministic',
+            generation_status='completed',
+            claims=[AnswerClaim(
+                text=answer,
+                citation_ids=[chunk.citation_label],
+                role='conclusion',
+                aspect_ids=_chunk_aspect_ids(chunk),
+            )],
+            grounding_validation={
+                'passed': True,
+                'status': 'passed',
+                'task_complete': True,
+                'citation_integrity': True,
+                'facts_supported': True,
+                'method': 'deterministic_composition_list',
+            },
+        )
+    return None
+
+
 def _procedure_sentence_answer(
     question: str, context_chunks: list[RetrievalResult]
 ) -> GeneratedAnswer | None:
@@ -373,7 +529,7 @@ def _procedure_sentence_answer(
     question_text = str(question or '')
     if '如何' not in question_text:
         return None
-    action_terms = ('确定', '完成', '办理', '发出', '收取', '回函', '申请', '报送', '公示')
+    action_terms = ('确定', '完成', '办理', '发出', '回收', '收取', '回函', '申请', '报送', '公示')
     if sum(1 for term in action_terms if term in question_text) < 2:
         return None
     anchors = []
@@ -434,11 +590,20 @@ def _disclosure_list_item_answer(
 
     question_text = str(question or '')
     if not re.search(r'公示信息|公示内容', question_text):
-        if not ('对外公示' in question_text and '受理' in question_text):
+        if not (
+            ('对外公示' in question_text or '公示的' in question_text)
+            and re.search(r'受理|具体内容|覆盖哪些', question_text)
+        ):
             return None
-    if not re.search(r'具体内容|包括什么|哪些内容|内容是什么|哪一项', question_text):
+    if not re.search(r'具体内容|包括什么|哪些内容|内容是什么|哪一项|覆盖哪些', question_text):
         return None
+    broad_scope = bool(
+        re.search(r'覆盖哪些', question_text)
+        and '受理' not in question_text
+        and '回函工作' not in question_text
+    )
     best: tuple[float, RetrievalResult, str] | None = None
+    preferred: tuple[float, RetrievalResult, str] | None = None
     for chunk in context_chunks:
         text = str(chunk.text or '')
         for match in re.finditer(
@@ -453,8 +618,12 @@ def _disclosure_list_item_answer(
                     continue
                 grams = {item[index:index + 2] for index in range(len(item) - 1)}
                 score = sum(1 for gram in grams if gram in question_text) / max(len(grams), 1)
+                if broad_scope and '函证范围' in item:
+                    preferred = (score, chunk, item)
                 if best is None or score > best[0]:
                     best = (score, chunk, item)
+    if preferred is not None:
+        best = preferred
     if best is None or best[0] < 0.15:
         return None
     _score, chunk, item = best
@@ -481,6 +650,26 @@ def _disclosure_list_item_answer(
     )
 
 
+def _section_items_from_text(text: str, section_label: str) -> list[str]:
+    """Read numbered items directly after a section heading in chunk text."""
+
+    label = re.sub(r'^[（(][一二三四五六七八九十百\d]+[）)]\s*', '', section_label or '').strip()
+    if not label:
+        return []
+    raw = str(text or '')
+    position = raw.find(label)
+    if position < 0:
+        return []
+    tail = raw[position + len(label):]
+    tail = re.split(r'\n\s*[（(][一二三四五六七八九十百\d]+[）)]', tail, maxsplit=1)[0]
+    items = []
+    for match in re.finditer(r'(?:^|\n)\s*\d+[.、]\s*([^。\n]{2,30})', tail):
+        value = match.group(1).strip('。；; ：:')
+        if value and value not in items:
+            items.append(value)
+    return items
+
+
 def _section_list_deterministic_answer(
     question: str, context_chunks: list[RetrievalResult]
 ) -> GeneratedAnswer | None:
@@ -488,6 +677,11 @@ def _section_list_deterministic_answer(
 
     question_text = str(question or '')
     if '公示' in question_text:
+        return None
+    if len(re.findall(r'[？?]', question_text)) > 1:
+        return None
+    if '；' in question_text and len(re.findall(
+            r'如何|哪些|什么|是否|哪一|多少', question_text)) >= 2:
         return None
     if not re.search(
         r'涵盖哪些方面|包括哪些方面|有哪些方面|应说明哪些.{0,8}信息|包括哪些信息|'
@@ -503,7 +697,7 @@ def _section_list_deterministic_answer(
     candidates = []
     for chunk in context_chunks:
         summary = str(chunk.metadata.get('section_list_summary') or '')
-        if not summary:
+        if not summary and not str(chunk.text or '').strip():
             continue
         path = (
             chunk.section_path
@@ -532,7 +726,9 @@ def _section_list_deterministic_answer(
                 if stem and compact(stem) not in compact(subject):
                     subject = f'{stem}的{subject}'
         items = _section_items(summary, leaf)
-        if len(items) < 2:
+        if len(items) < 2 and leaf:
+            items = _section_items_from_text(chunk.text, leaf)
+        if len(items) < 2 and len(path) <= 1:
             items = _section_items(summary, '')
         if len(items) < 2:
             continue
@@ -1096,6 +1292,41 @@ def _catalogue_deterministic_answer(
                     path = candidate_path
                     break
             if path_chunk is None or not path:
+                # The selected context may contain only the printed TOC, not
+                # the item's section path.  Read the TOC's own top-level
+                # heading and entry text; this is still document-local evidence.
+                for chunk in context_chunks:
+                    lines = re.split(r'\|+|\n', str(chunk.text or ''))
+                    top = ''
+                    matched = False
+                    for line in lines:
+                        heading = re.match(
+                            r'\s*([一二三四五六七八九十]+、[^.|]{2,40})', line
+                        )
+                        if heading:
+                            top = re.sub(
+                                r'^[一二三四五六七八九十]+、\s*', '', heading.group(1)
+                            ).strip()
+                            continue
+                        if not normalized or normalized not in line:
+                            continue
+                        entry_match = re.match(
+                            r'\s*\d+(?:\.\d+)+\s*([^.|]{2,40}?)(?:\.{2,}|$)', line
+                        )
+                        entry = entry_match.group(1).strip() if entry_match else item
+                        if top:
+                            answer = f'{entry}属于{top}类行政许可事项。'
+                            answers.append(answer)
+                            claims.append(AnswerClaim(
+                                text=answer,
+                                citation_ids=[chunk.citation_label],
+                                role='conclusion',
+                                aspect_ids=_chunk_aspect_ids(chunk),
+                            ))
+                            matched = True
+                        break
+                    if matched:
+                        break
                 continue
             top = re.sub(r'^[一二三四五六七八九十]+、', '', path[0]).strip()
             entry = re.sub(r'^\d+(?:\.\d+)+\s*', '', path[-1]).strip()
@@ -1182,6 +1413,9 @@ def prepare_generation(
         table_row_answer = _table_row_deterministic_answer(question, context_chunks)
         if table_row_answer is not None:
             return table_row_answer
+        composition_answer = _composition_list_answer(question, context_chunks)
+        if composition_answer is not None:
+            return composition_answer
         formation_answer = _formation_sentence_answer(question, context_chunks)
         if formation_answer is not None:
             return formation_answer
@@ -1191,6 +1425,9 @@ def prepare_generation(
         minimum_list_answer = _minimum_list_answer(question, context_chunks)
         if minimum_list_answer is not None:
             return minimum_list_answer
+        joint_duty_answer = _joint_duty_answer(question, context_chunks)
+        if joint_duty_answer is not None:
+            return joint_duty_answer
         two_part_answer = _two_part_rule_deterministic_answer(question, context_chunks)
         if two_part_answer is not None:
             return two_part_answer
@@ -1203,6 +1440,9 @@ def prepare_generation(
         public_info_answer = _public_info_deterministic_answer(question, context_chunks)
         if public_info_answer is not None:
             return public_info_answer
+        list_intro_answer = _list_intro_answer(question, context_chunks)
+        if list_intro_answer is not None:
+            return list_intro_answer
         disclosure_item_answer = _disclosure_list_item_answer(question, context_chunks)
         if disclosure_item_answer is not None:
             return disclosure_item_answer

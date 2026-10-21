@@ -935,6 +935,9 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     "制度问题生成有利于向量检索命中原文 chunk 的自然语言查询；"
                     "Excel/统计报表问题必须生成表格定位计划，识别文件、sheet、期间、指标、行标签、列标签、单位和计算动作。"
                     "用户枚举多个处理对象时，原则上一项一个 aspect。"
+                    "询问“包括哪些方式/类型/类别”时，只保留用户原问的范围，"
+                    "不得把推测的办理平台、流程、主体或类别成员新增为 aspect 或 evidence_need，"
+                    "不得预设某一类清单的成员。"
                     "不得丢弃依据不足、违规判断、正式监管报告生成等安全边界问题。"
                     "只输出 JSON 对象。"
                 ),
@@ -1575,6 +1578,18 @@ def _demote_planner_expansions(
 
     if len(aspects) <= 1:
         return aspects
+    if '名单' in question:
+        # A user-named list attachment is the answer scope.  Planner aspects
+        # about the parent notice's other clauses are retrieval hints, not
+        # additional answer obligations.
+        result = [
+            aspect if ('名单' in aspect.question or '编报' in aspect.question)
+            else replace(aspect, mandatory=False)
+            for aspect in aspects
+        ]
+        if not any(aspect.mandatory for aspect in result):
+            result[0] = replace(result[0], mandatory=True)
+        return result
     demoted = []
     for aspect in aspects:
         added = [

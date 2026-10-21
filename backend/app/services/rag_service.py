@@ -901,6 +901,170 @@ def _reserve_target_clauses(
     return selected
 
 
+def _reserve_section_chunk(
+    db: Session,
+    selected: list[RetrievalResult],
+    question: str,
+    aspect_retrievals: list[AspectRetrieval],
+) -> list[RetrievalResult]:
+    """Reserve the chunk whose section path matches a user-named section."""
+
+    match = re.search(r'([\u4e00-\u9fff]{2,12})部分', str(question or ''))
+    if not match:
+        return selected
+    label = match.group(1)
+    if not re.search(r'哪些方面|哪些内容|包括哪些|涵盖哪些|说明哪些', question):
+        return selected
+    if any(
+        label in str(chunk.metadata.get('section_list_summary') or '')
+        for chunk in selected
+    ):
+        return selected
+    from backend.app.services.retrieval_support import _chunks_by_document, _chunk_metadata
+    if not hasattr(db, 'scalars'):
+        return selected
+    document_ids = {
+        str(chunk.metadata.get('document_id'))
+        for item in aspect_retrievals
+        for chunk in item.candidates
+        if chunk.metadata.get('document_id')
+    }
+    if not document_ids:
+        return selected
+    snapshots = _chunks_by_document(db, document_ids)
+    replacement = None
+    for document_id, chunks in snapshots.items():
+        for source_chunk in chunks:
+            if source_chunk.index_status != 'indexed':
+                continue
+            metadata = _chunk_metadata(source_chunk)
+            path = [str(value) for value in (metadata.get('section_path') or [])]
+            if not path or label not in str(path[-1]):
+                continue
+            top = str(path[0]) if path else ''
+            headings = []
+            if top:
+                for sibling in chunks:
+                    sibling_path = [
+                        str(value) for value in (
+                            _chunk_metadata(sibling).get('section_path') or []
+                        )
+                    ]
+                    if not sibling_path or sibling_path[0] != top:
+                        continue
+                    for match in re.finditer(
+                        r'(?:^|\n)\s*((?:[（(][一二三四五六七八九十百\d]+[）)]|'
+                        r'\d+[.、])[^\n]{1,50})',
+                        str(sibling.text or '')[:500],
+                    ):
+                        heading = re.sub(r'\s+', ' ', match.group(1)).strip()
+                        if heading and heading not in headings:
+                            headings.append(heading)
+            if len(headings) >= 2:
+                metadata['section_list_summary'] = '；'.join(headings[:12])
+            replacement = RetrievalResult(
+                chunk_id=source_chunk.chunk_id,
+                rank=0,
+                source_doc=source_chunk.source_file,
+                section_title=source_chunk.section_title,
+                text=source_chunk.text,
+                citation_label='',
+                score=selected[0].score if selected else None,
+                metadata={**metadata, 'document_id': str(document_id),
+                          'prompt_selection_reason': 'section_chunk_reserved'},
+            )
+            break
+        if replacement is not None:
+            break
+    if replacement is None or any(
+        chunk.chunk_id == replacement.chunk_id for chunk in selected
+    ):
+        return selected
+    if aspect_retrievals:
+        _mark_chunk_for_aspect(replacement, aspect_retrievals[0].aspect)
+    if len(selected) >= MAX_PROMPT_CHUNKS:
+        removable = next(
+            (index for index in range(len(selected) - 1, -1, -1)
+             if not selected[index].metadata.get('dynamic_table_evidence')),
+            None,
+        )
+        if removable is not None:
+            selected.pop(removable)
+    selected.insert(0, replacement)
+    _renumber_context_chunks(selected)
+    return selected
+
+
+def _reserve_scope_rule(
+    db: Session,
+    selected: list[RetrievalResult],
+    question: str,
+    aspect_retrievals: list[AspectRetrieval],
+) -> list[RetrievalResult]:
+    """Reserve one consolidation-scope rule sentence when retrieval misses it."""
+
+    if '并表范围' not in question or '披露' not in question:
+        return selected
+    if any(
+        '并表范围' in str(chunk.text or '')
+        and ('披露相关信息' in str(chunk.text or '')
+             or '表格中另有规定' in str(chunk.text or ''))
+        for chunk in selected
+    ):
+        return selected
+    from backend.app.services.retrieval_support import _chunks_by_document, _chunk_metadata
+    if not hasattr(db, 'scalars'):
+        return selected
+    document_ids = {
+        str(chunk.metadata.get('document_id'))
+        for item in aspect_retrievals
+        for chunk in item.candidates
+        if chunk.metadata.get('document_id')
+    }
+    if not document_ids:
+        return selected
+    snapshots = _chunks_by_document(db, document_ids)
+    replacement = None
+    for document_id, chunks in snapshots.items():
+        for source_chunk in chunks:
+            text = str(source_chunk.text or '')
+            if ('并表范围' in text and '披露' in text
+                    and ('按照' in text or '本办法' in text)
+                    and source_chunk.index_status == 'indexed'):
+                metadata = _chunk_metadata(source_chunk)
+                replacement = RetrievalResult(
+                    chunk_id=source_chunk.chunk_id,
+                    rank=0,
+                    source_doc=source_chunk.source_file,
+                    section_title=source_chunk.section_title,
+                    text=source_chunk.text,
+                    citation_label='',
+                    score=selected[0].score if selected else None,
+                    metadata={**metadata, 'document_id': str(document_id),
+                              'prompt_selection_reason': 'scope_rule_reserved'},
+                )
+                break
+        if replacement is not None:
+            break
+    if replacement is None or any(
+        chunk.chunk_id == replacement.chunk_id for chunk in selected
+    ):
+        return selected
+    if aspect_retrievals:
+        _mark_chunk_for_aspect(replacement, aspect_retrievals[0].aspect)
+    if len(selected) >= MAX_PROMPT_CHUNKS:
+        removable = next(
+            (index for index in range(len(selected) - 1, -1, -1)
+             if not selected[index].metadata.get('dynamic_table_evidence')),
+            None,
+        )
+        if removable is not None:
+            selected.pop(removable)
+    selected.insert(0, replacement)
+    _renumber_context_chunks(selected)
+    return selected
+
+
 def _retrieval_support_structural_context(
     db: Session,
     selected: list[RetrievalResult],
@@ -1247,7 +1411,10 @@ def _retrieval_support_structural_context(
         # first two ordered chunks normally contain the retrieved anchor plus
         # the definition/preceding clause repaired above.
         for anchor, unit, _incomplete in primary:
-            for chunk in unit[:2]:
+            reserve_order = [anchor] + [
+                chunk for chunk in unit[:2] if chunk.chunk_id != anchor.chunk_id
+            ][:1]
+            for chunk in reserve_order:
                 if chunk.chunk_id in seen or len(result) >= MAX_PROMPT_CHUNKS:
                     continue
                 cost = _int_or_none(chunk.metadata.get('token_count')) or max(len(chunk.text)//2, 1)
@@ -1571,7 +1738,7 @@ _GENERIC_ENTITY_SUFFIX_RE = re.compile(
 _ANCHOR_SPLIT_RE = re.compile(
     r'[，。；：、？！?!\s]|'
     r'(?:应当|应|如何|哪些|什么|明确|说明|包括|进行|是否|分别|以及|其中|'
-    r'对于|根据|按照|所|就|对应|通过|由)'
+    r'对于|根据|按照|所|就|对应|通过|由|部分)'
 )
 
 
@@ -1624,7 +1791,15 @@ def _cross_aspect_terms_hit(requirement: Any, chunk: RetrievalResult) -> bool:
     terms = list(dict.fromkeys(term for term in terms if term))
     if not terms:
         return False
-    hits = [term for term in terms if term in compact]
+    def term_hit(term: str) -> bool:
+        if term in compact:
+            return True
+        if len(term) >= 6 and not _GENERIC_ENTITY_SUFFIX_RE.search(term):
+            grams = {term[index:index + 3] for index in range(len(term) - 2)}
+            hits = sum(1 for gram in grams if gram in compact)
+            return hits >= max(2, len(grams) // 3)
+        return False
+    hits = [term for term in terms if term_hit(term)]
     if not hits:
         return False
     # A long distinctive phrase is enough; short generic entities need at

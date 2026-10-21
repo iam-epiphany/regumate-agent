@@ -60,6 +60,20 @@ class CurationAgent(SpecialistAgent):
         context_chunks = rag_service._reserve_target_clauses(
             board.db, context_chunks, query_plan, aspect_retrievals
         )
+        context_chunks = rag_service._reserve_section_chunk(
+            board.db, context_chunks, question, aspect_retrievals
+        )
+        context_chunks = rag_service._reserve_scope_rule(
+            board.db, context_chunks, question, aspect_retrievals
+        )
+        # Structural expansion can evict a reserved section/scope chunk when it
+        # rebuilds source units; re-assert the two narrow reservations once.
+        context_chunks = rag_service._reserve_section_chunk(
+            board.db, context_chunks, question, aspect_retrievals
+        )
+        context_chunks = rag_service._reserve_scope_rule(
+            board.db, context_chunks, question, aspect_retrievals
+        )
         rag_service._bind_cross_aspect_evidence(context_chunks, query_plan)
         from backend.app.services.evidence_contract_service import build_evidence_bundle
         bundle = build_evidence_bundle(list(query_plan.requirements), context_chunks,

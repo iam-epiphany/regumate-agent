@@ -2,8 +2,11 @@ from backend.app.schemas.qa import EvidenceRequirement, RetrievalResult
 from backend.app.services.query_planner_service import QueryAspect, QueryPlan
 from backend.app.services.answer_generation_service import (
     _catalogue_deterministic_answer,
+    _composition_list_answer,
     _disclosure_list_item_answer,
     _formation_sentence_answer,
+    _joint_duty_answer,
+    _list_intro_answer,
     _minimum_list_answer,
     _procedure_sentence_answer,
     _range_deterministic_answer,
@@ -186,6 +189,26 @@ def test_formation_answer_uses_longest_overlap_and_trims_explanation() -> None:
     assert answer.answer == "该折现率曲线由基础利率曲线加综合溢价形成。"
 
 
+def test_section_list_reads_numbered_items_from_chunk_text() -> None:
+    chunk = _chunk(
+        "section-text",
+        "（一）机构概况\n1.经营情况。机构整体经营情况。\n"
+        "2.组织架构。机构设置情况。\n3.主要分支机构和子公司情况。列表及持股比例。",
+        metadata={
+            "section_path": ["一、概要", "（一）机构概况"],
+            "source_filename": "502_制度_附件3：处置计划建议示例（商业银行版）.docx",
+        },
+    )
+    answer = _section_list_deterministic_answer(
+        "《处置计划建议示例（商业银行版）》中，机构概况部分应说明哪些方面的信息？",
+        [chunk],
+    )
+    assert answer is not None
+    assert answer.answer == (
+        "处置计划建议示例的机构概况包括经营情况、组织架构、主要分支机构和子公司情况。"
+    )
+
+
 def test_minimum_list_answer_returns_at_least_sentence() -> None:
     chunk = _chunk(
         "minimum",
@@ -211,6 +234,89 @@ def test_formation_answer_accepts_three_part_composition() -> None:
     assert answer is not None
     assert "750日移动平均国债收益率曲线" in answer.answer
     assert "三段组成" in answer.answer
+
+
+def test_catalogue_answer_maps_items_from_printed_toc_without_paths() -> None:
+    toc = _chunk(
+        "toc-fallback",
+        "|一、机构设立|（一）法人机构设立|"
+        "1.2中资商业银行法人机构开业核准................3|"
+        "（二）境内分支机构设立|"
+        "1.3中资商业银行分行筹建审批....................4|",
+    )
+    answer = _catalogue_deterministic_answer(
+        "中资商业银行法人机构开业核准与分行筹建审批分别归入哪一类行政许可事项？",
+        [toc],
+    )
+    assert answer is not None
+    assert "中资商业银行法人机构开业核准属于机构设立类行政许可事项" in answer.answer
+    assert "中资商业银行分行筹建审批属于机构设立类行政许可事项" in answer.answer
+
+
+def test_joint_duty_answer_keeps_merged_source_clause() -> None:
+    chunk = _chunk(
+        "duty",
+        "1.与处置计划相关的公司治理，包括董事会、高管层、相关部门在处置计划建议的"
+        "制定、审批、更新和处置计划执行中承担的职责；处置机构的职责。",
+    )
+    answer = _joint_duty_answer(
+        "商业银行处置计划治理架构中，董事会、高管层及相关部门分别在处置计划建议的"
+        "哪些环节承担职责？",
+        [chunk],
+    )
+    assert answer is not None
+    assert answer.answer.startswith("处置计划治理架构中的职责分工包括")
+    assert "董事会、高管层、相关部门" in answer.answer
+    assert "处置计划执行" in answer.answer
+
+
+def test_composition_list_answer_reads_three_segments() -> None:
+    chunk = _chunk(
+        "curve-segments",
+        "一、基础利率曲线为即期曲线，由以下三段组成: "
+        "750 日移动平均国债收益率曲线 0 < t≤20 "
+        "终极利率过渡曲线 20 < t≤40 终极利率 t > 40",
+    )
+    answer = _composition_list_answer(
+        "寿险合同负债评估中的基础利率曲线采用哪类曲线，并由哪些组成部分构成？",
+        [chunk],
+    )
+    assert answer is not None
+    assert answer.answer == (
+        "基础利率曲线为即期曲线，由750日移动平均国债收益率曲线、"
+        "终极利率过渡曲线和终极利率三段组成。"
+    )
+
+
+def test_composition_list_answer_requires_matching_subject() -> None:
+    chunk = _chunk(
+        "curve-segments",
+        "一、基础利率曲线为即期曲线，由以下三段组成: "
+        "750 日移动平均国债收益率曲线 0 < t≤20 "
+        "终极利率过渡曲线 20 < t≤40 终极利率 t > 40",
+    )
+    answer = _composition_list_answer(
+        "寿险合同负债评估中计算现金流现值所采用的折现率曲线由哪些部分构成？",
+        [chunk],
+    )
+    assert answer is None
+
+
+def test_list_intro_answer_returns_operative_list_sentence() -> None:
+    chunk = _chunk(
+        "list-intro",
+        "应当编报保险集团偿付能力报告的公司名单。"
+        "下列保险集团应当按照《保险公司偿付能力监管规则第19号：保险集团》"
+        "有关规定，编报保险集团偿付能力报告。",
+    )
+    answer = _list_intro_answer(
+        "检索《应当编报保险集团偿付能力报告的公司名单》后，"
+        "以下哪一项与材料内容一致。请直接给出规定内容。",
+        [chunk],
+    )
+    assert answer is not None
+    assert answer.answer.startswith("下列保险集团应当按照")
+    assert "编报保险集团偿付能力报告" in answer.answer
 
 
 def test_procedure_answer_returns_verbatim_how_to_sentence() -> None:
