@@ -94,6 +94,7 @@ STRUCTURED_OUTPUT_RULES = (
     "除非用户明确要求逐项解释，选择题的claims只输出所选结论及必要依据，不评价未选项，也不声称其他选项未出现或错误。",
     "结论涉及条目归属、适用范围或条件时，须同时引用确定该关系的上位原文和条目正文；仅引用孤立条目或来源标题元数据不够。",
     "若证据不足，设置refused=true。",
+    "refused=true时，refusal_reason只用简短中文说明缺失的信息，不得输出needed、missing等内部字段名或JSON对象。",
     "只输出JSON。字段顺序必须为refused、refusal_reason、claims。",
     "claims必须是数组，第一项role必须为conclusion；role只能为conclusion、regulatory_basis、table_fact、calculation、explanation、recommendation。",
     "每个claim必须填写aspect_ids，标明该结论支持的问题方面。",

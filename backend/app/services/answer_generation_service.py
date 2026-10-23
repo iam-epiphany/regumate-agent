@@ -22,6 +22,12 @@ from backend.app.core.config import (
 )
 from backend.app.core.rag_features import feature_gate, features
 from backend.app.schemas.qa import AnswerClaim, EvidenceRequirement, RetrievalResult
+from backend.app.services.clarification_text import (
+    is_clarification_request,
+    normalize_clarification_text,
+    normalize_refusal_text,
+    normalize_structured_text,
+)
 from backend.app.services.formula_parser_service import (
     calculate_formula_answer,
     formula_refusal_grounding,
@@ -1868,7 +1874,16 @@ def run_generation_loop(
                 # A model refusal after the single allowed repair stays a
                 # refusal.  Similarity or a literal option match may guide
                 # retrieval, but it cannot by itself certify the option.
-                generated.answer = generated.answer or generated.refusal_reason or '当前证据不足，无法完整回答。'
+                # ``refusal_reason`` is model-facing: providers may return
+                # "needed: ..." or a structured object.  Normalise it before
+                # it becomes the user-visible answer.
+                reason_text = normalize_refusal_text(generated.refusal_reason)
+                if reason_text:
+                    if reason_text != str(generated.refusal_reason or "").strip():
+                        generated.refusal_reason = reason_text
+                    if generated.answer_type == "refusal" and is_clarification_request(reason_text):
+                        generated.answer_type = "clarification"
+                generated.answer = generated.answer or reason_text or '当前证据不足，无法完整回答。'
                 generated.refusal_reason = generated.refusal_reason or 'model_refusal'
                 generated.grounding_validation = {'passed': False, 'status': 'not_run', 'task_complete': False,
                                                  'reason': 'model_refusal', 'failure_stage': 'generation'}
@@ -2349,9 +2364,19 @@ def _parse_generated_answer_content(
             claim.text = _normalize_choice_conclusion(claim.text)
     composed_answer = "\n\n".join(claim.text + " " + "".join(ref for ref in claim.citation_ids if ref not in claim.text)
                                        for claim in claims if claim.text).strip()
-    fallback_answer = str(parsed.get("answer") or "").strip()
+    fallback_answer = normalize_structured_text(parsed.get("answer"))
     if is_choice and not refused and fallback_answer:
         fallback_answer = _normalize_choice_conclusion(fallback_answer)
+    raw_reason = parsed.get("refusal_reason")
+    refusal_reason = str(raw_reason or "").strip() or None
+    if raw_reason is not None:
+        cleaned_reason = normalize_structured_text(raw_reason)
+        if cleaned_reason and cleaned_reason != str(raw_reason).strip():
+            # Structured or marker-prefixed reasons keep the clarification
+            # styling so a bare item still reads as an explicit request.
+            refusal_reason = normalize_clarification_text(raw_reason) or cleaned_reason
+        elif not isinstance(raw_reason, str):
+            refusal_reason = normalize_clarification_text(raw_reason) or None
     return GeneratedAnswer(
         answer=composed_answer or fallback_answer or None,
         answer_type=(
@@ -2366,7 +2391,7 @@ def _parse_generated_answer_content(
         generation_status="completed",
         claims=claims,
         refused=refused,
-        refusal_reason=str(parsed.get("refusal_reason") or "").strip() or None,
+        refusal_reason=refusal_reason,
     )
 
 

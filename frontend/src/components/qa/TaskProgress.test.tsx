@@ -95,6 +95,30 @@ describe("TaskProgress", () => {
     expect(screen.getAllByText("未记录").length).toBeGreaterThan(0);
   });
 
+  it("does not leave a stage spinning after the task has ended", () => {
+    const events: RagProgressEvent[] = [{
+      stage: "planning",
+      status: "running",
+      title: "正在理解问题",
+      detail: "正在拆分问题并生成检索计划……",
+    }];
+
+    render(
+      <TaskProgress
+        events={events}
+        answer={null}
+        active={false}
+        technical={false}
+        taskStatus="refused"
+      />,
+    );
+
+    expect(screen.queryByText("正在理解问题")).not.toBeInTheDocument();
+    expect(screen.getByText("理解问题")).toBeInTheDocument();
+    expect(screen.getByText("已结束")).toBeInTheDocument();
+    expect(document.querySelector(".spinning")).toBeNull();
+  });
+
   it("does not show an agent badge when the event has no agent", () => {
     const events: RagProgressEvent[] = [{
       stage: "planning",

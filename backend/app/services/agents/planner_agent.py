@@ -45,8 +45,33 @@ class PlannerAgent(SpecialistAgent):
         from backend.app.services.request_budget_service import apply_plan_budget
         budget_decision = apply_plan_budget(query_plan)
         board.notes["budget_decision"] = budget_decision.to_debug_dict()
-        if not query_plan.clarification_reason:
-            planning_elapsed_ms = rag_service._elapsed_ms(planning_started_at)
+        planning_elapsed_ms = rag_service._elapsed_ms(planning_started_at)
+        if query_plan.clarification_reason:
+            # The clarification response is terminal for this request.  Emit a
+            # closing planning event so the UI never leaves the stage spinning
+            # after the answer has already been shown.
+            rag_service._report_progress(
+                board.reporter,
+                {
+                    "stage": "planning",
+                    "status": "completed",
+                    "title": "需要补充问题信息",
+                    "detail": (
+                        "已识别问题中的歧义，需要补充信息，"
+                        f"用时 {rag_service._format_elapsed_seconds(planning_elapsed_ms)}"
+                    ),
+                    "elapsed_ms": planning_elapsed_ms,
+                    "summary": {
+                        "aspect_count": 0,
+                        "planner": query_plan.planner,
+                        "fallback_used": query_plan.fallback_used,
+                        "clarification": True,
+                        "complex_task": budget_decision.complex_task,
+                        "budget_reasons": list(budget_decision.reasons),
+                    },
+                },
+            )
+        else:
             rag_service._report_progress(
                 board.reporter,
                 {

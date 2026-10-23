@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 from backend.app.services.agents.contracts import AgentResult, Blackboard
 from backend.app.services.agents.registry import AgentRegistry, default_registry
+from backend.app.services.clarification_text import (
+    DEFAULT_CLARIFICATION_TEXT,
+    normalize_clarification_text,
+)
 
 if TYPE_CHECKING:
     from backend.app.schemas.qa import EvidenceBundle, LLMContextPackage, QAResponse
@@ -517,7 +521,10 @@ class Supervisor:
 
             if package.retrieval_summary.get('clarification_reason'):
                 generated.answer_type = 'clarification'
-                generated.answer = package.retrieval_summary['clarification_reason']
+                generated.answer = (
+                    normalize_clarification_text(package.retrieval_summary['clarification_reason'])
+                    or DEFAULT_CLARIFICATION_TEXT
+                )
                 generated.refusal_code = 'missing_required_context'
                 generated.grounding_validation['failure_stage'] = 'planning'
             if generated.refused:
@@ -587,17 +594,29 @@ class Supervisor:
                 },
             )
             grounding_passed = validation_passed(generated.grounding_validation)
+            if package.retrieval_summary.get('clarification_reason'):
+                grounding_event = {
+                    "status": "skipped",
+                    "title": "无需事实与引用校验",
+                    "detail": "问题信息不完整，未进入答案生成与核验。",
+                }
+            elif grounding_passed:
+                grounding_event = {
+                    "status": "completed",
+                    "title": "事实与引用校验完成",
+                    "detail": "答案中的引用和关键实体已完成证据核验。",
+                }
+            else:
+                grounding_event = {
+                    "status": "failed",
+                    "title": "事实与引用校验未通过",
+                    "detail": "关键事实未能由当前证据或可信计算结果支持。",
+                }
             rag_service._report_progress(
                 board.reporter,
                 {
                     "stage": "grounding_validation",
-                    "status": "completed" if grounding_passed else "failed",
-                    "title": "事实与引用校验完成" if grounding_passed else "事实与引用校验未通过",
-                    "detail": (
-                        "答案中的引用和关键实体已完成证据核验。"
-                        if grounding_passed
-                        else "关键事实未能由当前证据或可信计算结果支持。"
-                    ),
+                    **grounding_event,
                     "summary": generated.grounding_validation,
                 },
             )

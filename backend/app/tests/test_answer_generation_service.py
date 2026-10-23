@@ -1,6 +1,8 @@
 import json
 from dataclasses import replace
 
+import pytest
+
 from backend.app.core.rag_features import RagFeatures
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
 from backend.app.services import answer_generation_service
@@ -184,6 +186,50 @@ def test_persistent_option_refusal_stays_unverified_refusal(monkeypatch) -> None
     assert result.refusal_reason == "model_refusal"
     assert result.grounding_validation["status"] == "not_run"
     assert not result.grounding_validation["passed"]
+
+
+def test_model_refusal_reason_is_rendered_as_clean_clarification(monkeypatch) -> None:
+    """Internal refusal markers must never become the user-visible answer."""
+
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test")
+    ctx = answer_generation_service.GenerationContext(
+        question="2026年城商行备案额度上限是多少？",
+        context_chunks=[_chunk()],
+        options=[],
+        option_labels=[],
+        llm_prompt=None,
+        answer_mode="text",
+        required=[],
+        requirements=None,
+        table_findings=[],
+        deterministic=None,
+        cancellation_checker=None,
+    )
+
+    for reason in (
+        "needed: 具体城商行名称",
+        {"needed": True, "question": "请补充具体城商行名称。"},
+    ):
+        def draft(context, *, attempt, correction, reason=reason):
+            return GeneratedAnswer(
+                answer=None,
+                answer_type="refusal",
+                generation_status="completed",
+                refused=True,
+                refusal_reason=reason,
+                claims=[],
+            )
+
+        result = answer_generation_service.run_generation_loop(
+            ctx,
+            draft=draft,
+            verify=lambda *args, **kwargs: pytest.fail("a refusal must not be verified"),
+        )
+
+        assert "needed" not in result.answer
+        assert "具体城商行名称" in result.answer
+        assert result.answer_type == "clarification"
 
 
 def test_table_calculation_result_not_in_options_refuses() -> None:
