@@ -7,6 +7,10 @@ import urllib.error
 import urllib.request
 from typing import Any
 from backend.app.schemas.qa import EvidenceRequirement
+from backend.app.services.clarification_text import (
+    DEFAULT_CLARIFICATION_TEXT,
+    normalize_clarification_text,
+)
 from backend.app.services.evidence_contract_service import (
     document_style_phrases,
     requirements_for_plan,
@@ -971,6 +975,8 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     f"本次规则识别到的用户处理对象：{json.dumps(list(budget.detected_items), ensure_ascii=False)}\n"
                     "每个aspect可填写subject_scope数组，仅允许逐字来自用户问题的主体或业务范围限定。"
                     "若用户目标存在无法消除的歧义，返回clarification说明需要补充的信息，禁止猜测。"
+                    "clarification 必须是面向用户的中文字符串，不要返回对象、布尔值，"
+                    "也不要写 needed、missing 等内部字段名。"
                     "输出格式：{\"aspects\":[...],\"clarification\":null,\"omitted_or_merged_items\":[]}\n\n"
                     f"用户问题：{question}"
                 ),
@@ -1011,8 +1017,12 @@ def _aspects_from_payload(
     payload: dict[str, Any],
     max_aspects: int | None = None,
 ) -> list[QueryAspect]:
+    clarification = normalize_clarification_text(payload.get('clarification'))
     if payload.get('clarification'):
-        raise QueryNeedsClarification(str(payload['clarification']))
+        # The provider may return a string, an object such as
+        # {"needed": true, "question": "..."}, or even a Python literal.
+        # Only the normalised sentence may reach the user-facing answer.
+        raise QueryNeedsClarification(clarification or DEFAULT_CLARIFICATION_TEXT)
     raw_aspects = payload.get("aspects")
     if not isinstance(raw_aspects, list):
         raise QueryPlannerError("LLM query planner 未返回 aspects")

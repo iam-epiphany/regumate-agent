@@ -1176,7 +1176,8 @@ nav {
   color: var(--danger);
 }
 
-.progress-node.skipped .progress-node__icon {
+.progress-node.skipped .progress-node__icon,
+.progress-node.ended .progress-node__icon {
   color: var(--text-faint);
 }
 

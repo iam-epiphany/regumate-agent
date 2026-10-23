@@ -281,13 +281,19 @@ def test_integration_planning_clarification_skips_evidence_and_answer(monkeypatc
         lambda *args, **kwargs: pytest.fail("clarification must not collect evidence"),
     )
 
-    response = rag_service.answer_question(SimpleNamespace(), "Clarify Blue Cedar")
+    events: list[dict] = []
+    response = rag_service.answer_question(
+        SimpleNamespace(), "Clarify Blue Cedar", progress_reporter=events.append
+    )
 
     assert response.answer_type == "clarification"
     tasks = [(entry.agent, entry.task) for entry in response.agent_trace]
     assert ("planner", "plan") in tasks
     assert not any(agent in {"evidence", "answer"} for agent, _task in tasks)
     assert not any(entry.task in {"collect", "draft"} for entry in response.agent_trace)
+    planning_events = [event for event in events if event.get("stage") == "planning"]
+    assert [event["status"] for event in planning_events] == ["running", "completed"]
+    assert planning_events[-1]["title"] == "需要补充问题信息"
 
 
 def test_integration_retrieval_routes_table_text_and_mixed_with_legacy_progress(monkeypatch) -> None:

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { QAResponse, RagProgressEvent, RagProgressStage } from "../../types/api";
 import { agentRoleLabel } from "../../utils/agentLabels";
 
-type DisplayStatus = RagProgressEvent["status"] | "unrecorded";
+type DisplayStatus = RagProgressEvent["status"] | "unrecorded" | "ended";
 
 interface StageDefinition {
   stage: RagProgressStage;
@@ -46,7 +46,12 @@ export function TaskProgress({ events, answer, active, technical, taskStatus, he
       {stages.map((stage) => {
         const event = resolveStageEvent(events, stage.stage);
         const reportedStatus: DisplayStatus = event?.status ?? missingStageStatus(active, taskStatus);
-        const status: DisplayStatus = taskStatus === "cancelled" && reportedStatus === "running" ? "skipped" : reportedStatus;
+        // A terminal task must never leave a stage spinning. Older snapshots
+        // can end with a lingering "running" event (for example when planning
+        // routed straight to a clarification), so show it as ended instead.
+        const status: DisplayStatus = !active && reportedStatus === "running"
+          ? (taskStatus === "cancelled" ? "skipped" : "ended")
+          : reportedStatus;
         return (
           <li key={stage.stage} className={`progress-node ${status}`}>
             <ProgressIcon status={status} />
@@ -115,6 +120,7 @@ function statusLabel(status: DisplayStatus): string {
     skipped: "已跳过",
     failed: "处理失败",
     unrecorded: "未记录",
+    ended: "已结束",
   })[status];
 }
 
@@ -134,6 +140,7 @@ function ProgressIcon({ status }: { status: DisplayStatus }) {
     skipped: <PauseCircle size={16} />,
     failed: <XCircle size={16} />,
     unrecorded: <CircleHelp size={16} />,
+    ended: <PauseCircle size={16} />,
   };
   return <span className="progress-node__icon">{icons[status]}</span>;
 }
