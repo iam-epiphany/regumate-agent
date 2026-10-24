@@ -940,6 +940,167 @@ def test_transposed_calculate_cross_period_difference(db_session) -> None:
     assert matches[0].citation.metadata["calculation_display_formula"] == "8234.537443 - 8064.958648 = 169.578795"
 
 
+def _add_column_period_bank_rows(db_session) -> None:
+    """主流统计布局：季度写在列头（一季度..四季度），行是裸指标，
+    索引的 quarter 列为空（文件标题不含季度）。"""
+    for quarter, coord, value in (
+        ("一季度", "D43", 0.1543),
+        ("二季度", "E43", 0.15534),
+        ("三季度", "F43", 0.15617),
+        ("四季度", "G43", 0.15736),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-TEST-0001-CHUNK-{coord}",
+            row_label="资本充足率",
+            value=value,
+            coordinate=coord,
+            column_label=quarter,
+            source_title="2024年商业银行主要监管指标情况表（季度）",
+            year=2024,
+            quarter=None,
+        )
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-H43",
+        row_label="核心一级资本充足率",
+        value=0.10997,
+        coordinate="H43",
+        column_label="四季度",
+        source_title="2024年商业银行主要监管指标情况表（季度）",
+        year=2024,
+        quarter=None,
+    )
+
+
+def test_column_period_lookup_finds_quarter_header_cell(db_session) -> None:
+    """周期在列头的表：quarter=4 硬过滤命中空时按列头兜底，定位四季度单元格。"""
+    _add_column_period_bank_rows(db_session)
+    aspect = _aspect(
+        "2024年四季度商业银行资本充足率是多少？",
+        table_task="lookup",
+        table_filters={
+            "year": 2024,
+            "quarter": 4,
+            "row_label": "资本充足率",
+            "indicator": "资本充足率",
+            "column_label": "四季度",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["cell"] == "G43"
+    assert matches[0].citation.metadata["value"] == "0.15736"
+    assert get_last_spreadsheet_diagnostic()["match_status"] == "valid_cell"
+
+
+def test_column_period_lookup_without_column_label(db_session) -> None:
+    """规划器未给列口径时，单元格级周期过滤直接锁定请求季度的列。"""
+    _add_column_period_bank_rows(db_session)
+    aspect = _aspect(
+        "2024年四季度商业银行资本充足率是多少？",
+        table_task="lookup",
+        table_filters={
+            "year": 2024,
+            "quarter": 4,
+            "indicator": "资本充足率",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["cell"] == "G43"
+
+
+def test_column_period_lookup_month_header_cell(db_session) -> None:
+    """月度表同理：月份在列头（如“3月”）时按列头兜底。"""
+    _add_table_row(
+        db_session,
+        chunk_id="DOC-TEST-0001-CHUNK-M3",
+        row_label="总资产",
+        value=444.5,
+        coordinate="C9",
+        column_label="3月",
+        source_title="2024年银行业总资产、总负债（月度）",
+        year=2024,
+        quarter=None,
+    )
+    aspect = _aspect(
+        "2024年3月银行业总资产是多少？",
+        table_task="lookup",
+        table_filters={
+            "year": 2024,
+            "month": 3,
+            "indicator": "总资产",
+            "row_label": "总资产",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    assert matches[0].citation.metadata["value"] == "444.5"
+
+
+def test_column_period_still_refuses_when_period_absent(db_session) -> None:
+    """库内确实没有请求的周期时仍拒绝（period_not_found 语义保留）。"""
+    _add_column_period_bank_rows(db_session)
+    aspect = _aspect(
+        "2023年四季度商业银行资本充足率是多少？",
+        table_task="lookup",
+        table_filters={
+            "year": 2023,
+            "quarter": 4,
+            "indicator": "资本充足率",
+        },
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert matches == []
+    assert get_last_spreadsheet_diagnostic()["match_status"] == "period_not_found"
+
+
+def test_compare_min_spans_all_period_columns(db_session) -> None:
+    """“哪个季度指标最低”：期间是比较维度，须在全部期间候选上选极值。"""
+    for quarter, coord, value in (
+        ("一季度", "D44", 0.01591),
+        ("二季度", "E44", 0.01559),
+        ("三季度", "F44", 0.01559),
+        ("四季度", "G44", 0.01504),
+    ):
+        _add_table_row(
+            db_session,
+            chunk_id=f"DOC-TEST-0001-CHUNK-{coord}",
+            row_label="不良贷款率",
+            value=value,
+            coordinate=coord,
+            column_label=quarter,
+            source_title="2024年商业银行主要监管指标情况表（季度）",
+            year=2024,
+            quarter=None,
+        )
+    aspect = _aspect(
+        "2024年哪个季度商业银行不良贷款率最低？",
+        table_task="compare",
+        operation="min",
+        table_filters={
+            "year": 2024,
+            "indicator": "不良贷款率",
+        },
+        selectors=({"row_label": "不良贷款率"},),
+    )
+
+    matches = retrieve_spreadsheet_matches(db_session, aspect)
+
+    assert len(matches) == 1
+    # 最低值在四季度（0.01504），不得因“首个匹配记录”假设截断到一季度。
+    assert matches[0].citation.metadata["cell"] == "G44"
+
+
 def test_selector_label_word_and_with_structural_prefix(db_session) -> None:
     """“财产险公司 银行存款” 在行 “其中：财产险公司 / 其中：银行存款” 中
     被 “其中：” 隔开，应按词级 AND 匹配而非连续子串。"""

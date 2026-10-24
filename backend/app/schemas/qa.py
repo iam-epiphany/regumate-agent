@@ -98,6 +98,11 @@ class Citation(BaseModel):
     document_id: str
     chunk_id: str
     filename: str
+    # Final display number of this citation inside the answer ("[1]", "[2]").
+    # The prompt numbers every context chunk [1]..[N]; this label is the
+    # renumbered position in the returned citations array so consumers can
+    # match answer-text markers to array entries without positional guessing.
+    citation_label: str | None = None
     source_url: str | None = None
     attachment_url: str | None = None
     source_title: str | None = None

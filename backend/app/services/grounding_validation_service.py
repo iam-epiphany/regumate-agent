@@ -179,9 +179,18 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
     for candidate, _, candidate_percent in re.findall(
         r"(-?\d+(?:\.(\d+))?)(%?)", normalized_evidence
     ):
-        if candidate_percent != percent:
-            continue
-        if math.isclose(value, float(candidate), rel_tol=0.0, abs_tol=tolerance):
+        if candidate_percent == percent and math.isclose(value, float(candidate), rel_tol=0.0, abs_tol=tolerance):
+            return True
+        # 统计语料把率类指标存成小数比率（0.10997），答案按百分比书写（10.997%），
+        # 或反向。百分号两侧不一致时按 ×100/÷100 换算比较，避免换算后的展示
+        # 数值被逐字支持检查误判为无据。
+        if percent and not candidate_percent and math.isclose(
+            value, float(candidate) * 100, rel_tol=0.0, abs_tol=tolerance
+        ):
+            return True
+        if not percent and candidate_percent and math.isclose(
+            value * 100, float(candidate), rel_tol=0.0, abs_tol=tolerance
+        ):
             return True
     return False
 

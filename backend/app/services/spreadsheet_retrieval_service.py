@@ -147,22 +147,32 @@ def _indexed_spreadsheet_matches(
 
     selectors = [item for item in getattr(aspect, "selectors", ()) if isinstance(item, dict)]
     base_statement = _indexed_base_statement(filters, selectors)
+    # Quarter/month are CELL-level hard constraints: a cell satisfies the
+    # requested period either through the index column (title-inferred periods)
+    # or, when that column is NULL, through a period-shaped COLUMN header
+    # ("一季度/…/四季度", "1月..12月" — the dominant statistical layout).
+    # Cells with neither (a different period, or no period at all) stay
+    # excluded, so an explicit constraint still never falls back to the whole
+    # corpus.  The year always lives on the index column.
     period_statement = base_statement
-    for field_name in ("year", "month", "quarter"):
+    if filters.get("year") is not None:
+        period_statement = period_statement.where(SpreadsheetCell.year == int(filters["year"]))
+    for field_name in ("month", "quarter"):
         value = filters.get(field_name)
         if value is not None:
-            period_statement = period_statement.where(getattr(SpreadsheetCell, field_name) == int(value))
+            column = getattr(SpreadsheetCell, field_name)
+            period_statement = period_statement.where(or_(column == int(value), column.is_(None)))
 
     rows = db.execute(period_statement).all()
+    rows = [row for row in rows if _cell_period_satisfies(row[0], filters)]
     # An explicit hard constraint that matches nothing must never fall back to
-    # a whole-corpus maximum or calculation.  One legitimate exception: a
-    # transposed layout (institution classes on columns, "一季度 / 不良贷款余额"
-    # period/indicator combinations on rows) keeps its periods in row labels,
-    # so the period equality filters above always match nothing.  Detect that
-    # layout and match periods at the row level instead.
+    # a whole-corpus maximum or calculation.  One legitimate exception keeps
+    # its period outside both the index columns and the column headers: a
+    # transposed layout (institution classes on columns, "一季度 / 不良贷款
+    # 余额" period/indicator combinations on rows) keeps periods in row labels.
+    # That layout is re-queried without the period filters and matched at the
+    # row level instead.
     if not rows:
-        # The year stays a hard filter (the index carries it), while quarter
-        # and month move to the row level inside the transposed fallback.
         transposed_base = base_statement
         if filters.get("year") is not None:
             transposed_base = transposed_base.where(SpreadsheetCell.year == int(filters["year"]))
@@ -186,6 +196,7 @@ def _indexed_spreadsheet_matches(
         return []
 
     candidates = [_candidate_from_index(cell, chunk, document, question, filters) for cell, chunk, document in rows]
+    _patch_column_period_metadata(candidates)
     label_filters = dict(filters)
     question_column_target = _specific_column_target_from_question(
         question,
@@ -249,6 +260,7 @@ def _indexed_spreadsheet_matches(
                 usable_selectors,
                 question=question,
                 question_column_target=question_column_target,
+                keep_all_periods=True,
             )
         else:
             selected = _numeric_candidates_for_column(
@@ -373,8 +385,16 @@ def _indexed_spreadsheet_matches(
             best_score = top[0].score
             tied = [candidate for candidate in top if abs(candidate.score - best_score) < 0.0001]
             if len(tied) > 1:
-                _set_last_diagnostic(match_status="ambiguous_candidates", refusal_reason="指定条件命中多个等价候选单元格。")
-                return []
+                latest = _latest_period_tie_candidate(tied)
+                if latest is None:
+                    _set_last_diagnostic(match_status="ambiguous_candidates", refusal_reason="指定条件命中多个等价候选单元格。")
+                    return []
+                latest.metadata["selection_assumptions"] = [
+                    "未指定具体期间，按最新期间取值："
+                    + f"{(latest.selected_cell or {}).get('row_label')} / "
+                    + f"{(latest.selected_cell or {}).get('column_label')}。"
+                ]
+                top = [latest]
         matches = [_to_match(top[0], aspect, table_task, operation, match_status="valid_cell")]
         _set_valid_diagnostic(matches)
         return matches
@@ -422,6 +442,66 @@ def _transposed_period_matches(period_part: str, filters: dict[str, Any]) -> boo
         if f"{int(year)}年" not in period_part:
             return False
     return True
+
+
+_COLUMN_PERIOD_PATTERN = re.compile(r"(?:第?([一二三四1-4])季度|(\d{1,2})月)")
+
+
+def _parse_column_period(column_label: Any) -> dict[str, int] | None:
+    """Parse a period expressed as a COLUMN header (“四季度”, “3月”, “2024年四季度”).
+
+    Returns ``{"quarter": n}`` or ``{"month": n}``, or None when the header
+    carries no period (institution names, indicator names, …).
+    """
+    match = _COLUMN_PERIOD_PATTERN.search(str(column_label or ""))
+    if not match:
+        return None
+    if match.group(1):
+        token = match.group(1)
+        quarter = int(token) if token.isdigit() else "一二三四".find(token) + 1
+        return {"quarter": quarter} if 1 <= quarter <= 4 else None
+    month = int(match.group(2))
+    return {"month": month} if 1 <= month <= 12 else None
+
+
+def _cell_period_satisfies(cell: SpreadsheetCell, filters: dict[str, Any]) -> bool:
+    """Cell-level quarter/month test against the requested period filters.
+
+    A cell passes when its index period column carries the requested value
+    (title-inferred periods) or, when that column is NULL, when its COLUMN
+    header parses to the requested period (“四季度”, “3月”).  NULL cells with
+    no period-shaped header fail, preserving the hard-constraint semantics.
+    """
+    for field_name in ("quarter", "month"):
+        value = filters.get(field_name)
+        if value is None:
+            continue
+        stored = getattr(cell, field_name, None)
+        if stored is not None:
+            if int(stored) != int(value):
+                return False
+            continue
+        parsed = _parse_column_period(cell.column_label)
+        if parsed is None or parsed.get(field_name) != int(value):
+            return False
+    return True
+
+
+def _patch_column_period_metadata(candidates: list[SpreadsheetCandidate]) -> None:
+    """Fill missing quarter/month metadata from period-shaped column headers.
+
+    Selector matching compares ``year/month/quarter`` equality against the
+    candidate metadata; for column-header periods the index column is NULL, so
+    without this patch cross-period selectors (“一季度与四季度…变化”) exclude
+    every cell of the dominant layout.
+    """
+    for candidate in candidates:
+        parsed = _parse_column_period((candidate.selected_cell or {}).get("column_label"))
+        if not parsed:
+            continue
+        for key, value in parsed.items():
+            if candidate.metadata.get(key) is None:
+                candidate.metadata[key] = value
 
 
 def _transposed_institution_terms(filters: dict[str, Any]) -> list[str]:
@@ -616,6 +696,10 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
             if not _row_label_terms_covered(row, _row_label_terms(filters.get(key))):
                 continue
             score += weight
+            # An exact row label outranks substring relatives: 资本充足率 must
+            # not tie with 核心一级资本充足率 when both rows exist in the table.
+            if target and row == target:
+                score += 2.0
         elif key == "column_label":
             # A row such as “全国合计” must not make every numeric cell look
             # like the requested “合计” column.  Compare column constraints
@@ -628,6 +712,8 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
             structural_text = combined
             if target and target in structural_text:
                 score += weight
+                if key in {"indicator", "metric"} and row == target:
+                    score += 2.0
     score += _token_overlap(question, combined)
     return score
 
@@ -782,6 +868,37 @@ def _source_title_matches(requested_source: str, actual_source: str) -> bool:
     return any(variant and variant in actual_source for variant in _source_title_variants(requested_source))
 
 
+def _latest_period_tie_candidate(tied: list[SpreadsheetCandidate]) -> SpreadsheetCandidate | None:
+    """Resolve a strict lookup tie that differs only by the period column.
+
+    “2024年商业银行拨备覆盖率是多少？” ties all four quarterly cells of the
+    same row.  Picking the latest period with a disclosed assumption answers
+    the user instead of refusing.  Returns None unless EVERY tied candidate
+    shares one row label and one source table and each carries a DISTINCT
+    period column — same-period duplicates (genuinely indistinguishable
+    values) stay ambiguous.
+    """
+    if len(tied) < 2:
+        return None
+    rows = {normalize_table_text((candidate.selected_cell or {}).get("row_label")) for candidate in tied}
+    sources = {
+        normalize_table_text(candidate.metadata.get("source_title") or candidate.document.filename)
+        for candidate in tied
+    }
+    if len(rows) != 1 or len(sources) != 1:
+        return None
+    keyed: list[tuple[int, SpreadsheetCandidate]] = []
+    for candidate in tied:
+        parsed = _parse_column_period((candidate.selected_cell or {}).get("column_label"))
+        if not parsed:
+            return None
+        keyed.append((int(parsed.get("quarter") or parsed.get("month") or 0), candidate))
+    periods = [key for key, _candidate in keyed]
+    if len(set(periods)) != len(periods):
+        return None
+    return max(keyed, key=lambda item: item[0])[1]
+
+
 def _cells_for_selectors(
     candidates: list[SpreadsheetCandidate],
     selectors: list[dict[str, Any]],
@@ -789,6 +906,7 @@ def _cells_for_selectors(
     question: str = "",
     question_column_target: str | None = None,
     preserve_explicit_generic_columns: bool = False,
+    keep_all_periods: bool = False,
 ) -> list[SpreadsheetCandidate]:
     selected: list[SpreadsheetCandidate] = []
     if question_column_target is None:
@@ -912,6 +1030,19 @@ def _cells_for_selectors(
                 ) + str((item.selected_cell or {}).get("column_label", "")))
             }
             if len(period_labels) > 1:
+                if keep_all_periods:
+                    # compare（max/min）把期间当作分组维度：保留全部期间的
+                    # 候选，由 _comparison_candidate 在完整集合上挑极值并显示
+                    # 获胜期间，而不是先截断到首个记录再比较。
+                    best_specificity = matches[0][0]
+                    period_matched = [item[2] for item in matches if item[0] == best_specificity]
+                    for candidate in period_matched:
+                        if not any(
+                            _candidate_cell_key(candidate) == _candidate_cell_key(existing)
+                            for existing in selected
+                        ):
+                            selected.append(candidate)
+                    continue
                 chosen.metadata["selection_assumptions"] = [
                     "未指定具体期间，采用表内首个匹配记录："
                     + f"{(chosen.selected_cell or {}).get('row_label')} / "

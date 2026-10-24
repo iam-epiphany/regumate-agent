@@ -683,12 +683,37 @@ def test_prompt_selection_prefers_duty_clause_body_over_short_heading():
 
 
 
-def test_mixed_answer_cannot_proceed_with_only_table_evidence(monkeypatch):
+def test_mixed_answer_proceeds_partially_with_only_table_evidence(monkeypatch):
+    """单模态可用时进入部分作答（披露缺失模态），不得整体拒答。"""
     table = evidence('本期金额为5亿元。')
     table.metadata.update(dynamic_table_evidence=True, value='5', unit='亿元', evidence_role='table_evidence')
-    monkeypatch.setattr(generation, '_call_llm', lambda *a, **k: pytest.fail('missing modality must stop generation'))
+    calls = []
+
+    def draft(*args, **kwargs):
+        calls.append(1)
+        assert kwargs['partial_mode'] is True
+        assert '制度依据' in (kwargs['missing_aspects'] or [])
+        return generation.GeneratedAnswer(
+            '本期金额为5亿元。 [1] 制度依据部分证据不足。', 'text', 'completed',
+            claims=[AnswerClaim(text='本期金额为5亿元。 [1]', citation_ids=['[1]'], role='table_fact')],
+        )
+
+    monkeypatch.setattr(generation, 'ANSWER_GENERATION_ENABLED', True)
+    monkeypatch.setattr(generation, 'ANSWER_GENERATION_API_KEY', 'test-only')
+    monkeypatch.setattr(generation, '_call_llm', draft)
     result = generation.generate_answer('结合制度及表格说明要求', [table], has_sufficient_context=True, answer_mode='mixed')
+    assert calls, 'single-modality mixed questions must reach generation in partial mode'
+    assert not result.refused
+
+
+def test_mixed_answer_refuses_when_both_modalities_missing(monkeypatch):
+    """表格事实与制度依据都缺失时仍整体拒答，不进入生成。"""
+    context_only = evidence('表格上下文说明。')
+    context_only.metadata.update(evidence_role='table_context')
+    monkeypatch.setattr(generation, '_call_llm', lambda *a, **k: pytest.fail('no-modality evidence must stop generation'))
+    result = generation.generate_answer('结合制度及表格说明要求', [context_only], has_sufficient_context=True, answer_mode='mixed')
     assert result.refused
+    assert '表格事实' in result.grounding_validation['missing_requirements']
     assert '制度依据' in result.grounding_validation['missing_requirements']
 
 
@@ -766,10 +791,17 @@ def test_plan_ambiguity_is_explicit_and_does_not_start_more_model_planning(monke
     monkeypatch.setattr(planner, 'QUERY_PLANNER_ENABLED', True)
     monkeypatch.setattr(planner, 'QUERY_PLANNER_API_KEY', 'test-only')
     monkeypatch.setattr(planner, 'chat_completion_content', ambiguous)
+    # 先检索后澄清：开放问题的歧义不再直接终态澄清，而是携带澄清理由的
+    # 通用检索计划（检索命中则正常作答，无可靠证据时 supervisor 回到澄清）。
     plan = planner.plan_query('比较两者的处理条件。')
     assert plan.clarification_reason == '请明确要比较的主体。'
-    assert not plan.aspects
+    assert plan.planner == 'clarification-retrieval'
+    assert plan.aspects
     assert calls == [1]
+    # 选择题（≥2 个选项）永远走确定性 MCQ 计划，不会落入 LLM 澄清路径。
+    choice = planner.plan_query('比较两者的处理条件。', options=['甲的表述', '乙的表述'])
+    assert choice.planner == 'deterministic-mcq'
+    assert not choice.clarification_reason
 
 
 def test_model_call_ceiling_counts_failed_transport_attempts(monkeypatch):

@@ -34,6 +34,12 @@ def _prep_terminal_reason(result: Any) -> str | None:
     return None
 
 
+def _with_citation_label(citation: Any, label: str | None) -> Any:
+    """Attach the renumbered display label to a citation object."""
+    citation.citation_label = label
+    return citation
+
+
 class Supervisor:
     name = "supervisor"
     role = "调度"
@@ -293,7 +299,7 @@ class Supervisor:
                 options=options,
             )
             query_plan = planned.output
-            if query_plan.clarification_reason:
+            if query_plan.clarification_reason and not query_plan.aspects:
                 package = LLMContextPackage(query=question, instruction=rag_service.CONTEXT_INSTRUCTION,
                     retrieval_summary={'has_sufficient_context': False, 'used_chunks': 0,
                                        'query_plan': query_plan.to_debug_dict(),
@@ -315,6 +321,10 @@ class Supervisor:
             )
             retrieval_summary = dict(bundle.diagnostics or {})
             retrieval_summary['generation_question'] = generation_question
+            if query_plan.clarification_reason:
+                # 先检索后澄清（planner="clarification-retrieval"）：保留澄清
+                # 理由；检索无可靠证据时 run() 会回到澄清，命中则正常作答。
+                retrieval_summary['pending_clarification'] = query_plan.clarification_reason
             package = LLMContextPackage(
                 query=question,
                 instruction=rag_service.CONTEXT_INSTRUCTION,
@@ -413,12 +423,22 @@ class Supervisor:
                     for item in preview_claims
                     for citation_id in item.citation_ids
                 }
+                preview_results = [
+                    result
+                    for result in package.context_chunks
+                    if result.citation_label in cited_labels
+                ]
+                preview_map = rag_service._citation_renumber_map(preview_results)
                 board.answer_preview_reporter(QAAnswerPreview(
-                    answer="\n\n".join(item.text for item in preview_claims),
+                    answer=rag_service._rewrite_citation_markers(
+                        "\n\n".join(item.text for item in preview_claims), preview_map
+                    ),
                     citations=[
-                        rag_service._citation_from_result(result)
-                        for result in package.context_chunks
-                        if result.citation_label in cited_labels
+                        _with_citation_label(
+                            rag_service._citation_from_result(result),
+                            preview_map.get(result.citation_label),
+                        )
+                        for result in preview_results
                     ],
                     verified_claim_count=len(preview_claims),
                     revision=preview_revision,
@@ -519,10 +539,18 @@ class Supervisor:
             # now driven through agent primitives.
             generated.grounding_validation["model_call_count"] = model_call_count()
 
-            if package.retrieval_summary.get('clarification_reason'):
+            clarification_reason = package.retrieval_summary.get('clarification_reason')
+            # 先检索后澄清：检索未找到可靠证据时回到澄清；找到则正常作答。
+            if (
+                not clarification_reason
+                and package.retrieval_summary.get('pending_clarification')
+                and (not package.context_chunks or not package.retrieval_summary.get('has_sufficient_context'))
+            ):
+                clarification_reason = package.retrieval_summary['pending_clarification']
+            if clarification_reason:
                 generated.answer_type = 'clarification'
                 generated.answer = (
-                    normalize_clarification_text(package.retrieval_summary['clarification_reason'])
+                    normalize_clarification_text(clarification_reason)
                     or DEFAULT_CLARIFICATION_TEXT
                 )
                 generated.refusal_code = 'missing_required_context'
@@ -625,9 +653,23 @@ class Supervisor:
                 answer=generated.answer,
                 claims=generated.claims,
             )
+            # Renumber citation markers to the returned citations array: the
+            # prompt numbers every context chunk ([1]..[N]) while the response
+            # keeps only the cited subset, so answer-text markers must be
+            # rewritten to their final positions.
+            renumber_map = rag_service._citation_renumber_map(cited_results)
+            generated.answer = rag_service._rewrite_citation_markers(generated.answer, renumber_map)
+            for claim in generated.claims:
+                claim.text = rag_service._rewrite_citation_markers(claim.text, renumber_map)
+                claim.citation_ids = [renumber_map.get(item, item) for item in claim.citation_ids]
+            response_citations: list = []
+            for result in cited_results:
+                citation = rag_service._citation_from_result(result)
+                citation.citation_label = renumber_map.get(result.citation_label)
+                response_citations.append(citation)
             response = QAResponse(
                 answer=generated.answer,
-                citations=[rag_service._citation_from_result(result) for result in cited_results],
+                citations=response_citations,
                 confidence=rag_service._confidence_from_results(cited_results),
                 refused=generated.refused,
                 context_package=package if board.include_debug else None,

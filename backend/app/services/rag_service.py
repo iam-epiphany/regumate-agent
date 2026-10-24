@@ -1992,6 +1992,27 @@ def _renumber_context_chunks(context_chunks: list[RetrievalResult]) -> None:
         chunk.citation_label = f"[{index}]"
 
 
+def _citation_renumber_map(cited_results: list[RetrievalResult]) -> dict[str, str]:
+    """Map prompt-time citation labels ("[6]") to display labels ("[1]", …).
+
+    The answer prompt numbers every context chunk, but the response keeps only
+    the cited subset; without this map the answer text would keep stale prompt
+    numbering ("[6]") next to a two-item citations array.
+    """
+    return {
+        result.citation_label: f"[{index}]"
+        for index, result in enumerate(cited_results, start=1)
+        if result.citation_label
+    }
+
+
+def _rewrite_citation_markers(text: str, mapping: dict[str, str]) -> str:
+    """Rewrite "[n]" markers in ``text`` through ``mapping`` (single pass)."""
+    if not text or not mapping:
+        return text
+    return re.sub(r"\[\d+\]", lambda match: mapping.get(match.group(0), match.group(0)), text)
+
+
 def _cited_context_results(
     context_chunks: list[RetrievalResult],
     *,

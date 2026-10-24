@@ -665,6 +665,21 @@ def _plan_query_impl(question: str, options: list[str] | None = None) -> QueryPl
                         question_mode=question_mode,
                 )
         except QueryNeedsClarification as exc:
+            # 先检索后澄清：LLM 判定歧义不再直接终态。开放问题先构造一次
+            # 通用检索并携带澄清理由——检索命中（例如问题词汇来自用户刚上传
+            # 的文档）则正常作答；检索无可靠证据时由 supervisor 回到澄清。
+            # 选择题模式保留直接澄清（选项消歧必须先行）。
+            fallback = _fallback_aspects(cleaned_question, budget)
+            if fallback and not any(str(option or "").strip() for option in options or []):
+                return QueryPlan(
+                    original_question=cleaned_question,
+                    aspects=tuple(fallback),
+                    planner="clarification-retrieval",
+                    fallback_used=True,
+                    question_mode=question_mode,
+                    clarification_reason=str(exc),
+                    budget=budget.to_debug_dict(),
+                )
             return QueryPlan(cleaned_question, (), 'clarification',
                              question_mode=question_mode, clarification_reason=str(exc))
         except QueryPlannerError as exc:
@@ -975,6 +990,9 @@ def _plan_with_llm(question: str, budget: QueryBudget) -> tuple[list[QueryAspect
                     f"本次规则识别到的用户处理对象：{json.dumps(list(budget.detected_items), ensure_ascii=False)}\n"
                     "每个aspect可填写subject_scope数组，仅允许逐字来自用户问题的主体或业务范围限定。"
                     "若用户目标存在无法消除的歧义，返回clarification说明需要补充的信息，禁止猜测。"
+                    "判断歧义要克制：只要知识库中可能存在能定位该问题的文档、指标或字段"
+                    "（包括用户刚上传的材料），就按正常 aspect 检索，不要因为问题简短、"
+                    "缺少报表名或期间而要求澄清；只有当任何检索都无法定位时才返回clarification。"
                     "clarification 必须是面向用户的中文字符串，不要返回对象、布尔值，"
                     "也不要写 needed、missing 等内部字段名。"
                     "输出格式：{\"aspects\":[...],\"clarification\":null,\"omitted_or_merged_items\":[]}\n\n"
@@ -2968,8 +2986,10 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
             filters['column_label'] = column_terms[0]
     # An institution and a metric may be separate segments of one indexed row.
     # Preserve both rather than replacing the metric with its parent category.
+    # With several institution terms the FIRST (question order) anchors the
+    # row, matching the single-table selector split above.
     institution_terms = _institution_row_terms(value_question, str(filters.get('indicator') or ''))
-    if len(institution_terms) == 1 and institution_terms[0] != filters.get('column_label'):
+    if institution_terms and institution_terms[0] != filters.get('column_label'):
         metric = str(filters.get('indicator') or '')
         if metric and institution_terms[0] not in metric:
             filters['row_label'] = institution_terms[0] + ' ' + metric
@@ -3295,7 +3315,24 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
                 if indicator in after and after.find(indicator) <= 12:
                     same_clause.append(term)
                 break
-    return same_clause
+    return _indexed_row_locator_terms(same_clause)
+
+
+def _indexed_row_locator_terms(terms: list[str]) -> list[str]:
+    """Drop institution terms that the index does not carry as row segments.
+
+    Row matching applies AND semantics over every row_label word
+    ("财产险公司 资金运用余额"), so a glued word that is not any indexed row
+    segment ("…商业银行主要监管指标情况表" keeps 商业银行 only in the title)
+    invalidates every candidate row.  Keep such words out of the row locator;
+    the institution still disambiguates through title/token scoring.  Without
+    a loaded row vocabulary (no table context) keep every term to preserve the
+    historical behavior.
+    """
+    row_parts = {re.sub(r"\s+", "", str(part)) for part in _TABLE_ROWS.get()}
+    if not row_parts:
+        return terms
+    return [term for term in terms if re.sub(r"\s+", "", str(term)) in row_parts]
 
 
 def _fallback_search_queries(question: str) -> tuple[QuerySearchQuery, ...]:

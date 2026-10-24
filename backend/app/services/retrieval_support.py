@@ -718,15 +718,15 @@ def _finish_aspect_matches(
 
 
 _SPREADSHEET_TERMINAL_REFUSAL_STATUSES = {
-    "missing_operands",
-    "period_not_found",
+    # Only "the user named this exact source and it does not exist" statuses
+    # terminally skip the vector fallback.  Resolution failures
+    # (indicator_not_found / ambiguous_candidates / missing_operands /
+    # empty_value / period_not_found / column_not_found / unit_mismatch) say
+    # the STRUCTURED locator could not resolve the cell — the answer may still
+    # be reachable in table summaries or regulation text, so vector retrieval
+    # runs and the answer model decides from real evidence.
     "source_not_found",
     "sheet_not_found",
-    "indicator_not_found",
-    "column_not_found",
-    "ambiguous_candidates",
-    "unit_mismatch",
-    "empty_value",
 }
 
 

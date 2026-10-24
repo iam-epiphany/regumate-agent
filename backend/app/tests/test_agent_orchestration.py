@@ -611,3 +611,104 @@ def test_trace_recording_failure_never_masks_the_task_outcome(monkeypatch) -> No
         agent.execute(board, "budget")
     assert info.value.code == "model_call_limit_exceeded"
     assert board.active_agent is None
+
+
+def test_integration_citation_markers_match_response_positions(monkeypatch) -> None:
+    """答案文本中的引用标记必须与 citations 数组的位置编号一致。
+
+    Prompt 给 12 个证据块编号 [1]..[12]，响应只保留被引用子集；不重排时
+    文本里的 [6] 会指着两元素数组的第三项（用户可见的编号错位）。
+    """
+    from backend.app.schemas.qa import AnswerClaim
+    from backend.app.services import answer_generation_service, rag_service
+
+    _disable_identity_and_logs(monkeypatch, rag_service)
+    chunks = [_chunk("evidence one"), _chunk("evidence two"), _chunk("evidence three")]
+    for index, chunk in enumerate(chunks, start=1):
+        chunk.chunk_id = f"chunk-blue-{index}"
+        chunk.citation_label = f"[{index}]"
+    package = _context_package()
+    package.context_chunks = chunks
+
+    def generated(*args, **kwargs):
+        from backend.app.services.answer_generation_service import GeneratedAnswer
+
+        return GeneratedAnswer(
+            answer="Blue Cedar requires notice. [3]",
+            answer_type="text",
+            generation_status="completed",
+            claims=[AnswerClaim(text="Blue Cedar requires notice. [3]", citation_ids=["[3]"])],
+        )
+
+    monkeypatch.setattr(rag_service, "build_context_package", lambda *args, **kwargs: package)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test-key")
+    monkeypatch.setattr(answer_generation_service, "_call_llm", generated)
+    monkeypatch.setattr(
+        "backend.app.services.answer_validation_service.validate_answer",
+        lambda *args, **kwargs: {"passed": True, "status": "passed", "task_complete": True,
+                                 "citation_integrity": True, "facts_supported": True},
+    )
+
+    response = rag_service.answer_question(SimpleNamespace(), "What does Blue Cedar require?")
+
+    assert "[1]" in response.answer and "[3]" not in response.answer
+    assert len(response.citations) == 1
+    assert response.citations[0].citation_label == "[1]"
+    assert response.citations[0].chunk_id == "chunk-blue-3"
+    assert response.claims[0].citation_ids == ["[1]"]
+
+
+def test_integration_demoted_clarification_answers_when_evidence_found(monkeypatch) -> None:
+    """先检索后澄清：澄清理由保留但检索命中时必须正常作答。"""
+    from backend.app.services import answer_generation_service, rag_service
+
+    _disable_identity_and_logs(monkeypatch, rag_service)
+    package = _context_package()
+    package.retrieval_summary = {**package.retrieval_summary, "pending_clarification": "请说明报表名称。"}
+
+    monkeypatch.setattr(rag_service, "build_context_package", lambda *args, **kwargs: package)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test-key")
+    monkeypatch.setattr(answer_generation_service, "_call_llm", lambda *args, **kwargs: _generated_answer())
+    monkeypatch.setattr(
+        "backend.app.services.answer_validation_service.validate_answer",
+        lambda *args, **kwargs: {"passed": True, "status": "passed", "task_complete": True,
+                                 "citation_integrity": True, "facts_supported": True},
+    )
+
+    response = rag_service.answer_question(SimpleNamespace(), "Blue Cedar contact person")
+
+    assert response.refused is False
+    assert response.answer_type != "clarification"
+    assert response.answer == "Blue Cedar requires notice."
+
+
+def test_integration_demoted_clarification_returns_when_retrieval_empty(monkeypatch) -> None:
+    """先检索后澄清：检索确实无可靠证据时才回到澄清。"""
+    from backend.app.services import answer_generation_service, rag_service
+
+    _disable_identity_and_logs(monkeypatch, rag_service)
+    package = _context_package()
+    package.retrieval_summary = {
+        **package.retrieval_summary,
+        "pending_clarification": "请说明报表名称。",
+        "has_sufficient_context": False,
+    }
+    package.context_chunks = []
+
+    monkeypatch.setattr(rag_service, "build_context_package", lambda *args, **kwargs: package)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_ENABLED", True)
+    monkeypatch.setattr(answer_generation_service, "ANSWER_GENERATION_API_KEY", "test-key")
+
+    def no_llm(*args, **kwargs):
+        raise AssertionError("clarification must not call the answer model")
+
+    monkeypatch.setattr(answer_generation_service, "_call_llm", no_llm)
+
+    response = rag_service.answer_question(SimpleNamespace(), "Blue Cedar contact person")
+
+    assert response.answer_type == "clarification"
+    assert response.refused is True
+    assert response.refusal_code == "missing_required_context"
+    assert "报表名称" in response.answer

@@ -1505,7 +1505,13 @@ def prepare_generation(
                    for c in context_chunks):
             missing_modalities.append('制度依据')
         if missing_modalities:
-            return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing_modalities})
+            if len(missing_modalities) > 1 or not features().partial_answer:
+                # 两种模态都缺失（或部分作答被关闭）才整体拒答。
+                return refusal_answer('missing_required_aspect', validation={'missing_requirements': missing_modalities})
+            # 单模态可用：进入部分作答，覆盖已有模态并在答案末尾披露缺失模态，
+            # 不因问题被分类为 mixed 就丢弃已经拿到的证据。
+            partial_mode = True
+            missing = list(dict.fromkeys([*missing, *missing_modalities]))
     resolver = table_resolver or _default_table_resolver
     deterministic = _catalogue_deterministic_answer(question, context_chunks)
     if deterministic is None and answer_mode not in {'mixed', 'scenario'}:
@@ -2087,12 +2093,8 @@ def _deterministic_table_answer(
         raw_value = metadata.get("value")
     label = metadata.get("row_label") or metadata.get("column_label")
     option_label, option_text = _match_option(raw_value, label, options, option_labels)
-    value_text = _format_value(
-        raw_value,
-        decimal_places=metadata.get("display_decimal_places"),
-    )
     output_unit = _deterministic_table_output_unit(metadata)
-    value_with_unit = f"{value_text} {output_unit}" if output_unit else value_text
+    value_with_unit = _value_with_unit(raw_value, output_unit, metadata)
     # Cross-table calculations return one cell-level evidence per operand
     # table; cite every involved chunk instead of only the anchor table.
     citation_label = _calculation_citation_text(metadata, context_chunks) or chunk.citation_label
@@ -2596,10 +2598,17 @@ def _match_option(
 ) -> tuple[str | None, str | None]:
     numeric = _float_or_none(value)
     normalized_label = re.sub(r"\s+", "", str(label or ""))
+    # 统计表把率类指标存成小数比率（0.15736），选项常按百分数书写（“15.74%”）。
+    # 直接比较之外再试 ×100 与 ÷100 变体，两方向对称覆盖两种存储/书写口径。
+    numeric_variants = {numeric}
+    if numeric is not None and numeric != 0:
+        numeric_variants.update({numeric * 100, numeric / 100})
     for index, option in enumerate(options):
         option_numeric = _float_or_none(option)
-        numeric_match = numeric is not None and option_numeric is not None and math.isclose(
-            numeric, option_numeric, rel_tol=1e-4, abs_tol=0.02
+        numeric_match = option_numeric is not None and any(
+            math.isclose(variant, option_numeric, rel_tol=1e-4, abs_tol=0.02)
+            for variant in numeric_variants
+            if variant is not None
         )
         normalized_option = re.sub(r"\s+", "", str(option))
         label_match = normalized_label and (
@@ -2624,6 +2633,24 @@ def _format_value(value: Any, *, decimal_places: int | None = None) -> str:
     if isinstance(decimal_places, int) and 0 <= decimal_places <= 10:
         return f"{numeric:.{decimal_places}f}"
     return f"{numeric:.10f}".rstrip("0").rstrip(".")
+
+
+def _value_with_unit(value: Any, output_unit: str | None, metadata: dict[str, Any]) -> str:
+    """Render a cell/calculation value together with its resolved output unit.
+
+    The statistical corpus stores ratio-type indicators (资本充足率、拨备覆盖
+    率、不良贷款率…) as decimal fractions even when the unit column says "%" —
+    拨备覆盖率 2.08128 means 208.128%.  Rendering the raw fraction next to a
+    "%" unit (“0.15736 %”) is wrong for readers and fails numeric scoring
+    against gold answers written as percentages, so scale it by 100.
+    """
+    if output_unit == "%":
+        numeric = _float_or_none(value)
+        if numeric is not None and 0 < abs(numeric) <= 10:
+            scaled = _format_value(numeric * 100, decimal_places=metadata.get("display_decimal_places"))
+            return f"{scaled}%"
+    text = _format_value(value, decimal_places=metadata.get("display_decimal_places"))
+    return f"{text} {output_unit}" if output_unit else text
 
 
 def _deterministic_table_output_unit(metadata: dict[str, Any]) -> str | None:

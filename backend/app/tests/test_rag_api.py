@@ -2652,7 +2652,7 @@ def test_constrained_aspect_rerank_limit_requires_document_scope() -> None:
     )
 
 
-def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
+def test_table_resolution_refusal_still_runs_vector_fallback(monkeypatch) -> None:
     from backend.app.services import retrieval_support
 
     aspect = QueryAspect(
@@ -2680,6 +2680,50 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
         lambda: {"match_status": "period_not_found", "refusal_reason": "指定年份、月份或季度在表格索引中不存在。"},
     )
 
+    collect_calls: list = []
+
+    def collect(*args, **kwargs):
+        collect_calls.append(1)
+        return [], {}, []
+
+    monkeypatch.setattr(retrieval_support, "collect_candidates_with_query_hits", collect)
+
+    matches, _diagnostics = retrieval_support.retrieve_requirement(object(), aspect)
+
+    # 周期未命中属于"结构化定位失败"而非"证据不存在"：向量兜底照常执行，
+    # 由答案模型基于真实召回决定作答或拒绝。
+    assert matches == []
+    assert collect_calls, "resolution-failure statuses must fall back to vector retrieval"
+
+
+def test_table_missing_source_refusal_skips_vector_fallback(monkeypatch) -> None:
+    from backend.app.services import retrieval_support
+
+    aspect = QueryAspect(
+        aspect_id="table_evidence",
+        question="根据《2099年10月人身险公司经营情况表》查询原保险保费收入。",
+        search_queries=(
+            QuerySearchQuery("2099年10月人身险公司经营情况表 原保险保费收入", "table_locator", ""),
+        ),
+        evidence_need="表格工作表、行列标签、单元格坐标和值",
+        keywords=("原保险保费收入",),
+        modality="table",
+        table_task="lookup",
+        table_filters={
+            "source_title": "2099年10月人身险公司经营情况表",
+            "year": 2099,
+            "month": 10,
+            "indicator": "原保险保费收入",
+        },
+    )
+
+    monkeypatch.setattr(retrieval_support, "retrieve_spreadsheet_matches", lambda db, aspect, limit: [])
+    monkeypatch.setattr(
+        retrieval_support,
+        "get_last_spreadsheet_diagnostic",
+        lambda: {"match_status": "source_not_found", "refusal_reason": "用户点名的表格来源在索引中不存在。"},
+    )
+
     def fail_collect(*args, **kwargs):
         raise AssertionError("vector fallback should not run after terminal spreadsheet refusal")
 
@@ -2689,7 +2733,7 @@ def test_table_terminal_refusal_skips_vector_fallback(monkeypatch) -> None:
 
     assert matches == []
     assert len(diagnostics) == 1
-    assert diagnostics[0]["spreadsheet_match_status"] == "period_not_found"
+    assert diagnostics[0]["spreadsheet_match_status"] == "source_not_found"
     assert diagnostics[0]["early_stopped"] is True
     assert diagnostics[0]["early_stop_reason"] == "structured_spreadsheet_refusal"
     assert diagnostics[0]["rerank_call_count"] == 0

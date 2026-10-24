@@ -1436,6 +1436,21 @@ def test_table_filters_without_institution_word_unchanged(monkeypatch) -> None:
     assert "财产险" not in str(table.table_filters.get("row_label") or "")
 
 
+def test_table_filters_do_not_glue_title_only_institution(monkeypatch) -> None:
+    """机构词只出现在表标题（未作为行段索引）时不得拼入 row_label。
+
+    “商业银行”在《…商业银行主要监管指标情况表》里是标题词，不是行类别；
+    行匹配是 AND 语义，拼进去会让所有候选行失败。
+    """
+    monkeypatch.setattr(query_planner_service, "QUERY_PLANNER_API_KEY", None)
+
+    plan = plan_query("2024年四季度商业银行资本充足率是多少？")
+    table = plan.aspects[0]
+    assert table.table_filters["indicator"] == "资本充足率"
+    assert table.table_filters["row_label"] == "资本充足率"
+    assert "商业银行" not in str(table.table_filters.get("row_label") or "")
+
+
 def test_institution_row_terms_ignores_title_embedded_words() -> None:
     """无书名号自然标题中的机构词（'…保险公司资金运用情况表中…'）不得成为行定位词。"""
     terms = query_planner_service._institution_row_terms(
@@ -1568,7 +1583,13 @@ def indexed_table_schema():
     token = query_planner_service._TABLE_VOCABULARY.set(("健康险", "全国合计", "北京", "天津", "公司本级", "本年累计", '现金及存放同业', '贷款余额', '证券投资', '其他资产', '资产合计', '不良贷款余额', '损失类贷款余额', '可疑类贷款余额', '次级类贷款余额', '资金运用余额', '普惠小微贷款余额', '绿色信贷余额', '原保险保费收入', '资本充足率', '银行存款', '债券', '股票', '证券投资基金', '长期股权投资', '保户投资款新增交费', '投连险独立账户新增交费', '赔付支出', '总资产', '净资产', '净利润'))
     source_token = query_planner_service._TABLE_SOURCES.set(tuple(f"{year}年{month}月{subject}经营情况表" for year in [2023,2024,2025] for month in range(1,13) for subject in ["保险业","人身险公司","财产保险公司"])+tuple(f"{year}年{month}月全国各地区原保险保费收入情况表" for year in [2023,2024,2025] for month in range(1,13)))
     column_token = query_planner_service._TABLE_COLUMNS.set(("健康险",))
-    row_token = query_planner_service._TABLE_ROWS.set(("全国合计", "农村商业银行", "北京", "天津", "公司本级"))
+    # 财产险公司/人身险公司/保险公司与全国合计一样是真实语料中的行段
+    # （“其中：财产险公司 / 资金运用余额”的行轴部分），机构词只有作为行段
+    # 才能拼入 row_label（AND 行匹配），见 _indexed_row_locator_terms。
+    row_token = query_planner_service._TABLE_ROWS.set(
+        ("全国合计", "农村商业银行", "北京", "天津", "公司本级",
+         "财产险公司", "人身险公司", "保险公司", "城市商业银行", "民营银行")
+    )
     yield
     query_planner_service._TABLE_ROWS.reset(row_token)
     query_planner_service._TABLE_COLUMNS.reset(column_token)
