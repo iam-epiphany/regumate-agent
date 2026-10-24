@@ -1,6 +1,6 @@
 """Offline evidence-set evaluation for paired QA outputs.
 
-This script reads an existing ``run_pair_regression.py`` output file and the
+This script reads an existing batch output JSON file and the
 matching ``gold.jsonl``.  It does not call the QA service, a model, or a
 vector store, and it never feeds gold data into production code.
 
@@ -180,7 +180,7 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--outputs", required=True, help="run_pair_regression.py output JSON")
+    parser.add_argument("--outputs", required=True, help="Batch output JSON containing per-question responses")
     parser.add_argument("--gold", required=True, help="matching gold.jsonl")
     parser.add_argument("--out", required=True, help="report JSON path")
     parser.add_argument("--limit", type=int, default=0, help="evaluate only the first N rows")

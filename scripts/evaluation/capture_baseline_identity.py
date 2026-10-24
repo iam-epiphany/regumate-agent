@@ -18,6 +18,11 @@ CORPUS_ROOT = (
     / "nfra_page_attachments_500"
 )
 ENV_KEYS = (
+    "MODEL_PROVIDER",
+    "MODEL_API_KEY",
+    "MODEL_BASE_URL",
+    "MODEL_NAME",
+    "SERVICE_PORT",
     "DEEPSEEK_API_KEY",
     "LLM_API_KEY",
     "LLM_PROVIDER",

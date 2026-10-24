@@ -31,7 +31,6 @@ ReguMate-Agent-Delivery*/
 *.7z
 .env
 .env.*
-!.env.example
 
 outputs/*
 !outputs/official300_open/

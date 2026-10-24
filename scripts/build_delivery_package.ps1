@@ -11,6 +11,7 @@ $DeliveryName = 'ReguMate-Agent-Contest'
 $DistRoot = Join-Path $ProjectRoot 'dist-delivery'
 $DeliveryRoot = Join-Path $DistRoot $DeliveryName
 $ProjectRootFull = (Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\')
+$DeliveryFiles = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'delivery_files.json') -Raw | ConvertFrom-Json
 
 function Ensure-InProject([string]$Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
@@ -68,7 +69,7 @@ New-Item -ItemType Directory -Force -Path $DeliveryRootFull | Out-Null
 
 $rootFiles = @(
     '.dockerignore',
-    '.env.example',
+    '.env',
     '.gitignore',
     'docker-compose.gpu.yml',
     'docker-compose.yml',
@@ -85,22 +86,21 @@ foreach ($file in $rootFiles) { Copy-FileToDelivery $file }
 
 Copy-Directory (Join-Path $ProjectRoot 'backend') (Join-Path $DeliveryRoot 'backend') `
     -ExcludeDirs @('__pycache__', '.pytest_cache') `
-    -ExcludeFiles @('*.pyc', '*.pyo', '*.log')
+    -ExcludeFiles (@('*.pyc', '*.pyo', '*.log') + @($DeliveryFiles.development_only_backend_tests))
 
 Copy-Directory (Join-Path $ProjectRoot 'frontend') (Join-Path $DeliveryRoot 'frontend') `
     -ExcludeDirs @('node_modules', 'dist', 'build') `
     -ExcludeFiles @('*.tsbuildinfo', '*.log')
 
-Copy-Directory (Join-Path $ProjectRoot 'scripts') (Join-Path $DeliveryRoot 'scripts') `
-    -ExcludeDirs @('__pycache__') `
-    -ExcludeFiles @(
-        '*.pyc',
-        '*.pyo',
-        '*.log',
-        'audit_hard_challenge_50.py',
-        'build_hard_challenge_50.py',
-        'build_hard_challenge_50_round2.py'
-    )
+# Ship only the documented upload, warmup, official evaluation and packaging
+# tools. Development utilities stay in the source repository.
+foreach ($relative in $DeliveryFiles.scripts) {
+    $source = Ensure-InProject (Join-Path $ProjectRoot $relative)
+    if (-not $source.StartsWith((Join-Path $ProjectRootFull 'scripts') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Delivery script must be inside scripts/: $relative"
+    }
+    Copy-FileToDelivery $relative
+}
 
 $IterationLogFileName = -join ([char[]](
     0x7cfb, 0x7edf, 0x4f18, 0x5316, 0x4e0e, 0x8bc4, 0x6d4b,
@@ -158,7 +158,8 @@ $excludedFinding = Get-ChildItem -LiteralPath $DeliveryRoot -Recurse -Force -Err
     $insideQdrant = $relative -like 'data\qdrant\*'
     $_.FullName -match '\\(node_modules|\.git|\.idea|\.pytest_cache|__pycache__|\.run-state|contest_staging|audit_archives|dev_runtime)\\' -or
     ($_.Name -match '\.(pyc|pyo|tsbuildinfo)$') -or
-    ($_.Name -eq '.env') -or
+    ($_.Name -eq '.env' -and $relative -ne '.env') -or
+    ($_.Name -eq '.env.example') -or
     ($_.Name -eq 'SHA256SUMS.txt') -or
     ($_.Name -eq 'FILE_MANIFEST.sha256') -or
     ($_.Name -match '\.log$' -and -not $insideQdrant)
@@ -183,7 +184,7 @@ $contents = @(
     }
 ) + @(
     "",
-    "Excluded from delivery: .git, IDE files, Python/Node caches, node_modules, frontend dist, development databases, temporary staging directories, historical audit logs, repeated evaluation runs, the real .env, and generated SHA-256 manifests. The package ships .env.example only.",
+    "Excluded from delivery: .git, IDE files, Python/Node caches, node_modules, frontend dist, development databases, temporary staging directories, historical audit logs, repeated evaluation runs, development scripts and their dedicated tests, .env.example, and generated SHA-256 manifests. Script contents follow scripts/delivery_files.json. Root .env is included with the owner's authorized domestic-model credentials for contest deployment.",
     "Qdrant internal *.log files are retained because they are part of the persisted vector index."
 )
 $contents | Set-Content -LiteralPath $contentsPath -Encoding utf8

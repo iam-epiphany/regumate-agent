@@ -1,6 +1,6 @@
 services:
   app:
-    command: python -m uvicorn backend.main:app --reload --reload-dir /app/backend --host 0.0.0.0 --port 8000
+    command: python -m uvicorn backend.main:app --reload --reload-dir /app/backend --host 0.0.0.0 --port ${SERVICE_PORT:-8000}
     volumes:
       - ./backend:/app/backend
       - ./scripts:/app/scripts
@@ -14,7 +14,7 @@ services:
     depends_on:
       - app
     environment:
-      VITE_API_PROXY_TARGET: http://app:8000
+      VITE_API_PROXY_TARGET: http://app:${SERVICE_PORT:-8000}
     ports:
       - "127.0.0.1:${REGUMATE_DOCKER_FRONTEND_PORT:-5174}:5174"
     volumes:

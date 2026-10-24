@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "scripts": [
+    "scripts/build_delivery_package.ps1",
+    "scripts/verify_delivery.ps1",
+    "scripts/delivery_files.json",
+    "scripts/readme.txt",
+    "scripts/evaluate_contest_qa.py",
+    "scripts/run_contest_dataset_test.py",
+    "scripts/upload_contest_knowledge_base.py",
+    "scripts/warmup_models.ps1",
+    "scripts/evaluation/run_official300_open.py",
+    "scripts/evaluation/rewrite_official300_open.py",
+    "scripts/evaluation/score_official300_open.py",
+    "scripts/evaluation/readme.txt"
+  ],
+  "development_only_backend_tests": [
+    "test_evidence_set_evaluation.py",
+    "test_official_excel_cells.py",
+    "test_package_manifest.py",
+    "test_phase1_evaluation_gates.py"
+  ]
+}

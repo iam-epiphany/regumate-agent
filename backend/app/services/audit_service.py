@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 import json
+import os
 import re
 from threading import Lock
 from zoneinfo import ZoneInfo
@@ -30,10 +31,9 @@ _PDF_FONT_NAME = "ReguMateAuditArchiveFont"
 _PDF_FALLBACK_CID_FONT_NAME = "STSong-Light"
 _PDF_FONT_REGISTERED = False
 _PDF_FONT_CANDIDATES = (
-    Path(r"C:\Windows\Fonts\simhei.ttf"),
-    Path(r"C:\Windows\Fonts\simfang.ttf"),
-    Path(r"C:\Windows\Fonts\simkai.ttf"),
-    Path(r"C:\Windows\Fonts\simsunb.ttf"),
+    *(Path(os.environ["WINDIR"]) / "Fonts" / name
+      for name in ("simhei.ttf", "simfang.ttf", "simkai.ttf", "simsunb.ttf")
+      if os.environ.get("WINDIR")),
     Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
     Path("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"),
     Path("/usr/share/fonts/opentype/source-han-sans/SourceHanSansSC-Regular.otf"),

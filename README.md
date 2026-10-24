@@ -1,5 +1,7 @@
 # ReguMate 监管可信问答
 
+> **决赛完整提交包入口**：如果目录中含 `images/`，请先阅读根目录 `DEPLOYMENT.md`（同内容 PDF 可单独上传）。包内已提供 `.env`、linux/amd64 镜像、完整检索模型和已索引知识库。Linux 执行 `sh scripts/offline/start.sh`；无需构建、下载模型或重新导入资料。提交包默认 `docker-compose.yml` 与 `docker-compose.offline.yml` 相同，源码重建配置另存为 `docker-compose.source.yml`。下文的源码构建方法供开发维护参考。
+
 ReguMate 面向银行监管制度、填报说明和统计报表，提供文档入库、资料检索、表格取数与计算、带依据的问答和操作记录。回答基于已上传的知识库，用户可以查看引用原文及计算依据。
 
 ## 系统亮点
@@ -21,33 +23,34 @@ ReguMate 面向银行监管制度、填报说明和统计报表，提供文档�
 
 ## 2. 填写配置
 
-首次运行时复制模板；已有 `.env` 时直接编辑，避免覆盖自己的配置。
+提交包根目录已提供 `.env`，包含团队授权用于本作品部署的 DeepSeek API Key。模型供应商为 DeepSeek（深度求索），当前模型为 `deepseek-v4-flash`。承办方可直接使用随包配置，或在部署前替换自己的 Key。
 
 Windows PowerShell：
 
 ```powershell
-Copy-Item .env.example .env
 notepad .env
 ```
 
 Linux/macOS：
 
 ```sh
-cp .env.example .env
+vi .env
 ```
 
-填写自己的大模型配置，例如：
+环境变量含义如下，实际 Key 已写入随包 `.env`，此处只说明字段：
 
 ```dotenv
-LLM_PROVIDER=openai_compatible
-LLM_API_KEY=填写自己的密钥
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
+MODEL_PROVIDER=DeepSeek
+MODEL_API_KEY=实际密钥见随包.env
+MODEL_BASE_URL=https://api.deepseek.com
+MODEL_NAME=deepseek-v4-flash
+EMBEDDING_API_KEY=
+SERVICE_PORT=8000
 ```
 
-`LLM_BASE_URL` 填提供商的 API 根地址，不包含 `/chat/completions`。可替换为其他兼容接口的地址与模型名。本地 BGE-M3 和 BGE reranker 负责检索向量与重排，不由上述大模型配置替代。
+`MODEL_BASE_URL` 填提供商的 API 根地址，不包含 `/chat/completions`。如承办方更换接口，应选择比赛支持的国产模型服务，并同步修改供应商、地址、名称和 Key。规划、回答生成和语义核验默认共用这套配置。本地 BGE-M3 和 BGE reranker 负责检索向量与重排，不使用独立 Embedding API，因此 `EMBEDDING_API_KEY` 留空。
 
-提交包仅附带密钥为空的 `.env.example`，实际 `.env` 留在部署机器上。
+系统优先读取 `MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_NAME`，同时兼容已有 `LLM_*` 配置。Docker Compose 自动读取根目录 `.env`；直接运行 `python -m backend.main` 时也会读取该文件，并监听 `SERVICE_PORT` 指定的端口。操作系统环境变量可覆盖文件中的同名值。
 
 ## 3. 启动系统
 
@@ -94,7 +97,7 @@ REGUMATE_TORCH_FLAVOR=cpu MODEL_DEVICE=cpu REGUMATE_APP_IMAGE=regumate/app:conte
 | API 文档 | <http://127.0.0.1:8000/docs> |
 | Qdrant 控制台 | <http://127.0.0.1:6333/dashboard> |
 
-应用端口被占用时，在 `.env` 修改 `REGUMATE_APP_PORT`，并使用新端口访问。GPU 启动后仍显示 CPU 时，检查 Docker GPU 支持及系统状态中的设备说明。
+应用端口被占用时，在 `.env` 修改 `SERVICE_PORT`，并使用新端口访问；容器监听端口、端口映射和健康检查会同步调整。GPU 启动后仍显示 CPU 时，检查 Docker GPU 支持及系统状态中的设备说明。
 
 ## 4. 准备本地模型
 
@@ -224,6 +227,8 @@ python scripts/evaluation/score_official300_open.py --results outputs/official30
 
 ## 9. 开发与生成提交包
 
+提交包只包含 `scripts/delivery_files.json` 列出的上传、模型预热、官方 300 题评测与打包工具。开发启停、索引重建、审计、性能测试和调试脚本保留在开发仓库；依赖这些工具的专用测试也仅在开发仓库保留。提交包中的后端测试覆盖随包提供的功能，完整开发检查应在开发仓库执行。
+
 项目目录：
 
 ```text
@@ -260,4 +265,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_delivery_pac
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_delivery.ps1
 ```
 
-输出为 `dist-delivery/ReguMate-Agent-Contest/` 和 `dist-delivery/ReguMate-Agent-Contest.zip`。默认包含代码、技术文档、空配置模板、可用的官方资料和默认题目输入；依赖、模型、已入库运行数据、临时文件及真实 `.env` 不随包提供。
+输出为 `dist-delivery/ReguMate-Agent-Contest/` 和 `dist-delivery/ReguMate-Agent-Contest.zip`。默认包含代码、技术文档、含团队授权 Key 的根目录 `.env`、可用的官方资料和默认题目输入；依赖、模型、已入库运行数据和临时文件不随包提供，不再附带 `.env.example`。

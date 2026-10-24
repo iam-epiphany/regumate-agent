@@ -2,10 +2,6 @@ from __future__ import annotations
 from backend.app.services import retrieval_support
 
 from dataclasses import dataclass
-from decimal import Decimal
-from pathlib import Path
-
-import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -42,19 +38,6 @@ from backend.app.services.formula_parser_service import (
     _format_formula_result,
 )
 from backend.app.services.vector_store_service import VectorSearchResult, _retrieval_filter
-from scripts.evaluate_trust_challenge import (
-    _asserted_forbidden,
-    _atomic_required_conclusions,
-    _critical_entity_errors,
-    _decimal_value,
-    _fact_match,
-    _citation_trace_sources,
-    _has_equivalent_chunk_boundary_citation,
-    _has_cross_document_near_duplicate_citation,
-    _score_multiple_choice,
-    _summarize,
-    read_jsonl,
-)
 
 
 def _document(document_id: str, title: str, authority: str) -> Document:
@@ -429,44 +412,8 @@ def test_mcq_exact_support_preserves_governing_modal_list_preamble() -> None:
     assert preamble.metadata["governs_chunk_ids"] == [exact.citation.chunk_id]
 
 
-def test_multiple_choice_evaluator_accepts_label_option_format_without_forcing_definition_restatement() -> None:
-    correct, detail = _score_multiple_choice(
-        {
-            "required_conclusions": [
-                "答案为C",
-                "大额风险暴露是指商业银行对单一客户超过一级资本净额2.5%的风险暴露",
-            ]
-        },
-        "C选项‘门槛为一级资本净额2.5%’正确。[1]",
-        False,
-        [
-            {"conclusion": "答案为C", "matched": True},
-            {"conclusion": "大额风险暴露是指商业银行对单一客户超过一级资本净额2.5%的风险暴露", "matched": False},
-        ],
-    )
-
-    assert correct is True
-    assert detail["actual_label"] == "C"
 
 
-@pytest.mark.parametrize(
-    ("answer", "label"),
-    [
-        ("正确选项为：A、核心一级资本充足率降至5.125%。[1]", "A"),
-        ("选项B“真实性、准确性、完整性、一致性和可比性”正确。[1]", "B"),
-        ("因此选项D正确。[1]", "D"),
-    ],
-)
-def test_multiple_choice_evaluator_accepts_common_explicit_label_phrasings(answer: str, label: str) -> None:
-    correct, detail = _score_multiple_choice(
-        {"required_conclusions": [f"答案为{label}"]},
-        answer,
-        False,
-        [],
-    )
-
-    assert correct is True
-    assert detail["actual_label"] == label
 
 
 
@@ -715,53 +662,12 @@ def test_compact_formula_assignments_and_percentage_output() -> None:
     assert _format_formula_result(0.09, "(核心一级资本-扣除项)/风险加权资产", "结果是多少百分比") == "9%"
 
 
-def test_evaluator_accepts_elided_regulated_subject_and_shared_suffix_enumeration() -> None:
-    subject = _fact_match(
-        "团体意外险不得向特定团体成员以外的个人销售。",
-        "保险公司不得向特定团体成员以外的个人销售团体意外险",
-    )
-    enumeration = _fact_match(
-        "压力测试至少覆盖系统性、自身和混合压力情景。",
-        "压力测试至少包括系统性压力情景、自身压力情景和混合压力情景。",
-    )
-
-    assert subject["matched"] is True
-    assert enumeration["matched"] is True
 
 
-def test_evaluator_reads_cross_document_sources_from_calculation_trace() -> None:
-    chunks, documents, pairs = _citation_trace_sources(
-        [
-            {
-                "metadata": {
-                    "calculation_cells": [
-                        {"document_id": "DOC-A", "chunk_id": "CHUNK-A", "cell": "C5"},
-                        {"document_id": "DOC-B", "chunk_id": "CHUNK-B", "cell": "C5"},
-                    ]
-                }
-            }
-        ]
-    )
-
-    assert chunks == {"CHUNK-A", "CHUNK-B"}
-    assert documents == {"DOC-A", "DOC-B"}
-    assert pairs == {("CHUNK-A", "DOC-A"), ("CHUNK-B", "DOC-B")}
 
 
-def test_evaluator_requires_each_semicolon_delimited_conclusion() -> None:
-    conclusions = _atomic_required_conclusions(["应使用自有资金；应与监管部门和客户有效沟通。"])
-
-    assert conclusions == ["应使用自有资金", "应与监管部门和客户有效沟通。"]
-    assert all(_fact_match("应使用自有资金。", item)["matched"] for item in conclusions) is False
 
 
-def test_evaluator_accepts_explicit_judgment_alias_and_contextual_subject_elision() -> None:
-    assert _fact_match("正确。该比例与期限均符合要求。", "说法正确")["matched"]
-    assert _fact_match(
-        "账簿划分政策和程序的内部审计频率为每年一次，内部审计结果需留档备查。",
-        "商业银行应每年对划分政策和程序开展内部审计，内部审计结果需留档备查",
-    )["matched"]
-    assert not _fact_match("商业银行每年披露一次信息。", "商业银行应每年开展内部审计并留档备查")["matched"]
 
 
 def test_fullwidth_ordinal_number_is_not_a_factual_entity() -> None:
@@ -779,74 +685,12 @@ def test_fullwidth_ordinal_number_is_not_a_factual_entity() -> None:
     assert "20" in entities
 
 
-def test_evaluator_does_not_count_cited_extra_number_as_entity_error() -> None:
-    case = {"canonical_answer": "应在10个工作日内完成。"}
-    citations = [{"excerpt": "2025年底前，特殊情形可延长至14个工作日。"}]
-
-    errors, total = _critical_entity_errors(
-        case,
-        "应在10个工作日内完成；2025年底前特殊情形可延长至14个工作日。[1]",
-        citations,
-    )
-
-    assert errors == 0
-    assert total == 3
 
 
-def test_evaluator_accepts_same_document_overlap_chunk_with_required_clause() -> None:
-    conclusion = "补充披露信息应符合真实性、准确性、完整性、一致性和可比性要求"
-    evidence = {
-        "document_id": "DOC-DISCLOSURE",
-        "evidence_text": f"四、补充披露要求。其他前置规定。{conclusion}。",
-    }
-    citation = {
-        "document_id": "DOC-DISCLOSURE",
-        "excerpt": f"{conclusion}。五、追溯披露和过渡期披露要求。其他后续规定。",
-    }
-
-    assert _has_equivalent_chunk_boundary_citation(
-        evidence,
-        [citation],
-        required_conclusions=[conclusion],
-    )
-    assert not _has_equivalent_chunk_boundary_citation(
-        evidence,
-        [{**citation, "document_id": "DOC-OTHER"}],
-        required_conclusions=[conclusion],
-    )
 
 
-def test_evaluator_accepts_only_strict_cross_document_clause_duplicates() -> None:
-    repeated_clause = (
-        "在处置计划实施过程中，应当与监管部门、地方政府、股东、客户、员工和社会公众等开展有效沟通，"
-        "维持正常经营秩序，防范区域性与系统性风险和其他不利于处置的事件，降低处置影响，提高处置可行性。"
-    )
-    evidence = {"document_id": "DOC-A", "evidence_text": repeated_clause}
-    duplicate = repeated_clause.replace("降低处置影响", "降低处置的影响")
-
-    assert _has_cross_document_near_duplicate_citation(
-        evidence,
-        [{"document_id": "DOC-B", "excerpt": duplicate}],
-    )
-    assert not _has_cross_document_near_duplicate_citation(
-        evidence,
-        [{"document_id": "DOC-A", "excerpt": duplicate}],
-    )
-    assert not _has_cross_document_near_duplicate_citation(
-        evidence,
-        [{"document_id": "DOC-B", "excerpt": "本段只共享处置计划和有效沟通等少量通用词语，并不包含同一监管要求。" * 5}],
-    )
 
 
-def test_evaluator_requires_each_item_in_an_includes_conclusion() -> None:
-    conclusion = "银行业金融机构公示信息包括函证范围和回函用章。"
-
-    incomplete = _fact_match("银行业金融机构公示信息包括办理机构和联系方式。", conclusion)
-    complete = _fact_match("公示信息包括回函用章以及询证函的函证范围。", conclusion)
-
-    assert incomplete["matched"] is False
-    assert incomplete["required_terms"] == ["函证范围", "回函用章"]
-    assert complete["matched"] is True
 
 
 
@@ -1105,70 +949,10 @@ def test_answer_claim_remains_backward_compatible() -> None:
     assert claim.aspect_ids == []
 
 
-def test_hard_50_is_gold_isolated_and_independently_audited() -> None:
-    root = Path("data/evaluation/hard_challenge_50/round_1")
-    if not (root / "questions.jsonl").is_file():
-        pytest.skip("optional internal hard-50 dataset is not included in the submission package")
-    questions = read_jsonl(root / "questions.jsonl")
-    gold = read_jsonl(root / "gold.jsonl")
-    audit = __import__("json").loads((root / "independent_audit.json").read_text(encoding="utf-8"))
-
-    assert len(questions) == len(gold) == 50
-    assert [row["id"] for row in questions] == [row["id"] for row in gold]
-    assert all(row["difficulty"] == "hard" for row in questions)
-    assert sum(row["answerable"] is True for row in questions) == 44
-    assert all("canonical_answer" not in row and "evidence" not in row for row in questions)
-    assert audit["passed"] is True
-    assert audit["expert_reviewed"] is False
 
 
-def test_hard_50_gate_requires_accuracy_refusal_and_direct_citations() -> None:
-    records = []
-    for index in range(50):
-        answerable = index < 44
-        records.append({
-            "case_id": f"HC{index + 1:03d}",
-            "scenario": "test",
-            "question_type": "fact" if answerable else "table_refusal",
-            "answerable": answerable,
-            "difficulty": "hard",
-            "scoring_type": "text_fact" if answerable else "refusal",
-            "answer_correct": True,
-            "passed": True,
-            "request_error": None,
-            "http_status": 200,
-            "elapsed_ms": 100.0,
-            "source_hit": True,
-            "aspect_citation_complete": True,
-            "aspect_checks": ([{"matched": True}] if answerable else []),
-            "invalid_citations": [],
-            "mismatched_citations": [],
-            "forbidden_conclusions_found": [],
-            "critical_entity_errors": 0,
-            "critical_entity_total": 1,
-            "expected_document_ids": (["DOC-1"] if answerable else []),
-        })
-
-    passed = _summarize(records, [], "all", None, "hard50")
-    assert passed["gate_passed"] is True
-    assert passed["answerable_accuracy"] == 1.0
-    assert passed["refusal_accuracy"] == 1.0
-    assert passed["evidence_aspect_recall"] == 1.0
-
-    records[0]["aspect_citation_complete"] = False
-    failed = _summarize(records, [], "all", None, "hard50")
-    assert failed["gate_passed"] is False
 
 
-def test_challenge_scorer_handles_facts_decimals_and_negated_forbidden_phrases() -> None:
-    fact = _fact_match(
-        "消费金融公司是不吸收公众存款、服务境内居民个人的非银行金融机构。",
-        "消费金融公司是不吸收公众存款、为中国境内居民个人提供消费贷款的非银行金融机构。",
-    )
-    assert fact["matched"] is True
-    assert _decimal_value("9%")[:2] == (Decimal("9"), True)
-    assert _asserted_forbidden("现有依据无法确认现行有效。", "确认现行有效") is False
-    assert _asserted_forbidden("该文件确认现行有效。", "确认现行有效") is True
 
 
 def test_document_identity_question_returns_explicit_unknown_without_legal_inference() -> None:

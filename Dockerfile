@@ -85,4 +85,4 @@ EXPOSE 8000
 # UVICORN_WORKERS controls the process count for concurrent load tests
 # (default 1: a single worker keeps model-inference and SQLite access
 # serialized and is the safest production shape on a CPU-only host).
-CMD ["sh", "-c", "python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1}"]
+CMD ["sh", "-c", "python -m uvicorn backend.main:app --host 0.0.0.0 --port ${SERVICE_PORT:-8000} --workers ${UVICORN_WORKERS:-1}"]

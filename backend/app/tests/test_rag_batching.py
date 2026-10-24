@@ -218,6 +218,13 @@ def test_retrieve_aspects_single_prepared_uses_single_path(monkeypatch) -> None:
         collect_calls.append(prepared)
         raise AssertionError("batched collector must not run for a single prepared aspect")
 
+    single_collect_calls = []
+
+    def fake_single_collect(queries, **kwargs):
+        single_collect_calls.append(queries)
+        return [], {}, []
+
+    monkeypatch.setattr(rag_service, "collect_candidates_with_query_hits", fake_single_collect)
     monkeypatch.setattr(rag_service, "_collect_prepared_candidates_many", fake_collect)
     monkeypatch.setattr(rag_service, "rerank_candidate_groups", lambda **kwargs: (_ for _ in ()).throw(AssertionError("group rerank must not run for a single aspect")))
     finished_calls = []
@@ -243,6 +250,7 @@ def test_retrieve_aspects_single_prepared_uses_single_path(monkeypatch) -> None:
     retrievals = _retrieve_aspects(None, query_plan)
 
     assert finished_calls == ["aspect_single"]
+    assert single_collect_calls == [[query.query for query in aspect.search_queries]]
     assert retrievals[0].aspect.aspect_id == "aspect_single"
     assert not collect_calls
 

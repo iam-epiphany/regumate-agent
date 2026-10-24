@@ -16,7 +16,7 @@ from backend.app.api.audit import router as audit_router
 from backend.app.api.documents import router as documents_router
 from backend.app.api.health import router as health_router
 from backend.app.api.qa import router as qa_router
-from backend.app.core.config import API_TITLE, CORS_ORIGINS, FRONTEND_DEV_SERVER
+from backend.app.core.config import API_TITLE, CORS_ORIGINS, FRONTEND_DEV_SERVER, SERVICE_PORT
 from backend.app.core.database import init_db
 from backend.app.services.index_task_service import start_index_task_worker
 from backend.app.services.qa_task_service import start_qa_task_worker
@@ -189,3 +189,9 @@ def serve_frontend(request: Request, full_path: str):
         "Frontend build not found. Run `npm install` and `npm run build` in the frontend directory first.",
         status_code=503,
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=SERVICE_PORT)

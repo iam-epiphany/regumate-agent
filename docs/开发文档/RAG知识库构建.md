@@ -320,7 +320,7 @@ LibreOffice 转换默认限制 120 秒、输出 200MB，并拒绝空输出；两
 
 上传解析硬限制可配置，默认 ZIP 条目 20,000、总解压大小 500 MB、Excel 实际逻辑单元格 500 万。OOXML 在解压前核对条目与声明大小；工作簿在双份加载公式版/数值版前后执行维度检查，只遍历实际 materialized cells，并在所有分支关闭 workbook。超限、伪格式和解析失败均记录稳定错误并清理文件。
 
-交付包中的 `scripts/upload_contest_knowledge_base.ps1` 是面向测试人员的批量入库入口。它不会绕过 RAG 入库链路，而是在容器内通过 `/api/documents/upload` 逐个上传 `data/contest_dataset/dataset/nfra_page_attachments_500` 的 500 个官方附件，并轮询 `/api/documents` 等待 `indexed=500/500`。该脚本只负责知识库构建，不自动运行 QA。QA 自动评测由 `scripts/run_contest_qa_test.ps1` 独立执行；它要求当前知识库已准备好，若 collection、文档数或 Qdrant point 数明显不对，会提示先执行知识库上传。重复上传时按同名文件跳过已索引文档，失败或未完成文档会重新排队索引。
+开发仓库中的 `scripts/upload_contest_knowledge_base.ps1` 是历史 PowerShell 批量入库工具，仅供开发维护。当前交付包的批量入库入口为 `scripts/upload_contest_knowledge_base.py`（具体命令见根目录 README）。后者复用统一上传函数。它不会绕过 RAG 入库链路，而是在容器内通过 `/api/documents/upload` 逐个上传 `data/contest_dataset/dataset/nfra_page_attachments_500` 的 500 个官方附件，并轮询 `/api/documents` 等待 `indexed=500/500`。该脚本只负责知识库构建，不自动运行 QA。QA 自动评测由 `scripts/run_contest_qa_test.ps1` 独立执行；它要求当前知识库已准备好，若 collection、文档数或 Qdrant point 数明显不对，会提示先执行知识库上传。重复上传时按同名文件跳过已索引文档，失败或未完成文档会重新排队索引。
 
 检索只接受 SQLite 中活跃文档，并在 rerank 前完成过滤；Qdrant dense/sparse 查询附带当前 `index_version` payload 条件并适度 overfetch，避免失效 point 占据 top-K。文档恢复为 `indexed` 前，必须核对当前版本 point ID 集合与 SQLite 全部 chunk ID 精确一致，而不只比较一个近似数量。
 

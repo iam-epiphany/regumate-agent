@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.evaluate_contest_qa import read_cases
+from backend.app.core.config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
 PROMPT = """你是银行监管知识库评测的出题助手。下面是一道选择题。请把它改写成一道等价的开卷问答题。
 要求：
@@ -42,21 +43,20 @@ PROMPT = """你是银行监管知识库评测的出题助手。下面是一道�
 
 
 def _api_key() -> str:
-    for line in Path(".env").read_text(encoding="utf-8").splitlines():
-        if line.startswith("LLM_API_KEY="):
-            return line.split("=", 1)[1].strip()
-    raise RuntimeError("LLM_API_KEY not found in .env")
+    if LLM_API_KEY:
+        return LLM_API_KEY
+    raise RuntimeError("MODEL_API_KEY is not configured in .env or the environment")
 
 
 def _call(prompt: str, key: str, timeout: float) -> dict:
     payload = {
-        "model": "deepseek-v4-flash",
+        "model": LLM_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
         "response_format": {"type": "json_object"},
     }
     request = urllib.request.Request(
-        "https://api.deepseek.com/chat/completions",
+        LLM_BASE_URL.rstrip("/") + "/chat/completions",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
         method="POST",

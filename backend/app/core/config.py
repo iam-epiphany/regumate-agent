@@ -1,6 +1,12 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
@@ -40,6 +46,9 @@ def _env_choice(name: str, default: str, choices: set[str]) -> str:
 
 
 APP_NAME = "ReguMate"
+SERVICE_PORT = _env_int("SERVICE_PORT", 8000, minimum=1)
+if SERVICE_PORT > 65535:
+    raise RuntimeError("SERVICE_PORT must be <= 65535")
 API_TITLE = "ReguMate API"
 BUILD_ID = os.getenv("REGUMATE_BUILD_ID", "dev").strip() or "dev"
 APP_DESCRIPTION = "面向银行业监管制度与统计报表的可信 RAG 问答"
@@ -53,7 +62,6 @@ CORS_ORIGINS = [
 ]
 FRONTEND_DEV_SERVER = os.getenv("REGUMATE_FRONTEND_DEV_SERVER", "").strip().rstrip("/")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = Path(os.getenv("REGUMATE_DATA_DIR", PROJECT_ROOT / "data"))
 # The SQLite database may live on a separate Docker named volume: bind mounts
 # on Docker Desktop cannot reliably serve SQLite's multi-connection locking
@@ -64,7 +72,7 @@ DOCUMENT_DIR = DATA_DIR / "documents" / "originals"
 QDRANT_STORAGE_DIR = DATA_DIR / "qdrant"
 AUDIT_ARCHIVE_DIR = DATA_DIR / "audit_archives"
 
-DEFAULT_MODEL_CACHE_DIR = Path(r"D:\AI-Cache") if os.name == "nt" else DATA_DIR / "model_cache"
+DEFAULT_MODEL_CACHE_DIR = DATA_DIR / "model_cache"
 MODEL_CACHE_DIR = Path(os.getenv("REGUMATE_MODEL_CACHE_DIR") or DEFAULT_MODEL_CACHE_DIR)
 MODEL_DIR = DATA_DIR / "models"
 DEFAULT_EMBEDDING_MODEL_DIR = MODEL_DIR / "bge-m3"
@@ -183,13 +191,14 @@ DOCUMENT_SNAPSHOT_CACHE_MAX_DOCUMENTS = _env_int(
 )
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai_compatible").strip() or "openai_compatible"
-LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+LLM_API_KEY = os.getenv("MODEL_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
 LLM_BASE_URL = (
-    os.getenv("LLM_BASE_URL")
+    os.getenv("MODEL_BASE_URL")
+    or os.getenv("LLM_BASE_URL")
     or os.getenv("DEEPSEEK_BASE_URL")
     or "https://api.deepseek.com"
 )
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
+LLM_MODEL = os.getenv("MODEL_NAME") or os.getenv("LLM_MODEL") or "deepseek-v4-flash"
 # 语义为“显式关闭 thinking 输出”：为 True 时请求体携带 thinking: disabled
 # （部分 OpenAI 兼容 API 默认开启思考过程）。旧名 LLM_INCLUDE_THINKING 仍兼容，
 # 其语义曾与变量名相反（True 实际表示禁用），新部署请使用 LLM_DISABLE_THINKING。
