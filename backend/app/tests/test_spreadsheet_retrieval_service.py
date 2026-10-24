@@ -1140,7 +1140,11 @@ def test_selector_label_word_and_with_structural_prefix(db_session) -> None:
     matches = retrieve_spreadsheet_matches(db_session, aspect)
 
     assert len(matches) == 1
-    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(0.1609481203, rel=1e-6)
+    # “占…比例” is a percent-shaped ratio: the result now carries the percent
+    # value itself (result_scale=100), so the display layer never rescales it
+    # a second time.
+    assert matches[0].citation.metadata["calculation_result"] == pytest.approx(16.094812030783878, rel=1e-6)
+    assert matches[0].citation.metadata.get("result_scale") == 100
 
 
 def test_operand_decimal_prefers_displayed_value(db_session) -> None:

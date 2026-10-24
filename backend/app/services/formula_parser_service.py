@@ -692,6 +692,12 @@ def _format_formula_number(value: float) -> str:
 def _format_formula_result(value: float, formula: str, question: str = "") -> str:
     if "%" not in str(formula) and not any(marker in str(question) for marker in ("百分比", "百分数", "%")):
         return _format_formula_number(value)
+    # A quotient formula (“A / B”, with or without a trailing “*100%”) reads
+    # as a ratio and displays as a percentage (“9%”).  A multiplicative
+    # formula with a percent coefficient (“Y = A × 50%”, A=200 → 100) already
+    # carries the percent in the value — scaling again printed “10000%”.
+    if "/" not in str(formula) and "÷" not in str(formula):
+        return _format_formula_number(value)
     percent_value = value * 100
     return f"{_format_formula_number(percent_value)}%"
 

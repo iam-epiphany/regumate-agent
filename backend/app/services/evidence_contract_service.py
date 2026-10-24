@@ -109,10 +109,46 @@ def _qualifier_matches(qualifier: str, actual_text: str, metadata: dict[str, Any
         formats.update(re.findall(r'\.(pdf|docx?|xlsx?)$', chunk.source_doc.lower()))
         return expected in formats
     # Period qualifiers: the document title may omit them while its table
-    # metadata carries the year/month/quarter.  This is the same identity the
-    # spreadsheet locator already validated.
+    # metadata carries the year/month/quarter.  A qualifier that names a
+    # concrete quarter must compare the QUARTER VALUE — “四季度” evidence
+    # cannot stand in for “一季度” just because both carry quarter metadata.
     period_metadata = metadata.get('period')
     period_values = period_metadata if isinstance(period_metadata, dict) else {}
+    _CN_QUARTERS = {'一': 1, '二': 2, '三': 3, '四': 4}
+
+    def _quarter_value(text: str) -> int | None:
+        match = re.search(r'([一二四1-4])\s*季度', text)
+        if not match:
+            return None
+        token = match.group(1)
+        return _CN_QUARTERS.get(token) or (int(token) if token.isdigit() else None)
+
+    combined_period = re.fullmatch(r'(?:(20\d{2})\s*年)?\s*([一二四1-4])\s*季度', raw)
+    if combined_period or _quarter_value(raw) is not None:
+        requested_quarter = _quarter_value(raw)
+        if requested_quarter is not None:
+            metadata_quarters = {
+                int(value) for value in (
+                    metadata.get('quarter'), metadata.get('inferred_quarter'),
+                    period_values.get('quarter'),
+                ) if value is not None
+            }
+            if metadata_quarters and requested_quarter not in metadata_quarters:
+                return False
+            if not metadata_quarters:
+                actual_quarter = _quarter_value(actual_text)
+                if actual_quarter is not None and actual_quarter != requested_quarter:
+                    return False
+        if combined_period and combined_period.group(1):
+            year = int(combined_period.group(1))
+            if year in {metadata.get('inferred_year'), period_values.get('year')}:
+                return True
+            return bool(re.search(rf'{year}\s*年', actual_text))
+        if requested_quarter is not None and any(str(metadata.get(key) or '') for key in ('quarter', 'inferred_quarter')):
+            return True
+        if period_values.get('quarter') is not None:
+            return True
+        return bool(re.search(r'[一二三四1-4]\s*季度|季度', actual_text))
     year_match = re.fullmatch(r'(20\d{2})\s*年?', raw)
     if year_match:
         year = int(year_match.group(1))
@@ -125,12 +161,6 @@ def _qualifier_matches(qualifier: str, actual_text: str, metadata: dict[str, Any
         if month in {metadata.get('inferred_month'), period_values.get('month')}:
             return True
         return bool(re.search(rf'{month}\s*月', actual_text))
-    if '季度' in compact:
-        if any(str(metadata.get(key) or '') for key in ('quarter', 'inferred_quarter')):
-            return True
-        if period_values.get('quarter') is not None:
-            return True
-        return bool(re.search(r'[一二三四1-4]\s*季度|季度', actual_text))
     if '月度' in compact or compact in {'月', '月份'}:
         if metadata.get('inferred_month') is not None or period_values.get('month') is not None:
             return True

@@ -1469,9 +1469,8 @@ def prepare_generation(
             return catalogue_answer
     missing = _missing_aspects_in_context(context_chunks, required) if context_chunks and required else []
     if missing and requirements:
-        from backend.app.services.evidence_contract_service import requirement_source_matches
-
         by_id = {requirement.requirement_id: requirement for requirement in requirements}
+        from backend.app.services.evidence_contract_service import requirement_source_matches
         missing = [
             aspect_id for aspect_id in missing
             if not any(
@@ -2603,19 +2602,30 @@ def _match_option(
     numeric_variants = {numeric}
     if numeric is not None and numeric != 0:
         numeric_variants.update({numeric * 100, numeric / 100})
+    normalized_options = [re.sub(r"\s+", "", str(option)) for option in options]
+    # Numeric equality first, across ALL options: a label hit ("资本充足率"
+    # appears in every option text) must never outrank the option whose value
+    # actually equals the computed result, and a label-only fallback must not
+    # fire while a numeric match exists.  Options embed the number in prose
+    # (“资本充足率为10.5%”), so extract the first numeric token.
     for index, option in enumerate(options):
-        option_numeric = _float_or_none(option)
-        numeric_match = option_numeric is not None and any(
+        token = re.search(r"-?\d[\d,]*(?:\.\d+)?%?", str(option))
+        option_numeric = _float_or_none(token.group(0)) if token else None
+        if option_numeric is None:
+            continue
+        if any(
             math.isclose(variant, option_numeric, rel_tol=1e-4, abs_tol=0.02)
             for variant in numeric_variants
             if variant is not None
-        )
-        normalized_option = re.sub(r"\s+", "", str(option))
-        label_match = normalized_label and (
-            normalized_label in normalized_option or normalized_option in normalized_label
-        )
-        if numeric_match or label_match:
+        ):
             return option_labels[index] if index < len(option_labels) else None, str(option)
+    if numeric is not None:
+        return None, None
+    if not normalized_label:
+        return None, None
+    for index, normalized_option in enumerate(normalized_options):
+        if normalized_label in normalized_option or normalized_option in normalized_label:
+            return option_labels[index] if index < len(option_labels) else None, str(options[index])
     return None, None
 
 
@@ -2631,8 +2641,20 @@ def _format_value(value: Any, *, decimal_places: int | None = None) -> str:
     if numeric is None:
         return str(value or "")
     if isinstance(decimal_places, int) and 0 <= decimal_places <= 10:
-        return f"{numeric:.{decimal_places}f}"
-    return f"{numeric:.10f}".rstrip("0").rstrip(".")
+        return _round_half_up(numeric, decimal_places)
+    # Display formatting: six decimals absorb float noise from converted
+    # workbooks (“4096981.5249999999” → “4096981.525”) without hurting any
+    # regulatory figure (statistical tables carry at most 4-6 decimals).
+    return f"{numeric:.6f}".rstrip("0").rstrip(".")
+
+
+def _round_half_up(numeric: float, decimal_places: int) -> str:
+    """Regulatory 四舍五入: half-up, unlike float formatting's half-even."""
+
+    from decimal import ROUND_HALF_UP, Decimal
+
+    quantum = Decimal(1).scaleb(-decimal_places)
+    return str(Decimal(str(numeric)).quantize(quantum, rounding=ROUND_HALF_UP))
 
 
 def _value_with_unit(value: Any, output_unit: str | None, metadata: dict[str, Any]) -> str:
@@ -2642,14 +2664,28 @@ def _value_with_unit(value: Any, output_unit: str | None, metadata: dict[str, An
     率、不良贷款率…) as decimal fractions even when the unit column says "%" —
     拨备覆盖率 2.08128 means 208.128%.  Rendering the raw fraction next to a
     "%" unit (“0.15736 %”) is wrong for readers and fails numeric scoring
-    against gold answers written as percentages, so scale it by 100.
+    against gold answers written as percentages, so scale it by 100.  A value
+    the calculation layer already scaled (``result_scale: 100``, the
+    ratio-percent path) arrives in percent units and must not be scaled
+    again — the double scaling turned a 5% answer into “500.00%”.
     """
     if output_unit == "%":
         numeric = _float_or_none(value)
-        if numeric is not None and 0 < abs(numeric) <= 10:
+        if (
+            numeric is not None
+            and 0 < abs(numeric) <= 10
+            and metadata.get("result_scale") != 100
+            # A calculated result (difference/sum/ratio) is already in the
+            # unit the formula states — a 9.1 percentage-point difference must
+            # not be rescaled to “910%”.
+            and "calculation_result" not in metadata
+            and metadata.get("table_task") != "calculate"
+        ):
             scaled = _format_value(numeric * 100, decimal_places=metadata.get("display_decimal_places"))
             return f"{scaled}%"
     text = _format_value(value, decimal_places=metadata.get("display_decimal_places"))
+    if output_unit == "%":
+        return f"{text}%"
     return f"{text} {output_unit}" if output_unit else text
 
 

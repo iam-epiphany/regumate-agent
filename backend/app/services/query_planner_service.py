@@ -2087,10 +2087,16 @@ def _fallback_table_aspect(question: str, options: list[str] | None = None) -> Q
         # plus the 多 of 多少) must not be read as a difference.
         or re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+比(?!例|重|百分)[\u4e00-\u9fffA-Za-z0-9_]+(?:多|少)", operation_intent)
         or ("计算" in operation_intent and re.search(r"[\u4e00-\u9fffA-Za-z0-9_]+[－—-][\u4e00-\u9fffA-Za-z0-9_]+", operation_intent))
-    ):
+    ) and not re.search(r"百分比|百分数|比重|占比", operation_intent):
         table_task = "calculate"
         operation = "difference"
-    elif explicit_table and _asks_ratio_calculation(question):
+    elif (
+        # “A占B的比重” is a ratio regardless of how the table was anchored:
+        # statistical-intent questions (“2021年12月X占Y的比重”) have no book
+        # title, and gating this branch on explicit_table turned them into
+        # single-cell lookups that can never answer.
+        _asks_ratio_calculation(question)
+    ):
         table_task = "calculate"
         operation = "ratio"
     elif any(term in operation_intent for term in ["求和", "总和", "加总", "之和", "分项之和", "分项合计"]):
@@ -2458,6 +2464,14 @@ def _extract_table_selectors(
                 {"row_label": row_label, "column_label": ratio_columns.group(1).strip()},
                 {"row_label": row_label, "column_label": ratio_columns.group(2).strip()},
             ]
+    if not selectors and table_task == "calculate":
+        # “A占B的比重”：two rows of one table, one shared metric column.
+        ratio_rows = _ratio_operand_labels(question)
+        if len(ratio_rows) == 2 and ratio_rows[0] != ratio_rows[1]:
+            selectors = [
+                {"row_label": ratio_rows[0]},
+                {"row_label": ratio_rows[1]},
+            ]
     if selectors:
         pass
     elif len(period_selectors) >= 2:
@@ -2687,8 +2701,17 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
     row_label = indicators[0] if indicators else ""
     column_label = ""
     value_text = re.sub(r'《[^》]+》', '', compact)
-    actual_columns = [x for x in _TABLE_COLUMNS.get() if x in value_text and x not in TABLE_SCOPE_TERMS
-                      and not re.fullmatch(r'20\d{2}年|\d{1,2}月', x)]
+    # Column headers shaped like periods (“一季度末”, “12月”) are selected by
+    # the selector's own period key, never as a shared column target: a
+    # “三季度末到四季度末” question would otherwise pin every operand to one
+    # quarter column and empty the other selector.
+    period_shaped = re.compile(r"^(?:20\d{2}年)?(?:第?[一二三四1-4]季度末?|\d{1,2}月末?)$")
+    actual_columns = [
+        x for x in _TABLE_COLUMNS.get()
+        if x in value_text and x not in TABLE_SCOPE_TERMS
+        and not re.fullmatch(r'20\d{2}年|\d{1,2}月', x)
+        and not period_shaped.fullmatch(x)
+    ]
     actual_columns.sort(key=len, reverse=True)
     if actual_columns:
         column_label = actual_columns[0]
@@ -2700,6 +2723,23 @@ def _period_selectors(question: str) -> list[dict[str, Any]]:
         column_label = "本年累计"
     elif not column_label and ("账面值" in compact or "账面余额" in compact):
         column_label = "账面余额"
+    if row_label:
+        # The institution scope (“人身险公司 综合偿付能力充足率”) must ride on
+        # every period selector: the global row filter is dropped for
+        # calculations, so without it an aggregate row (保险公司) can win over
+        # the institution-specific row the question names.  Only a subject
+        # DIRECTLY adjacent to the indicator belongs to the row — an
+        # institution word separated from it by period words (“农村商业银行
+        # 一季度与四季度不良贷款余额”) is the cross-period subject itself and
+        # stays with the global row filter.
+        institution_terms = _institution_row_terms(value_text, row_label)
+        if institution_terms and institution_terms[0] not in row_label:
+            label_pos = value_text.find(row_label)
+            term_pos = value_text.find(institution_terms[0])
+            if label_pos > term_pos >= 0:
+                between = value_text[term_pos + len(institution_terms[0]): label_pos]
+                if not re.search(r"[一二三四1-4]季度|\d{1,2}月", between):
+                    row_label = f"{institution_terms[0]} {row_label}"
     selectors: list[dict[str, Any]] = []
     for period in unique_periods:
         selector: dict[str, Any] = {
@@ -2889,7 +2929,11 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         title = _indexed_source_for_question(question, {k: filters[k] for k in ('year', 'month', 'quarter') if k in filters})
         if title:
             filters['source_title'] = title
-    quarter_match = re.search(r"([一二三四1-4])季度|([1-4])季", compact_question)
+    # “第1-4季度哪个最低” spans every quarter: a single quarter filter would
+    # truncate the comparison set to the interval's last member.  Leave the
+    # quarter unconstrained so the comparison scans all period columns.
+    quarter_interval = re.search(r"[1-4一二三四]\s*[-—~至到]\s*[1-4一二三四]\s*季度", compact_question)
+    quarter_match = None if quarter_interval else re.search(r"([一二三四1-4])季度|([1-4])季", compact_question)
     if quarter_match:
         value = quarter_match.group(1) or quarter_match.group(2)
         filters["quarter"] = {"一": 1, "二": 2, "三": 3, "四": 4}.get(value, int(value) if value.isdigit() else None)
@@ -2933,20 +2977,35 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         value_question = value_question.replace(sheet_match.group(0), "")
     indicators = _mentioned_table_indicators(value_question)
     if indicators and "indicator" not in filters:
-        filters["indicator"] = indicators[0]
+        scope, core = _split_indicator_scope(indicators[0])
+        if scope:
+            filters["scope"] = scope
+        # “X中，Y是多少”（资金运用余额中，债券投资）：Y 是所求子行，X 只是
+        # 父项上下文，用于锁定表族，不能替代 Y 成为行目标。
+        if len(indicators) >= 2 and re.search(rf"{re.escape(core)}\s*中[，,]", value_question):
+            filters["context"] = core
+            core = _split_indicator_scope(indicators[1])[1]
+        filters["indicator"] = core
         # The row label stays the bare indicator: composite corpus rows carry
         # the institution as a separate segment ("其中：财产险公司 / 其中：
         # 银行存款"), which is not a contiguous substring, and the institution
         # qualifier is already rewarded by the token-overlap scoring.
-        if indicators[0] in _TABLE_COLUMNS.get() and indicators[0] not in _TABLE_ROWS.get():
-            filters.setdefault('column_label', indicators[0])
+        if core in _TABLE_COLUMNS.get() and core not in _TABLE_ROWS.get():
+            filters.setdefault('column_label', core)
         else:
-            filters["row_label"] = indicators[0]
+            filters["row_label"] = core
+    # A family word anywhere in the question (“保险业…”, “商业银行…”) scores
+    # the source table family; longest match wins so 大型商业银行 beats 商业银行.
+    if "scope" not in filters:
+        for scope_word in sorted(_TABLE_FAMILY_SCOPE_WORDS, key=len, reverse=True):
+            if scope_word in value_question:
+                filters["scope"] = scope_word
+                break
     scope_text = re.split(r"(?:请比较|请对比|比较|对比)", value_question, maxsplit=1)[0]
     # A position word right after the title (“《…情况表》中保险公司…”) belongs
     # to the title fragment, not to the institution name.
     scope_text = re.sub(r"《[^》]+》[中里内下于的]?", "", scope_text)
-    if explicit_row is None:
+    if explicit_row is None and "context" not in filters:
         matched_label = False
         for label in sorted(_TABLE_ROWS.get(), key=len, reverse=True):
             if label.replace(" ", "") in re.sub(r"\s+", "", scope_text):
@@ -2969,8 +3028,16 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
                 current_row_label = str(filters.get("row_label") or "").strip()
                 filters["row_label"] = f"{institution_terms[0]} {current_row_label}".strip()
     if "column_label" not in filters:
-        column_terms = [c for c in _TABLE_COLUMNS.get() if c in value_question and c not in TABLE_SCOPE_TERMS
-                        and not re.fullmatch(r'20\d{2}年|\d{1,2}月', c)]
+        # Structural column words (“机构”, “名称”, “项目”) describe table
+        # layout, not a measurement column; “银行业金融机构总资产” must not
+        # grow a column filter 机构 that no value column contains.
+        structural_column_words = {"机构", "名称", "项目", "指标", "地区", "机构类别", "机构类型"}
+        column_terms = [
+            c for c in _TABLE_COLUMNS.get()
+            if c in value_question and c not in TABLE_SCOPE_TERMS
+            and c not in structural_column_words
+            and not re.fullmatch(r'20\d{2}年|\d{1,2}月', c)
+        ]
         if not column_terms:
             # “X 的账面余额是多少” names the measurement column without an
             # explicit “在…列” phrase.  Scope words are valid columns when the
@@ -2993,6 +3060,22 @@ def _extract_table_filters(question: str) -> dict[str, Any]:
         metric = str(filters.get('indicator') or '')
         if metric and institution_terms[0] not in metric:
             filters['row_label'] = institution_terms[0] + ' ' + metric
+    # Rating-class locators (“风险综合评级为A类…有多少家”): the class word is
+    # part of the indexed row tail (“… / A类公司”), never an institution term.
+    # A generic “(保险)公司” mention in such questions is the subject being
+    # counted, not a row word — “保险公司” is not a substring of the row tail
+    # “A类公司”, so keeping it would fail every candidate under AND semantics.
+    class_match = re.search(r"([1-4一二三四A-Da-d])类", scope_text)
+    if class_match:
+        class_word = f"{class_match.group(1)}类"
+        current_row = str(filters.get("row_label") or "").strip()
+        words = [
+            word for word in re.split(r"\s+", current_row)
+            if word and word not in {"保险公司", "保险机构", "机构", "公司"}
+        ]
+        if class_word not in words:
+            words.append(class_word)
+        filters["row_label"] = " ".join(dict.fromkeys(words))
     row_scoped_phrase = False
     # Quoted column scope first: the quotes are an exact boundary, so
     # '截至当期-账面余额'口径下 extracts cleanly while an institution term in
@@ -3214,13 +3297,47 @@ def _should_force_text_aspect(question: str, sub_question: str, modality: str) -
     return _looks_like_policy_question(combined) or not _looks_like_statistical_table_question(combined)
 
 
+def _vocabulary_match_terms() -> list[tuple[str, str]]:
+    """Vocabulary entries as (display, match_form) pairs.
+
+    Indexed row labels carry layout artefacts — inner spaces
+    ("风险综合评级    （家）"), section suffixes ("综合偿付能力充足率（%）"),
+    numbering prefixes.  Questions never quote those artefacts, so matching
+    uses a stripped form while the display form keeps the full indexed label
+    for downstream row matching.
+    """
+
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for label in _TABLE_VOCABULARY.get():
+        display = str(label or "").strip()
+        if not display:
+            continue
+        match_form = re.sub(r"\s+", "", display)
+        # Leading numbering ("（3）人身意外伤害险", "其中：银行存款") and a
+        # trailing parenthetical ("（家）", "（%）") are layout artefacts a
+        # question never quotes.
+        match_form = re.sub(r"^[（(][0-9一二三四五六七八九十]{1,3}[）)]", "", match_form)
+        match_form = re.sub(r"^其中\s*[:：]?", "", match_form)
+        match_form = re.sub(r"[（(][^）)]*[）)]$", "", match_form)
+        if len(match_form) < 2 or match_form in seen:
+            continue
+        seen.add(match_form)
+        pairs.append((display, match_form))
+    return pairs
+
+
 def _mentioned_table_indicators(question: str) -> list[str]:
     normalized = re.sub(r"《[^》]+》", "", question)
     normalized = re.sub(r"工作表\s*[：:]\s*.+?(?=）\s*[，,]|[，。；;]|$)", "", normalized)
     normalized = re.sub(r"工作表\s*[“\"‘']([^”\"’']+)[”\"’']", "", normalized)
-    normalized = re.sub(r"20\d{2}年|[一二三四1-4]季度|\d{1,2}月", "", normalized)
+    # Spaces first: users write “2027 年 3 月”, and the period patterns only
+    # match the compact form — an unstripped “月” would glue onto the
+    # indicator phrase (“月绿色信贷余额”).
     normalized = re.sub(r"\s+", "", normalized)
-    matches = [indicator for indicator in _TABLE_VOCABULARY.get() if indicator in normalized]
+    normalized = re.sub(r"20\d{2}年|[一二三四1-4]季度|\d{1,2}月", "", normalized)
+    vocab = _vocabulary_match_terms()
+    matches = [match_form for _display, match_form in vocab if match_form in normalized]
     matches = [value for value in matches if value not in TABLE_SCOPE_TERMS]
     # A category name embedded in an institution name is a scope, not an
     # independent operand (for example, a row named X in "X公司收入").
@@ -3228,11 +3345,20 @@ def _mentioned_table_indicators(question: str) -> list[str]:
     if any(not re.search(r'(?:公司|银行|机构)$', value) for value in matches):
         matches = [value for value in matches if not re.search(r'(?:公司|银行|机构)$', value)]
     # A user may name only the distinguishing part of an indexed label.
-    # Keep the user's quantity phrase when an actual label contains it.
-    phrases = re.findall(r'[\u4e00-\u9fff]{0,12}(?:余额|金额|收入|支出|总额|费用|合计|总量|数量|净额|比例|比率|占比|率)', normalized)
+    # Keep the user's quantity phrase when an actual label contains it — in
+    # either direction: "债券投资" narrows to the indexed row "债券", while a
+    # longer indexed label keeps its own substring match.
+    phrases = re.findall(r'[\u4e00-\u9fff]{0,12}(?:余额|金额|收入|支出|投资|总额|费用|合计|总量|数量|净额|比例|比率|占比|率)', normalized)
     phrases = [re.split(r'公司|银行|以及|与|和|及|中|的|查询|计算|给出|读取', value)[-1] for value in phrases]
-    matches.extend(value for value in phrases if len(value) >= 2 and
-                   (not _TABLE_VOCABULARY.get() or any(value in label for label in _TABLE_VOCABULARY.get())))
+    match_forms = {match_form for _display, match_form in vocab}
+    # Reverse containment stays tight: a user phrase may narrow an indexed
+    # label by at most a two-character qualifier ("债券投资" → row "债券").
+    # Anything longer ("原保险保费收入是赔付支出" vs "赔付支出") is a
+    # different clause, not a narrowing.
+    matches.extend(value for value in phrases if len(value) >= 2 and (
+        not vocab
+        or any(value in match_form or (match_form in value and len(value) - len(match_form) <= 2) for match_form in match_forms)
+    ))
     matches = list(dict.fromkeys(matches))
     matches.sort(key=lambda item: normalized.find(item))
     # Substring overlap: “不良贷款余额” also contains “贷款余额”.  A longer
@@ -3245,6 +3371,93 @@ def _mentioned_table_indicators(question: str) -> list[str]:
             continue
         filtered.append(match)
     return filtered
+
+
+# Table-family scope words.  A question like “保险业原保险保费收入” glues the
+# family word onto the row label; the family disambiguates the SOURCE table
+# (保险业经营情况表 vs 人身险公司经营情况表 vs 财产保险公司经营情况表) and must
+# therefore score the source, not disappear into an unmatchable row target.
+# Matched softly (scoring bonus only) so a question that names a family while
+# its data lives in a differently titled table still answers.
+_TABLE_FAMILY_SCOPE_WORDS = (
+    "银行业金融机构",
+    "大型商业银行",
+    "股份制商业银行",
+    "城市商业银行",
+    "民营银行",
+    "农村商业银行",
+    "农村金融机构",
+    "财产保险公司",
+    "人身保险公司",
+    "财产险公司",
+    "人身险公司",
+    "再保险公司",
+    "保险公司",
+    "保险业",
+    "银行业",
+    "商业银行",
+    "保险集团",
+    "各地区",
+    "全国",
+)
+
+
+def _split_indicator_scope(phrase: str) -> tuple[str, str]:
+    """Split a glued compound phrase into ``(scope, indicator)``.
+
+    “保险业原保险保费收入” → (“保险业”, “原保险保费收入”): the row label is
+    only matchable without the family prefix, and the prefix instead scores
+    the source table.  Returns (“”, phrase) when nothing splits.
+    """
+
+    compact = re.sub(r"\s+", "", str(phrase or ""))
+    vocab_forms = {match_form for _display, match_form in _vocabulary_match_terms()}
+    for scope in sorted(_TABLE_FAMILY_SCOPE_WORDS, key=len, reverse=True):
+        if compact.startswith(scope) and len(compact) > len(scope) + 1:
+            remainder = compact[len(scope):]
+            if not vocab_forms or remainder in vocab_forms:
+                return scope, remainder
+    return "", compact
+
+
+def _ratio_operand_labels(question: str) -> list[str]:
+    """Row operands of an “A占B的比重/百分比” question, in question order.
+
+    A compound operand (“人身意外伤害险原保险保费收入”) splits at the longest
+    vocabulary prefix whose remainder is itself a label: the prefix is the
+    queried row and the remainder the shared metric.  A scope-glued operand
+    (“保险业原保险保费收入”) strips the family word instead.  Returns fewer
+    than two labels when either side fails to resolve.
+    """
+
+    compact = re.sub(r"\s+", "", re.sub(r"《[^》]+》", "", str(question or "")))
+    match = re.search(r"(.{2,30}?)占(.{2,30}?)(?:的)?(?:比重|百分比|比例|占比)", compact)
+    if not match:
+        return []
+    vocab_forms = {match_form for _display, match_form in _vocabulary_match_terms()}
+
+    def operand(raw: str) -> str:
+        text = re.sub(r"\s+", "", raw)
+        text = re.sub(r"^(?:20\d{2}年)?(?:\d{1,2}月)?[，,：:]?", "", text)
+        for form in sorted(vocab_forms, key=len, reverse=True):
+            if len(form) >= 3 and text.startswith(form) and len(text) > len(form) + 1:
+                remainder = text[len(form):]
+                if remainder in vocab_forms:
+                    return form
+        scope, core = _split_indicator_scope(text)
+        # A family word the question also uses as a ROW locator (“财产险公司
+        # 银行存款”) stays with the row: stripping it would drop the
+        # institution half of a composite row (“财产险公司 银行存款”).
+        if scope and scope not in _institution_row_terms(text, core):
+            return core or text
+        return f"{scope + ' ' if scope else ''}{core or text}".strip()
+
+    labels = [operand(match.group(1)), operand(match.group(2))]
+    if any(not label for label in labels):
+        return []
+    if vocab_forms and any(label not in vocab_forms for label in labels):
+        return []
+    return labels
 
 
 def _institution_row_terms(text: str, indicator: str) -> list[str]:
@@ -3278,7 +3491,11 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
     if not indicator:
         return []
     candidates: list[str] = []
-    for match in re.finditer(r"(?:其中：)?[\u4e00-\u9fff]{2,6}?(?:公司|银行)", compact):
+    # The subject part may not itself contain 机构后缀字 (银/公/司/机/构), so
+    # “财产险公司银行存款” cuts at “财产险公司” instead of greedy-backtracking
+    # into “财产险公司银行”, and “大型商业银行/农村金融机构” still match whole.
+    _INSTITUTION_RE = re.compile(r"(?:(?![银公司机构])[\u4e00-\u9fff]){2,8}(?:公司|银行|机构)")
+    for match in _INSTITUTION_RE.finditer(compact):
         # 剥掉“其中：”与并列连词（“人身险公司与财产险公司”中的“与”属于
         # 句法连接，不是机构名的一部分）。
         word = re.sub(r"^(?:其中：|以及|与|和|及|或)+", "", match.group(0))
@@ -3289,10 +3506,12 @@ def _institution_row_terms(text: str, indicator: str) -> list[str]:
         if tail:
             word = tail
         word = re.sub(r'^.*?表[的中里内下]', '', word)
-        # 标题/时间粘连（如 "…情况表中保险公司…"）可能把位置/时间词吞进机构名；
-        # 剥掉通用前缀。 "中国" 是机构名合法前缀（中国银行/中国人寿），保留。
+        # 标题/时间粘连（如 "…情况表中保险公司…"、"四季度末财产险公司…"）可能把
+        # 位置/时间词吞进机构名；剥掉通用前缀。 "中国" 是机构名合法前缀
+        # （中国银行/中国人寿），保留。 末/底 是 "季度末/年末" 的尾字，
+        # 同样属于时间残片，必须剥离，否则 "末财产险公司" 永远匹配不到行。
         word = re.sub(
-            r"^(?!中国)(?:[\d一二三四五六七八九十]{1,2}|年|月|季度|上|下|当|本|今|去|各|全|其|中|里|内|于|的|在|情况|统计|经营)+",
+            r"^(?!中国)(?:[\d一二三四五六七八九十]{1,2}|年|月|季度|上|下|末|底|当|本|今|去|各|全|其|中|里|内|于|的|在|情况|统计|经营)+",
             "",
             word,
         )

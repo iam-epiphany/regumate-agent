@@ -129,6 +129,21 @@ def _normalize(value: Any) -> str:
     return re.sub(r"[\s,，]", "", normalized).lower()
 
 
+_MONTH_VARIANT_PATTERN = re.compile(r"(\d{4})年0?(\d{1,2})月")
+
+
+def _month_spelling_variants(normalized: str) -> list[str]:
+    """Zero-padded / unpadded spellings of one month mention."""
+
+    match = _MONTH_VARIANT_PATTERN.fullmatch(normalized)
+    if not match:
+        return []
+    year, month = match.group(1), int(match.group(2))
+    if not 1 <= month <= 12:
+        return []
+    return [f"{year}年{month:02d}月", f"{year}年{month}月", f"{year}{month:02d}月", f"{year}-{month:02d}"]
+
+
 def _strip_presentation_markers(value: str) -> str:
     """Remove list ordinals that carry layout, not regulatory facts.
 
@@ -169,6 +184,13 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
     normalized = _normalize(entity)
     if normalized in normalized_evidence:
         return True
+    # Month mentions differ in zero padding between an answer (“2023年3月”)
+    # and corpus titles (“2023年03月”, “2023-03”).  The retrieval layer already
+    # accepts both spellings; validation must not reject an answer for the
+    # same variant the locator matched on.
+    for variant in _month_spelling_variants(normalized):
+        if variant in normalized_evidence:
+            return True
     numeric = re.fullmatch(r"(-?\d+(?:\.(\d+))?)(%?)", normalized)
     if not numeric:
         return False
@@ -191,6 +213,11 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
         if not percent and candidate_percent and math.isclose(
             value * 100, float(candidate), rel_tol=0.0, abs_tol=tolerance
         ):
+            return True
+        # 单位由表头声明（unit "%、家"），单元格存纯数值（283.7），答案按
+        # 该单位书写（283.7%）——同值异号也是支持，逐字比较不得因 % 标注
+        # 差异否决。
+        if math.isclose(value, float(candidate), rel_tol=0.0, abs_tol=tolerance):
             return True
     return False
 

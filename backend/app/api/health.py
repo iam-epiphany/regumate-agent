@@ -33,14 +33,39 @@ router = APIRouter()
 
 
 @router.get("/health", response_model=HealthResponse)
-def health_check() -> HealthResponse:
-    """健康检查接口，前端工作台会用它判断后端是否可连接。"""
+def health_check(response: Response) -> HealthResponse:
+    """健康检查接口，前端工作台与容器 healthcheck 都用它判断后端是否可连接。
 
+    纯进程存活探针（不碰库）无法发现“连接池耗尽后所有碰库接口假死”的故障：
+    那种事故里 /api/health 一直返回 200，掩盖了服务不可用。这里加一个 DB
+    ping——它不依赖知识库数据，空库同样通过，只在数据库真正失联时报 503。
+    """
+
+    database_ready = _quick_sqlite_ping()
+    if not database_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(
-        status="ok",
-        message=f"{APP_NAME} backend is healthy",
+        status="ok" if database_ready else "degraded",
+        message=(
+            f"{APP_NAME} backend is healthy"
+            if database_ready
+            else f"{APP_NAME} backend cannot reach the database"
+        ),
         build_id=config.BUILD_ID,
     )
+
+
+def _quick_sqlite_ping() -> bool:
+    try:
+        from sqlalchemy import text
+
+        from backend.app.core.database import engine
+
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:  # noqa: BLE001 - any failure means "not ready" here
+        return False
 
 
 @router.get("/health/rag", response_model=RagHealthResponse)

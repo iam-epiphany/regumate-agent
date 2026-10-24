@@ -3,7 +3,7 @@ from backend.app.core.rag_features import features, feature_gate, event
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import json
 import re
 from typing import Any
@@ -282,7 +282,19 @@ def _indexed_spreadsheet_matches(
             _set_last_diagnostic(match_status="missing_operands",
                                  refusal_reason="尚未明确全部操作数，请给出每项的来源、期间及行列定位。")
             return []
-        selected = _cells_for_selectors(
+        if operation == "ratio":
+            # A ratio is only meaningful inside one source table: several
+            # monthly families (保险业 / 人身险公司 / 财产保险公司) carry the
+            # same row labels, and per-selector best picks can mix tables.
+            selected = _ratio_same_source_selection(
+                candidates,
+                selectors,
+                question=question,
+                question_column_target=question_column_target,
+                filters=filters,
+            )
+        else:
+            selected = _cells_for_selectors(
                 candidates,
                 selectors,
                 question=question,
@@ -385,16 +397,43 @@ def _indexed_spreadsheet_matches(
             best_score = top[0].score
             tied = [candidate for candidate in top if abs(candidate.score - best_score) < 0.0001]
             if len(tied) > 1:
-                latest = _latest_period_tie_candidate(tied)
-                if latest is None:
-                    _set_last_diagnostic(match_status="ambiguous_candidates", refusal_reason="指定条件命中多个等价候选单元格。")
-                    return []
-                latest.metadata["selection_assumptions"] = [
-                    "未指定具体期间，按最新期间取值："
-                    + f"{(latest.selected_cell or {}).get('row_label')} / "
-                    + f"{(latest.selected_cell or {}).get('column_label')}。"
-                ]
-                top = [latest]
+                # Identical values are not an ambiguity: several layouts
+                # repeat one figure across equivalent rows/columns.
+                tied_values = {
+                    round(float((candidate.selected_cell or {}).get("normalized_value")), 6)
+                    for candidate in tied
+                }
+                if len(tied_values) == 1:
+                    tied[0].metadata["selection_assumptions"] = [
+                        "多个候选单元格取值相同，已按其一作答："
+                        + f"{(tied[0].selected_cell or {}).get('row_label')} / "
+                        + f"{(tied[0].selected_cell or {}).get('column_label')}。"
+                    ]
+                    top = [tied[0]]
+                else:
+                    resolved = (
+                        _first_block_tie_candidate(tied)
+                        or _latest_period_tie_candidate(tied)
+                        or _question_signal_tie_candidate(question, tied)
+                    )
+                    if resolved is None:
+                        summary = "；".join(
+                            f"{(candidate.selected_cell or {}).get('row_label')}"
+                            f"/{(candidate.selected_cell or {}).get('column_label')}"
+                            f"={(candidate.selected_cell or {}).get('normalized_value')}"
+                            for candidate in tied[:4]
+                        )
+                        _set_last_diagnostic(
+                            match_status="ambiguous_candidates",
+                            refusal_reason=f"指定条件命中多个等价候选单元格（{summary}），请补充期间或口径。",
+                        )
+                        return []
+                    resolved.metadata["selection_assumptions"] = [
+                        "存在多个不同取值的候选单元格，已按问题限定择一："
+                        + f"{(resolved.selected_cell or {}).get('row_label')} / "
+                        + f"{(resolved.selected_cell or {}).get('column_label')}。"
+                    ]
+                    top = [resolved]
         matches = [_to_match(top[0], aspect, table_task, operation, match_status="valid_cell")]
         _set_valid_diagnostic(matches)
         return matches
@@ -684,22 +723,58 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
     row = cell.row_label_norm
     column = cell.column_label_norm
     combined = f"{row}{column}"
+    source_norm = normalize_table_text(getattr(cell, "source_title_norm", None) or "")
     score = 0.25 if cell.numeric_value is not None else 0.0
     column_leaf = normalize_table_text(re.split(r"\s*/\s*|[|｜>]", str(cell.column_label or ""))[-1])
+    locator_row_label = normalize_table_text(
+        " ".join(
+            str(filters.get(key) or "")
+            for key in ("row_label", "indicator", "metric", "scope")
+        )
+    )
+    # Derived ratio rows (“占银行业金融机构比例”) are never the subject a
+    # locator word names — they must not collect row/scope hits through a
+    # bare substring of the institution word.
+    derived_ratio_row = bool(
+        re.search(r"占.{0,14}(?:比例|比重)$|占比$", row)
+    ) and not re.search(r"(?:比例|比重|占比)$", locator_row_label)
     for key, weight in (("row_label", 5.0), ("column_label", 5.0), ("indicator", 4.0), ("metric", 4.0), ("scope", 3.0)):
         target = normalize_table_text(filters.get(key))
         if key == "row_label":
+            if derived_ratio_row and target:
+                continue
             # Multi-word row labels ("财产险公司 资金运用余额") must ALL be
             # covered by the row, otherwise an aggregate row that only matches
             # the indicator would tie with (or beat) the institution-specific
             # sub-row.  Single-word labels keep the historical substring test.
             if not _row_label_terms_covered(row, _row_label_terms(filters.get(key))):
+                # Whole-table indicators ("银行业金融机构普惠型小微企业贷款余额"
+                # on rows named 银行业金融机构合计) leave the locator word
+                # unmatched: a partial word hit still separates that family
+                # from unrelated tables, just with less weight.
+                if any(
+                    normalize_table_text(term) in row
+                    for term in _row_label_terms(filters.get(key))
+                ):
+                    score += 1.0
                 continue
             score += weight
             # An exact row label outranks substring relatives: 资本充足率 must
             # not tie with 核心一级资本充足率 when both rows exist in the table.
             if target and row == target:
                 score += 2.0
+            # A single-word institution locator (“保险公司”) is a substring of
+            # every sibling row (“再保险公司”, “财产险公司”).  When one of the
+            # locator words equals a row's TAIL segment, that row is the named
+            # row and the substring siblings stay behind it.
+            if target:
+                for term in _row_label_terms(filters.get(key)):
+                    raw_row_label = getattr(cell, "row_label", None) or (cell.row_label_norm or "")
+                    if normalize_table_text(term) == normalize_table_text(
+                        str(raw_row_label).split("/")[-1]
+                    ):
+                        score += 2.0
+                        break
         elif key == "column_label":
             # A row such as “全国合计” must not make every numeric cell look
             # like the requested “合计” column.  Compare column constraints
@@ -711,10 +786,41 @@ def _indexed_cell_score(cell: SpreadsheetCell, question: str, filters: dict[str,
         else:
             structural_text = combined
             if target and target in structural_text:
+                if derived_ratio_row and key == "scope":
+                    continue
                 score += weight
                 if key in {"indicator", "metric"} and row == target:
                     score += 2.0
+            # Whole-table indicators (“普惠型小微企业贷款…情况表”) live in the
+            # source title, not in any row/column label.  Crediting the source
+            # keeps that table family ahead of unrelated ones.  A derived
+            # ratio row must not ride along: it is not the queried subject.
+            elif target and target in source_norm and key in {"indicator", "metric"} and not derived_ratio_row:
+                score += 2.5
     score += _token_overlap(question, combined)
+    # Table-family scope (“保险业” vs “人身险公司经营情况表”): the family word
+    # names the source table, not a row or column, so it scores the source
+    # title.  This breaks the exact tie where several monthly tables carry
+    # identically labelled rows (原保险保费收入) for the same period.  A long
+    # family word whose full form is absent (“银行业金融机构” on sources titled
+    # “银行业总资产、总负债”) still credits its longest matching prefix.
+    scope = normalize_table_text(filters.get("scope"))
+    if scope:
+        if scope in source_norm:
+            score += 4.0
+        elif len(scope) >= 4:
+            prefix = scope[: len(scope) - 1]
+            while len(prefix) >= 3:
+                if prefix in source_norm:
+                    score += 3.0
+                    break
+                prefix = prefix[:-1]
+    # Parent context (“资金运用余额中，债券投资”): a source whose title or the
+    # row family carries the parent indicator is preferred over unrelated
+    # tables that happen to contain the sub-row label.
+    context = normalize_table_text(filters.get("context"))
+    if context and (context in row or context in source_norm):
+        score += 2.0
     return score
 
 
@@ -741,13 +847,51 @@ def _filter_candidates_by_required_labels(
                     candidate.metadata.get("row_label"),
                     candidate.metadata.get("table_title"),
                     candidate.metadata.get("source_title"),
+                    # The filename is the strongest surviving locator when a
+                    # chunk's table_title is degraded (a document id, a bare
+                    # sheet name): “249_2021年银行业金融机构普惠型小微企业
+                    # 贷款情况表” names both the family and the rows.
+                    candidate.document.filename,
                 ]
                 if part
             )
         )
-        if all(term in searchable for term in required_terms):
+        if all(_required_term_hit(term, searchable) for term in required_terms):
             result.append(candidate)
     return result
+
+
+def _required_term_hit(term: str, searchable: str) -> bool:
+    """A required term matches when it (or its long-word prefix) appears.
+
+    Some indexed chunks carry a degraded ``table_title`` (a document id), so a
+    family word like “银行业金融机构” only reaches the searchable text through
+    the source title “2026年银行业总资产、总负债（月度）”.  Matching the same
+    longest-prefix semantics as the scope score keeps those rows in play
+    without letting short fragments through.
+    """
+
+    if term in searchable:
+        return True
+    # Period-shaped terms match by period VALUE, not literally: the question
+    # says “四季度末” (a solvency-table header) while the target table's
+    # column is “四季度” — the 末 suffix is layout, not semantics.
+    period = _parse_column_period(term)
+    if period is not None:
+        if period.get("quarter") is not None:
+            cjk = "一二三四"[int(period["quarter"]) - 1]
+            return bool(
+                re.search(rf"{cjk}\s*季度|{int(period['quarter'])}\s*季度", searchable)
+            )
+        if period.get("month") is not None:
+            return bool(re.search(rf"{int(period['month'])}\s*月", searchable))
+    if len(term) >= 5:
+        prefix = term[:-1]
+        while len(prefix) >= 3:
+            if prefix in searchable:
+                return True
+            prefix = prefix[:-1]
+    return False
 
 
 def _required_label_terms(filters: dict[str, Any], selectors: tuple[dict[str, Any], ...]) -> list[str]:
@@ -796,14 +940,47 @@ def _row_label_terms(value: Any) -> list[str]:
     ]
 
 
+_MEASUREMENT_SUFFIXES = ("投资", "余额", "收入", "支出", "金额", "发生额", "总额", "净额", "总量")
+
+
+def _row_word_variants(word: str) -> list[str]:
+    """A row word plus its base form with a trailing measurement suffix removed.
+
+    Questions say “债券投资” while the indexed row is “债券”; requiring the
+    full word would exclude the exact row.  The base form only fires when the
+    full word fails, and never for single-character bases.
+    """
+
+    variants = [word]
+    for suffix in _MEASUREMENT_SUFFIXES:
+        if word.endswith(suffix) and len(word) > len(suffix) + 1:
+            base = word[: -len(suffix)]
+            if base not in variants:
+                variants.append(base)
+    return variants
+
+
 def _row_label_terms_covered(row_text: str, terms: list[str]) -> bool:
     """True when every normalized row-label word is a substring of the row."""
 
     if not terms:
         return True
-    return all(
-        bool(term) and normalize_table_text(term) in row_text for term in terms
-    )
+    for term in terms:
+        normalized = normalize_table_text(term)
+        if not normalized:
+            continue
+        if normalized in row_text:
+            continue
+        # A measurement-suffix base (“债券投资” → “债券”) only matches when it
+        # ends a word in the row: “债券” matches the row “债券” but must not
+        # match “不良贷款率” through “不良贷款”.
+        if any(
+            re.search(rf"{re.escape(variant)}(?![\u4e00-\u9fffA-Za-z0-9])", row_text)
+            for variant in _row_word_variants(normalized)[1:]
+        ):
+            continue
+        return False
+    return True
 
 
 def _has_explicit_label_filters(filters: dict[str, Any]) -> bool:
@@ -868,6 +1045,39 @@ def _source_title_matches(requested_source: str, actual_source: str) -> bool:
     return any(variant and variant in actual_source for variant in _source_title_variants(requested_source))
 
 
+def _first_block_tie_candidate(tied: list[SpreadsheetCandidate]) -> SpreadsheetCandidate | None:
+    """Resolve identical row labels in one table by first occurrence.
+
+    Block-structured monthly tables (“1. 银行业金融机构 / 其中：商业银行合计 /
+    2. 大型商业银行…”) repeat one row label (“总资产”) per block with different
+    values.  Statistical convention puts the whole-scope block first, so the
+    question's unnamed subject (“…总资产是多少”) reads as the first block.
+    Returns None unless every tied candidate shares one row label and one
+    source table.
+    """
+
+    if len(tied) < 2:
+        return None
+    rows = {normalize_table_text((candidate.selected_cell or {}).get("row_label")) for candidate in tied}
+    sources = {
+        normalize_table_text(candidate.metadata.get("source_title") or candidate.document.filename)
+        for candidate in tied
+    }
+    if len(rows) != 1 or len(sources) != 1:
+        return None
+    values = {
+        round(float((candidate.selected_cell or {}).get("normalized_value")), 6)
+        for candidate in tied
+        if isinstance((candidate.selected_cell or {}).get("normalized_value"), (int, float))
+    }
+    if len(values) == 1:
+        return None  # identical values already answered upstream
+    return min(
+        tied,
+        key=lambda candidate: int((candidate.selected_cell or {}).get("row") or 0),
+    )
+
+
 def _latest_period_tie_candidate(tied: list[SpreadsheetCandidate]) -> SpreadsheetCandidate | None:
     """Resolve a strict lookup tie that differs only by the period column.
 
@@ -887,16 +1097,69 @@ def _latest_period_tie_candidate(tied: list[SpreadsheetCandidate]) -> Spreadshee
     }
     if len(rows) != 1 or len(sources) != 1:
         return None
-    keyed: list[tuple[int, SpreadsheetCandidate]] = []
+    keyed: list[tuple[tuple[int, str], SpreadsheetCandidate]] = []
     for candidate in tied:
         parsed = _parse_column_period((candidate.selected_cell or {}).get("column_label"))
         if not parsed:
             return None
-        keyed.append((int(parsed.get("quarter") or parsed.get("month") or 0), candidate))
+        # Quarter and month are different axes: comparing "Q4" against "11月"
+        # on one integer silently prefers the month.  The kind keeps them
+        # apart, and the year keeps cross-year ties ordered correctly.
+        kind = "quarter" if parsed.get("quarter") is not None else "month"
+        value = int(parsed.get(kind) or 0)
+        year = int(candidate.metadata.get("year") or 0)
+        keyed.append(((year, kind, value), candidate))
     periods = [key for key, _candidate in keyed]
     if len(set(periods)) != len(periods):
         return None
+    if len({kind for _year, kind, _value in periods}) != 1:
+        return None
     return max(keyed, key=lambda item: item[0])[1]
+
+
+_QUESTION_TERM_PATTERN = re.compile(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9_]+")
+
+
+def _question_signal_tie_candidate(
+    question: str,
+    tied: list[SpreadsheetCandidate],
+) -> SpreadsheetCandidate | None:
+    """Break a value tie with question wording that only one row satisfies.
+
+    “综合偿付能力充足率” vs “核心偿付能力充足率” rows tie when the row filter
+    only matched the shared tail (保险公司).  The question names one block —
+    “综合…” — so the candidate whose row label covers more distinct question
+    terms wins.  Returns None unless exactly one candidate leads.
+    """
+
+    terms = [
+        normalize_table_text(term)
+        for term in _QUESTION_TERM_PATTERN.findall(str(question or ""))
+        if len(term) >= 2
+    ]
+    # Chinese runs are whole clauses; their 2-grams carry the discriminating
+    # block words (综合/核心).
+    grams: list[str] = []
+    for term in terms:
+        grams.append(term)
+        if re.fullmatch(r"[\u4e00-\u9fff]+", term):
+            grams.extend(term[i : i + 2] for i in range(len(term) - 1))
+    if not grams:
+        return None
+    best: list[tuple[int, SpreadsheetCandidate]] = []
+    for candidate in tied:
+        row_text = normalize_table_text(str((candidate.selected_cell or {}).get("row_label") or ""))
+        column_text = normalize_table_text(str((candidate.selected_cell or {}).get("column_label") or ""))
+        signal = sum(1 for gram in set(grams) if gram in row_text)
+        signal_column = sum(1 for gram in set(grams) if gram in column_text)
+        best.append((signal * 2 + signal_column, candidate))
+    top = max(score for score, _candidate in best)
+    if top <= 0:
+        return None
+    leaders = [candidate for score, candidate in best if score == top]
+    if len(leaders) != 1:
+        return None
+    return leaders[0]
 
 
 def _cells_for_selectors(
@@ -928,11 +1191,16 @@ def _cells_for_selectors(
         # An explicit selector column always wins; the question-derived target
         # only fills in an absent selector column.  A bare "合计" operand in
         # "从'合计'到'健康险'" must not be overwritten by another column name
-        # found in the question.
-        if question_column_target and not column_target:
+        # found in the question.  A selector that carries its own period
+        # (year/quarter/month) selects its column through that period — the
+        # question's period-shaped mention (“三季度末到四季度末”) belongs to
+        # the OTHER selectors and must not pin this one to a single column.
+        selector_has_period = any(selector.get(key) is not None for key in ("year", "month", "quarter"))
+        if question_column_target and not column_target and not selector_has_period:
             column_target = question_column_target
         elif (
             question_column_target
+            and not selector_has_period
             and _is_generic_column_target(column_target)
             and not (preserve_explicit_generic_columns and column_target)
         ):
@@ -988,6 +1256,50 @@ def _cells_for_selectors(
                     candidate,
                 )
             )
+        if not matches and row_target and " " in row_target.strip():
+            # A composite locator (“商业银行 不良贷款余额”) can overshoot when
+            # the matched table has no institution prefix at all — the 商业银行
+            # regulatory-indicator tables ARE the commercial-bank aggregate and
+            # name rows “不良贷款余额” bare.  Retry with the non-institution
+            # words only; the source scope still separates the right table.
+            non_institution = [
+                word for word in _row_label_terms(row_target)
+                if not re.search(r"(?:公司|银行|机构|合计)$", normalize_table_text(word))
+            ]
+            retry_words = non_institution or _row_label_terms(row_target)
+            retry_target = " ".join(retry_words)
+            if retry_target and retry_target != row_target:
+                for candidate in candidates:
+                    cell = candidate.selected_cell or {}
+                    if not isinstance(cell.get("normalized_value"), (int, float)):
+                        continue
+                    row = normalize_table_text(cell.get("row_label"))
+                    column = normalize_table_text(cell.get("column_label"))
+                    if generic_period and not re.search(period_pattern, str(cell.get('column_label') or '')):
+                        continue
+                    if any(
+                        selector.get(key) is not None and int(candidate.metadata.get(key) or 0) != int(selector[key])
+                        for key in ("year", "month", "quarter")
+                    ):
+                        continue
+                    requested_source = normalize_table_text(selector.get("source_title"))
+                    actual_source = normalize_table_text(candidate.metadata.get("source_title") or candidate.document.filename)
+                    if requested_source and not _source_title_matches(requested_source, actual_source):
+                        continue
+                    if retry_target and not _row_target_matches(retry_target, row):
+                        continue
+                    if column_target and column_target not in column:
+                        continue
+                    if scope and scope not in f"{row}{column}":
+                        continue
+                    row_index = int(cell.get("row") or 0)
+                    matches.append(
+                        (
+                            0,
+                            candidate.score - row_index * 0.01,
+                            candidate,
+                        )
+                    )
         if not matches:
             return []
         matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -1181,6 +1493,14 @@ def _candidate_cell_key(candidate: SpreadsheetCandidate) -> tuple[str, str, str]
     return candidate.document.document_id, str(candidate.metadata.get("sheet_name") or ""), str(cell.get("coordinate") or "")
 
 
+def _round_half_up_text(value: Decimal, decimal_places: int | None) -> str:
+    """Render a Decimal with regulatory 四舍五入 (half-up), not half-even."""
+
+    if decimal_places is None:
+        return format(value, "f")
+    return str(value.quantize(Decimal(1).scaleb(-decimal_places), rounding=ROUND_HALF_UP))
+
+
 def _operand_decimal(candidate: SpreadsheetCandidate) -> Decimal:
     """Calculation operand from the displayed value string when possible.
 
@@ -1194,6 +1514,49 @@ def _operand_decimal(candidate: SpreadsheetCandidate) -> Decimal:
     if isinstance(raw, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", raw.strip()):
         return Decimal(raw.strip())
     return Decimal(str((candidate.selected_cell or {})["normalized_value"]))
+
+
+def _ratio_same_source_selection(
+    candidates: list[SpreadsheetCandidate],
+    selectors: list[dict[str, Any]],
+    *,
+    question: str,
+    question_column_target: str | None,
+    filters: dict[str, Any],
+) -> list[SpreadsheetCandidate]:
+    """Pick ratio operands from ONE source table, preferring the question's family.
+
+    Each source group must satisfy every selector; among the satisfying
+    groups, a source whose title carries the question's family scope word
+    (“保险业”) wins, then the group matching the most selectors.
+    """
+
+    groups: dict[str, list[SpreadsheetCandidate]] = {}
+    for candidate in candidates:
+        key = normalize_table_text(
+            str(candidate.metadata.get("source_title") or candidate.document.filename or "")
+        )
+        groups.setdefault(key, []).append(candidate)
+    scope = normalize_table_text(filters.get("scope") or "")
+    best: tuple[tuple[int, int], list[SpreadsheetCandidate]] | None = None
+    for key, group in groups.items():
+        selected = _cells_for_selectors(
+            group,
+            selectors,
+            question=question,
+            question_column_target=question_column_target,
+            preserve_explicit_generic_columns=True,
+        )
+        if len(selected) != len(selectors):
+            continue
+        # Distinct operands must stay distinct cells.
+        keys = {_candidate_cell_key(candidate) for candidate in selected}
+        if len(keys) != len(selected):
+            continue
+        rank = (1 if scope and scope in key else 0, len(selected))
+        if best is None or rank > best[0]:
+            best = (rank, selected)
+    return best[1] if best else []
 
 
 def _calculation_match_from_selected(
@@ -1230,10 +1593,10 @@ def _calculation_match_from_selected(
     elif operation == "ratio":
         if decimal_values[1] == 0:
             return None
-        # A ratio is normally the raw quotient (0.1609 / 2.50); only an
-        # explicit “百分比” request scales by 100.
+        # A ratio is normally the raw quotient (0.1609 / 2.50); an explicit
+        # percent-shaped request (百分比/比重/占比/比例) reads as a percentage.
         quotient = decimal_values[0] / decimal_values[1]
-        if re.search(r"百分比", question_text):
+        if re.search(r"百分比|百分数|比重|占比|比例", question_text):
             decimal_result = quotient * Decimal("100")
             formula = f"{_cell_ref(candidates[0])} / {_cell_ref(candidates[1])} * 100"
             ratio_is_percent = True
@@ -1246,14 +1609,15 @@ def _calculation_match_from_selected(
     result = float(decimal_result)
     display_decimal_places = _requested_decimal_places(question_text)
     if display_decimal_places is None and operation == "ratio":
-        # “多少倍” reads as a multiplier with two decimals (2.50); a plain
-        # proportion keeps four (0.1609).
-        display_decimal_places = 2 if re.search(r"[多少几]倍", question_text) else 4
-    display_result = (
-        f"{decimal_result:.{display_decimal_places}f}"
-        if display_decimal_places is not None
-        else format(decimal_result, "f")
-    )
+        # “多少倍” reads as a multiplier with two decimals (2.50); a percent
+        # answer keeps the regulatory convention of two decimals (2.70%);
+        # a plain proportion keeps four (0.1609).
+        if re.search(r"[多少几]倍", question_text) or ratio_is_percent:
+            # 倍数与百分数都保留两位小数（2.50 倍 / 2.70%）。
+            display_decimal_places = 2
+        else:
+            display_decimal_places = 4
+    display_result = _round_half_up_text(decimal_result, display_decimal_places)
     anchor = candidates[0]
     metadata = {
         **anchor.metadata,
@@ -1802,7 +2166,22 @@ def _token_overlap(question: str, text: str) -> float:
     if not terms:
         return 0.0
     normalized_text = _normalize(text)
-    return sum(1 for term in terms if _normalize(term) in normalized_text) / len(terms)
+    hit = 0.0
+    total = 0.0
+    for term in terms:
+        normalized_term = _normalize(term)
+        total += 1
+        if normalized_term in normalized_text:
+            hit += 1
+            continue
+        # A Chinese clause almost never appears verbatim in a label, so whole
+        # clauses score 0 and cannot break ties.  Their character bigrams
+        # carry the discriminating words (综合 vs 核心, 债券 vs 存款).
+        if re.fullmatch(r"[\u4e00-\u9fff]+", normalized_term) and len(normalized_term) > 2:
+            grams = [normalized_term[i : i + 2] for i in range(len(normalized_term) - 1)]
+            covered = sum(1 for gram in grams if gram in normalized_text)
+            hit += covered / len(grams) * 0.5
+    return hit / total if total else 0.0
 
 
 def _normalize(text: str) -> str:
