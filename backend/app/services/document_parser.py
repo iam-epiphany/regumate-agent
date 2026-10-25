@@ -412,6 +412,65 @@ class SpreadsheetXlsLoader:
         return load_xls_workbook(file_path)
 
 
+_LAYOUT_HYPHEN_PATCHED: list[bool] = []
+
+
+def _preserve_formula_hyphens() -> None:
+    """Keep “数字-” line tails through pymupdf4llm's line joining.
+
+    pymupdf4llm resolves English hyphenation by dropping a trailing “- ”
+    (``get_plain_text`` in ``helpers.document_layout``).  A Chinese regulatory
+    formula that breaks across lines at a minus sign — “最低现金价值=净保费×（1-
+    保险合同已生效的天数/…” — loses the minus with it, and the indexed evidence
+    then shows a wrong formula (“净保费×（1保险…”).  Hyphenation merging is only
+    meaningful for an ASCII word tail, so keep the hyphen whenever the character
+    before it is not an ASCII letter.  Failure falls back to the stock
+    behaviour: the patch must never break PDF loading.
+    """
+
+    if _LAYOUT_HYPHEN_PATCHED:
+        return
+    try:
+        import inspect
+
+        import pymupdf4llm.helpers.document_layout as layout
+
+        source = inspect.getsource(layout.get_plain_text)
+        if "REGUMATE_HYPHEN" in source:
+            _LAYOUT_HYPHEN_PATCHED.append(True)
+            return
+
+        def get_plain_text_keep_minus(spans):
+            # REGUMATE_HYPHEN: patched copy of stock get_plain_text.
+            output = ""
+            for i, s in enumerate(spans):
+                superscript = s["flags"] & 1
+                span_text = s["text"].strip()
+                if superscript:
+                    if i == 0:
+                        span_text = f"[{span_text}] "
+                    elif output.endswith(" "):
+                        output = output[:-1]
+                # Stock hyphenation resolution, narrowed to ASCII letter
+                # tails: a “- ” whose preceding character is a digit or any
+                # non-letter is a minus sign, not a syllable break.
+                if (
+                    output.endswith("- ")
+                    and len(output.split()[-1]) > 2
+                    and output[-3:-2].isascii()
+                    and output[-3:-2].isalpha()
+                ):
+                    output = output[:-2]
+                output += span_text + " "
+            return output
+
+        get_plain_text_keep_minus.__name__ = "get_plain_text"
+        layout.get_plain_text = get_plain_text_keep_minus
+        _LAYOUT_HYPHEN_PATCHED.append(True)
+    except Exception:  # noqa: BLE001 - the patch must never break PDF loading
+        _LAYOUT_HYPHEN_PATCHED.append(True)
+
+
 class PyMuPDF4LLMLoader:
     name = "pymupdf4llm"
 
@@ -424,6 +483,7 @@ class PyMuPDF4LLMLoader:
         except ImportError as exc:
             raise DocumentParseError("缺少 pymupdf4llm 依赖，无法使用版式感知 PDF loader") from exc
 
+        _preserve_formula_hyphens()
         try:
             pages = pymupdf4llm.to_markdown(
                 str(file_path),

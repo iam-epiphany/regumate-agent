@@ -230,6 +230,12 @@ ANSWER_GENERATION_API_KEY = os.getenv("ANSWER_GENERATION_API_KEY") or LLM_API_KE
 ANSWER_GENERATION_BASE_URL = os.getenv("ANSWER_GENERATION_BASE_URL", LLM_BASE_URL)
 ANSWER_GENERATION_MODEL = os.getenv("ANSWER_GENERATION_MODEL", LLM_MODEL)
 QA_REQUEST_TOTAL_BUDGET_SECONDS = _env_float("QA_REQUEST_TOTAL_BUDGET_SECONDS", 150.0, minimum=1.0)
+# Server-side admission gate for /api/qa/ask.  Each request holds one DB
+# session for the whole multi-agent pipeline, so unbounded concurrency
+# exhausts the connection pool and wedges every DB-touching endpoint.  Extra
+# requests queue here instead of failing; 0 disables the gate.
+QA_MAX_CONCURRENT_ASKS = _env_int("QA_MAX_CONCURRENT_ASKS", 2, minimum=0)
+QA_ASK_QUEUE_WAIT_SECONDS = _env_float("QA_ASK_QUEUE_WAIT_SECONDS", 120.0, minimum=1.0)
 # A plan that requires multiple named sources, both text and table evidence,
 # or at least three explicit user items gets the larger budget.  The upgrade
 # is applied once from the original request start time.

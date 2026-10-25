@@ -11,7 +11,19 @@ from backend.app.core.config import DATABASE_PATH, ensure_runtime_dirs
 
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# A QA request holds its session for the whole multi-agent pipeline (minutes
+# under CPU inference), so the pool must absorb realistic concurrency: the
+# /api/qa/ask semaphore caps pipeline runs, and these limits keep remaining
+# endpoints (documents, audit, tasks) from starving behind them.  pre_ping
+# drops connections the SQLite file no longer accepts after a wedged worker.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=30,
+    pool_timeout=30,
+)
 
 
 @event.listens_for(engine, "connect")

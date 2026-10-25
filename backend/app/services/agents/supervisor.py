@@ -5,6 +5,7 @@ verification stay in their existing deterministic services and are reached
 through the same module-attribute seams the mainline and its tests use.  The
 supervisor itself never calls a model.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -56,7 +57,9 @@ class Supervisor:
         finally:
             board.active_agent = previous
 
-    def gather_aspects(self, board: Blackboard, query_plan: Any) -> list[AspectRetrieval]:
+    def gather_aspects(
+        self, board: Blackboard, query_plan: Any
+    ) -> list[AspectRetrieval]:
         from backend.app.services import rag_service, retrieval_support
         from backend.app.services.retrieval_support import (
             _DEFAULT_PREPARE_ASPECT_RETRIEVAL,
@@ -101,9 +104,15 @@ class Supervisor:
                     },
                 )
                 composite = None
-                if rag_service._prepare_aspect_retrieval is not _DEFAULT_PREPARE_ASPECT_RETRIEVAL:
+                if (
+                    rag_service._prepare_aspect_retrieval
+                    is not _DEFAULT_PREPARE_ASPECT_RETRIEVAL
+                ):
                     composite = rag_service._prepare_aspect_retrieval
-                elif retrieval_support._prepare_aspect_retrieval is not _DEFAULT_PREPARE_ASPECT_RETRIEVAL:
+                elif (
+                    retrieval_support._prepare_aspect_retrieval
+                    is not _DEFAULT_PREPARE_ASPECT_RETRIEVAL
+                ):
                     composite = retrieval_support._prepare_aspect_retrieval
                 if composite is not None:
                     # Compatibility seam for callers that replace the composite
@@ -183,7 +192,9 @@ class Supervisor:
                     board,
                     "collect",
                     prepared_items=prepared_items,
-                    aspect_ids=[aspect.aspect_id for aspect, _prepared in prepared_items],
+                    aspect_ids=[
+                        aspect.aspect_id for aspect, _prepared in prepared_items
+                    ],
                 )
                 finished = collected.output
 
@@ -223,7 +234,9 @@ class Supervisor:
                     {
                         "stage": "retrieval",
                         "status": "completed" if valid_candidates else "failed",
-                        "title": f"方面 {aspect_index} 检索完成" if valid_candidates else f"方面 {aspect_index} 未找到足够依据",
+                        "title": f"方面 {aspect_index} 检索完成"
+                        if valid_candidates
+                        else f"方面 {aspect_index} 未找到足够依据",
                         "detail": (
                             f"已为“{aspect.question}”召回 {len(valid_candidates)} 个可回溯候选片段"
                             if valid_candidates
@@ -236,13 +249,17 @@ class Supervisor:
                             "candidate_count": len(valid_candidates),
                             "aspect_question": aspect.question,
                             "retrieved_sections": [
-                                chunk.section_title for chunk in valid_candidates if chunk.section_title
+                                chunk.section_title
+                                for chunk in valid_candidates
+                                if chunk.section_title
                             ],
                         },
                     },
                 )
             retrieval_elapsed_ms = rag_service._elapsed_ms(retrieval_started_at)
-            retrieved_aspect_count = sum(1 for item in aspect_retrievals if item.retrieval_covered)
+            retrieved_aspect_count = sum(
+                1 for item in aspect_retrievals if item.retrieval_covered
+            )
             candidate_count = sum(len(item.candidates) for item in aspect_retrievals)
             rag_service._report_progress(
                 board.reporter,
@@ -287,7 +304,9 @@ class Supervisor:
             board.evidence_bundle = bundle
             return bundle
 
-    def build_context(self, board: Blackboard, question: str, options: list[str] | None) -> LLMContextPackage:
+    def build_context(
+        self, board: Blackboard, question: str, options: list[str] | None
+    ) -> LLMContextPackage:
         from backend.app.schemas.qa import LLMContextPackage
         from backend.app.services import rag_service
 
@@ -300,11 +319,18 @@ class Supervisor:
             )
             query_plan = planned.output
             if query_plan.clarification_reason and not query_plan.aspects:
-                package = LLMContextPackage(query=question, instruction=rag_service.CONTEXT_INSTRUCTION,
-                    retrieval_summary={'has_sufficient_context': False, 'used_chunks': 0,
-                                       'query_plan': query_plan.to_debug_dict(),
-                                       'clarification_reason': query_plan.clarification_reason},
-                    context_chunks=[], llm_prompt='')
+                package = LLMContextPackage(
+                    query=question,
+                    instruction=rag_service.CONTEXT_INSTRUCTION,
+                    retrieval_summary={
+                        "has_sufficient_context": False,
+                        "used_chunks": 0,
+                        "query_plan": query_plan.to_debug_dict(),
+                        "clarification_reason": query_plan.clarification_reason,
+                    },
+                    context_chunks=[],
+                    llm_prompt="",
+                )
                 board.context_package = package
                 return package
             bundle = rag_service.retrieve_evidence(
@@ -320,11 +346,13 @@ class Supervisor:
                 context_chunks=bundle.evidence,
             )
             retrieval_summary = dict(bundle.diagnostics or {})
-            retrieval_summary['generation_question'] = generation_question
+            retrieval_summary["generation_question"] = generation_question
             if query_plan.clarification_reason:
                 # 先检索后澄清（planner="clarification-retrieval"）：保留澄清
                 # 理由；检索无可靠证据时 run() 会回到澄清，命中则正常作答。
-                retrieval_summary['pending_clarification'] = query_plan.clarification_reason
+                retrieval_summary["pending_clarification"] = (
+                    query_plan.clarification_reason
+                )
             package = LLMContextPackage(
                 query=question,
                 instruction=rag_service.CONTEXT_INSTRUCTION,
@@ -346,6 +374,7 @@ class Supervisor:
         from backend.app.services import rag_service
         from backend.app.services.answer_generation_service import (
             GeneratedAnswer,
+            _ensure_refusal_flag_consistency,
             refusal_answer,
             run_generation_loop,
         )
@@ -353,7 +382,9 @@ class Supervisor:
 
         with self._active(board):
             raw_options = board.notes.get("raw_options")
-            routed = self.registry.get("triage").execute(board, "route", raw_options=raw_options)
+            routed = self.registry.get("triage").execute(
+                board, "route", raw_options=raw_options
+            )
             route = routed.output["route"]
 
             if route == "identity":
@@ -362,7 +393,9 @@ class Supervisor:
                 return response
 
             if route == "boundary":
-                boundary_code = board.boundary_code or routed.output.get("boundary_code")
+                boundary_code = board.boundary_code or routed.output.get(
+                    "boundary_code"
+                )
                 response = QAResponse(
                     answer="该请求超出监管知识库可验证回答的范围，系统需要补充可核验依据或改为资料库可支持的问题。",
                     citations=[],
@@ -371,7 +404,8 @@ class Supervisor:
                     context_package=None,
                     answer_type=(
                         "clarification"
-                        if boundary_code in {"missing_required_context", "missing_calculation_operands"}
+                        if boundary_code
+                        in {"missing_required_context", "missing_calculation_operands"}
                         else "refusal"
                     ),
                     generation_status="skipped",
@@ -388,7 +422,10 @@ class Supervisor:
                 )
                 rag_service._save_qa_log(board.db, board.original_question, response)
                 rag_service._log_qa_audit(
-                    board.db, "qa_refused_explicit_boundary", board.original_question, response
+                    board.db,
+                    "qa_refused_explicit_boundary",
+                    board.original_question,
+                    response,
                 )
                 self._record_trace(board, response)
                 return response
@@ -414,7 +451,9 @@ class Supervisor:
                 preview_keys.add(key)
                 preview_claims.append(claim)
                 if first_preview_ms is None:
-                    first_preview_ms = round((perf_counter() - generation_started) * 1000, 2)
+                    first_preview_ms = round(
+                        (perf_counter() - generation_started) * 1000, 2
+                    )
                 if board.answer_preview_reporter is None:
                     return
                 preview_revision += 1
@@ -429,20 +468,23 @@ class Supervisor:
                     if result.citation_label in cited_labels
                 ]
                 preview_map = rag_service._citation_renumber_map(preview_results)
-                board.answer_preview_reporter(QAAnswerPreview(
-                    answer=rag_service._rewrite_citation_markers(
-                        "\n\n".join(item.text for item in preview_claims), preview_map
-                    ),
-                    citations=[
-                        _with_citation_label(
-                            rag_service._citation_from_result(result),
-                            preview_map.get(result.citation_label),
-                        )
-                        for result in preview_results
-                    ],
-                    verified_claim_count=len(preview_claims),
-                    revision=preview_revision,
-                ))
+                board.answer_preview_reporter(
+                    QAAnswerPreview(
+                        answer=rag_service._rewrite_citation_markers(
+                            "\n\n".join(item.text for item in preview_claims),
+                            preview_map,
+                        ),
+                        citations=[
+                            _with_citation_label(
+                                rag_service._citation_from_result(result),
+                                preview_map.get(result.citation_label),
+                            )
+                            for result in preview_results
+                        ],
+                        verified_claim_count=len(preview_claims),
+                        revision=preview_revision,
+                    )
+                )
 
             rag_service._report_progress(
                 board.reporter,
@@ -455,40 +497,59 @@ class Supervisor:
             )
 
             def resolver(kind: str, **kwargs: Any) -> Any:
-                return self.registry.get("table").execute(
-                    board, "deterministic", kind=kind, **kwargs
-                ).output
+                return (
+                    self.registry.get("table")
+                    .execute(board, "deterministic", kind=kind, **kwargs)
+                    .output
+                )
 
-            if package.retrieval_summary.get('clarification_reason'):
+            if package.retrieval_summary.get("clarification_reason"):
                 # The planner asked for clarification, so the context package is
                 # the empty stub.  Route straight to the response: this is the
                 # answer agent's first gate (no context, insufficient context)
                 # reproduced verbatim, without engaging generation.
                 board.notes["generation_route"] = "clarification"
-                prepared = AgentResult(output=refusal_answer(
-                    'insufficient_context',
-                    validation={'missing_requirements': rag_service._required_aspect_ids(package.retrieval_summary) or []},
-                ), status="clarification")
+                prepared = AgentResult(
+                    output=refusal_answer(
+                        "insufficient_context",
+                        validation={
+                            "missing_requirements": rag_service._required_aspect_ids(
+                                package.retrieval_summary
+                            )
+                            or []
+                        },
+                    ),
+                    status="clarification",
+                )
             else:
                 board.notes["generation_route"] = "answer_agent"
                 prepared = self.registry.get("answer").execute(
                     board,
                     "prepare",
                     question=(
-                        package.retrieval_summary.get('generation_question')
+                        package.retrieval_summary.get("generation_question")
                         or board.question
                     ),
                     context_chunks=package.context_chunks,
                     options=board.options,
                     option_labels=board.option_labels,
                     llm_prompt=package.llm_prompt,
-                    has_sufficient_context=bool(package.retrieval_summary["has_sufficient_context"]),
-                    answer_mode=rag_service._answer_mode(board.question, package.retrieval_summary),
-                    required_aspect_ids=rag_service._required_aspect_ids(package.retrieval_summary),
+                    has_sufficient_context=bool(
+                        package.retrieval_summary["has_sufficient_context"]
+                    ),
+                    answer_mode=rag_service._answer_mode(
+                        board.question, package.retrieval_summary
+                    ),
+                    required_aspect_ids=rag_service._required_aspect_ids(
+                        package.retrieval_summary
+                    ),
                     requirements=[
                         EvidenceRequirement.model_validate(item)
-                        for item in package.retrieval_summary.get('evidence_bundle', {}).get('requirements', [])
-                    ] or None,
+                        for item in package.retrieval_summary.get(
+                            "evidence_bundle", {}
+                        ).get("requirements", [])
+                    ]
+                    or None,
                     table_resolver=resolver,
                 )
             if isinstance(prepared.output, GeneratedAnswer):
@@ -498,7 +559,9 @@ class Supervisor:
                 answer_agent = self.registry.get("answer")
                 verifier = self.registry.get("verifier")
 
-                def draft(ctx: Any, *, attempt: int, correction: str | None) -> GeneratedAnswer:
+                def draft(
+                    ctx: Any, *, attempt: int, correction: str | None
+                ) -> GeneratedAnswer:
                     return answer_agent.execute(
                         board,
                         "draft",
@@ -532,46 +595,71 @@ class Supervisor:
                         validation=validation,
                     ).output
 
-                generated = run_generation_loop(ctx, draft=draft, verify=verify, judge=judge)
+                generated = run_generation_loop(
+                    ctx, draft=draft, verify=verify, judge=judge
+                )
             # ``generate_answer`` is wrapped by ``qa_execution``, which stamps
             # the spent model budget onto the generated answer before the
             # response is assembled.  Reproduce that here because the loop is
             # now driven through agent primitives.
             generated.grounding_validation["model_call_count"] = model_call_count()
+            # A refusal in substance (“无法提供…”、“依据不足，不能建议…”) must
+            # carry refused=True even when the salvage path kept the text.
+            generated = _ensure_refusal_flag_consistency(generated)
 
-            clarification_reason = package.retrieval_summary.get('clarification_reason')
+            clarification_reason = package.retrieval_summary.get("clarification_reason")
             # 先检索后澄清：检索未找到可靠证据时回到澄清；找到则正常作答。
             if (
                 not clarification_reason
-                and package.retrieval_summary.get('pending_clarification')
-                and (not package.context_chunks or not package.retrieval_summary.get('has_sufficient_context'))
+                and package.retrieval_summary.get("pending_clarification")
+                and (
+                    not package.context_chunks
+                    or not package.retrieval_summary.get("has_sufficient_context")
+                )
             ):
-                clarification_reason = package.retrieval_summary['pending_clarification']
+                clarification_reason = package.retrieval_summary[
+                    "pending_clarification"
+                ]
             if clarification_reason:
-                generated.answer_type = 'clarification'
+                generated.answer_type = "clarification"
                 generated.answer = (
                     normalize_clarification_text(clarification_reason)
                     or DEFAULT_CLARIFICATION_TEXT
                 )
-                generated.refusal_code = 'missing_required_context'
-                generated.grounding_validation['failure_stage'] = 'planning'
+                generated.refusal_code = "missing_required_context"
+                generated.grounding_validation["failure_stage"] = "planning"
             if generated.refused:
-                missing = generated.grounding_validation.get('missing_requirements') or []
-                requirements = (package.retrieval_summary.get('evidence_bundle') or {}).get('requirements', [])
-                descriptions = {r['requirement_id']: ('《' + '》、《'.join(r['source_titles']) + '》的直接依据'
-                                if r.get('source_titles') else r['question']) for r in requirements}
+                missing = (
+                    generated.grounding_validation.get("missing_requirements") or []
+                )
+                requirements = (
+                    package.retrieval_summary.get("evidence_bundle") or {}
+                ).get("requirements", [])
+                descriptions = {
+                    r["requirement_id"]: (
+                        "《" + "》、《".join(r["source_titles"]) + "》的直接依据"
+                        if r.get("source_titles")
+                        else r["question"]
+                    )
+                    for r in requirements
+                }
                 labels = [descriptions.get(item, item) for item in missing]
-                generated.grounding_validation['missing_required_aspect_ids'] = missing
-                generated.grounding_validation['missing_requirements'] = labels
-                if labels and generated.answer_type != 'service_error':
-                    generated.answer = '当前证据不足以完整回答。缺少：' + '；'.join(labels)
+                generated.grounding_validation["missing_required_aspect_ids"] = missing
+                generated.grounding_validation["missing_requirements"] = labels
+                if labels and generated.answer_type != "service_error":
+                    generated.answer = "当前证据不足以完整回答。缺少：" + "；".join(
+                        labels
+                    )
             from backend.app.services.answer_validation_service import validation_passed
+
             if (
                 not generated.refused
                 and not validation_passed(generated.grounding_validation)
-                and not generated.grounding_validation.get('partial_answer')
+                and not generated.grounding_validation.get("partial_answer")
             ):
-                generated.answer = "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
+                generated.answer = (
+                    "当前生成结果未通过事实与引用校验，系统已停止输出结论。"
+                )
                 generated.answer_type = "refusal"
                 generated.refused = True
                 generated.refusal_reason = "grounding_validation_failed"
@@ -583,8 +671,9 @@ class Supervisor:
                 if reason
             ]
             if generated.refused and table_refusal_reasons:
-                generated.answer = "当前知识库中未找到足够表格依据，无法给出确定答案。" + "；".join(
-                    dict.fromkeys(table_refusal_reasons)
+                generated.answer = (
+                    "当前知识库中未找到足够表格依据，无法给出确定答案。"
+                    + "；".join(dict.fromkeys(table_refusal_reasons))
                 )
                 generated.refusal_reason = "table_evidence_not_found"
                 generated.grounding_validation = {
@@ -596,16 +685,24 @@ class Supervisor:
             if generated.refused and not generated.refusal_code:
                 # Keep refusal outcomes machine-readable even when the answer
                 # model declines before it can emit its own structured code.
-                generated.refusal_code = rag_service._refusal_code_for_request(board.question)
-            if not generated.refused and validation_passed(generated.grounding_validation):
+                generated.refusal_code = rag_service._refusal_code_for_request(
+                    board.question
+                )
+            if not generated.refused and validation_passed(
+                generated.grounding_validation
+            ):
                 for claim in generated.claims:
                     report_verified_claim(claim)
             rag_service._report_progress(
                 board.reporter,
                 {
                     "stage": "llm_generation",
-                    "status": "completed" if generated.generation_status == "completed" else "skipped",
-                    "title": "答案生成完成" if generated.generation_status == "completed" else "答案生成已跳过",
+                    "status": "completed"
+                    if generated.generation_status == "completed"
+                    else "skipped",
+                    "title": "答案生成完成"
+                    if generated.generation_status == "completed"
+                    else "答案生成已跳过",
                     "detail": rag_service._generation_progress_detail(
                         generated.generation_status, generated.answer_type
                     ),
@@ -616,13 +713,15 @@ class Supervisor:
                         "refusal_reason": generated.refusal_reason,
                         "refusal_code": generated.refusal_code,
                         "first_verified_claim_ms": first_preview_ms,
-                        "generation_total_ms": round((perf_counter() - generation_started) * 1000, 2),
+                        "generation_total_ms": round(
+                            (perf_counter() - generation_started) * 1000, 2
+                        ),
                         "verified_claim_count": len(preview_claims),
                     },
                 },
             )
             grounding_passed = validation_passed(generated.grounding_validation)
-            if package.retrieval_summary.get('clarification_reason'):
+            if package.retrieval_summary.get("clarification_reason"):
                 grounding_event = {
                     "status": "skipped",
                     "title": "无需事实与引用校验",
@@ -658,10 +757,16 @@ class Supervisor:
             # keeps only the cited subset, so answer-text markers must be
             # rewritten to their final positions.
             renumber_map = rag_service._citation_renumber_map(cited_results)
-            generated.answer = rag_service._rewrite_citation_markers(generated.answer, renumber_map)
+            generated.answer = rag_service._rewrite_citation_markers(
+                generated.answer, renumber_map
+            )
             for claim in generated.claims:
-                claim.text = rag_service._rewrite_citation_markers(claim.text, renumber_map)
-                claim.citation_ids = [renumber_map.get(item, item) for item in claim.citation_ids]
+                claim.text = rag_service._rewrite_citation_markers(
+                    claim.text, renumber_map
+                )
+                claim.citation_ids = [
+                    renumber_map.get(item, item) for item in claim.citation_ids
+                ]
             response_citations: list = []
             for result in cited_results:
                 citation = rag_service._citation_from_result(result)
@@ -692,6 +797,7 @@ class Supervisor:
             from backend.app.services.answer_explanation_service import (
                 build_answer_explanation,
             )
+
             response.explanation = build_answer_explanation(
                 question=board.original_question,
                 generated=generated,
@@ -703,7 +809,9 @@ class Supervisor:
             )
             self._record_trace(board, response)
             rag_service._save_qa_log(board.db, board.original_question, response)
-            rag_service._log_qa_audit(board.db, "qa_context_built", board.original_question, response)
+            rag_service._log_qa_audit(
+                board.db, "qa_context_built", board.original_question, response
+            )
             return response
 
     def _record_trace(self, board: Blackboard, response: Any) -> None:
@@ -718,20 +826,22 @@ class Supervisor:
             status = "failed"
         else:
             status = "refused"
-        board.record(AgentTraceEntry(
-            agent=self.name,
-            role=self.role,
-            task="route",
-            status=status,
-            summary={
-                "route": board.route,
-                "boundary_code": board.boundary_code,
-                "aspect_routes": board.notes.get("aspect_routes", []),
-                "generation_attempts": len(board.drafts),
-                "validations": len(board.validations),
-                "model_calls_total": board.total_model_calls(),
-                "answer_type": response.answer_type,
-                "refusal_reason": response.refusal_reason,
-            },
-        ))
+        board.record(
+            AgentTraceEntry(
+                agent=self.name,
+                role=self.role,
+                task="route",
+                status=status,
+                summary={
+                    "route": board.route,
+                    "boundary_code": board.boundary_code,
+                    "aspect_routes": board.notes.get("aspect_routes", []),
+                    "generation_attempts": len(board.drafts),
+                    "validations": len(board.validations),
+                    "model_calls_total": board.total_model_calls(),
+                    "answer_type": response.answer_type,
+                    "refusal_reason": response.refusal_reason,
+                },
+            )
+        )
         response.agent_trace = list(board.trace)

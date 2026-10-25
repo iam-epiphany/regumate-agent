@@ -1,12 +1,12 @@
 import json
 from queue import Queue
-from threading import Event, Thread
+from threading import Event, Semaphore, Thread
 from time import monotonic, sleep
 from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, TimeoutError as _PoolTimeoutError
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import SessionLocal, get_db
@@ -30,12 +30,19 @@ from backend.app.services.qa_task_service import (
 )
 from backend.app.services.rag_service import answer_question, retrieve_context_package
 from backend.app.services.retrieval_service import RetrievalServiceUnavailable
-from backend.app.core.config import QA_REQUEST_TOTAL_BUDGET_SECONDS
+from backend.app.core.config import QA_ASK_QUEUE_WAIT_SECONDS, QA_MAX_CONCURRENT_ASKS, QA_REQUEST_TOTAL_BUDGET_SECONDS
 from backend.app.services.performance_metrics import RequestBudgetExceeded, record_trace_event, request_budget_context, request_trace_context
 from uuid import uuid4
 
 
 router = APIRouter(prefix="/qa", tags=["qa"])
+
+# One pipeline run holds its request-scoped DB session from the first chunk
+# lookup to the audit write, so the pool (pool_size + max_overflow) caps how
+# many answers can run at once.  The semaphore keeps excess requests QUEUED
+# instead of letting them fail with a pool-timeout 500 and wedging the
+# service; CPU-only deployments previously needed a restart to recover.
+_ASK_GATE = Semaphore(max(QA_MAX_CONCURRENT_ASKS, 0)) if QA_MAX_CONCURRENT_ASKS > 0 else None
 
 
 @router.get("/agents", response_model=AgentRegistryResponse)
@@ -57,21 +64,32 @@ def ask_question(payload: QARequest, response: Response, db: Session = Depends(g
             str(event.get("stage") or "unknown"), str(event.get("status") or "unknown"),
             event.get("summary") if isinstance(event.get("summary"), dict) else None,
         )
+    if _ASK_GATE is not None and not _ASK_GATE.acquire(timeout=QA_ASK_QUEUE_WAIT_SECONDS):
+        raise HTTPException(
+            status_code=503,
+            detail="当前问答请求较多，请稍后重试。",
+        )
     try:
-        with request_trace_context(request_id), request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
-            record_trace_event("request_received", "started", {"question_length": len(payload.question), "option_count": len(payload.options or [])})
-            result = answer_question(
-                db, payload.question, options=payload.options,
-                include_debug=payload.include_debug, progress_reporter=progress,
-            )
-            record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
-            return result
-    except OperationalError as exc:
-        raise HTTPException(status_code=503, detail="数据库暂不可用，请稍后重试。") from exc
-    except RetrievalServiceUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except RequestBudgetExceeded as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
+        try:
+            with request_trace_context(request_id), request_budget_context(QA_REQUEST_TOTAL_BUDGET_SECONDS):
+                record_trace_event("request_received", "started", {"question_length": len(payload.question), "option_count": len(payload.options or [])})
+                result = answer_question(
+                    db, payload.question, options=payload.options,
+                    include_debug=payload.include_debug, progress_reporter=progress,
+                )
+                record_trace_event("response_returned", "completed", {"citation_count": len(result.citations)})
+                return result
+        except OperationalError as exc:
+            raise HTTPException(status_code=503, detail="数据库暂不可用，请稍后重试。") from exc
+        except _PoolTimeoutError as exc:
+            raise HTTPException(status_code=503, detail="数据库连接繁忙，请稍后重试。") from exc
+        except RetrievalServiceUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RequestBudgetExceeded as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+    finally:
+        if _ASK_GATE is not None:
+            _ASK_GATE.release()
 
 
 @router.post("/tasks", response_model=QATaskCreateResponse)
