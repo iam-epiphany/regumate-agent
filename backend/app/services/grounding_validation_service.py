@@ -1,17 +1,16 @@
 from __future__ import annotations
-from backend.app.core.rag_features import capture_validation
 
 import math
 import re
 from typing import Any
 
+from backend.app.core.rag_features import capture_validation
 from backend.app.schemas.qa import AnswerClaim, RetrievalResult
 from backend.app.services.performance_metrics import timed
 
-
 ENTITY_PATTERN = re.compile(
     r"(?:20\d{2}年(?:\d{1,2}月(?:\d{1,2}日)?)?)|(?:[-−－]?\d+(?:\.\d+)?%?)|"
-    r"(?:[A-Za-z一-龥]+〔\d{4}〕\d+号)"
+    r"(?:[A-Za-z一-龥]{1,10}〔\d{4}〕\d{1,6}号)"
 )
 # Period labels locate the evidence; they are not standalone numeric facts.
 # Removing the whole expression avoids treating the “3” in “2023-3” or
@@ -23,8 +22,8 @@ _PERIOD_EXPRESSION_PATTERN = re.compile(
     r"|(?:第)?[一二三四1-4]\s*季度"
 )
 ACTOR_PATTERN = re.compile(
-    r'(?:由|向|经)([\u4e00-\u9fffA-Za-z]{1,35}?(?:委员会|事务所|中心|公司|银行|部门|机构|总局|局|部|处|组|会))'
-    r'(?=审批|批准|备案|审核|核验|报告|报送|提交|负责|办理|确认)'
+    r"(?:由|向|经)([\u4e00-\u9fffA-Za-z]{1,35}?(?:委员会|事务所|中心|公司|银行|部门|机构|总局|局|部|处|组|会))"
+    r"(?=审批|批准|备案|审核|核验|报告|报送|提交|负责|办理|确认)"
 )
 
 
@@ -55,9 +54,12 @@ def validate_grounded_answer(
     }
     missing_inline_citation_ids = sorted(claimed_citation_ids - answer_citation_ids)
     evidence_by_id = {
-        chunk.citation_label: _normalize(_chunk_support_text(chunk)) for chunk in context_chunks
+        chunk.citation_label: _normalize(_chunk_support_text(chunk))
+        for chunk in context_chunks
     }
-    evidence = _normalize("\n".join(_chunk_support_text(chunk) for chunk in context_chunks))
+    evidence = _normalize(
+        "\n".join(_chunk_support_text(chunk) for chunk in context_chunks)
+    )
     answer_without_citations = _strip_presentation_markers(
         re.sub(r"\[\d+\]", "", answer)
     )
@@ -68,7 +70,9 @@ def validate_grounded_answer(
             if not _entity_is_supported(entity, evidence)
         }
     )
-    missing_claim_citations = [index + 1 for index, claim in enumerate(claims) if not claim.citation_ids]
+    missing_claim_citations = [
+        index + 1 for index, claim in enumerate(claims) if not claim.citation_ids
+    ]
     missing_claims = not claims
     unsupported_claim_entities: list[dict[str, Any]] = []
     for index, claim in enumerate(claims, start=1):
@@ -103,7 +107,11 @@ def validate_grounded_answer(
         and not missing_claim_citations
         and not unsupported_claim_entities
     )
-    semantic_validation = {"semantic_passed": None, "semantic_mode": "task_level", "verifier_status": "not_run"}
+    semantic_validation = {
+        "semantic_passed": None,
+        "semantic_mode": "task_level",
+        "verifier_status": "not_run",
+    }
     passed = base_passed
     return {
         "passed": passed,
@@ -121,10 +129,20 @@ def validate_grounded_answer(
 
 def _normalize(value: Any) -> str:
     normalized = str(value or "").translate(
-        str.maketrans({
-            "％": "%", "－": "-", "−": "-", "﹣": "-",
-            "〔": "", "〕": "", "【": "", "】": "", "[": "", "]": "",
-        })
+        str.maketrans(
+            {
+                "％": "%",
+                "－": "-",
+                "−": "-",
+                "﹣": "-",
+                "〔": "",
+                "〕": "",
+                "【": "",
+                "】": "",
+                "[": "",
+                "]": "",
+            }
+        )
     )
     return re.sub(r"[\s,，]", "", normalized).lower()
 
@@ -141,7 +159,12 @@ def _month_spelling_variants(normalized: str) -> list[str]:
     year, month = match.group(1), int(match.group(2))
     if not 1 <= month <= 12:
         return []
-    return [f"{year}年{month:02d}月", f"{year}年{month}月", f"{year}{month:02d}月", f"{year}-{month:02d}"]
+    return [
+        f"{year}年{month:02d}月",
+        f"{year}年{month}月",
+        f"{year}{month:02d}月",
+        f"{year}-{month:02d}",
+    ]
 
 
 def _strip_presentation_markers(value: str) -> str:
@@ -167,7 +190,7 @@ def _chunk_support_text(chunk: RetrievalResult) -> str:
     metadata_parts = [
         chunk.source_doc,
         chunk.section_title,
-        *(chunk.section_path or (chunk.metadata or {}).get('section_path') or []),
+        *(chunk.section_path or (chunk.metadata or {}).get("section_path") or []),
         metadata.get("source_title"),
         metadata.get("source_filename"),
         metadata.get("filename"),
@@ -184,6 +207,12 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
     normalized = _normalize(entity)
     if normalized in normalized_evidence:
         return True
+    # 发文字号是唯一标识，但答案常把文号嵌进句子（“严格遵守财会〔2022〕39号”），
+    # 而原文以《标题》（文号）或“…通知（财会〔2022〕39号）”形式出现，逐字包含
+    # 必然失败。归一化后的“年份+序号+号”核心出现在证据中即视为支持。
+    document_number = re.search(r"\d{4}\d{1,6}号", normalized)
+    if document_number and document_number.group(0) in normalized_evidence:
+        return True
     # Month mentions differ in zero padding between an answer (“2023年3月”)
     # and corpus titles (“2023年03月”, “2023-03”).  The retrieval layer already
     # accepts both spellings; validation must not reject an answer for the
@@ -197,21 +226,31 @@ def _entity_is_supported(entity: str, normalized_evidence: str) -> bool:
     value = float(numeric.group(1))
     decimal_places = len(numeric.group(2) or "")
     percent = numeric.group(3)
-    tolerance = 0.0 if decimal_places == 0 else 0.5 * (10 ** -decimal_places) + 1e-9
+    tolerance = 0.0 if decimal_places == 0 else 0.5 * (10**-decimal_places) + 1e-9
     for candidate, _, candidate_percent in re.findall(
         r"(-?\d+(?:\.(\d+))?)(%?)", normalized_evidence
     ):
-        if candidate_percent == percent and math.isclose(value, float(candidate), rel_tol=0.0, abs_tol=tolerance):
+        if candidate_percent == percent and math.isclose(
+            value, float(candidate), rel_tol=0.0, abs_tol=tolerance
+        ):
             return True
         # 统计语料把率类指标存成小数比率（0.10997），答案按百分比书写（10.997%），
         # 或反向。百分号两侧不一致时按 ×100/÷100 换算比较，避免换算后的展示
         # 数值被逐字支持检查误判为无据。
-        if percent and not candidate_percent and math.isclose(
-            value, float(candidate) * 100, rel_tol=0.0, abs_tol=tolerance
+        if (
+            percent
+            and not candidate_percent
+            and math.isclose(
+                value, float(candidate) * 100, rel_tol=0.0, abs_tol=tolerance
+            )
         ):
             return True
-        if not percent and candidate_percent and math.isclose(
-            value * 100, float(candidate), rel_tol=0.0, abs_tol=tolerance
+        if (
+            not percent
+            and candidate_percent
+            and math.isclose(
+                value * 100, float(candidate), rel_tol=0.0, abs_tol=tolerance
+            )
         ):
             return True
         # 单位由表头声明（unit "%、家"），单元格存纯数值（283.7），答案按
@@ -228,4 +267,6 @@ def _extract_entities(value: str) -> set[str]:
         return f"{year}年" if year else " "
 
     without_periods = _PERIOD_EXPRESSION_PATTERN.sub(keep_year, value)
-    return set(ENTITY_PATTERN.findall(without_periods)) | set(ACTOR_PATTERN.findall(without_periods))
+    return set(ENTITY_PATTERN.findall(without_periods)) | set(
+        ACTOR_PATTERN.findall(without_periods)
+    )

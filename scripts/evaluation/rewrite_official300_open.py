@@ -11,6 +11,7 @@ is already an open question.
 
 Output: JSONL with one row per case, resumable by id.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,8 +26,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from scripts.evaluate_contest_qa import read_cases
 from backend.app.core.config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+from scripts.evaluate_contest_qa import read_cases
 
 PROMPT = """你是银行监管知识库评测的出题助手。下面是一道选择题。请把它改写成一道等价的开卷问答题。
 要求：
@@ -76,6 +77,54 @@ def _valid(question: str, answer: str) -> bool:
     return not (numbers and any(number in question for number in numbers))
 
 
+_DEICTIC_PATTERN = re.compile(r"以下哪[一二项个]|下列哪[一项个]|四个选项中")
+
+
+def _key(value: str) -> str:
+    return re.sub(r"[\s·•、，,。.;；:：（()）\"'“”‘’]+", "", str(value or ""))
+
+
+def ensure_candidate_enumeration(question: str, options: list[str]) -> str:
+    """Keep comparison rewrites answerable by naming the candidate items.
+
+    A comparative stem (“以下哪一项数值最高？”) loses its referent once the
+    options are dropped: the system cannot know which rows the comparison is
+    restricted to.  When the rewritten question still points at dropped
+    options, fold the option names back into the question text.
+    """
+
+    items = list(
+        dict.fromkeys(
+            str(option).strip() for option in options or [] if str(option).strip()
+        )
+    )
+    if not items or not _DEICTIC_PATTERN.search(question):
+        return question
+    # Only metric/item-name candidates (table comparisons) are folded back in.
+    # Statement-style options (“以下哪项表述正确”) are answered by stating the
+    # provision; enumerating full sentences would turn a provision question
+    # into a four-statement matching task.
+    if any(len(item) > 14 or "。" in item for item in items):
+        return question
+    key_question = _key(question)
+    listed = sum(1 for item in items if _key(item) in key_question)
+    if listed >= len(items) - 1:
+        return question
+    enumeration = "、".join(items) + ("四项" if len(items) == 4 else "中")
+    replaced = question
+    for token in ("以下哪一项", "以下哪个", "下列哪一项", "下列哪个"):
+        if token in replaced:
+            replaced = replaced.replace(
+                token,
+                f"{enumeration}{'的哪一项' if enumeration.endswith('四项') else '哪一项'}",
+            )
+            break
+    else:
+        replaced = re.sub(r"[？?]\s*$", "", replaced)
+        replaced = f"{replaced}（在{'、'.join(items)}中比较）？"
+    return replaced
+
+
 def _fallback(case) -> str:
     topic = case.source_title or "该制度"
     return f"请根据《{topic}》回答：{case.question.rstrip('。？?')}。请直接给出规定内容，不要要求提供选项。"
@@ -86,12 +135,16 @@ def _rewrite(case, key: str, timeout: float) -> dict:
     if re.fullmatch(r"[-+]?\d[\d,\.]*\s*[%％]?", answer):
         return {
             "id": case.id,
-            "open_question": case.question,
+            "open_question": ensure_candidate_enumeration(
+                case.question, list(case.options)
+            ),
             "topic": "",
             "leak_risk": "low",
             "rewrite_status": "numeric_original",
         }
-    prompt = PROMPT.format(title=case.source_title, question=case.question, answer=answer)
+    prompt = PROMPT.format(
+        title=case.source_title, question=case.question, answer=answer
+    )
     last_error = None
     for attempt in range(3):
         try:
@@ -101,7 +154,9 @@ def _rewrite(case, key: str, timeout: float) -> dict:
             if _valid(question, answer) and leak != "high":
                 return {
                     "id": case.id,
-                    "open_question": question,
+                    "open_question": ensure_candidate_enumeration(
+                        question, list(case.options)
+                    ),
                     "topic": str(payload.get("topic") or ""),
                     "leak_risk": leak,
                     "rewrite_status": "llm",
@@ -113,7 +168,9 @@ def _rewrite(case, key: str, timeout: float) -> dict:
             time.sleep(1.5 + attempt)
     return {
         "id": case.id,
-        "open_question": _fallback(case),
+        "open_question": ensure_candidate_enumeration(
+            _fallback(case), list(case.options)
+        ),
         "topic": "",
         "leak_risk": "unknown",
         "rewrite_status": "fallback",
@@ -123,7 +180,11 @@ def _rewrite(case, key: str, timeout: float) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("outputs/official300_open/open_questions.jsonl"))
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("outputs/official300_open/open_questions.jsonl"),
+    )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--start", type=int, default=0)
@@ -144,11 +205,16 @@ def main() -> int:
                 done[str(row["id"])] = row
     pending = [case for case in cases if str(case.id) not in done]
     key = _api_key()
-    print(f"[rewrite] total={len(cases)} done={len(done)} pending={len(pending)}", flush=True)
+    print(
+        f"[rewrite] total={len(cases)} done={len(done)} pending={len(pending)}",
+        flush=True,
+    )
 
     lock = threading.Lock()
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
-        futures = {pool.submit(_rewrite, case, key, args.timeout): case for case in pending}
+        futures = {
+            pool.submit(_rewrite, case, key, args.timeout): case for case in pending
+        }
         for future in as_completed(futures):
             case = futures[future]
             row = future.result()
@@ -166,7 +232,10 @@ def main() -> int:
                 with args.out.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(row, ensure_ascii=False) + "\n")
                     stream.flush()
-                print(f"[rewrite] {len(done)}/{len(cases)} {case.id} {row['rewrite_status']}", flush=True)
+                print(
+                    f"[rewrite] {len(done)}/{len(cases)} {case.id} {row['rewrite_status']}",
+                    flush=True,
+                )
 
     rows = [done[str(case.id)] for case in cases if str(case.id) in done]
     args.out.write_text(
@@ -176,7 +245,13 @@ def main() -> int:
     status = {}
     for row in rows:
         status[row["rewrite_status"]] = status.get(row["rewrite_status"], 0) + 1
-    print(json.dumps({"rows": len(rows), "status": status, "output": str(args.out)}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"rows": len(rows), "status": status, "output": str(args.out)},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
