@@ -260,18 +260,22 @@ def main() -> None:
     parser.add_argument('--collection', default='regumate_chunks')
     parser.add_argument('--skip-archive', action='store_true')
     parser.add_argument('--archive-existing', action='store_true')
+    parser.add_argument('--no-models', action='store_true',
+                        help='Exclude local model weights; the deployment doc gains a notice '
+                             'that data/models must be supplied before first start.')
     args = parser.parse_args()
     destination = args.output.resolve()
     delivery_parent = (ROOT / 'dist-delivery').resolve()
     if destination.parent != delivery_parent or not re.fullmatch(r'[A-Za-z0-9_-]+', destination.name):
         raise RuntimeError('Output must be an ASCII-named direct child of dist-delivery.')
     if args.archive_existing:
-        check_models(destination)
+        if not args.no_models:
+            check_models(destination)
         archive_delivery(destination)
         return
     if destination.exists():
         raise FileExistsError(f'Output directory already exists: {destination}')
-    models = check_models(ROOT)
+    models = [] if args.no_models else check_models(ROOT)
     images = [image_info(args.app_image), image_info('qdrant/qdrant:v1.18.0')]
     required_free = (sum(m['bytes'] for m in models) + sum(i['bytes'] for i in images) + 16 * 2**30) * 2
     if shutil.disk_usage(delivery_parent).free < required_free:
@@ -315,11 +319,12 @@ def main() -> None:
     # Default compose must restore the bundled seeds, even when invoked without -f.
     shutil.copy2(destination / 'docker-compose.yml', destination / 'docker-compose.source.yml')
     shutil.copy2(destination / 'docker-compose.offline.yml', destination / 'docker-compose.yml')
-    for name in MODEL_NAMES:
-        log(f'Copying complete local model: {name}.')
-        shutil.copytree(ROOT / 'data' / 'models' / name, destination / 'data' / 'models' / name)
-    if check_models(destination) != models:
-        raise RuntimeError('Copied model directory inventory differs from the source.')
+    if not args.no_models:
+        for name in MODEL_NAMES:
+            log(f'Copying complete local model: {name}.')
+            shutil.copytree(ROOT / 'data' / 'models' / name, destination / 'data' / 'models' / name)
+        if check_models(destination) != models:
+            raise RuntimeError('Copied model directory inventory differs from the source.')
     copy_tree(ROOT / 'data' / 'contest_dataset', destination / 'data' / 'contest_dataset')
     question = Path('outputs/official300_open/open_questions_all.jsonl')
     (destination / question).parent.mkdir(parents=True)
@@ -332,14 +337,28 @@ def main() -> None:
          args.app_image, 'qdrant/qdrant:v1.18.0'])
     guide = ROOT / 'docs' / '\u6bd4\u8d5b\u5e73\u53f0\u90e8\u7f72\u6587\u6863.md'
     for name in ('DEPLOYMENT.md', 'OFFLINE_README.md', 'README.md'):
-        shutil.copy2(guide, destination / name)
+        guide_text = guide.read_text(encoding='utf-8')
+        if args.no_models:
+            guide_text += (
+                '\n\n## 本包不含本地模型权重（NoModels 变体）\n\n'
+                '本包为不带模型权重的轻量变体：`data/models/` 为空，`OFFLINE_MANIFEST.json` 的 '
+                '`model_weights_included` 为 false。本地检索与重排依赖两个本地模型，首次启动前必须把权重放到：\n\n'
+                '- `data/models/bge-m3`\n'
+                '- `data/models/bge-reranker-v2-m3`\n\n'
+                '权重可从含模型的完整提交包（ReguMate-Agent-Submission-20261025）的 `data/models/` 复制，'
+                '或使用团队自有的同结构权重文件（目录内需含 config.json、tokenizer_config.json 与权重文件）。'
+                '权重缺失时应用就绪检查不通过（embedding/reranker not ready），问答不可用。'
+                '其余内容（镜像、知识库种子、`.env`、源码与文档）与完整包一致。\n'
+            )
+        (destination / name).write_text(guide_text, encoding='utf-8')
     pdf_candidates = sorted((ROOT / 'output' / 'pdf').glob('ReguMate-Deployment-*.pdf'))
     if not pdf_candidates:
         raise RuntimeError('Deployment PDF missing under output/pdf/.')
     shutil.copy2(pdf_candidates[-1], destination / 'DEPLOYMENT.pdf')
     manifest = {'created_utc': datetime.now(timezone.utc).isoformat(),
         'images': images, 'models': models, 'knowledge_base': knowledge,
-        'model_downloads_at_runtime': False, 'credentials_included': True,
+        'model_downloads_at_runtime': False, 'model_weights_included': not args.no_models,
+        'credentials_included': True,
         'source_sessions_included': False,
         'external_llm_api_required_for_full_answers': True}
     (destination / 'OFFLINE_MANIFEST.json').write_text(
