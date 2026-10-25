@@ -333,7 +333,10 @@ def main() -> None:
     guide = ROOT / 'docs' / '\u6bd4\u8d5b\u5e73\u53f0\u90e8\u7f72\u6587\u6863.md'
     for name in ('DEPLOYMENT.md', 'OFFLINE_README.md', 'README.md'):
         shutil.copy2(guide, destination / name)
-    shutil.copy2(ROOT / 'output' / 'pdf' / 'ReguMate-Deployment-20261022.pdf', destination / 'DEPLOYMENT.pdf')
+    pdf_candidates = sorted((ROOT / 'output' / 'pdf').glob('ReguMate-Deployment-*.pdf'))
+    if not pdf_candidates:
+        raise RuntimeError('Deployment PDF missing under output/pdf/.')
+    shutil.copy2(pdf_candidates[-1], destination / 'DEPLOYMENT.pdf')
     manifest = {'created_utc': datetime.now(timezone.utc).isoformat(),
         'images': images, 'models': models, 'knowledge_base': knowledge,
         'model_downloads_at_runtime': False, 'credentials_included': True,
